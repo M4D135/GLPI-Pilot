@@ -721,6 +721,12 @@ public partial class MainWindow : Window
         SetStatus("Fermeture du navigateur piloté…");
         try { await _browser.DisposeAsync(); }
         catch (Exception ex) { AppPaths.AppendLog("Fermeture : " + AppPaths.SafeError(ex)); }
-        _closedAllowed = true; Close();
+        // DisposeAsync can complete synchronously when no browser was opened.
+        // Let the cancelled Closing event return before requesting the final close.
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            _closedAllowed = true;
+            Close();
+        });
     }
 }
