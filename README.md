@@ -1,4 +1,4 @@
-# GLPI Pilot 1.4.0 — Windows x64
+# GLPI Pilot 1.5.0 — Windows x64
 
 Application Windows autonome avec interface graphique pour extraire une recherche GLPI au moyen du navigateur et du SSO du portail. Aucun accès API, base de données ou serveur n’est nécessaire.
 
@@ -38,7 +38,33 @@ Fermer GLPI Pilot avant de remplacer les fichiers. Les préférences et le profi
 
 Le ZIP livré est le pack complet : extrais-le dans un nouveau dossier, sans récupérer de fichier de l’ancien pack. Il contient le nouvel EXE, le pilote complet et les documents. Il n’est pas nécessaire d’installer Python, Node.js ou .NET sur le poste utilisateur. Edge ou Chrome doit être installé et autorisé à s’ouvrir sur ce poste.
 
-## Nouveautés 1.4.0
+## Nouveautés 1.5.0
+
+### Zoom et interface plus lisible
+
+Les boutons **− / 100 % / +**, à côté du bouton de thème, règlent toute l’interface de **75 à 150 %**, par pas de 5 %. Cliquer sur le pourcentage revient à 100 %. **Ctrl+Plus**, **Ctrl+Moins**, **Ctrl+0** et **Ctrl+molette** donnent le même accès. Le zoom est mémorisé automatiquement pour le poste ; importer la configuration d’un collègue conserve votre zoom.
+
+L’en-tête, les actions du relevé et la navigation se réorganisent avec la place réellement disponible après zoom. Les palettes claire et sombre s’appliquent aux nouvelles vues. Les tableaux Techniciens, Tournées et Requêtes utilisent leur propre zone délimitée ; les formulaires et les résultats sont répartis en sous-onglets pour limiter les défilements imbriqués.
+
+### Des widgets qui prennent la place nécessaire
+
+Les cartes du dashboard utilisent une **hauteur automatique** et suivent le contenu. La météo n’ajoute plus son propre ascenseur à celui de la page. Les méthodes de calcul et les explications détaillées se déplient à la demande. Les longues répartitions, alertes et listes de qualité ouvrent une vue complète **paginée et recherchable**, intégrée au dashboard, avec retour à la carte. Les indices des lignes source sont conservés pour retrouver les tickets.
+
+L’éditeur propose une hauteur automatique ou une hauteur minimale manuelle. Agrandir une explication repousse les cartes suivantes ; le contenu reste lisible. Le catalogue présente six résultats par page, avec recherche sur toutes les sources. Déplacement, redimensionnement, verrouillage, styles, couleurs et annuler/rétablir restent disponibles.
+
+### Suivi opérationnel et bibliothèque de 64 modèles
+
+**16 nouvelles sondes** complètent les indicateurs : tickets en attente anciens ou sans modification récente, nouveaux sans modification, priorités hautes et retards sans technicien, affectation à un groupe seul, planifiés à échéance dépassée, anciens sans technicien, actifs sans catégorie, résolus dont la clôture est à suivre, résolus sans date, incidents en priorité haute, et moyenne/médiane/P90/maximum des jours écoulés depuis la résolution des tickets actuellement résolus.
+
+Les seuils d’ancienneté et de modification sont ceux des Réglages. Une date illisible ou une colonne absente reste signalée comme indisponible. L’âge d’un ticket en attente ne représente pas sa durée dans ce statut. Le suivi de clôture ne déduit ni approbation de solution ni délai contractuel.
+
+L’atelier fournit **64 modèles** : les 40 existants et 24 nouvelles répartitions par ville, technicien ou groupe. Dans **Requêtes**, le bouton **Modèles +** ajoute les modèles manquants à votre brouillon, puis **Enregistrer** les mémorise. Vos requêtes modifiées, favoris et identifiants existants sont conservés. La limite reste de 128 définitions au total.
+
+### Annulation et import
+
+Une annulation est désormais contrôlée avant et après les enregistrements automatiques, puis avant l’annonce de fin. Une écriture déjà commencée peut terminer proprement ; elle ne déclenche plus de message de réussite après l’annulation. Le lecteur CSV contrôle aussi l’annulation pendant les longues suites de lignes vides et la normalisation finale. La détection du préambule `sep=` ne charge plus une première ligne entière avant d’appliquer les limites de lecture.
+
+## Fonctions de l’espace 1.4.0 conservées
 
 ### Un espace de travail plus direct
 
@@ -94,7 +120,7 @@ L’export CSV/Excel reprend les lignes du périmètre sélectionné avec l’or
 
 ### Atelier de requêtes et widgets personnalisés
 
-La bibliothèque fournit **40 requêtes prêtes à l’emploi** pour les villes, les techniciens, les échéances, l’activité et la qualité du relevé. Vous pouvez rechercher une définition, la marquer comme favorite, la dupliquer, la modifier ou créer votre propre requête. Les définitions et les critères sont mémorisés et suivent l’export de configuration.
+La bibliothèque fournit **64 requêtes prêtes à l’emploi** pour les villes, les techniciens, les échéances, l’activité et la qualité du relevé. Vous pouvez rechercher une définition, la marquer comme favorite, la dupliquer, la modifier ou créer votre propre requête. Les définitions et les critères sont mémorisés et suivent l’export de configuration.
 
 Le constructeur choisit un périmètre de départ — toutes les lignes, tickets actifs, retards, priorités hautes, etc. — puis combine jusqu’à 20 conditions avec **toutes** ou **au moins une**. Les champs peuvent suivre un rôle reconnu du dashboard ou un en-tête exact. Les opérateurs couvrent les textes, les valeurs vides, les nombres et les dates, y compris les fenêtres relatives en jours. Les valeurs sont des critères littéraux, sans exécution de SQL ou de script.
 
@@ -208,4 +234,4 @@ Projet C# WPF, .NET 10, publication autonome Windows x64. Avec le SDK .NET 10 in
 
 La publication conserve le pilote Playwright Windows à l’extérieur de l’EXE dans `wad/.playwright`, avec ses licences. Les sources incluent les vérifications d’export, d’import CSV, de navigation et de DOM. Aucun identifiant, cookie ou contenu du portail utilisateur n’est livré avec les sources.
 
-Le rapport de vérification distingue les tests réellement exécutés ici de la validation restant à faire sur le portail et le poste Windows réels. L’affichage WPF, le comportement du premier plan Windows et le SSO du portail réel n’ont pas été testés dans cet environnement Linux. Outil indépendant, sans affiliation au projet GLPI.
+Les journaux du workflow Windows sont associés au commit contrôlé : tests des moteurs, rendu WPF dans les deux thèmes, captures, démarrage du pack et mémorisation du zoom. La compilation croisée Linux seule ne prouve pas un démarrage Windows. Le SSO, le comportement du premier plan sur le poste utilisateur et les personnalisations de son portail restent à confirmer dans cet environnement réel. Outil indépendant, sans affiliation au projet GLPI.
