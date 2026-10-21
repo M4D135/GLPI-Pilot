@@ -1,0 +1,8 @@
+{
+  "name": "glpi-pilot-native-dom-checks",
+  "private": true,
+  "version": "1.1.1",
+  "description": "Synthetic browser fixture checks for GLPI native export discovery",
+  "scripts": { "test": "node run.cjs" },
+  "devDependencies": { "playwright": "1.62.1" }
+}

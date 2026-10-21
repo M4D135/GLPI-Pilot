@@ -1,0 +1,56 @@
+GLPI Pilot native export DOM checks
+Started UTC: 2026-10-21T09:48:53.576Z
+Node: v24.19.0 | Playwright: 1.62.1
+Browser: 138.0.7204.0
+PASS 01 - Inspection does not mutate the page DOM
+PASS 02 - Inspection never clicks the export toggle
+PASS 03 - Official search-results table wins over layout tables
+PASS 04 - Total is read from GLPI data-count, not visible row count
+PASS 05 - Exactly one reviewed plan is returned
+PASS 06 - Hidden export menu must be opened through the browser
+PASS 07 - Hidden native all-pages CSV is proven but still needs opening
+PASS 08 - Open menu reinspection produces a direct action
+PASS 09 - GLPI 10 chooses all-pages CSV, excluding current page and PDF
+PASS 10 - Native browser download completes without failure
+PASS 11 - Download uses the existing all-pages display_type
+PASS 12 - Export link does not submit the surrounding massive-action form
+PASS 13 - Adapter reinstallation is idempotent
+PASS 14 - GLPI 11 scope includes the export controls outside the massive-action form
+PASS 15 - GLPI 11 total remains attached to the chosen table form
+PASS 16 - Two links labelled CSV are disambiguated by the All pages section
+PASS 17 - Detached GLPI 11 menu is associated through aria-labelledby
+PASS 18 - Native browser download completes without failure
+PASS 19 - Detached menu retains the existing table export destination
+PASS 20 - GLPI 11 export never submits the massive-action form
+PASS 21 - Legacy native GET export form is detected
+PASS 22 - All-pages legacy option value comes from the rendered select
+PASS 23 - Unproven total stays unknown
+PASS 24 - Native browser download completes without failure
+PASS 25 - Legacy export retains the form HTTP method
+PASS 26 - Browser form submission preserves actual existing search filters
+PASS 27 - Legacy download submits all pages
+PASS 28 - Recognized hidden Select2 native select advertises formatHidden
+PASS 29 - Host can select the underlying native option for Select2
+PASS 30 - Unrecognized hidden select is not automated
+PASS 31 - Cross-origin all-pages links are rejected
+PASS 32 - All-pages text with positive current-page mode is rejected
+PASS 33 - Negative mode alone does not prove an all-pages CSV command
+PASS 34 - Current-page-only CSV does not become an all-pages plan
+PASS 35 - Custom inline script on an export-looking link requires fallback
+PASS 36 - Mutation-looking query parameters invalidate a native export candidate
+PASS 37 - Business form with an Export label is never treated as native report export
+PASS 38 - Unknown POST export form is not substituted for the verified legacy GET form
+PASS 39 - A submit override cannot redirect an apparently valid export form
+PASS 40 - Duplicate links to the exact same export produce one plan
+PASS 41 - Distinct all-pages export destinations are ambiguous
+PASS 42 - Multiple GLPI result tables require an explicit saved selection
+PASS 43 - Explicit table selection scopes the associated native export
+PASS 44 - Table-specific total never leaks from another result card
+PASS 45 - Two independent data tables sharing one export region are ambiguous
+PASS 46 - Empty native menu may be opened but is not yet proven all-pages
+PASS 47 - Lazy menu is reinspected and must prove all-pages before download
+PASS 48 - Visible login form defers export without reading credentials
+PASS 49 - An explicit GLPI zero total remains distinguishable from unknown
+PASS 50 - Invalid saved selector fails closed with no action plan
+PASS 51 - Only three explicitly executed fixture exports caused a download request
+51 native export DOM checks passed.
