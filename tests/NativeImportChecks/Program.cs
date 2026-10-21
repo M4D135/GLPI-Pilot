@@ -42,7 +42,10 @@ var checks = new List<(string Name, Action Run)>
     ("Diagnostic complet : BOM, séparateur, colonnes et nombre réel de lignes", CheckDiagnosticSummary),
     ("831 descriptions synthétiques : CSV volumineux, contrôles et intégrité du fichier", CheckLargeNativeCsv),
     ("Encodage invalide : diagnostic sans octets d’entrée ni exception interne", CheckInvalidEncodingDiagnostics),
-    ("Signes C1 en UTF-8 : hypothèse documentée sans correction silencieuse", CheckC1Typography)
+    ("Signes C1 en UTF-8 : hypothèse documentée sans correction silencieuse", CheckC1Typography),
+    ("Annulation après inspection : aucun préambule vide ne masque la demande", CheckCancelledPreamble),
+    ("Annulation finale : aucun résultat n’est publié après la demande", CheckCancelledPublication),
+    ("Préambule sep= : préfixes proches, lignes CR et en-têtes littéraux conservés", CheckPreamblePrefixes)
 };
 int failures = 0;
 try
@@ -246,6 +249,39 @@ void CheckInvalidArguments()
     Throws<ArgumentOutOfRangeException>(() => Import("ID;Nom\n", expected: -1));
     using var cts = new CancellationTokenSource(); cts.Cancel();
     Throws<OperationCanceledException>(() => NativeCsvImportService.Read(FileFor("ID;Nom\n"), source, cancellationToken: cts.Token));
+}
+
+void CheckCancelledPreamble()
+{
+    string path = FileFor(new string('\n', 8192));
+    var original = File.ReadAllBytes(path);
+    using var cancellation = new CancellationTokenSource();
+    Throws<OperationCanceledException>(() => NativeCsvImportService.Read(path, source, cancellationToken: cancellation.Token,
+        diagnostics: message => { if (message.StartsWith("CSV natif : texte=", StringComparison.Ordinal)) cancellation.Cancel(); }));
+    True(original.SequenceEqual(File.ReadAllBytes(path)), "Une annulation ne doit modifier aucun octet du reçu natif.");
+}
+
+void CheckCancelledPublication()
+{
+    string path = FileFor("ID;Titre;\n0001;Valeur littérale;\n");
+    using var cancellation = new CancellationTokenSource();
+    Throws<OperationCanceledException>(() => NativeCsvImportService.Read(path, source, 1, cancellationToken: cancellation.Token,
+        diagnostics: message => { if (message.StartsWith("CSV natif : lignes source=", StringComparison.Ordinal)) cancellation.Cancel(); }));
+}
+
+void CheckPreamblePrefixes()
+{
+    foreach (var name in new[] { "s", "se", "sep", "SEParation", "sep=;" })
+    {
+        var data = Import("\"" + name + "\";ID\rValeur;0001\r", 1);
+        Equal(name, data.Headers[0]); Equal("0001", data.Rows[0][1]);
+    }
+    var literal = Import("sep;ID\nValeur;0001\n", 1);
+    Equal("sep", literal.Headers[0]);
+    var directed = Import("\r\r\nSeP=;\rID;Titre\r0001;Littéral\r", 1);
+    Equal(2, directed.Headers.Count); Equal("0001", directed.Rows[0][0]); True(directed.Complete, "Le préambule accepte CR, CRLF et casse du mot sep.");
+    Throws<InvalidDataException>(() => Import("sep=;"));
+    Throws<InvalidDataException>(() => Import("sep=;;\nID;Titre\n1;Texte\n"));
 }
 
 void CheckXlsxRoundtrip()
