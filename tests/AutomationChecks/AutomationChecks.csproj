@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PlaywrightPlatform>linux</PlaywrightPlatform>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <Compile Include="../../src/GlpiPilot/Core/*.cs" Exclude="../../src/GlpiPilot/Core/ThemeService.cs" Link="Core/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/bridge.js" LogicalName="AutomationChecks.BrowserScripts.bridge.js" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/native-export.js" LogicalName="AutomationChecks.BrowserScripts.native-export.js" />
+    <Content Include="../fixtures/native-glpi10.html" Link="fixtures/native-glpi10.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/native-glpi11.html" Link="fixtures/native-glpi11.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/native-legacy.html" Link="fixtures/native-legacy.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/native-legacy-realistic.html" Link="fixtures/native-legacy-realistic.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/basic-glpi.html" Link="fixtures/basic-glpi.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
