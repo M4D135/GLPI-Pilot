@@ -1,0 +1,48 @@
+GLPI Pilot 1.3.1 — sources techniques consultées
+
+GLPI : statuts, priorité, urgence et impact
+https://github.com/glpi-project/glpi/blob/9.5.13/inc/commonitilobject.class.php
+Les constantes et fonctions getPriorityName/getUrgencyName/getImpactName
+fondent les correspondances numériques et textuelles du dashboard. Une valeur
+personnalisée non reconnue reste non classée. L'urgence et l'impact ne remplacent
+jamais la priorité ; la matrice de priorité peut être configurée dans GLPI.
+https://help.glpi-project.org/documentation/fr/modules/assistance/prioritymatrix
+
+GLPI : types incident/demande et formulaire historique
+https://github.com/glpi-project/glpi/blob/9.5.13/inc/ticket.class.php
+https://help.glpi-project.org/documentation/modules/assistance/tickets/ticketmanagement
+
+GLPI : cycle de vie des tickets
+https://help.glpi-project.org/documentation/modules/assistance/tickets/ticketlifecycle
+
+GLPI : niveaux de service et calendriers
+https://help.glpi-project.org/documentation/modules/configuration/service_levels
+Les pauses en attente et les calendriers ouvrés ne peuvent pas être reconstruits
+à partir des seules colonnes du relevé. Le dashboard compare donc les échéances
+exportées à l'heure du calcul et affiche des durées calendaires, sans prétendre
+contrôler le respect contractuel d'un SLA.
+
+GLPI : formulaires et onglets consultatifs
+https://github.com/glpi-project/glpi/blob/9.5.13/inc/ajax.class.php
+https://github.com/glpi-project/glpi/blob/10.0/bugfixes/src/Ajax.php
+Les adaptateurs vérifient le contexte, l'identité du ticket et la destination
+des liens d'onglets de lecture. Ils ne soumettent pas les formulaires métier.
+
+Excel : échappement SpreadsheetML des valeurs de texte
+https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/bd0aa042-434a-4ca7-b25f-4e1fd25a954d
+
+WPF : priorité de fenêtre
+https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.topmost?view=windowsdesktop-10.0
+
+Les captures fournies dans la conversation ont servi à ajuster les intitulés
+des colonnes. Aucune capture, donnée de ticket, identité de personne, cookie
+ou session utilisateur n'est inclus dans la distribution.
+
+Démarrage et distribution 1.3.1 :
+- Microsoft .NET : déploiement autonome à fichier unique
+  https://learn.microsoft.com/dotnet/core/deploying/single-file/
+- Source Microsoft du singlefilehost : runtime natif lié statiquement
+  https://github.com/dotnet/runtime/blob/main/src/native/corehost/apphost/static/CMakeLists.txt
+- Le pack local .NET 10.0.13 indique DropFromSingleFile=true pour coreclr,
+  clrjit, hostfxr et hostpolicy dans data/RuntimeList.xml ; leur absence comme
+  fichiers séparés ne démontre pas un défaut de distribution.

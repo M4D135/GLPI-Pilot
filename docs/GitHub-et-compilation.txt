@@ -1,0 +1,56 @@
+GLPI Pilot 1.4.0 — packs PROD et DEV, compilation Windows
+
+DEUX PACKS COMPLETS
+Chaque ZIP contient exactement GLPI-Pilot.exe et le dossier wad à sa racine.
+PROD : exécutable autonome, pilote Windows complet, guide, diagnostics,
+licences et empreintes SHA-256. Aucune installation de .NET n’est nécessaire.
+DEV : le même exécutable et le même pilote, avec les sources, tests et outils
+de compilation dépliés sous wad/sources. Tout reste rangé dans wad.
+Aucun profil SSO, réglage personnel ou relevé métier n’est inclus.
+Edge ou Chrome doit être installé et autorisé sur le poste utilisateur.
+
+TELECHARGER
+Dépôt : https://github.com/M4D135/GLPI-Pilot
+Packs : https://github.com/M4D135/GLPI-Pilot/releases
+Choisir le ZIP PROD pour utiliser le logiciel, DEV pour son développement.
+La commande GitHub Code > Download ZIP télécharge uniquement les sources.
+Extraire le pack entier et conserver wad à côté de GLPI-Pilot.exe.
+
+COMPILER SOUS WINDOWS
+Prérequis de développement : SDK .NET 10 stable, PowerShell 7.2 ou plus,
+accès aux dépendances NuGet. Depuis wad/sources du pack DEV, ou la racine
+des sources du dépôt, lancer dans PowerShell :
+  ./build.ps1
+Cette commande produit les deux ZIP PROD et DEV dans artifacts.
+Le script refuse de remplacer un pack déjà présent. Choisir un autre dossier :
+  ./build.ps1 -OutputDirectory ./artifacts/release-suivante
+Le pack DEV peut ainsi reconstruire les deux distributions.
+
+WORKFLOW GITHUB ACTIONS
+.github/workflows/windows.yml prépare une exécution Windows x64 :
+1. Contrôles du démarrage, configuration et moteurs locaux.
+2. Compilation et exécution de vrais contrôles WPF sur données synthétiques.
+3. Construction et contrôle du contenu des packs PROD et DEV.
+4. Extraction puis premier rendu de l’EXE PROD dans un état temporaire.
+5. Publication des deux ZIP en artefacts si ces étapes réussissent.
+Les journaux sont joints également en cas d’échec. Les artefacts de travail
+sont conservés 30 jours ; les packs publiés dans Releases restent disponibles.
+Le workflow utilise contents:read et ne publie pas lui-même de Release.
+
+Le contrôle du pack refuse tout état GLPI Pilot déjà présent sur le runner.
+Il vérifie le premier rendu, une vraie fenêtre visible et la fermeture
+normale, avec un délai global. Aucun portail GLPI ni SSO métier n’est lancé.
+
+PORTEE DES VERIFICATIONS
+La compilation croisée Linux pour Windows ne prouve pas un démarrage WPF.
+La présence d’un workflow ou d’un commit ne prouve pas une exécution réussie.
+Le rapport de vérification conserve les contrôles locaux du 21 octobre 2026.
+L’onglet Actions fournit les résultats Windows pour le commit contrôlé ;
+les notes de Release indiquent les validations propres aux packs publiés.
+Le SSO d’entreprise et les personnalisations GLPI restent propres au poste.
+
+EN CAS DE NON-DEMARRAGE
+Dans le pack extrait, lancer wad/support/DIAGNOSTIC_DEMARRAGE.cmd.
+Ce lanceur observe le démarrage et ouvre son rapport dans le Bloc-notes.
+Il conserve les réglages et le profil du navigateur. Le diagnostic permet
+d’identifier l’étape exacte en échec sur le poste concerné.

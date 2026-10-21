@@ -1,0 +1,112 @@
+GLPI Pilot 1.4.0 — dashboards et atelier de requêtes
+
+CHOISIR SON ESPACE
+Dashboard contient la vue globale du relevé.
+Techniciens contient la gestion de l’équipe et les dashboards individuels.
+C’est moi mémorise votre identité ; Mon espace retrouve votre vue.
+La disposition globale et la disposition personnelle sont indépendantes.
+Les techniciens consultés partagent le modèle personnel ; leurs chiffres
+sont calculés sur leurs propres lignes. Ne pas additionner des tickets
+attribués à plusieurs personnes comme s’ils étaient tous distincts.
+
+PERSONNALISER
+Personnaliser ouvre le mode édition. Le catalogue permet de rechercher
+les indicateurs, les répartitions, la météo, l’activité datée, les tickets
+à examiner, la qualité et les notes. Il contient aussi Localisation et
+Mes requêtes après calcul du relevé. Disponibles seulement cache les
+sources qui ne peuvent pas être calculées. Les favoris du catalogue
+restent des favoris de session ; les favoris de requêtes sont enregistrés.
+
+DEPLACER ET REDIMENSIONNER
+Déplacer la poignée d’une carte avant une autre, ou sur le fond pour la
+placer à la fin. Des commandes d’ordre remplacent le glisser-déposer.
+Le coin inférieur droit règle largeur et hauteur. La grille de 12 colonnes
+s’adapte aux petites fenêtres en conservant les dimensions préférées.
+La carte verrouillée refuse déplacement et redimensionnement directs.
+
+REGLER UNE CARTE
+Choisir titre, source, largeur, hauteur, accent et style : surface sobre,
+contour coloré, accent latéral ou minimal. Les sept accents restent
+cohérents avec le thème clair ou sombre. Appliquer enregistre la carte.
+Une note contient du texte libre ; aucun HTML ou code n’est exécuté.
+
+Les répartitions proposent barres, liste, compact et anneau. Le nombre
+affiché est réglable de 3 à 30. Le tableau complet reste accessible.
+Dans l’anneau, Autres regroupe les valeurs restantes et ouvre leurs lignes.
+Pour les affectations multiples, les occurrences par groupe peuvent
+excéder le nombre de tickets distincts ; le dénominateur est expliqué.
+
+La jauge d’un indicateur possède un objectif, un seuil de vigilance,
+un seuil critique et un sens favorable. La valeur exacte reste visible
+au-delà de l’objectif. L’absence de valeur ou d’objectif reste explicite.
+Ces seuils sont des repères choisis localement, pas des engagements SLA.
+
+ORGANISER LES DISPOSITIONS
+Neuf modèles : Pilotage, Exploitation, Analyse, Mon quotidien,
+Charge de l’équipe, Échéances, Qualité des données, Villes et territoires,
+Page libre. Chaque espace accepte 12 dispositions de 60 widgets maximum.
+Renommer, dupliquer, supprimer ; une disposition au moins est conservée.
+Masquer un widget le conserve dans le catalogue pour le réafficher.
+Annuler/Rétablir concerne les modifications de présentation de la session.
+Les sauvegardes sont automatiques ; un échec reste signalé et réessayable.
+
+VILLES ET INDICATEURS GEOGRAPHIQUES
+Réglages > Correspondances des villes mémorise un nom et ses variantes.
+Exemple : Marseille | MA ; Mars. Le nom Marseille est lui-même reconnu.
+L’extraction ajoute Ville détectée et Repérage ville sans modifier le CSV
+natif. Les ambiguïtés et les titres indisponibles restent distincts.
+Le catalogue propose couverture du repérage, volumes localisés, non
+repérés et ambigus, ainsi que les répartitions de ville et de lieu.
+Les requêtes prêtes à l’emploi ajoutent actifs, attente, hautes priorités,
+retards, échéances, ancienneté et absence d’affectation par ville.
+Les mêmes définitions suivent le périmètre du technicien consulté.
+
+ATELIER DE REQUETES
+La bibliothèque commence avec 40 modèles, modifiables et duplicables.
+Rechercher une requête, choisir sa catégorie ou ses favoris.
+Une requête sélectionne une base de lignes : relevé, actifs, retards, etc.
+Ajouter jusqu’à 20 conditions, toutes requises (ET) ou au moins une (OU).
+Chaque champ suit un rôle du dashboard ou un en-tête exact du relevé.
+Textes : contient, ne contient pas, égal, différent, commence par, vide.
+Nombres : égal, supérieur/inférieur, avec ou sans égalité.
+Dates : avant/après, derniers/prochains jours, ancienneté minimale.
+Les nombres utilisent une virgule ou un point décimal ; seuls les espaces
+servent de séparateurs de milliers. 1,234 désigne 1,234 unité, pas 1 234.
+Les dates utilisent le format configuré dans Réglages et l’heure du calcul.
+
+L’indicateur calcule nombre, part dans la base, distincts, somme, moyenne,
+minimum ou maximum. Les quatre derniers exigent une colonne numérique.
+Le regroupement facultatif compte toujours les lignes par valeur : ville,
+technicien, catégorie ou autre colonne. Il ne somme pas la mesure numérique.
+Un filtre technicien par rôle reconnaît les affectations multiples selon
+les séparateurs explicites du relevé ; les regroupements l’expliquent.
+
+Prévisualiser sur le relevé, contrôler valeur et échantillon, ouvrir les
+lignes, puis enregistrer. Ajouter l’indicateur ou la répartition au dashboard
+global ou personnel. Les widgets suivent les nouveaux relevés et les
+modifications enregistrées de leur requête. Supprimer la requête laisse
+ses anciens widgets indisponibles, sans les transformer en un autre calcul.
+Limite de la bibliothèque : 128 requêtes au total, modèles compris.
+
+FIABILITE DES RESULTATS
+Une colonne requise absente ou ambiguë ne donne jamais un faux zéro.
+Une cellule numérique ou date illisible est signalée. En ET, elle empêche
+la ligne de remplir toutes les conditions. En OU, une autre condition vraie
+suffit à retenir la ligne. Une colonne requise manquante reste bloquante,
+même en OU. Une moyenne sans valeur exploitable est indisponible.
+Le widget Qualité liste les sondes, leurs échantillons et leurs limites.
+Cliquer un chiffre, une barre ou une ligne retrouve les lignes source.
+L’aperçu affiche au plus 10 000 correspondances ; recherche et statistiques
+portent sur toutes les lignes chargées. Le tri porte sur l’aperçu affiché.
+Bilan Excel exporte tous les indicateurs et répartitions du périmètre,
+avec leurs avertissements. Un bilan dépassant Excel est proposé en CSV.
+Recalculer reste local. Extraire tout récupère un nouveau relevé GLPI.
+La météo synthétise les signaux du relevé, sans prévision météorologique.
+
+PARTAGE
+L’export de configuration inclut les deux ensembles de dispositions,
+les notes, styles, objectifs, villes, alias et requêtes avec leurs critères.
+Les critères que vous avez saisis font donc partie du fichier transmis.
+Le choix C’est moi, les objectifs/notes de gestion des techniciens, l’ordre
+de tournée, les colonnes de l’aperçu, le dossier d’exports et le SSO restent
+sur le poste. Aucun relevé ou cookie n’est intégré à ce fichier partagé.

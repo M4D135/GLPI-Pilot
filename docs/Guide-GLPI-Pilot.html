@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLPI Pilot — Guide de prise en main</title>
+  <style>
+    :root{color-scheme:light;--ink:#202024;--muted:#666570;--blue:#1765d1;--line:#e0e0e6;--pale:#f5f5f7}
+    *{box-sizing:border-box}
+    body{margin:0;background:#f5f5f7;color:var(--ink);font:15px/1.65 "Segoe UI",Arial,sans-serif}
+    main{max-width:1040px;margin:28px auto;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    header{padding:36px 48px 30px;background:#fff;color:var(--ink);border-bottom:1px solid var(--line)}
+    header .eyebrow{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+    h1{margin:8px 0 7px;font-size:38px;line-height:1.2;letter-spacing:-.035em}
+    header p{max-width:760px;margin:0;color:var(--muted);font-size:17px}
+    article{padding:10px 48px 38px}
+    section{margin:29px 0 0}
+    h2{font-size:21px;line-height:1.3;margin:0 0 12px;letter-spacing:-.02em}
+    h3{font-size:17px;line-height:1.4;margin:22px 0 7px}
+    p{margin:10px 0}
+    li{margin:8px 0;padding-left:3px}
+    ol,ul{padding-left:24px;margin:10px 0 16px}
+    strong{font-weight:650}
+    a{color:var(--blue);text-underline-offset:3px;overflow-wrap:anywhere}
+    code,kbd{font-family:Consolas,"Liberation Mono",monospace;font-size:.9em;background:#edf2f7;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}
+    .lead{font-size:17px}
+    .callout{background:var(--pale);border:1px solid var(--line);border-radius:10px;padding:15px 19px;margin:18px 0}
+    .callout p{margin:0}
+    .chips{display:flex;flex-wrap:wrap;gap:7px;margin:17px 0 0}
+    .chip{font-size:11px;padding:3px 8px;color:var(--muted);border:1px solid var(--line);border-radius:7px}
+    table{width:100%;border-collapse:collapse;font-size:14px;margin:13px 0 17px;table-layout:fixed}
+    th,td{padding:12px 14px;text-align:left;vertical-align:top;border:1px solid var(--line);overflow-wrap:anywhere}
+    th{background:#f5f5f7;color:#4e4d57;font-weight:650}
+    th:first-child,td:first-child{width:29%}
+    tr:nth-child(even) td{background:#fafcff}
+    .muted{color:var(--muted)}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .small{font-size:13px}
+    .rule{border-top:1px solid var(--line);padding-top:25px}
+    footer{padding:21px 48px;background:#f5f5f7;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+    @media(max-width:760px){body{font-size:15px}main{margin:0;border:0;border-radius:0}header,article,footer{padding-left:22px;padding-right:22px}h1{font-size:32px}.two{grid-template-columns:1fr}table{font-size:13px}th,td{padding:9px}}
+    @media print{@page{size:A4;margin:17mm 15mm}body{font-size:10pt;background:#fff;line-height:1.5}main{max-width:none;margin:0;border:0;box-shadow:none;border-radius:0}header{padding:0 0 8mm;background:#fff;color:#111;border-bottom:2px solid #244f85}header .eyebrow{color:#244f85}header p{color:#333;font-size:12pt}h1{font-size:27pt}article{padding:0}section{margin-top:7mm}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}p,li{orphans:3;widows:3}.chips{display:none}.callout{break-inside:avoid;padding:3mm 4mm}table{font-size:9pt}th,td{padding:2.7mm}tr{break-inside:avoid}.two{display:block}.two>div{margin-top:5mm}footer{padding:5mm 0 0;background:#fff;margin-top:6mm}a{color:#244f85;text-decoration:none}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Guide de prise en main · Version 1.4.0</div>
+    <h1>GLPI Pilot</h1>
+    <p>Relancer une recherche GLPI, analyser ses résultats et consulter le détail des tickets depuis une interface claire ou sombre.</p>
+    <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
+  </header>
+  <article>
+    <section id="nouveautes-140">
+      <h2>Le nouvel espace 1.4.0</h2>
+      <p>La navigation devient latérale sur grand écran et compacte quand la fenêtre se réduit. <kbd>Ctrl K</kbd> retrouve les écrans et actions. <kbd>Ctrl 1</kbd> à <kbd>Ctrl 9</kbd> change d’onglet ; <kbd>Ctrl L</kbd> sélectionne la source, <kbd>Ctrl F</kbd> recherche le relevé, <kbd>Ctrl R</kbd> extrait et <kbd>Ctrl E</kbd> exporte en Excel.</p>
+      <p>L’adresse possède un bouton <strong>Enregistrer</strong> et un état de mémorisation. Les étapes de l’extraction et son temps écoulé sont affichés. Lors d’une actualisation, le relevé précédent reste visible et est conservé si la nouvelle récupération échoue. Les boutons du dernier export permettent de l’ouvrir ou de le retrouver dans son dossier.</p>
+      <p><strong>Colonnes</strong> règle les en-têtes visibles, leur ordre et leur largeur, mémorisés pour la structure du relevé. La recherche inclut les colonnes masquées. Les fichiers exportés conservent toutes les colonnes du relevé.</p>
+      <h3>Jauges, anneaux et catalogue</h3>
+      <p>Le catalogue des widgets se filtre par catégorie, disponibilité et favoris de session. Les répartitions proposent un anneau avec légende et groupe Autres ouvrant les lignes restantes. Les indicateurs proposent une jauge : objectif, vigilance, critique et sens favorable sont réglables. La valeur numérique exacte reste visible, y compris au-delà de l’objectif.</p>
+      <p>Le widget Qualité détaille les sondes, les échantillons et les sources manquantes. Les colonnes absentes et les calculs impossibles sont signalés ; ils ne sont pas remplacés par des chiffres d’exemple.</p>
+      <h3>Gestion de l’équipe</h3>
+      <p>Techniciens comprend un tableau de gestion triable : volumes, actifs, attentes, priorités, retards, ancienneté, inactivité et affectations multiples. Les favoris, un objectif de stock actif et une note peuvent être mémorisés localement par personne. Ce sont des repères de pilotage du relevé, sans modification de GLPI ni déduction de productivité.</p>
+      <p>Après <strong>C’est moi</strong>, l’option d’ouverture de l’espace personnel après une extraction réussie attend le nouveau relevé et la détection de votre identité. Elle ne déclenche pas d’extraction au lancement.</p>
+    </section>
+
+    <section id="villes">
+      <h2>Correspondances des villes et tournées</h2>
+      <p>Dans <strong>Réglages → Correspondances des villes</strong>, saisissez une ville de référence et ses variantes. Le nom de référence est reconnu lui aussi. Aucun exemple n’est ajouté automatiquement à votre liste.</p>
+      <table><thead><tr><th>Termes dans le titre</th><th>Ville produite</th></tr></thead><tbody>
+        <tr><td>MA</td><td>Marseille</td></tr><tr><td>Mars</td><td>Marseille</td></tr><tr><td>Marseille</td><td>Marseille</td></tr>
+      </tbody></table>
+      <p>Le collage groupé accepte <code>Marseille | MA ; Mars</code> ou <code>MA ; Mars ; Marseille = Marseille</code>, une correspondance par ligne. Casse et accents sont ignorés, les termes sont recherchés comme mots entiers et les noms composés sont pris en compte. Un alias partagé ou deux villes présentes séparément rendent le titre ambigu. Les alias courts doivent être choisis avec soin.</p>
+      <p>La colonne <strong>Ville détectée</strong> contient le nom de référence. <strong>Repérage ville</strong> distingue reconnu, sans correspondance, ambigu et titre indisponible. Ces colonnes sont ajoutées aux fichiers créés localement ; le CSV natif téléchargé reste intact. Une modification des correspondances peut être appliquée au relevé déjà chargé sans refaire le SSO.</p>
+      <p>La liste et ses variantes sont mémorisées et partageables par configuration. Le code postal et les coordonnées sont facultatifs et saisis par vous. Le repérage ne constitue pas une adresse d’intervention.</p>
+      <h3>Indicateurs géographiques</h3>
+      <p>Le modèle <strong>Villes et territoires</strong> rassemble les volumes, la couverture du repérage et les répartitions. Le catalogue permet d’ajouter les villes reconnues, sans correspondance, ambiguës ou privées de titre. L’atelier propose la charge, les retards, les priorités hautes et les échéances par ville. Une correspondance explicite de colonne Ville dans les réglages du dashboard reste prioritaire sur la colonne détectée.</p>
+      <h3>Préparer une tournée</h3>
+      <p>Dans <strong>Villes et tournées</strong>, choisir toute l’équipe ou un technicien. Le périmètre initial utilise les actifs reconnus ; tous les statuts peuvent être inclus volontairement. Les villes deviennent des étapes, tandis que les tickets non localisés ou ambigus restent accessibles séparément.</p>
+      <p>Déplacer les étapes ou les classer par nom, priorité et échéance. Si toutes possèdent des coordonnées, l’ordre de proximité utilise les distances à vol d’oiseau. Il ne calcule pas le réseau routier, le trafic ou une heure d’arrivée. L’ordre choisi est mémorisé sur le poste.</p>
+      <p>L’export CSV/Excel reprend le périmètre retenu avec l’ordre de visite, la ville et l’état de localisation. Les lignes non localisées sont conservées sans numéro d’étape fictif. Le bouton de carte ouvre volontairement une recherche publique contenant seulement la ville et son code postal, sans transmettre les données des tickets.</p>
+    </section>
+
+    <section id="requetes">
+      <h2>Atelier de requêtes</h2>
+      <p>La bibliothèque contient <strong>40 modèles</strong> pour les villes, techniciens, échéances, activité et qualité. Rechercher, mettre en favoris, dupliquer, modifier ou créer une requête. Les brouillons sont conservés pendant les changements de relevé ; une erreur de sauvegarde laisse la saisie disponible pour réessayer.</p>
+      <ol>
+        <li>Choisir une base : toutes les lignes, actifs, retards, hautes priorités ou une autre cohorte du relevé.</li>
+        <li>Ajouter des conditions sur des rôles du dashboard ou des en-têtes exacts. Combiner toutes les conditions ou au moins une.</li>
+        <li>Choisir nombre, pourcentage dans la base, valeurs distinctes, somme, moyenne, minimum ou maximum.</li>
+        <li>Choisir éventuellement un regroupement par ville, technicien, catégorie ou autre colonne.</li>
+        <li>Prévisualiser, vérifier le chiffre et l’échantillon, puis ouvrir les lignes pour contrôler la sélection.</li>
+        <li>Enregistrer et ajouter l’indicateur ou la répartition au dashboard global ou personnel.</li>
+      </ol>
+      <p>Le regroupement compte les lignes retenues, même lorsque l’indicateur calcule une somme ou une moyenne. Une attribution multiple peut figurer dans plusieurs groupes de techniciens ; la somme des groupes peut dépasser le nombre de tickets distincts.</p>
+      <p>Les critères sont littéraux : aucun SQL ni script n’est exécuté. Les opérateurs couvrent textes, valeurs vides, comparaisons numériques et dates, avec des fenêtres relatives en jours. Les nombres acceptent point ou virgule décimale et espaces de milliers : <code>1,234</code> signifie 1,234 unité. Les dates suivent la culture choisie dans les réglages.</p>
+      <p>Une colonne requise manquante ou ambiguë rend la requête indisponible, y compris avec une combinaison OU. Une cellule numérique ou date illisible est signalée : en ET, la ligne ne remplit pas toutes les conditions ; en OU, une autre condition vraie suffit à la retenir. Le diagnostic distingue les lignes avec une valeur illisible de celles qui n’ont pas été retenues. Sans valeur numérique exploitable, une moyenne ou une somme ne produit pas un faux zéro.</p>
+      <p>Les widgets liés suivent les prochains relevés et le périmètre du technicien consulté. Une requête supprimée laisse ses widgets signalés comme indisponibles. Limites : 128 définitions au total, modèles compris, et 20 conditions par requête.</p>
+      <p>Les définitions, favoris et critères saisis suivent l’export de configuration. Le fichier partagé contient donc les noms de villes, les variantes, les notes de widgets et les valeurs de filtre que vous avez volontairement enregistrées. Il ne contient ni relevé ni session SSO.</p>
+    </section>
+
+    <section>
+      <h2>1. Démarrer le logiciel</h2>
+      <p class="lead">Extrais entièrement l’archive, puis lance <code>GLPI-Pilot.exe</code>. Garde l’EXE et le dossier <code>wad</code> ensemble.</p>
+      <p>Le pack Windows 11 x64 contient le moteur .NET et les composants Playwright. Aucune installation de Python, de .NET ou d’Excel n’est nécessaire pour créer les exports. <strong>Edge ou Chrome doit être installé</strong>, et le poste doit pouvoir joindre ton portail.</p>
+      <p>Lance l’application dans ta session Windows habituelle, sans élévation administrateur. Les réglages sont conservés dans ton compte Windows.</p>
+      <p><strong>La barre du haut rassemble les actions principales.</strong> Extraire tout lance le traitement depuis les différents onglets. La source et l’aperçu occupent Extraction ; Dashboard présente les statistiques et les widgets, Techniciens contient les vues personnelles, et Détail du ticket rassemble les sections et le traitement de la fiche sélectionnée. Le navigateur, les limites et les configurations se règlent dans Réglages. Le journal se déplie en bas de la fenêtre.</p>
+      <div class="callout"><p><strong>Clair ou sombre :</strong> utilise le bouton <strong>soleil / lune</strong> en haut à droite. Il change les fonds, les textes, les tableaux, les listes déroulantes et les états des contrôles. Ton choix est mémorisé au prochain lancement.</p></div>
+    </section>
+
+    <section>
+      <h2>2. Extraire en un clic après la préparation initiale</h2>
+      <ol>
+        <li>Dans <strong>Extraction</strong>, renseigne l’adresse complète de la recherche. Dans <strong>Réglages</strong>, choisis Edge ou Chrome.</li>
+        <li>Dans Réglages, conserve le mode <strong>Export GLPI — toutes les pages</strong> pour utiliser l’export natif, ou choisis <strong>Parcours du tableau</strong>. Active <strong>Créer aussi un fichier Excel</strong> si tu veux le classeur à la fin du traitement.</li>
+        <li>Clique sur <strong>Extraire tout</strong>, en haut. Le logiciel ouvre l’adresse avec le navigateur derrière lui, attend la page après les redirections SSO et lance la méthode choisie lorsque les éléments attendus sont disponibles. Tu peux suivre l’avancement dans GLPI Pilot.</li>
+        <li>Lis le résultat dans la barre d’état. L’aperçu et le bilan présentent les données recueillies et la méthode employée. Clique sur <strong>Dossier des exports</strong> pour retrouver le CSV et, si l’option est activée, le classeur Excel créé automatiquement.</li>
+      </ol>
+      <div class="callout"><p><strong>Pendant l’extraction, le navigateur reste ouvert normalement derrière GLPI Pilot.</strong> Le logiciel reste au-dessus pendant le démarrage et le traitement. Utilise <strong>Voir le navigateur</strong> pour intervenir dans la page, puis <strong>Revenir à GLPI Pilot</strong> pour reprendre le suivi dans l’application. Ce bouton reste accessible pendant l’attente et le traitement. Au repos, GLPI Pilot relâche cette priorité pour laisser les autres applications librement accessibles.</p></div>
+      <h3>Préparer une recherche une seule fois</h3>
+      <p>Si l’adresse du portail mène à l’accueil, commence par <strong>Outils manuels → Ouvrir GLPI seulement</strong>. Laisse le SSO se terminer et affiche la liste voulue dans le navigateur : filtres, colonnes et ordre de tri. Reviens dans le logiciel : les onglets se mettent à jour automatiquement. Choisis la bonne page, puis clique sur <strong>Page du navigateur</strong> dans Extraction.</p>
+      <p>Les critères présents dans l’URL sont conservés avec l’adresse de la recherche, tandis que les paramètres d’authentification reconnus sont écartés. Les filtres que GLPI conserve uniquement dans sa session dépendent de cette session. Pour le mode parcours, tu peux également sélectionner le bon tableau dans Outils manuels avant de mémoriser la recherche.</p>
+      <p>Les prochains lancements utilisent l’adresse, le mode et les réglages mémorisés. Une recherche nécessitant une navigation particulière peut demander une adaptation initiale du portail.</p>
+    </section>
+
+    <section>
+      <h2>3. Comprendre les deux méthodes</h2>
+      <table>
+        <thead><tr><th>Méthode</th><th>Fonctionnement</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Export GLPI — toutes les pages</strong></td><td>Le logiciel utilise les commandes d’export CSV reconnues dans GLPI et la portée Toutes les pages. Le fichier natif est conservé, puis ses données sont importées pour l’aperçu et le fichier Excel éventuel. Si ces commandes ne sont pas reconnues ou si le CSV reçu ne peut pas être lu, il essaie <strong>Afficher tout</strong> lorsque la liste le permet.</td></tr>
+          <tr><td><strong>Parcours du tableau</strong></td><td>Le logiciel lit les lignes du tableau, suit les contrôles de pagination reconnus et rassemble les résultats. L’option <strong>Créer aussi un fichier Excel</strong> crée automatiquement un classeur à l’issue du traitement.</td></tr>
+        </tbody>
+      </table>
+      <p>Le mode natif est le choix initial. Il utilise en priorité l’export complet disponible dans ton GLPI. Le journal indique si ses commandes ont été reconnues et quelle méthode a finalement produit les résultats.</p>
+      <h3>La solution automatique Afficher tout</h3>
+      <p>Lorsque l’export natif n’est pas reconnu ou que sa lecture échoue, le logiciel essaie une option déjà proposée dans la liste GLPI, avec une capacité suffisante pour <strong>le total connu de la recherche</strong>. Il attend le rechargement et lit le tableau ainsi agrandi. Il contrôle le nombre de lignes, la plage allant du premier au dernier résultat et l’absence de page suivante avant de confirmer la totalité.</p>
+      <p>Dans cette situation, le CSV et le classeur Excel sont créés localement à partir du tableau. Si un fichier natif a déjà été téléchargé, il reste conservé dans le dossier des exports, même lorsqu’il n’a pas pu être importé. Si le total dépasse la limite de lignes réglée dans l’application, le traitement s’arrête avant de demander l’affichage de toute la liste. Si le total est inconnu, si l’option nécessaire manque ou si les compteurs ne concordent pas, cette tentative s’arrête avec un diagnostic et ne produit aucun export automatique. Le parcours et les repères avancés restent disponibles.</p>
+      <p><strong>Lorsqu’un CSV natif est téléchargé, il est conservé intact, puis importé dans l’aperçu.</strong> L’option <strong>Créer aussi un fichier Excel</strong> s’applique aux deux méthodes. À l’import d’un CSV natif, la limite de lignes peut rendre l’aperçu et le classeur partiels ; elle ne réduit pas le fichier reçu. Le bilan indique cette situation.</p><p>La réception d’un fichier et son import ne garantissent pas à eux seuls l’exhaustivité. Un total annoncé ou fourni permet de comparer les nombres lorsque c’est possible ; sans total vérifiable, l’exhaustivité reste non confirmée.</p>
+      <div class="callout"><p><strong>Vérifier la totalité :</strong> sans total connu et vérifiable, l’exhaustivité reste non confirmée. Pour un parcours de pages, vérifie le point de départ, les limites et le bilan. Un résultat partiel reste exploitable, mais ne constitue pas automatiquement un inventaire complet.</p></div>
+      <p>Pour une longue recherche, privilégie un tri stable dans GLPI, par exemple sur l’identifiant, et évite de modifier les filtres pendant la récupération. Les données peuvent évoluer côté serveur entre deux pages.</p>
+    </section>
+
+    <section>
+      <h2>4. Laisser le SSO se terminer et rester dans le logiciel</h2>
+      <p>GLPI Pilot utilise un navigateur réel avec <strong>son propre profil persistant</strong>. En mode automatique, sa fenêtre reste ouverte derrière GLPI Pilot pendant que le SSO et la récupération continuent. Ce profil conserve sa session ; il ne récupère pas automatiquement les cookies de ton navigateur habituel. La compatibilité du SSO avec ce profil dépend du portail et des règles de ton entreprise.</p>
+      <p>Le logiciel ne demande aucun mot de passe. Les redirections et les éventuelles étapes d’authentification appartiennent au navigateur. L’attente repose sur les éléments de la page et les repères configurés, avec une durée maximale réglable.</p>
+      <p>Si l’attente se prolonge ou si une étape interactive est nécessaire, clique sur <strong>Voir le navigateur</strong>. GLPI Pilot suspend immédiatement sa priorité d’affichage, ce qui permet d’utiliser la page. Termine l’action dans le portail, puis clique sur <strong>Revenir à GLPI Pilot</strong> dans le logiciel. Une nouvelle extraction automatique rétablit également le suivi depuis GLPI Pilot. Cette priorité reste limitée au démarrage et au traitement ; elle est relâchée au repos. Ces commandes concernent le navigateur piloté par l’application.</p>
+      <p>Le journal précise si la page reste en redirection, si l’authentification attend une action ou si les éléments attendus n’ont pas été trouvés. Une simple page affichant le logo GLPI ne confirme pas une session connectée.</p>
+    </section>
+
+    <section>
+      <h2>5. Régler le traitement et adapter le portail</h2>
+      <p>L’onglet <strong>Réglages</strong> contient le navigateur, la méthode d’extraction, la création automatique d’Excel, les délais et les limites. Le bloc Fichiers contient le dossier de destination ; les repères avancés sont repliables. Termine par <strong>Enregistrer les réglages</strong> pour les conserver.</p>
+      <table>
+        <thead><tr><th>Réglage</th><th>Utilisation</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Attente SSO</strong></td><td>Temps accordé à l’apparition de la page GLPI attendue. Valeur initiale : 180 secondes.</td></tr>
+          <tr><td><strong>Délai export</strong></td><td>Temps accordé à la préparation et à la réception de l’export natif. Valeur initiale : 600 secondes.</td></tr>
+          <tr><td><strong>Pages / lignes maximum</strong></td><td>La limite de pages concerne le parcours. La limite de lignes concerne aussi l’import du CSV : l’aperçu et le classeur peuvent être partiels, tandis que le fichier natif complet reste conservé. La solution Afficher tout s’arrête avant le rechargement si le total dépasse cette limite. Le bilan signale les limites atteintes.</td></tr>
+          <tr><td><strong>Total attendu</strong></td><td>Total de la recherche à comparer au nombre de lignes extraites lorsqu’une comparaison est possible. Mets-le à jour quand la recherche change, ou laisse le champ vide.</td></tr>
+          <tr><td><strong>Dossier des exports</strong></td><td>Destination des fichiers générés et des téléchargements reçus. Le bouton Choisir permet de la modifier.</td></tr>
+        </tbody>
+      </table>
+      <h3>Session et pagination</h3>
+      <p>Déplie ce bloc si la détection automatique demande une adaptation. <strong>Désigner un élément de la session</strong> permet de choisir dans le navigateur un élément visible uniquement après connexion, par exemple le menu du compte. <strong>Désigner le bouton Suivant</strong> permet de choisir la pagination du tableau sélectionné.</p>
+      <p><kbd>Échap</kbd> annule la désignation. <strong>Effacer les repères personnalisés</strong> revient à la détection automatique sans supprimer la session du navigateur.</p>
+      <h3>Export GLPI personnalisé</h3>
+      <p>Ce bloc expert permet d’indiquer les sélecteurs CSS du menu d’export, du format, de la portée et du bouton final. Les deux champs de valeur servent aux contrôles de type liste qui nécessitent une valeur précise.</p>
+      <p>Ces champs doivent correspondre aux éléments réels de ton portail. Ils sont facultatifs : ne renseigne pas de sélecteur supposé. Après une mise à jour ou une personnalisation de GLPI, un repère peut devoir être ajusté. Le diagnostic permet d’identifier l’étape qui bloque.</p>
+    </section>
+
+    <section>
+      <h2>6. Utiliser les outils manuels</h2>
+      <p>Ils restent disponibles pour préparer une recherche, sélectionner précisément un tableau ou examiner un problème.</p>
+      <ol>
+        <li><strong>Ouvrir GLPI seulement</strong> ouvre et affiche volontairement le portail sans déclencher d’extraction.</li>
+        <li><strong>Actualiser</strong> met à jour la liste des pages. Choisis la bonne page, puis utilise <strong>Analyser les tableaux</strong>.</li>
+        <li>Sélectionne un tableau. <strong>Repérer</strong> le met en évidence ; <strong>Désigner le tableau</strong> permet de le choisir directement dans la page.</li>
+        <li><strong>Extraire cette page</strong> lit uniquement son contenu chargé. <strong>Pages suivantes</strong> commence à la page affichée et poursuit vers les suivantes : place-toi à la première page pour viser toute la recherche.</li>
+      </ol>
+      <p>Les outils de désignation affichent le navigateur pour te permettre de cliquer dans la page. Le bouton <strong>Revenir à GLPI Pilot</strong> permet ensuite de reprendre le suivi dans le logiciel.</p>
+      <h3>Réimporter un CSV déjà téléchargé</h3>
+      <p>Dans <strong>Outils manuels → Reprendre un fichier</strong>, clique sur <strong>Importer un CSV…</strong> et choisis le fichier sur ton poste. L’import ne demande pas d’ouvrir GLPI ni de refaire le SSO. Le fichier d’origine reste conservé.</p>
+      <p>Une fois la lecture terminée, consulte l’aperçu et le bilan dans Extraction, puis utilise <strong>Exporter en Excel</strong> si nécessaire. La limite de lignes des Réglages s’applique à cet import. Le total attendu des Réglages n’est pas utilisé pour un fichier local, dont la source peut être différente. La portée de la recherche GLPI ne peut pas être confirmée à partir d’un fichier local seul.</p>
+      <h3>Recevoir un export déclenché à la main</h3>
+      <p>Clique sur <strong>Recevoir un export GLPI</strong>, puis utilise le bouton d’export du portail dans l’onglet choisi. Sélectionne Toutes les pages dans GLPI si cette option correspond à ton besoin. L’application conserve le fichier reçu dans son format d’origine. Ce mode de réception manuelle sert à récupérer un téléchargement ; il est distinct du traitement automatique CSV lancé par Extraire tout. <strong>Arrêter</strong> met fin à l’attente.</p>
+      <h3>Interrompre un traitement</h3>
+      <p><strong>Annuler</strong> arrête l’opération en cours. Lors d’un parcours, les lignes déjà collectées restent disponibles et le résultat indique l’interruption. Une courte action du navigateur déjà engagée peut se terminer avant que l’arrêt soit confirmé.</p>
+    </section>
+
+    <section>
+      <h2>7. Lire les résultats et créer les fichiers</h2>
+      <p>Les données issues d’un parcours, de la lecture du CSV natif ou de l’import d’un fichier local apparaissent dans l’onglet Extraction. Le filtre de l’aperçu sert à l’inspection ; <strong>il ne réduit pas les lignes enregistrées dans les exports</strong>. Tu peux trier et redimensionner les colonnes, puis copier une sélection avec Ctrl+C.</p>
+      <div class="two">
+        <div><h3>Excel · .xlsx</h3><p>Le classeur contient les feuilles <strong>Données</strong> et <strong>Informations</strong>. Le bilan conserve la portée, le nombre de lignes et les avertissements. Les cellules sont écrites en texte pour préserver les identifiants, les zéros initiaux et les valeurs qui ressemblent à des formules.</p><p>Convertis les colonnes numériques dans Excel si nécessaire. La limite de 32 767 caractères par cellule est signalée lorsqu’un texte doit être raccourci.</p></div>
+        <div><h3>CSV · .csv</h3><p>Le CSV créé par GLPI Pilot utilise l’UTF-8 avec marque d’encodage et le séparateur point-virgule. Il conserve les textes longs. Les valeurs susceptibles d’être interprétées comme des formules sont préfixées d’une apostrophe.</p><p>Le CSV contient le tableau seul. Pour conserver le bilan avec les données et éviter les conversions automatiques d’identifiants à l’ouverture, privilégie le fichier Excel.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. Analyser la recherche dans Dashboard</h2>
+      <p>Le <strong>Dashboard</strong> utilise les lignes récupérées dans la recherche ou l’import local. Il calcule ses indicateurs sur l’ensemble de ces données, même si l’aperçu affiche au plus 10 000 correspondances. La recherche locale examine toutes les lignes chargées ; le tri concerne les correspondances affichées. Le filtre de recherche de l’aperçu ne modifie pas les calculs.</p>
+      <p>Les statistiques disponibles dépendent des colonnes présentes : statuts, priorités, urgences, impacts, affectations, catégories, lieux, villes, codes postaux et dates. Un champ absent ou une valeur non reconnue est signalé ; il ne devient pas automatiquement un zéro. La portée affichée reste celle de l’extraction : un résultat partiel ou un fichier dont la provenance est inconnue ne représente pas nécessairement tous les tickets du portail.</p>
+      <table>
+        <thead><tr><th>Vue</th><th>Informations disponibles</th></tr></thead>
+        <tbody>
+          <tr><td><strong>L’essentiel</strong></td><td>Volume, actifs, nouveaux, en cours, en attente, résolus, clos, part terminée, priorités hautes, échéances dépassées ou proches, affectation et ancienneté.</td></tr>
+          <tr><td><strong>Répartitions</strong></td><td>Statuts, priorités, urgences, impacts, âge, dernière modification, techniciens, groupes, catégories, types, entités, demandeurs, lieux, villes, codes postaux, origines et auteur de la dernière modification, selon les colonnes présentes. Les répartitions principales portent explicitement sur les actifs ou sur toutes les lignes.</td></tr>
+          <tr><td><strong>Présence d’une solution</strong></td><td>Présence ou absence d’une valeur dans la colonne Solution lorsqu’elle existe. Cette information ne remplace pas le statut du ticket et ne prouve pas que la solution a été acceptée.</td></tr>
+          <tr><td><strong>Durées</strong></td><td>Âge des actifs, temps jusqu’à résolution et clôture : moyenne, médiane, 90e percentile et maximum sur les dates exploitables. Le 90e percentile est le niveau que ne dépassent pas environ neuf valeurs sur dix de l’échantillon.</td></tr>
+          <tr><td><strong>Activité datée</strong></td><td>Créations, résolutions et clôtures présentes dans le relevé, avec une vue quotidienne sur 30 jours et des compteurs sur 7 et 30 jours.</td></tr>
+          <tr><td><strong>À regarder en priorité</strong></td><td>Jusqu’à 50 lignes cumulant des points d’attention. L’échéance dépassée, la priorité et la date d’ouverture déterminent l’ordre présenté.</td></tr>
+          <tr><td><strong>Qualité et périmètre</strong></td><td>Identifiants uniques, occurrences dupliquées, identifiants manquants, statuts non classés, dates non interprétables et correspondances de colonnes utilisées.</td></tr>
+        </tbody>
+      </table>
+      <p>Les durées sont <strong>calendaires</strong>. Une ancienne date de modification ne prouve pas une absence de travail, et la comparaison avec une échéance ne reproduit pas les calendriers, pauses ou règles contractuelles d’un SLA. Les occurrences répétées d’un identifiant ne sont pas fusionnées silencieusement.</p>
+      <p><strong>Priorité, urgence et impact restent des informations distinctes.</strong> Une urgence élevée n’est pas utilisée à la place d’une priorité absente. Les indicateurs d’échéance nécessitent la colonne de date correspondante dans les données exportées : la seule présence d’un choix TTR dans le menu GLPI ne suffit pas. Si cette colonne manque, les indicateurs concernés restent indisponibles.</p>
+      <p><strong>Lieu, Ville et Code postal ont chacun leur propre correspondance de colonne et leur propre répartition.</strong> Ces trois informations ne sont pas fusionnées.</p>
+      <p>La courbe de 30 jours utilise les tickets présents dans le relevé. Une recherche limitée aux tickets ouverts ne permet donc pas de mesurer le flux réel des clôtures du portail. <strong>Recalculer</strong> met à jour les calculs sur les données locales ; <strong>Extraire tout</strong> relit la recherche dans GLPI. <strong>Bilan Excel</strong> crée un fichier contenant les indicateurs, leurs échantillons et les avertissements.</p>
+      <p>Si le bilan dépasse <strong>1 048 575 lignes de données</strong>, la capacité d’une feuille Excel avec son en-tête, le logiciel propose automatiquement de l’enregistrer en <strong>CSV complet</strong>. Le dialogue d’enregistrement et la barre d’état indiquent ce changement de format ; les lignes du bilan ne sont pas tronquées pour les faire tenir dans Excel.</p>
+      <h3>Personnaliser les widgets</h3>
+      <p>Clique sur <strong>Personnaliser</strong>, puis <strong>+ Widget</strong> pour composer ton espace. La bibliothèque contient les indicateurs et répartitions disponibles, la météo, l’activité datée, les tickets à examiner, la qualité et des notes libres. Chaque widget est relié aux données du périmètre affiché.</p>
+      <table><thead><tr><th>Action</th><th>Utilisation</th></tr></thead><tbody>
+        <tr><td>Déplacer</td><td>Glisse la poignée du widget vers une autre carte. Les boutons Avant et Après de l’éditeur permettent aussi de changer l’ordre.</td></tr>
+        <tr><td>Redimensionner</td><td>Glisse le coin inférieur droit ou renseigne la largeur sur 12 colonnes et la hauteur. La disposition s’adapte à la largeur de la fenêtre.</td></tr>
+        <tr><td>Modifier</td><td>Le bouton à trois points ouvre l’éditeur intégré : titre, source, style, couleur d’accent, présentation, nombre de barres et explications. Termine par Appliquer au widget.</td></tr>
+        <tr><td>Dupliquer, masquer, verrouiller</td><td>Duplique une carte pour comparer des présentations. Les widgets masqués se retrouvent dans la bibliothèque. Verrouiller protège la position et la taille.</td></tr>
+        <tr><td>Annuler et rétablir</td><td>Les commandes de l’édition conservent jusqu’à 30 étapes dans la vue courante. Elles concernent la disposition, pas les données GLPI.</td></tr>
+        <tr><td>Plusieurs tableaux de bord</td><td>Tableaux de bord ouvre les dispositions : renommer, dupliquer, supprimer ou créer depuis Pilotage, Exploitation, Analyse, Mon quotidien, Charge de l’équipe, Échéances, Qualité des données, Villes et territoires ou Page libre. Maximum 12 dispositions et 60 widgets par disposition.</td></tr>
+      </tbody></table>
+      <p>La disposition est enregistrée automatiquement. Son statut de sauvegarde est visible dans l’édition ; <strong>Enregistrer</strong> permet de réessayer si l’écriture a échoué. Les tableaux de bord, les styles, les notes et les tailles sont inclus dans la configuration partageable. Les dispositions globales et personnelles sont indépendantes. Une modification dans un espace ne remplace pas l’autre. Le modèle personnel est réutilisé pour les différents techniciens, avec leurs propres lignes.</p>
+      <h3>Mon espace et les autres techniciens</h3>
+      <ol>
+        <li>Après l’extraction, ouvre <strong>Techniciens</strong>. La liste provient de la colonne d’affectation du relevé.</li>
+        <li>Choisis ton nom et clique sur <strong>C’est moi</strong>. Cette identité reste mémorisée sur le poste.</li>
+        <li><strong>Mon tableau de bord</strong> ouvre ta vue. Les onglets de techniciens et leur recherche permettent de consulter les autres personnes détectées ; <strong>Vue d’équipe</strong> revient au dashboard global.</li>
+      </ol>
+      <p>Les indicateurs et la météo sont recalculés sur toutes les lignes attribuées à la personne choisie. Les clics retrouvent les bonnes lignes de la recherche originale. <strong>Bilan Excel</strong> dans cet espace décrit uniquement ce technicien et précise le relevé source. L’export de toute la recherche reste accessible dans Extraction.</p>
+      <p>Les affectations multiples séparées explicitement par des retours à la ligne, des points-virgules ou des barres verticales espacées sont reconnues. Une ligne peut donc figurer dans plusieurs vues ; les totaux individuels ne s’additionnent pas. Un technicien absent du relevé garde une vue vide explicite. Le logiciel ne cherche pas d’autres tickets hors de cette recherche.</p>
+      <h3>Adapter les colonnes et les seuils</h3>
+      <p>Dans <strong>Réglages</strong>, le bloc du dashboard permet d’associer les colonnes de la recherche aux informations utilisées par les statistiques. Les noms peuvent varier selon la langue, la version ou la personnalisation de GLPI. Choisis également la convention de lecture des dates pour éviter les ambiguïtés de jour et de mois.</p>
+      <p>Les seuils d’ancienneté, de dernière modification et de proximité d’échéance servent à repérer les groupes de tickets qui demandent une attention. La météo opérationnelle résume ces indicateurs sur les données disponibles ; elle ne constitue pas un historique indépendant du portail.</p>
+      <p>Son indice est indicatif : échéances dépassées 35 %, priorités hautes 25 %, absence d’affectation 15 %, dernière modification 15 % et âge 10 %. Les poids disponibles sont ajustés au total des poids exploitables ; chaque signal indique son propre échantillon. Un indice inférieur à 10 correspond au soleil, de 10 à moins de 25 à la vigilance, de 25 à moins de 45 à la pluie, et à partir de 45 à l’orage. Si la portée ou les données sont insuffisantes, la météo le précise, même lorsque peu de signaux sont détectés.</p>
+      <h3>Revenir aux lignes concernées</h3>
+      <p>Les indicateurs proposant une action permettent de retrouver les lignes correspondantes dans <strong>Extraction</strong>. Le bouton <strong>Retirer le filtre</strong>, près du filtre de l’aperçu, rétablit la liste de la recherche. Ce filtrage d’analyse ne retire aucune ligne des exports de la recherche.</p>
+    </section>
+
+    <section>
+      <h2>9. Lire le détail d’un ticket</h2>
+      <p>Un clic sur une cellule affiche sa valeur dans <strong>Texte complet</strong>. Ce panneau se déplie pour les descriptions, solutions et autres valeurs longues ou multilignes. Son texte peut être sélectionné et copié.</p>
+      <ol>
+        <li>Après une extraction GLPI, sélectionne une ligne de ticket dans <strong>Extraction</strong>. Si <strong>Charger à la sélection</strong> est activé, le logiciel prépare son détail après une courte pause, sans quitter la liste.</li>
+        <li>Clique sur <strong>Détail du ticket</strong> au-dessus de l’aperçu, ou double-clique sur la ligne, pour afficher son onglet.</li>
+        <li>Utilise le <strong>menu du ticket</strong> pour consulter les sections, le traitement et les onglets réellement proposés par GLPI. Les autres onglets de consultation sont lus à la demande. Le bilan précise les limites et les sections absentes.</li>
+        <li><strong>Exporter cette section en Excel</strong> enregistre toutes les lignes lues dans cette section et son bilan. L’export de la recherche reste disponible dans Extraction.</li>
+      </ol>
+      <p>La fiche est lue dans <strong>un onglet dédié du navigateur piloté</strong>. La liste de recherche reste à sa place et l’aperçu local est conservé. La lecture de plusieurs tickets se fait successivement ; si tu changes rapidement de ligne, la demande précédente est annulée et seule la dernière sélection peut alimenter le détail affiché. Une extraction de la liste et une lecture de fiche ne naviguent pas simultanément.</p>
+      <p>Les derniers détails lus peuvent être réutilisés en mémoire. Leur heure de lecture est visible. <strong>Actualiser</strong> force une nouvelle lecture du portail ; <strong>Voir dans GLPI</strong> donne volontairement accès à la fiche dans le navigateur. Les données conservées en mémoire disparaissent à la fermeture du logiciel ou lorsque la recherche est remplacée.</p>
+      <h3>Traitement, suivis, tâches et solutions</h3>
+      <p>La lecture automatique du traitement est activée par défaut. Lorsqu’un onglet <strong>Traitement du ticket</strong> est reconnu, il est ouvert dans la fiche dédiée et sa chronologie est lue. Les éléments visibles sont présentés avec leur type, leur date, leur auteur et leur contenu, selon les informations disponibles. Les sous-vues permettent de retrouver les suivis, tâches ou solutions sans parcourir les autres éléments.</p>
+      <p>Le menu reprend les autres onglets de consultation détectés : leur présence dépend de la version, des plugins et de tes droits dans GLPI. La recherche du détail agit sur le contenu déjà chargé. Les textes longs et descriptions bénéficient d’une lecture sur toute la largeur ; les éditeurs enrichis associés à un champ visible sont pris en compte. Les commandes d’ajout et les zones de dépôt de fichiers ne sont pas exportées comme des données.</p>
+      <p><strong>Lire automatiquement le traitement</strong> dans les réglages permet de modifier ce comportement. La présence d’un document dans la chronologie décrit ses métadonnées visibles ; elle ne signifie pas que son fichier a été téléchargé.</p>
+      <h3>Identifier la bonne fiche</h3>
+      <p>La lecture exige une source GLPI connue et un identifiant numérique explicite dans une colonne <strong>ID</strong>, <strong>Identifiant</strong> ou <strong>Ticket ID</strong>. Si ton tableau emploie un autre nom, renseigne son nom exact dans <strong>Réglages → Détail des tickets → Colonne de l’identifiant</strong>. Aucun numéro n’est déduit du titre d’un ticket.</p>
+      <p>La liste standard GLPI permet de retrouver l’adresse de fiche. Pour une recherche personnalisée, le champ <strong>Adresse du ticket, avec {id}</strong> accepte une adresse réelle de fiche <code>/front/ticket.form.php?id={id}</code> de la même installation GLPI. Remplace uniquement le numéro par <code>{id}</code>. Le logiciel refuse une source inconnue, un identifiant ambigu ou une adresse qui ne correspond pas à une fiche de lecture reconnue.</p>
+      <div class="callout"><p><strong>Un CSV local seul ne prouve pas sa source GLPI.</strong> Il reste utilisable pour l’aperçu, le dashboard et les exports, mais il ne suffit pas à ouvrir automatiquement une fiche. Relance la recherche depuis le portail pour rétablir cette association.</p></div>
+      <h3>Choisir les sections du détail</h3>
+      <p>Dans Réglages, active <strong>Inclure les sections détectées</strong> pour reprendre les tableaux et les champs reconnus. Tu peux compléter ou remplacer cette détection par une liste de sections personnalisées, avec un maximum de 20 sections.</p>
+      <table>
+        <thead><tr><th>Champ</th><th>Rôle</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Nom</strong></td><td>Libellé présenté dans le sélecteur de sections.</td></tr>
+          <tr><td><strong>Sélecteur CSS</strong></td><td>Repère réel du tableau ou du bloc à lire dans la fiche.</td></tr>
+          <tr><td><strong>Mode table</strong></td><td>Lire un tableau ou une grille reconnue, avec ses colonnes et ses lignes.</td></tr>
+          <tr><td><strong>Mode fields</strong></td><td>Présenter les libellés et leurs valeurs sous forme de tableau.</td></tr>
+          <tr><td><strong>Mode text</strong></td><td>Lire le texte du bloc choisi et le présenter dans un tableau exportable.</td></tr>
+          <tr><td><strong>Mode timeline</strong></td><td>Lire une chronologie de traitement reconnue, avec ses éléments, dates, auteurs et textes disponibles.</td></tr>
+          <tr><td><strong>Onglet CSS</strong></td><td>Facultatif : onglet de consultation à ouvrir avant de lire la section. Il doit être reconnu comme une navigation de lecture ; une action de modification n’est pas déclenchée.</td></tr>
+          <tr><td><strong>Lignes par section</strong></td><td>Limite de lecture de chaque section : 5 000 par défaut, réglable entre 1 et 100 000. Une limite atteinte est signalée.</td></tr>
+        </tbody>
+      </table>
+      <p><strong>Ajouter une section</strong> crée une ligne à renseigner. Double-clique dans une cellule pour la modifier ; <strong>Supprimer</strong> retire uniquement la ligne choisie de cette configuration. Dans le détail, <strong>Mémoriser cette section</strong> ajoute directement les repères de la section affichée aux réglages. Termine tes modifications manuelles par <strong>Enregistrer les réglages</strong>.</p>
+      <p>Les sections non chargées, les zones non autorisées et les listes virtuelles peuvent limiter ce qui est visible. Le logiciel ne prétend pas que la lecture de quelques sections constitue la totalité de la fiche, de son historique ou de ses pièces jointes. Il ne crée, ne modifie et ne clôture aucun ticket.</p>
+    </section>
+
+    <section>
+      <h2>10. Exporter et importer une configuration</h2>
+      <p>En haut de <strong>Réglages</strong>, <strong>Exporter…</strong> crée un fichier de configuration JSON réutilisable. Il contient les paramètres de la recherche, les repères d’extraction, les sections de ticket, les correspondances du dashboard les dispositions globales et personnelles, les correspondances de villes et les requêtes enregistrées avec leurs critères. <strong>Importer…</strong> permet de les reprendre dans GLPI Pilot. Les anciens réglages sont sauvegardés localement avant leur remplacement ; les données de la recherche précédente sont retirées de l’aperçu pour éviter de les associer à la nouvelle source.</p>
+      <p>La configuration ne transporte ni le profil du navigateur, ni les cookies, ni les identifiants de connexion, ni les données des tableaux. Le dossier d’export et le choix personnel « C’est moi » du poste destinataire sont conservés. La connexion SSO reste propre à la session et au poste utilisés.</p>
+      <p>Le fichier peut contenir l’adresse interne de ton portail, les critères de recherche et les repères que tu as configurés. Partage-le avec les personnes auxquelles tu souhaites transmettre ces réglages. Après l’import, vérifie la source, les sections et les correspondances de colonnes avant la prochaine extraction.</p>
+    </section>
+
+    <section>
+      <h2>11. Copier un diagnostic si quelque chose bloque</h2>
+      <p><strong>Clique sur Copier le diagnostic, en bas de la fenêtre, puis colle le texte dans la conversation.</strong> Précise simplement ce que tu souhaitais extraire et ce que tu voyais dans le navigateur au moment du problème.</p>
+      <p>Le <strong>Journal de la session</strong> est repliable en bas de la fenêtre. Le bouton Copier le diagnostic fonctionne aussi lorsqu’il est replié. Le diagnostic donne aussi les intitulés des colonnes et les correspondances reconnues, sans les valeurs des tickets. Le journal détaille les étapes techniques utiles : ouverture du navigateur, attente du portail, repères détectés, navigation, export et motif d’arrêt. Il est préparé pour éviter le contenu des cellules, les cookies, les jetons et les paramètres sensibles d’authentification. Vérifie le texte avant de le partager si certains noms de serveurs sont confidentiels.</p>
+      <table>
+        <thead><tr><th>Symptôme</th><th>Vérification utile</th></tr></thead>
+        <tbody>
+          <tr><td>Le navigateur n’est pas visible</td><td>Pendant l’extraction, la fenêtre du navigateur reste derrière GLPI Pilot. Clique sur <strong>Voir le navigateur</strong> pour consulter la page.</td></tr>
+          <tr><td>Le navigateur ne démarre pas</td><td>Vérifie le navigateur choisi, l’extraction complète du pack et le message du journal. Une politique d’entreprise peut empêcher le pilotage.</td></tr>
+          <tr><td>L’attente SSO expire</td><td>Clique sur <strong>Voir le navigateur</strong>, puis examine la page : redirection, étape de connexion ou erreur du portail. Le profil utilisé est distinct de celui de ton navigateur habituel.</td></tr>
+          <tr><td>L’export automatique n’est pas reconnu</td><td>Le logiciel essaie <strong>Afficher tout</strong> si une option suffisante et un total connu sont disponibles. Si le traitement s’arrête, copie le diagnostic ; adapte les repères experts si l’interface est personnalisée, ou utilise le mode parcours.</td></tr>
+          <tr><td>Le CSV est téléchargé, mais sa lecture échoue</td><td>Le fichier d’origine reste conservé. L’extraction automatique essaie Afficher tout lorsque le portail le permet. Pour reprendre un fichier local, utilise <strong>Outils manuels → Importer un CSV…</strong>, puis copie le diagnostic si la lecture échoue encore.</td></tr>
+          <tr><td>Le résultat est incomplet</td><td>Contrôle le point de départ, les limites, le total attendu et le bilan. Une liste virtuelle peut ne charger qu’une partie des lignes ; l’export natif est alors préférable lorsqu’il est disponible.</td></tr>
+          <tr><td>Le détail du ticket ne s’ouvre pas</td><td>Vérifie que les données proviennent d’une extraction GLPI, que la colonne d’identifiant est explicite et que l’adresse de fiche correspond au portail. Le bilan du détail indique le point à corriger.</td></tr>
+          <tr><td>Une statistique manque</td><td>Vérifie les colonnes présentes et leurs correspondances dans Réglages. Un champ absent, une date illisible ou un statut non reconnu limite les indicateurs disponibles.</td></tr>
+          <tr><td>Impossible d’enregistrer</td><td>Choisis un dossier accessible en écriture et ferme le fichier de destination s’il est déjà ouvert dans Excel.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>12. Retrouver les fichiers</h2>
+      <table>
+        <thead><tr><th>Élément</th><th>Emplacement</th></tr></thead>
+        <tbody>
+          <tr><td>Programme</td><td><code>GLPI-Pilot.exe</code>, accompagné du dossier <code>wad</code>.</td></tr>
+          <tr><td>Réglages</td><td><code>%LOCALAPPDATA%\GLPI-Pilot\settings.json</code></td></tr>
+          <tr><td>Avant un import de configuration</td><td>Copie des réglages précédents dans <code>%LOCALAPPDATA%\GLPI-Pilot\Backups</code>.</td></tr>
+          <tr><td>Profils du navigateur</td><td><code>%LOCALAPPDATA%\GLPI-Pilot\Browser\Edge</code> ou <code>Browser\Chrome</code>. Ces dossiers contiennent la session dédiée et ne sont pas à joindre à un diagnostic.</td></tr>
+          <tr><td>Journaux</td><td><code>%LOCALAPPDATA%\GLPI-Pilot\Logs</code></td></tr>
+          <tr><td>Exports par défaut</td><td><code>Documents\GLPI-Pilot\Exports</code>, dans le dossier Documents réel de ton compte, y compris s’il est redirigé.</td></tr>
+          <tr><td>Sources du pack DEV</td><td>Projet complet déplié dans <code>wad\sources</code>, destiné à la maintenance et à la reconstruction des packs PROD et DEV.</td></tr>
+        </tbody>
+      </table>
+      <p>Copier le pack sur un autre poste ne copie pas le profil SSO ni les réglages du compte Windows. Le transfert de configuration permet de reprendre les réglages choisis sans transporter la session SSO. La fermeture du logiciel ferme sa fenêtre de navigateur dédiée.</p>
+    </section>
+
+    <section class="rule">
+      <h2>Portée et validation</h2>
+      <p>GLPI Pilot utilise les pages auxquelles ton compte donne accès. Il ne demande pas d’accès à la base GLPI ni à son API. La création, la modification et la clôture de tickets ne sont pas implémentées dans cette version.</p>
+      <p>Le parcours générique lit les tableaux HTML et les grilles reconnues. Une grille virtuelle peut ne fournir que les lignes présentes dans la page ; un avertissement accompagne les cas détectés. Les champs absents de la vue ne sont pas récupérés automatiquement. La lecture de détail utilise uniquement les sections accessibles et les onglets de consultation reconnus. Les statistiques décrivent les données récupérées et les règles configurées ; elles ne remplacent pas un historique complet de GLPI.</p>
+      <p><strong>Le pack est compilé et contrôlé dans un environnement Linux.</strong> L’interface WPF n’a pas été exécutée sous Windows dans cet environnement, et aucun portail GLPI réel n’a été utilisé pour les essais. Le rendu, le comportement du premier plan Windows, le SSO et les personnalisations de ton portail restent à valider sur ton poste. Le rapport joint détaille les contrôles réalisés pour cette version.</p>
+      <p class="small muted">Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a>, <a href="https://playwright.dev/dotnet/docs/api/class-browsertype">profils persistants</a>, <a href="https://playwright.dev/dotnet/docs/downloads">téléchargements</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
+    </section>
+<section id="demarrage"><h2>Si la fenêtre ne s’ouvre pas</h2>
+<p>La version 1.3.1 enregistre les étapes du démarrage avant de créer l’interface. Une erreur de construction ou de premier rendu affiche un message et son diagnostic, puis ferme l’instance en échec. Le dernier journal se trouve dans <code>%LOCALAPPDATA%\GLPI-Pilot\Logs\demarrage-dernier.log</code>, avec repli dans <code>%TEMP%\GLPI-Pilot\Logs</code> si nécessaire.</p>
+<p>Si aucune fenêtre n’apparaît, ouvrir <strong>wad\support\DIAGNOSTIC_DEMARRAGE.cmd</strong> dans le pack extrait. Le lanceur observe uniquement l’EXE de ce pack pendant vingt secondes, puis ouvre son rapport dans le Bloc-notes. Copier ce rapport pour l’analyse. Une instance encore active reste ouverte ; le lanceur ne ferme pas d’autres processus et ne modifie ni réglages ni session SSO.</p>
+<p>Fermer une ancienne instance de GLPI Pilot avant un nouvel essai, même si elle n’apparaît que dans le Gestionnaire des tâches. La cause exacte du blocage initial n’est pas encore confirmée sur le poste Windows de l’utilisateur.</p></section>
+  </article>
+  <footer>GLPI Pilot 1.4.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+</main>
+</body>
+</html>
