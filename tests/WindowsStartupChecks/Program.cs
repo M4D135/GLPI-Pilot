@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Linq;
@@ -270,7 +271,13 @@ internal static class Program
         Require(edit != null, "The real Personnaliser button is missing.");
         edit!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await FlushLayoutAsync();
-        Require(Descendants<Button>(dashboard).Any(button => button.Content as string == "+ Widget"), "Editor toolbar did not open.");
+        Require(Descendants<Button>(dashboard).Any(button => AutomationProperties.GetName(button) == "Terminer" && button.IsVisible),
+            "Dashboard did not switch from consultation to customization.");
+        Require(Descendants<Button>(dashboard).Any(button => AutomationProperties.GetName(button) == "Catalogue" && button.IsVisible),
+            "The widget catalog editor did not open.");
+        Require(Descendants<DashboardBoardPanel>(dashboard).Any(panel => panel.AllowDrop)
+            && Descendants<Thumb>(dashboard).Any(thumb => thumb.ToolTip as string == "Glisser pour ajuster largeur et hauteur" && thumb.IsEnabled),
+            "Customization did not enable widget dragging and resizing.");
         Require(Descendants<ComboBox>(dashboard).Any(), "Editor view did not contain its real selectors.");
         Pass("Real dashboard edit command creates editor, drag handles and resize controls");
         foreach (var width in new[] { 850d, 1440d })
