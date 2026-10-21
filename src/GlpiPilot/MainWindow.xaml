@@ -6,7 +6,7 @@
         Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
         FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" SnapsToDevicePixels="True"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize">
-    <Grid Margin="24,18,24,14" Background="{DynamicResource WindowBrush}">
+    <Grid x:Name="ShellRoot" Margin="24,18,24,14" Background="{DynamicResource WindowBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -14,9 +14,10 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,18">
+        <Grid Grid.Row="0" x:Name="ShellHeader" Margin="0,0,0,14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <StackPanel VerticalAlignment="Center">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <StackPanel x:Name="ShellHeaderTitle" VerticalAlignment="Center">
                 <TextBlock Text="GLPI Pilot" FontSize="23" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
                 <TextBlock x:Name="WorkspaceContextText" Text="Votre espace de pilotage GLPI" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,4,14,0" TextTrimming="CharacterEllipsis" />
             </StackPanel>
@@ -31,7 +32,19 @@
                         ToolTip="Demander l’arrêt du traitement en cours." />
                 <Button x:Name="RunAutoButton" Content="Extraire tout" Click="RunAuto_Click" Style="{StaticResource PrimaryButton}"
                         Width="160" Height="42" FontSize="14" Padding="16,9" VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="RunAutoButton"
                         ToolTip="Ouvrir la recherche mémorisée, attendre le SSO et récupérer les résultats (Ctrl+R)." />
+                <Border x:Name="InterfaceZoomControls" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource LineBrush}" Background="{DynamicResource PanelBrush}"
+                        Margin="10,0,0,0" Height="36" VerticalAlignment="Center" ToolTip="Zoom de l’interface mémorisé sur ce poste · Ctrl + / − / 0 · Ctrl + molette">
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="ZoomOutButton" Content="−" Click="ZoomOut_Click" Width="32" MinHeight="32" Height="32" Padding="0" FontSize="17" Style="{StaticResource QuietButton}"
+                                AutomationProperties.AutomationId="ZoomOutButton" AutomationProperties.Name="Réduire le zoom de l’interface" ToolTip="Réduire de 5 % (Ctrl −)" />
+                        <Button x:Name="ZoomResetButton" Content="100 %" Click="ZoomReset_Click" MinWidth="54" MinHeight="32" Height="32" Padding="3,0" FontSize="12" Style="{StaticResource QuietButton}"
+                                AutomationProperties.AutomationId="ZoomResetButton" ToolTip="Revenir à 100 % (Ctrl 0)" />
+                        <Button x:Name="ZoomInButton" Content="+" Click="ZoomIn_Click" Width="32" MinHeight="32" Height="32" Padding="0" FontSize="17" Style="{StaticResource QuietButton}"
+                                AutomationProperties.AutomationId="ZoomInButton" AutomationProperties.Name="Agrandir le zoom de l’interface" ToolTip="Agrandir de 5 % (Ctrl +)" />
+                    </StackPanel>
+                </Border>
                 <Button x:Name="ThemeToggleButton" Content="☀" Click="ThemeToggle_Click"
                         FontFamily="Segoe UI Symbol" FontSize="19" Width="36" Height="36" Padding="0" Margin="12,0,0,0"
                         Style="{StaticResource QuietButton}" VerticalAlignment="Center"
@@ -80,18 +93,19 @@
                                 <RowDefinition Height="Auto" /><RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" Margin="16,12,16,12">
+                            <Grid Grid.Row="0" x:Name="PreviewHeader" Margin="16,12,16,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <Grid VerticalAlignment="Center" Margin="0,0,12,0">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Grid x:Name="PreviewHeading" VerticalAlignment="Center" Margin="0,0,12,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                     <TextBlock Text="Aperçu" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" x:Name="StatsText" Text="Aucune donnée" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="14,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </Grid>
-                                <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="610">
+                                <WrapPanel Grid.Column="1" x:Name="PreviewActions" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="610">
                                     <Button x:Name="PreviewColumnsButton" Content="Colonnes" Click="OpenPreviewColumns_Click" MinHeight="32" Padding="10,5" FontSize="12" Margin="0,0,8,0" IsEnabled="False" ToolTip="Choisir les colonnes visibles et mémoriser leur présentation sur ce poste."/>
                                     <Button x:Name="OpenTicketButton" Content="Détail du ticket" Click="OpenTicket_Click" MinHeight="32" Padding="10,5" FontSize="12" Margin="0,0,14,0" IsEnabled="False"
                                             ToolTip="Lire le détail du ticket sélectionné. Un double-clic sur sa ligne ouvre aussi cet onglet." />
-                                    <TextBlock Text="Filtrer" FontSize="12" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,9,0" />
+                                    <TextBlock x:Name="PreviewFilterLabel" Text="Filtrer" FontSize="12" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,9,0" />
                                     <TextBox x:Name="SearchBox" Width="180" MinHeight="32" Padding="10,5"
                                              ToolTip="Rechercher dans toutes les lignes du relevé (Ctrl+F). Les exports conservent toutes les lignes récupérées." AutomationProperties.Name="Rechercher dans toutes les lignes du relevé" />
                                     <Button Content="×" Click="ClearPreviewSearch_Click" MinWidth="28" MinHeight="32" Padding="5,3" FontSize="16" Margin="4,0,0,0" Style="{StaticResource QuietButton}" ToolTip="Effacer la recherche" AutomationProperties.Name="Effacer la recherche de l’aperçu"/>
@@ -118,23 +132,24 @@
                                     </Border>
                                 </Grid>
                             </Border>
-                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="46" Margin="16,9,16,0">
-                                <TextBlock x:Name="ResultSummaryText" Text="Le bilan de récupération s’affichera ici." Style="{StaticResource HelpText}" FontSize="11.5" />
-                            </ScrollViewer>
-                            <Grid Grid.Row="3" Margin="12,8,16,12">
+                            <Expander Grid.Row="2" Header="Bilan de la récupération" IsExpanded="False" Margin="16,7,16,0" FontSize="11.5">
+                                <TextBlock x:Name="ResultSummaryText" Text="Le bilan de récupération s’affichera ici." Style="{StaticResource HelpText}" FontSize="11.5" Margin="0,5,0,0" />
+                            </Expander>
+                            <Grid Grid.Row="3" x:Name="PreviewFooter" Margin="12,8,16,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <WrapPanel>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <WrapPanel x:Name="PreviewFileActions">
                                     <Button x:Name="OpenLastExportButton" Content="Ouvrir le fichier" Click="OpenLastExport_Click" Margin="0,0,7,0" Visibility="Collapsed" ToolTip="Ouvrir le dernier fichier produit par GLPI Pilot."/>
                                     <Button x:Name="RevealLastExportButton" Content="Afficher dans le dossier" Click="RevealLastExport_Click" Margin="0,0,7,0" Visibility="Collapsed" Style="{StaticResource QuietButton}"/>
                                     <Button x:Name="OpenExportsButton" Content="Dossier des exports" Click="OpenExports_Click" HorizontalAlignment="Left"
                                             Style="{StaticResource QuietButton}" ToolTip="Ouvrir le dossier de destination dans l’Explorateur Windows." />
                                 </WrapPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <WrapPanel Grid.Column="1" x:Name="PreviewExportActions" Orientation="Horizontal">
                                     <Button x:Name="ExportCsvButton" Content="Exporter en CSV" Click="ExportCsv_Click" Margin="0,0,8,0"
                                             ToolTip="Enregistrer toutes les lignes récupérées dans un CSV." />
                                     <Button x:Name="ExportXlsxButton" Content="Exporter en Excel" Click="ExportXlsx_Click"
                                             ToolTip="Enregistrer toutes les lignes récupérées dans un classeur avec le bilan d’extraction." />
-                                </StackPanel>
+                                </WrapPanel>
                             </Grid>
                         </Grid>
                     </Border>
@@ -148,21 +163,15 @@
             </TabItem>
 
             <TabItem x:Name="TechniciansTab" Header="Techniciens" Tag="&#xE716;">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource WindowBrush}">
-                    <ContentControl x:Name="TechniciansHost" HorizontalContentAlignment="Stretch" Margin="0,0,5,0" />
-                </ScrollViewer>
+                <ContentControl x:Name="TechniciansHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
             </TabItem>
 
             <TabItem x:Name="ToursTab" Header="Villes et tournées" Tag="&#xE707;">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ContentControl x:Name="ToursHost" HorizontalContentAlignment="Stretch" Margin="0,0,5,0" />
-                </ScrollViewer>
+                <ContentControl x:Name="ToursHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
             </TabItem>
 
             <TabItem x:Name="QueriesTab" Header="Atelier requêtes" Tag="&#xE9CE;">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ContentControl x:Name="QueriesHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Margin="0,0,5,0" />
-                </ScrollViewer>
+                <ContentControl x:Name="QueriesHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
             </TabItem>
 
             <TabItem x:Name="TicketDetailTab" Header="Détail du ticket" Tag="&#xE8A5;">
@@ -492,7 +501,7 @@
                             <Border Style="{StaticResource Card}">
                                 <StackPanel>
                                     <TextBlock Text="À portée de main" Style="{StaticResource SectionTitle}" />
-                                    <TextBlock Text="Ctrl K : rechercher une action. Ctrl L : adresse source. Ctrl F : recherche. Ctrl R : extraire tout. Ctrl E : export Excel. Ctrl 1 à 9 : navigation. Entrée sur une ligne : ouvrir le ticket. F1 : aide." Style="{StaticResource HelpText}" Margin="0,8,0,0" />
+                                    <TextBlock Text="Ctrl K : rechercher une action. Ctrl L : adresse source. Ctrl F : recherche. Ctrl R : extraire tout. Ctrl E : export Excel. Ctrl + / − : zoom. Ctrl 0 : taille 100 %. Ctrl + molette : zoom. Ctrl 1 à 9 : navigation. Entrée sur une ligne : ouvrir le ticket. F1 : aide." Style="{StaticResource HelpText}" Margin="0,8,0,0" />
                                     <TextBlock Text="Le bouton soleil / lune change le thème et mémorise ton choix. Le journal est repliable en bas ; Copier le diagnostic prépare les informations techniques à partager." Style="{StaticResource HelpText}" Margin="0,8,0,0" />
                                     <TextBlock Text="Le navigateur utilise un profil SSO réservé à l’application. Le logiciel ne demande aucun identifiant ni mot de passe." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
                                     <TextBlock Text="Importer / Exporter dans Réglages transfère la configuration de recherche, des sections et du dashboard. Le profil SSO et le dossier d’export restent propres au poste." Style="{StaticResource HelpText}" Margin="0,10,0,0" />

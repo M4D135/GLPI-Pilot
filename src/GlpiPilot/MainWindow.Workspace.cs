@@ -41,7 +41,9 @@ public partial class MainWindow
         _workspaceClockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _workspaceClockTimer.Tick += (_, _) => UpdateOperationElapsed();
         PortalUrlBox.TextChanged += (_, _) => { if (_workspaceInitialized) UpdateControls(); };
-        SizeChanged += (_, _) => UpdateWorkspaceLayout();
+        InitializeInterfaceZoom();
+        ShellRoot.SizeChanged += WorkspaceSizeChanged;
+        PreviewHeader.SizeChanged += WorkspaceSizeChanged;
         PreviewKeyDown += Workspace_KeyDown;
         ContentRendered += (_, _) =>
         {
@@ -55,12 +57,7 @@ public partial class MainWindow
     private void UpdateWorkspaceLayout()
     {
         if (!_workspaceInitialized) return;
-        var width = ActualWidth > 0 ? ActualWidth : Width;
-        ShellHeaderActions.MaxWidth = Math.Max(410, width - 290);
-        var wide = width >= 1240;
-        if (_wideNavigation == wide) return;
-        _wideNavigation = wide;
-        MainTabs.Style = (Style)FindResource(wide ? "WorkspaceTabs" : "CompactWorkspaceTabs");
+        UpdateResponsiveChrome();
     }
 
     private bool HasValidSource()
@@ -98,6 +95,7 @@ public partial class MainWindow
                 + (ReferenceEquals(_retainedResult, _result) ? " · actualisation en cours" : _result.Complete ? " · complet" : " · à vérifier");
         WorkspaceContextText.ToolTip = _result == null ? "Extraction, statistiques, techniciens et détail des tickets."
             : "Source du relevé affiché : " + (string.IsNullOrWhiteSpace(_result.SourceUrl) ? "CSV local, provenance GLPI non confirmée" : AppPaths.SafeUrl(_result.SourceUrl));
+        UpdateWorkspaceLayout();
     }
 
     private void SaveSource_Click(object sender, RoutedEventArgs e)
@@ -260,6 +258,9 @@ public partial class MainWindow
         Click("Importer une configuration", "Reprendre les réglages et les dispositions d’un collègue.", ImportConfigButton);
         Click("Exporter la configuration", "Partager les réglages et les widgets sans transférer le SSO.", ExportConfigButton);
         Click("Changer de thème", "Basculer entre le thème clair et le thème sombre.", ThemeToggleButton);
+        Click("Agrandir l’interface", "Augmenter le zoom de 5 % et mémoriser cette taille.", ZoomInButton, "Ctrl +");
+        Click("Réduire l’interface", "Réduire le zoom de 5 % et mémoriser cette taille.", ZoomOutButton, "Ctrl −");
+        Click("Zoom 100 %", "Revenir à la taille normale de l’interface.", ZoomResetButton, "Ctrl 0");
         Click("Copier le diagnostic", "Préparer les étapes techniques à partager en cas d’erreur.", CopyDiagnosticButton);
         var dialog = new CommandPaletteWindow(commands) { Owner = this };
         _commandPalette = dialog;
@@ -271,6 +272,7 @@ public partial class MainWindow
     {
         if (_closing || e.Handled) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (HandleInterfaceZoomKey(key, Keyboard.Modifiers)) { e.Handled = true; return; }
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
             if (key >= Key.D1 && key <= Key.D9) { MainTabs.SelectedIndex = key - Key.D1; e.Handled = true; return; }
@@ -296,6 +298,9 @@ public partial class MainWindow
     private void DisposeWorkspace()
     {
         _workspaceClockTimer?.Stop(); _workspaceClock.Stop();
+        DisposeInterfaceZoom();
+        ShellRoot.SizeChanged -= WorkspaceSizeChanged;
+        PreviewHeader.SizeChanged -= WorkspaceSizeChanged;
         PreviewKeyDown -= Workspace_KeyDown;
         DisposePreviewWorkspace();
     }

@@ -99,7 +99,7 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => UpdateWindowPriority();
         UpdateControls();
         StartupDiagnostics.Step("Fenêtre construite · attente du premier rendu");
-        AddLog("GLPI Pilot 1.4.0 prêt. Extraction en un clic, widgets personnalisables, espace techniciens et traitement des tickets.");
+        AddLog("GLPI Pilot 1.5.0 prêt. Zoom mémorisé, dashboards adaptatifs, 64 modèles de requêtes et suivi opérationnel des tickets.");
     }
 
     public void ShowError(Exception error)
@@ -333,6 +333,7 @@ public partial class MainWindow : Window
             PortalUrl = PortalUrlBox.Text.Trim(),
             BrowserChannel = (BrowserBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() == "chrome" ? "chrome" : "msedge",
             Theme = ThemeService.CurrentTheme,
+            InterfaceZoomPercent = _settings.InterfaceZoomPercent,
             AutoMode = (AutoModeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() == "pagination" ? "pagination" : "native",
             AutoSaveXlsx = AutoSaveXlsxCheckBox.IsChecked == true,
             ReadySelector = ReadySelectorBox.Text.Trim(), NextSelector = NextSelectorBox.Text.Trim(), SelectorOrigin = origin,
