@@ -243,7 +243,16 @@ void CheckAtomic()
     Throws<InvalidDataException>(() => ConfigurationTransferService.Export(path, invalid));
     Equal("FICHIER EXISTANT", File.ReadAllText(path));
     string folder = Path.Combine(temporary, "target.json"); Directory.CreateDirectory(folder);
-    Throws<IOException>(() => ConfigurationTransferService.Export(folder, Sample()));
+    bool rejected = false;
+    try { ConfigurationTransferService.Export(folder, Sample()); }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+    {
+        // Windows reports an existing directory as access denied; Unix reports an I/O error.
+        rejected = true;
+    }
+    Equal(true, rejected);
+    Equal(true, Directory.Exists(folder));
+    Equal("FICHIER EXISTANT", File.ReadAllText(path));
     Equal(0, Directory.GetFiles(temporary, ".glpi-configuration-*.tmp").Length);
 }
 
