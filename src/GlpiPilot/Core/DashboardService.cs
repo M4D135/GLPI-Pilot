@@ -1,0 +1,621 @@
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace GlpiPilot.Core;
+
+/// <summary>Statistics of the supplied snapshot only. No network, guessed history or implicit deduplication.</summary>
+public static class DashboardService
+{
+    public static readonly IReadOnlyList<DashboardRole> Roles = new[]
+    {
+        new DashboardRole("id", "Identifiant du ticket", new[] { "ID", "Identifiant", "Ticket ID", "ID du ticket", "Numéro du ticket" }),
+        new DashboardRole("title", "Titre", new[] { "Titre", "Title", "Objet", "Sujet", "Ticket title" }),
+        new DashboardRole("status", "Statut", new[] { "Statut", "Status", "État", "État du ticket" }),
+        new DashboardRole("priority", "Priorité", new[] { "Priorité", "Priority" }),
+        new DashboardRole("urgency", "Urgence", new[] { "Urgence", "Urgency", "Niveau d'urgence" }),
+        new DashboardRole("impact", "Impact", new[] { "Impact", "Niveau d'impact" }),
+        new DashboardRole("type", "Type", new[] { "Type", "Type de ticket", "Ticket type" }),
+        new DashboardRole("created", "Date d’ouverture", new[] { "Date d'ouverture", "Date d’ouverture", "Date d'ouverture du ticket", "Date de création", "Opening date", "Creation date", "Created", "Created at" }),
+        new DashboardRole("updated", "Dernière modification", new[] { "Dernière modification", "Date de modification", "Date de dernière modification", "Last update", "Last modification", "Modification date", "Updated at" }),
+        new DashboardRole("resolved", "Date de résolution", new[] { "Date de résolution", "Date de resolution", "Resolution date", "Date de solution", "Solved date", "Solved at", "Resolved at" }),
+        new DashboardRole("closed", "Date de clôture", new[] { "Date de clôture", "Closing date", "Closed date", "Closed at" }),
+        new DashboardRole("due", "Échéance de résolution", new[] { "Temps de résolution", "Date limite de résolution", "Échéance de résolution", "Échéance", "Time to resolve", "Resolution due date", "Due date", "Date d'échéance", "TTR" }),
+        new DashboardRole("assignee", "Technicien attribué", new[] { "Attribué à - Technicien", "Attribué à - Techniciens", "Assigned to - Technician", "Assigned to - Technicians", "Technicien", "Techniciens", "Assigned technician", "Assignee" }),
+        new DashboardRole("group", "Groupe attribué", new[] { "Attribué à - Groupe de techniciens", "Attribué à - Groupes de techniciens", "Attribué à - Groupe", "Assigned to - Technician group", "Assigned to - Group", "Groupe de techniciens", "Groupe attribué", "Assignment group" }),
+        new DashboardRole("requester", "Demandeur", new[] { "Demandeur", "Demandeur - Demandeur", "Demandeur - Utilisateur", "Demandeurs", "Requester", "Requester - Requester", "Requester - User" }),
+        new DashboardRole("category", "Catégorie", new[] { "Catégorie", "Catégorie ITIL", "Category", "ITIL category" }),
+        new DashboardRole("entity", "Entité", new[] { "Entité", "Entités", "Entity", "Entities" }),
+        new DashboardRole("location", "Lieu", new[] { "Lieu", "Localisation", "Location" }),
+        new DashboardRole("city", "Ville", new[] { "Ville", "City", "Town" }),
+        new DashboardRole("postal", "Code postal", new[] { "Code postal", "Postal code", "Postcode", "ZIP code" }),
+        new DashboardRole("source", "Origine de la demande", new[] { "Source de la demande", "Origine de la demande", "Source de demande", "Request source", "Source" }),
+        new DashboardRole("updatedBy", "Dernière modification par", new[] { "Dernière modification par", "Last update by", "Last edited by", "Updated by" }),
+        new DashboardRole("solution", "Solution", new[] { "Solution", "Solution - Description", "Solutions - Description", "Solution description" })
+    };
+
+    private sealed class Record
+    {
+        public int Index, Status, Type, TechnicianCount, DatePresent, DateInvalid, DateFuture;
+        public int? Priority;
+        public string Id = "", Title = "", Assignee = "", Group = "";
+        public DateTime? Created, Updated, Resolved, Closed, Due;
+        public bool Active => Status is >= 1 and <= 4;
+    }
+
+    public static DashboardSnapshot Calculate(ExtractionResult data, DashboardSettings settings,
+        DateTimeOffset? referenceTime = null, CancellationToken ct = default)
+        => CalculateCore(data, settings, null, "Équipe entière", referenceTime, ct);
+
+    /// <summary>Calculates a real subset without renumbering the rows used by drill-down links.</summary>
+    public static DashboardSnapshot CalculateSubset(ExtractionResult data, DashboardSettings settings,
+        IReadOnlyList<int> sourceRows, string scopeLabel, DateTimeOffset? referenceTime = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceRows);
+        return CalculateCore(data, settings, sourceRows, scopeLabel, referenceTime, ct);
+    }
+
+    private static DashboardSnapshot CalculateCore(ExtractionResult data, DashboardSettings settings,
+        IReadOnlyList<int>? sourceRows, string scopeLabel, DateTimeOffset? referenceTime, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(settings);
+        ValidateSettings(settings);
+        ct.ThrowIfCancellationRequested();
+        var now = referenceTime ?? DateTimeOffset.Now;
+        var wallNow = now.DateTime;
+        var selectedRows = sourceRows?.Distinct().Order().ToArray();
+        if (selectedRows?.Any(i => i < 0 || i >= data.Rows.Count) == true)
+            throw new ArgumentOutOfRangeException(nameof(sourceRows), "Le périmètre contient une ligne absente du relevé.");
+        var sourceComplete = data.Complete && (!data.ExpectedTotal.HasValue || data.ExpectedTotal == data.Rows.Count);
+        var columns = ResolveColumns(data.Headers, settings);
+        var index = columns.ToDictionary(x => x.Role, x => x.Index);
+        bool Has(string key) => index[key].HasValue;
+        string Cell(string[] row, string key) => index[key] is int n && n < row.Length ? (row[n] ?? "").Trim() : "";
+        var result = new DashboardSnapshot
+        {
+            CalculatedAt = now, ExtractedAt = data.ExtractedAt, RowCount = selectedRows?.Length ?? data.Rows.Count,
+            ExpectedTotal = selectedRows is null ? data.ExpectedTotal : sourceComplete ? selectedRows.Length : null, Complete = sourceComplete,
+            SourceUrl = data.SourceUrl, Scope = selectedRows is null ? data.Scope : data.Scope + " · " + scopeLabel, Columns = columns,
+            IsFiltered = selectedRows is not null, ScopeLabel = scopeLabel,
+            SourceRowCount = data.Rows.Count, SourceExpectedTotal = data.ExpectedTotal,
+            Warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToList()
+        };
+        if (!result.Complete) result.Warnings.Add("Périmètre incomplet ou non confirmé : les statistiques décrivent uniquement les lignes récupérées.");
+        if (data.ExpectedTotal.HasValue && data.ExpectedTotal != data.Rows.Count)
+            result.Warnings.Add($"Total annoncé {data.ExpectedTotal:N0} ; lignes récupérées {data.Rows.Count:N0}.");
+        foreach (var col in columns.Where(x => x.State is "ambiguous" or "missing-override"))
+            result.Warnings.Add($"{col.Label} : {(col.State == "ambiguous" ? "plusieurs colonnes possibles" : "colonne configurée absente")}. À régler dans les correspondances.");
+
+        var invalid = new Dictionary<string, int>();
+        var future = new Dictionary<string, int>();
+        var records = new List<Record>(selectedRows?.Length ?? data.Rows.Count);
+        var iteration = 0;
+        foreach (var i in selectedRows ?? Enumerable.Range(0, data.Rows.Count))
+        {
+            if ((iteration++ & 255) == 0) ct.ThrowIfCancellationRequested();
+            var row = data.Rows[i];
+            var datePresent = 0; var dateInvalid = 0; var dateFuture = 0;
+            DateTime? Date(string key, bool mayBeFuture = false)
+            {
+                var raw = Cell(row, key);
+                if (IsMissing(raw)) return null;
+                var bit = DateFieldBit(key);
+                datePresent |= bit;
+                if (!TryDate(raw, settings.DateCulture, now.Offset, out var value))
+                { dateInvalid |= bit; invalid[key] = invalid.GetValueOrDefault(key) + 1; return null; }
+                if (!mayBeFuture && value > wallNow)
+                { dateFuture |= bit; future[key] = future.GetValueOrDefault(key) + 1; return null; }
+                return value;
+            }
+            var assignee = Cell(row, "assignee");
+            records.Add(new Record
+            {
+                Index = i, Id = NormalizeId(Cell(row, "id")), Title = Cell(row, "title"),
+                Status = Status(Cell(row, "status")), Priority = Priority(Cell(row, "priority")),
+                Type = TypeKind(Cell(row, "type")), Assignee = assignee, TechnicianCount = SplitTechnicianNames(assignee).Count, Group = Cell(row, "group"),
+                Created = Date("created"), Updated = Date("updated"), Resolved = Date("resolved"), Closed = Date("closed"), Due = Date("due", true),
+                DatePresent = datePresent, DateInvalid = dateInvalid, DateFuture = dateFuture
+            });
+        }
+        foreach (var pair in invalid)
+            result.Warnings.Add($"{columns.First(x => x.Role == pair.Key).Label} : {pair.Value:N0} valeurs non interprétables, exclues des calculs de date.");
+        foreach (var pair in future)
+            result.Warnings.Add($"{columns.First(x => x.Role == pair.Key).Label} : {pair.Value:N0} dates futures, exclues des calculs historiques.");
+        var active = records.Where(r => r.Active).ToList();
+        var known = records.Where(r => r.Status != 0).ToList();
+        var unknown = records.Count - known.Count;
+        if (Has("status") && unknown > 0) result.Warnings.Add($"{unknown:N0} statuts absents ou non reconnus ; ces lignes ne sont classées ni actives ni terminées.");
+        var activeKnown = Has("status") && (records.Count == 0 || known.Count > 0);
+        var identityGroups = records.Where(x => x.Id.Length > 0).GroupBy(x => x.Id).ToList();
+        var missingIds = records.Where(x => x.Id.Length == 0).ToList();
+        var duplicateRows = identityGroups.Where(g => g.Count() > 1).SelectMany(g => g).ToList();
+        if (Has("id") && missingIds.Count == 0 && duplicateRows.Count == 0) result.Grain = "tickets";
+        if (Has("id") && duplicateRows.Count > 0)
+            result.Warnings.Add($"{duplicateRows.Count:N0} lignes partagent un identifiant avec une autre ligne. Aucun dédoublonnage implicite ; les totaux comptent des occurrences.");
+        if (Has("id") && missingIds.Count > 0) result.Warnings.Add($"{missingIds.Count:N0} identifiants absents ou non numériques ; le nombre de tickets uniques est partiel.");
+
+        int[] Rows(IEnumerable<Record> rows)
+        {
+            ct.ThrowIfCancellationRequested();
+            return rows.Select((record, position) =>
+            {
+                if ((position & 255) == 0) ct.ThrowIfCancellationRequested();
+                return record.Index;
+            }).ToArray();
+        }
+        void Count(string key, string title, IEnumerable<Record> rows, bool available, string explanation, int? sample = null, string tone = "normal")
+        {
+            var ids = available ? Rows(rows) : Array.Empty<int>();
+            result.Metrics.Add(new(key, title, available ? ids.Length : null, result.Grain, explanation, ids, sample, tone));
+        }
+        void Number(string key, string title, double? value, string unit, string explanation, int sample, int[]? rows = null) =>
+            result.Metrics.Add(new(key, title, value, unit, explanation, rows ?? Array.Empty<int>(), sample));
+        Count("total", selectedRows is null ? "Relevé" : "Tickets du périmètre", records, true,
+            selectedRows is null ? "Toutes les lignes récupérées ; aucun filtre de l’aperçu appliqué."
+                : "Lignes du périmètre « " + scopeLabel + " » présentes dans le relevé. Les filtres de l’aperçu n’interviennent pas dans ce calcul.");
+        Number("unique", "Identifiants distincts", Has("id") ? identityGroups.Count : null, "identifiants", "Identifiants numériques non vides. Aucune ligne n’est supprimée du relevé.", records.Count - missingIds.Count);
+        Count("duplicate", "Lignes avec ID répété", duplicateRows, Has("id"), "Toutes les occurrences des identifiants présents plusieurs fois.", records.Count, "warning");
+        Count("missing-id", "Sans ID exploitable", missingIds, Has("id"), "Identifiant absent, non numérique ou nul.", records.Count, "warning");
+        Count("active", "Actifs", active, activeKnown, "Nouveau, en cours attribué/planifié ou en attente. Les statuts inconnus sont exclus.", known.Count);
+        Count("new", "Nouveaux", records.Where(r => r.Status == 1), activeKnown, "Statut Nouveau parmi les statuts reconnus.", known.Count);
+        Count("processing", "En cours", records.Where(r => r.Status is 2 or 3), activeKnown, "En cours attribué ou planifié parmi les statuts reconnus.", known.Count);
+        Count("pending", "En attente", records.Where(r => r.Status == 4), activeKnown, "Inclus dans les actifs reconnus. Les échéances affichées ne tiennent pas compte des règles de pause du SLA.", known.Count);
+        Count("resolved", "Résolus", records.Where(r => r.Status == 5), activeKnown, "Statut Résolu parmi les statuts reconnus au moment du relevé.", known.Count);
+        Count("closed", "Clos", records.Where(r => r.Status == 6), activeKnown, "Statut Clos parmi les statuts reconnus au moment du relevé.", known.Count);
+        Count("unknown-status", "Statuts non classés", records.Where(r => r.Status == 0), Has("status"), "Statut vide ou non reconnu ; aucune hypothèse sur son état.", records.Count, "warning");
+        var completed = records.Where(r => r.Status is 5 or 6).ToList();
+        Number("completed-share", "Part résolue ou close", activeKnown && known.Count > 0 ? 100d * completed.Count / known.Count : null, "%",
+            "Part des lignes résolues ou closes parmi les statuts reconnus de ce relevé. Ce n’est pas un taux de résolution historique.", known.Count, Rows(completed));
+
+        var prioritySample = active.Where(x => x.Priority.HasValue).ToList();
+        var high = prioritySample.Where(x => x.Priority >= 4).ToList();
+        var unassignedAvailable = activeKnown && (Has("assignee") || Has("group"));
+        var unassignedLabel = Has("assignee") && Has("group") ? "Sans affectation" : Has("assignee") ? "Sans technicien renseigné" : "Sans groupe renseigné";
+        var unassigned = active.Where(x => (!Has("assignee") || x.TechnicianCount == 0) && (!Has("group") || IsMissing(x.Group))).ToList();
+        var datedActive = active.Where(x => x.Created.HasValue).ToList();
+        var updatedActive = active.Where(x => x.Updated.HasValue && (!x.Created.HasValue || x.Updated >= x.Created)).ToList();
+        var dueActive = active.Where(x => x.Due.HasValue).ToList();
+        var overdue = dueActive.Where(x => x.Due < wallNow).ToList();
+        var soon = dueActive.Where(x => x.Due >= wallNow && x.Due <= wallNow.AddHours(settings.DueSoonHours)).ToList();
+        var stale = updatedActive.Where(x => (wallNow - x.Updated!.Value).TotalDays >= settings.StaleDays).ToList();
+        var old = datedActive.Where(x => (wallNow - x.Created!.Value).TotalDays >= settings.OldDays).ToList();
+        Count("high", "Priorités hautes actives", high, activeKnown && Has("priority") && (active.Count == 0 || prioritySample.Count > 0), "Haute, très haute ou majeure, parmi les actifs dont la priorité est reconnue.", prioritySample.Count, "warning");
+        Count("major", "Priorités majeures actives", active.Where(x => x.Priority == 6), activeKnown && Has("priority") && (active.Count == 0 || prioritySample.Count > 0), "Priorité majeure GLPI (niveau 6).", prioritySample.Count, "error");
+        foreach (var (key, title) in new[] { ("urgency", "Urgences hautes actives"), ("impact", "Impacts hauts actifs") })
+        {
+            var valid = active.Where(x => Severity(Cell(data.Rows[x.Index], key)).HasValue).ToList();
+            Count("high-" + key, title, valid.Where(x => Severity(Cell(data.Rows[x.Index], key)) >= 4), activeKnown && Has(key) && (active.Count == 0 || valid.Count > 0),
+                "Niveaux haut et très haut de ce champ, parmi les actifs. L’urgence et l’impact sont distincts de la priorité et ne la remplacent pas.", valid.Count, "warning");
+        }
+        Count("with-solution", "Solution renseignée", records.Where(x => !IsMissing(Cell(data.Rows[x.Index], "solution"))), Has("solution"),
+            "Présence d’un texte dans la colonne Solution du relevé ; cela ne prouve pas son approbation ni son exhaustivité.", records.Count);
+        Count("completed-no-solution", "Terminés sans solution visible", completed.Where(x => IsMissing(Cell(data.Rows[x.Index], "solution"))), activeKnown && Has("solution"),
+            "Statut résolu ou clos avec une cellule Solution vide dans cet export. Une solution peut exister dans un autre onglet ou champ.", completed.Count, "warning");
+        Count("unassigned", unassignedLabel, unassigned, unassignedAvailable,
+            Has("assignee") && Has("group") ? "Actifs sans technicien et sans groupe renseignés." : "Une seule dimension d’affectation est disponible ; l’autre reste inconnue.", active.Count, "warning");
+        Count("overdue", "Échéance dépassée", overdue, activeKnown && Has("due") && (active.Count == 0 || dueActive.Count > 0),
+            "Date d’échéance affichée antérieure à l’heure du calcul. Échéances absentes exclues. Indication calendaire, pas un verdict de conformité SLA.", dueActive.Count, "error");
+        Count("soon", $"À échéance sous {settings.DueSoonHours} h", soon, activeKnown && Has("due") && (active.Count == 0 || dueActive.Count > 0), "Actifs avec échéance comprise entre maintenant et la fin de la fenêtre configurée.", dueActive.Count, "warning");
+        Count("stale", $"Sans modification ≥ {settings.StaleDays} j", stale, activeKnown && Has("updated") && (active.Count == 0 || updatedActive.Count > 0), "Ancienneté de la dernière modification disponible ; cela ne prouve pas une absence de travail.", updatedActive.Count, "warning");
+        Count("old", $"Ouverts depuis ≥ {settings.OldDays} j", old, activeKnown && Has("created") && (active.Count == 0 || datedActive.Count > 0), "Âge calendaire des actifs dont la date d’ouverture est valide.", datedActive.Count, "warning");
+        AddDurations("age", "Âge des actifs", datedActive.Select(x => (wallNow - x.Created!.Value).TotalDays).ToArray(), datedActive, "j", "Depuis l’ouverture jusqu’au calcul, en jours calendaires.");
+        var resolution = records.Where(x => x.Created.HasValue && x.Resolved.HasValue && x.Resolved >= x.Created).ToList();
+        var closure = records.Where(x => x.Created.HasValue && x.Closed.HasValue && x.Closed >= x.Created).ToList();
+        var inconsistent = records.Where(x => (x.Created.HasValue && x.Resolved < x.Created) || (x.Created.HasValue && x.Closed < x.Created)
+            || (x.Resolved.HasValue && x.Closed < x.Resolved) || (x.Created.HasValue && x.Updated < x.Created)).ToList();
+        if (inconsistent.Count > 0) result.Warnings.Add($"{inconsistent.Count:N0} lignes présentent une chronologie ouverture/modification/résolution/clôture incohérente ; les durées invalides sont exclues.");
+        AddDurations("resolution", "Délai ouverture → résolution", resolution.Select(x => (x.Resolved!.Value - x.Created!.Value).TotalHours).ToArray(), resolution, "h", "Durées calendaires des paires de dates valides du relevé. Ni temps de travail, ni durée contractuelle SLA.");
+        AddDurations("closure", "Délai ouverture → clôture", closure.Select(x => (x.Closed!.Value - x.Created!.Value).TotalHours).ToArray(), closure, "h", "Durées calendaires des paires de dates valides du relevé.");
+        foreach (var (key, title, selector) in new (string, string, Func<Record, DateTime?>)[] { ("created", "Créés", x => x.Created), ("resolved", "Résolutions datées", x => x.Resolved), ("closed", "Clôtures datées", x => x.Closed) })
+            foreach (var days in new[] { 7, 30 })
+                Count($"{key}-{days}", $"{title} sur {days} j", records.Where(x => selector(x) >= wallNow.AddDays(-days) && selector(x) <= wallNow), Has(key),
+                    $"Événements datés sur les {days} derniers jours glissants, parmi les lignes de ce relevé uniquement. Les tickets absents de la recherche ne sont pas comptés.");
+
+        void Distribution(string key, string title, IEnumerable<Record> pool, bool available, Func<Record, string> label, string note, string[]? order = null)
+        {
+            ct.ThrowIfCancellationRequested();
+            var list = pool as IReadOnlyCollection<Record> ?? pool.ToArray();
+            var groups = available ? list.GroupBy(label, StringComparer.OrdinalIgnoreCase).Select(g => new DashboardBucket(g.Key, g.Count(), Rows(g))) : Enumerable.Empty<DashboardBucket>();
+            var buckets = order == null ? groups.OrderByDescending(x => x.Count).ThenBy(x => x.Label, StringComparer.CurrentCultureIgnoreCase).ToList()
+                : groups.OrderBy(x => Array.IndexOf(order, x.Label) is var rank && rank >= 0 ? rank : int.MaxValue).ThenBy(x => x.Label).ToList();
+            result.Distributions.Add(new(key, title, available, list.Count, note, buckets));
+        }
+        Distribution("status", "Statuts", records, Has("status"), x => StatusLabel(x.Status), "Toutes les lignes. Les statuts non reconnus sont visibles.", new[] { "Nouveau", "En cours — attribué", "En cours — planifié", "En attente", "Résolu", "Clos", "Non classé" });
+        Distribution("priority", "Priorités", records, Has("priority"), x => PriorityLabel(x.Priority), "Toutes les lignes ; les valeurs inconnues ne sont pas considérées comme faibles.", new[] { "Majeure", "Très haute", "Haute", "Moyenne", "Basse", "Très basse", "Non renseignée / inconnue" });
+        Distribution("active-priority", "Priorités des actifs", active, activeKnown && Has("priority"), x => PriorityLabel(x.Priority), "Actifs uniquement.", new[] { "Majeure", "Très haute", "Haute", "Moyenne", "Basse", "Très basse", "Non renseignée / inconnue" });
+        foreach (var (key, title) in new[] { ("urgency", "Urgences"), ("impact", "Impacts") })
+            Distribution(key, title, records, Has(key), x => SeverityLabel(Severity(Cell(data.Rows[x.Index], key)), key == "impact"),
+                "Toutes les lignes du périmètre. Ce champ est conservé séparément de la priorité.", key == "impact"
+                    ? new[] { "Très haut", "Haut", "Moyen", "Bas", "Très bas", "Non renseigné / inconnu" }
+                    : new[] { "Très haute", "Haute", "Moyenne", "Basse", "Très basse", "Non renseignée / inconnue" });
+        Distribution("age", "Âge des actifs", active, activeKnown && Has("created"), x => !x.Created.HasValue ? "Date indisponible" : (wallNow - x.Created.Value).TotalDays switch { < 1 => "Moins de 1 j", < 7 => "1 à 6 j", < 14 => "7 à 13 j", < 30 => "14 à 29 j", < 90 => "30 à 89 j", _ => "90 j et plus" }, "Jours calendaires depuis l’ouverture.", new[] { "Moins de 1 j", "1 à 6 j", "7 à 13 j", "14 à 29 j", "30 à 89 j", "90 j et plus", "Date indisponible" });
+        Distribution("inactivity", "Dernière modification des actifs", active, activeKnown && Has("updated"), x => !x.Updated.HasValue || x.Created.HasValue && x.Updated < x.Created ? "Date indisponible" : (wallNow - x.Updated.Value).TotalDays switch { < 1 => "Moins de 1 j", < 3 => "1 à 2 j", < 7 => "3 à 6 j", < 14 => "7 à 13 j", < 30 => "14 à 29 j", _ => "30 j et plus" }, "Une modification du ticket n’est pas une mesure du travail accompli. Les dates antérieures à l’ouverture connue sont classées indisponibles.", new[] { "Moins de 1 j", "1 à 2 j", "3 à 6 j", "7 à 13 j", "14 à 29 j", "30 j et plus", "Date indisponible" });
+        Distribution("type", "Incidents et demandes", records, Has("type"), x => TypeLabel(Cell(data.Rows[x.Index], "type")), "Toutes les lignes.");
+        Distribution("active-type", "Incidents et demandes — actifs", active, activeKnown && Has("type"), x => TypeLabel(Cell(data.Rows[x.Index], "type")),
+            "Statuts actifs reconnus uniquement. Les types absents ou personnalisés restent visibles, sans être reclassés.");
+        foreach (var role in new[] { "group", "assignee", "category", "entity", "requester", "location", "city", "postal", "source", "updatedBy" })
+        {
+            string Label(Record record) { var raw = Cell(data.Rows[record.Index], role); return IsMissing(raw) ? "Non renseigné" : raw; }
+            var roleTitle = Roles.First(r => r.Key == role).Label;
+            Distribution(role, roleTitle + " — relevé", records, Has(role), Label, role == "updatedBy"
+                ? "Dernier auteur de modification exposé dans le relevé. Ce n’est ni l’historique des interventions ni une mesure de productivité."
+                : "Valeur complète de chaque cellule ; les affectations multiples ne sont pas réparties artificiellement.");
+            if (role is "group" or "assignee" or "category" or "entity" or "location" or "city" or "postal" or "source")
+                Distribution("active-" + role, roleTitle + " — actifs", active, activeKnown && Has(role), Label, "Volume d’actifs par valeur complète. Ce volume ne mesure pas la capacité ou la performance d’une personne.");
+        }
+        for (var i = 29; i >= 0; i--)
+        {
+            var day = wallNow.Date.AddDays(-i);
+            result.Timeline.Add(new(day, Rows(records.Where(r => r.Created?.Date == day)), Rows(records.Where(r => r.Resolved?.Date == day)), Rows(records.Where(r => r.Closed?.Date == day))));
+        }
+        var signals = new List<DashboardSignal>();
+        void Signal(string label, List<Record> affected, List<Record> sample, int weight, string explanation)
+        { if (activeKnown && sample.Count > 0) signals.Add(new(label, affected.Count, sample.Count, active.Count, weight, Rows(affected), explanation)); }
+        if (Has("due")) Signal("Échéance dépassée", overdue, dueActive, 35, "Sur les actifs ayant une échéance lisible ; comparaison calendaire uniquement.");
+        if (Has("priority")) Signal("Priorité haute à majeure", high, prioritySample, 25, "Sur les actifs dont la priorité est reconnue.");
+        if (Has("assignee") && Has("group")) Signal("Sans affectation", unassigned, active, 15, "Technicien et groupe tous deux absents.");
+        if (Has("updated")) Signal($"Sans modification ≥ {settings.StaleDays} j", stale, updatedActive, 15, "Sur les actifs avec une date de dernière modification lisible.");
+        if (Has("created")) Signal($"Âge ≥ {settings.OldDays} j", old, datedActive, 10, "Sur les actifs avec une date d’ouverture lisible.");
+        result.Weather = Weather(result, active.Count, unknown, signals, Has("status"), duplicateRows.Count == 0 && (!Has("id") || missingIds.Count == 0));
+        var overdueSet = Rows(overdue).ToHashSet(); var highSet = Rows(high).ToHashSet(); var unassignedSet = unassignedAvailable ? Rows(unassigned).ToHashSet() : new HashSet<int>();
+        var staleSet = Rows(stale).ToHashSet(); var oldSet = Rows(old).ToHashSet();
+        AddAdvancedProbes();
+        foreach (var r in active.OrderByDescending(x => overdueSet.Contains(x.Index)).ThenByDescending(x => x.Priority ?? 0).ThenBy(x => x.Created ?? DateTime.MaxValue))
+        {
+            if (result.Attention.Count == 50) break;
+            var reasons = new List<string>();
+            if (overdueSet.Contains(r.Index)) reasons.Add("Échéance dépassée");
+            if (highSet.Contains(r.Index)) reasons.Add("Priorité haute");
+            if (unassignedSet.Contains(r.Index)) reasons.Add(unassignedLabel);
+            if (staleSet.Contains(r.Index)) reasons.Add("Sans modification récente");
+            if (oldSet.Contains(r.Index)) reasons.Add("Ancien");
+            if (reasons.Count > 0) result.Attention.Add(new(r.Index, r.Id, r.Title, StatusLabel(r.Status), PriorityLabel(r.Priority), r.Group,
+                r.Created.HasValue ? (wallNow - r.Created.Value).TotalDays : null, string.Join(" · ", reasons)));
+        }
+        ct.ThrowIfCancellationRequested();
+        return result;
+
+        void AddDurations(string key, string title, double[] values, List<Record> sample, string unit, string explanation)
+        {
+            ct.ThrowIfCancellationRequested();
+            Array.Sort(values);
+            var sampleRows = Rows(sample);
+            foreach (var (suffix, label, value) in new[]
+            {
+                ("mean", "moyenne", values.Length > 0 ? (double?)values.Average() : null),
+                ("median", "médiane", Percentile(values, .5)),
+                ("p90", "90e percentile", Percentile(values, .9)),
+                ("max", "maximum", values.Length > 0 ? (double?)values[^1] : null)
+            }) Number($"{key}-{suffix}", $"{title} · {label}", value, unit, explanation + " Percentiles calculés par interpolation linéaire.", sample.Count, sampleRows);
+        }
+
+        void AddAdvancedProbes()
+        {
+            ct.ThrowIfCancellationRequested();
+            var at = $"Calculé au {now:dd/MM/yyyy HH:mm:ss zzz}. ";
+            void Share(string key, string label, string affectedKey, int sample, bool available, string explanation)
+            {
+                var affected = result.Metric(affectedKey)!;
+                var measured = available && affected.Value.HasValue && sample > 0;
+                result.Metrics.Add(new(key, label, measured ? 100d * affected.Value!.Value / sample : null, "%", explanation,
+                    measured ? affected.Rows : Array.Empty<int>(), sample));
+            }
+
+            Share("active-share", "Part active des statuts reconnus", "active", known.Count, activeKnown,
+                "Actifs / statuts reconnus du périmètre. Les statuts inconnus sont exclus du numérateur et du dénominateur ; ce n’est pas une tendance historique.");
+            Share("pending-share", "Part des actifs en attente", "pending", active.Count, activeKnown,
+                "En attente / actifs reconnus. Un ticket en attente reste actif ; aucune règle de pause SLA n’est déduite.");
+            Share("unassigned-share", "Part des actifs sans affectation", "unassigned", active.Count, activeKnown && Has("assignee") && Has("group"),
+                "Actifs sans technicien et sans groupe / actifs reconnus. Les deux colonnes d’affectation doivent être disponibles.");
+            Share("overdue-share", "Part des échéances dépassées", "overdue", dueActive.Count, activeKnown && Has("due"),
+                at + "Actifs dont l’échéance est passée / actifs ayant une échéance lisible. Les échéances absentes ou illisibles sont exclues ; comparaison calendaire uniquement.");
+            Share("high-share", "Part des actifs en priorité haute", "high", prioritySample.Count, activeKnown && Has("priority"),
+                "Priorités haute, très haute ou majeure / actifs dont la priorité est reconnue. Les valeurs inconnues ne sont pas assimilées à une priorité faible.");
+
+            var withoutTechnician = active.Where(record => record.TechnicianCount == 0);
+            var withoutGroup = active.Where(record => IsMissing(record.Group));
+            Count("without-technician", "Actifs sans technicien", withoutTechnician, activeKnown && Has("assignee"),
+                "Aucun technicien renseigné dans la colonne d’affectation ; un groupe peut être présent.", active.Count, "warning");
+            Count("without-group", "Actifs sans groupe", withoutGroup, activeKnown && Has("group"),
+                "Aucun groupe renseigné dans la colonne d’affectation ; un technicien peut être présent.", active.Count, "warning");
+            Share("without-technician-share", "Part des actifs sans technicien", "without-technician", active.Count, activeKnown && Has("assignee"),
+                "Actifs sans technicien renseigné / actifs reconnus. La présence d’un groupe ne change pas ce ratio.");
+            Share("without-group-share", "Part des actifs sans groupe", "without-group", active.Count, activeKnown && Has("group"),
+                "Actifs sans groupe renseigné / actifs reconnus. La présence d’un technicien ne change pas ce ratio.");
+            Count("multi-technician", "Actifs avec plusieurs techniciens", active.Where(record => record.TechnicianCount > 1), activeKnown && Has("assignee"),
+                "Au moins deux identités distinctes dans une cellule d’affectation. Retours à la ligne, points-virgules et barres entourées d’espaces séparent les noms ; virgules et espaces ordinaires ne sont pas découpés.", active.Count);
+            Count("new-unassigned", "Nouveaux sans affectation", active.Where(record => record.Status == 1 && unassignedSet.Contains(record.Index)),
+                activeKnown && Has("assignee") && Has("group"), "Statut Nouveau, aucun technicien et aucun groupe renseignés. Les deux colonnes d’affectation sont requises.",
+                active.Count(record => record.Status == 1), "warning");
+            Distribution("assignment-coverage", "Affectation des actifs", active, activeKnown && Has("assignee") && Has("group"),
+                record => record.TechnicianCount == 0 ? IsMissing(record.Group) ? "Sans technicien ni groupe" : "Groupe seul"
+                    : IsMissing(record.Group) ? "Technicien seul" : "Technicien et groupe",
+                "Chaque actif reconnu apparaît une seule fois. Une affectation renseignée ne mesure pas la capacité de l’équipe.",
+                new[] { "Sans technicien ni groupe", "Groupe seul", "Technicien seul", "Technicien et groupe" });
+
+            Count("active-no-due", "Actifs sans échéance renseignée", active.Where(record => (record.DatePresent & DateFieldBit("due")) == 0), activeKnown && Has("due"),
+                "Cellule d’échéance vide ou explicitement non renseignée. Une date illisible n’est pas comptée comme absente ; consulter Qualité de l’échéance.", active.Count, "warning");
+            var datesAvailable = activeKnown && Has("due") && (active.Count == 0 || dueActive.Count > 0);
+            var tomorrow = wallNow.Date.AddDays(1);
+            var weekEnd = wallNow.Date.AddDays(7 - ((int)wallNow.DayOfWeek + 6) % 7);
+            Count("due-today", "Échéances aujourd’hui", dueActive.Where(record => record.Due >= wallNow.Date && record.Due < tomorrow), datesAvailable,
+                at + "Actifs ayant une échéance pendant le jour civil du calcul, de 00:00 inclus au lendemain exclu. Inclut les échéances déjà passées aujourd’hui.", dueActive.Count, "warning");
+            Count("due-tomorrow", "Échéances demain", dueActive.Where(record => record.Due >= tomorrow && record.Due < tomorrow.AddDays(1)), datesAvailable,
+                at + "Actifs ayant une échéance pendant le prochain jour civil, dans le fuseau de référence du calcul.", dueActive.Count);
+            Count("due-week", "Échéances d’ici la fin de semaine", dueActive.Where(record => record.Due >= wallNow && record.Due < weekEnd), datesAvailable,
+                at + "Échéances à venir jusqu’au lundi suivant à 00:00 exclu. Les échéances déjà dépassées sont exclues. Semaine calendaire du lundi au dimanche.", dueActive.Count, "warning");
+
+            var jointPriorityDue = active.Count(record => record.Priority.HasValue && record.Due.HasValue);
+            var jointPriorityUpdated = updatedActive.Count(record => record.Priority.HasValue);
+            Count("high-overdue", "Hautes priorités à échéance dépassée", high.Where(record => overdueSet.Contains(record.Index)),
+                activeKnown && Has("priority") && Has("due") && (active.Count == 0 || jointPriorityDue > 0),
+                at + "Intersection priorité haute à majeure et échéance passée. Échantillon : actifs avec priorité reconnue et échéance lisible. Indication calendaire, pas un verdict SLA.", jointPriorityDue, "error");
+            Count("high-stale", "Hautes priorités sans modification récente", high.Where(record => staleSet.Contains(record.Index)),
+                activeKnown && Has("priority") && Has("updated") && (active.Count == 0 || jointPriorityUpdated > 0),
+                at + $"Intersection priorité haute à majeure et dernière modification depuis au moins {settings.StaleDays} jours. Échantillon : actifs avec priorité et modification exploitables ; ce n’est pas une preuve d’absence de travail.", jointPriorityUpdated, "warning");
+
+            Count("missing-category", "Catégorie non renseignée", records.Where(record => IsMissing(Cell(data.Rows[record.Index], "category"))), Has("category"),
+                "Toutes les lignes du périmètre dont la catégorie est vide ou explicitement non renseignée.", records.Count, "warning");
+            Count("missing-requester", "Demandeur non renseigné", records.Where(record => IsMissing(Cell(data.Rows[record.Index], "requester"))), Has("requester"),
+                "Toutes les lignes du périmètre dont le demandeur est vide ou explicitement non renseigné.", records.Count, "warning");
+            var dateRoles = new[] { "created", "updated", "resolved", "closed", "due" };
+            var observedDates = records.Count(record => record.DatePresent != 0);
+            var observedHistory = records.Count(record => (record.DatePresent & ~record.DateInvalid & 15) != 0);
+            Count("invalid-dates", "Lignes avec une date illisible", records.Where(record => record.DateInvalid != 0),
+                dateRoles.Any(Has) && (records.Count == 0 || observedDates > 0),
+                "Au moins une date non vide ne respecte pas le format configuré. Une ligne compte une seule fois, même si plusieurs champs sont illisibles. Les cellules vides et les chronologies incohérentes sont suivies séparément.", observedDates, "warning");
+            Count("future-dates", "Dates historiques dans le futur", records.Where(record => record.DateFuture != 0),
+                dateRoles.Take(4).Any(Has) && (records.Count == 0 || observedHistory > 0),
+                at + "Au moins une date d’ouverture, modification, résolution ou clôture se trouve après l’heure du calcul et est exclue des calculs historiques. Une échéance future est normale et n’entre pas dans cette sonde.", observedHistory, "warning");
+            var chronologySample = records.Count(record => record.Created.HasValue && (record.Updated.HasValue || record.Resolved.HasValue || record.Closed.HasValue)
+                || record.Resolved.HasValue && record.Closed.HasValue);
+            var chronologyAvailable = Has("created") && (Has("updated") || Has("resolved") || Has("closed")) || Has("resolved") && Has("closed");
+            Count("inconsistent-dates", "Chronologies incohérentes", inconsistent,
+                chronologyAvailable && (records.Count == 0 || chronologySample > 0),
+                "Modification, résolution ou clôture antérieure à l’ouverture, ou clôture antérieure à la résolution. Échantillon : lignes avec au moins une paire de dates comparable. Chaque durée utilise seulement ses paires valides.", chronologySample, "warning");
+            foreach (var role in dateRoles)
+            {
+                var bit = DateFieldBit(role);
+                var title = Roles.First(item => item.Key == role).Label;
+                Distribution("quality-" + role, "Qualité · " + title, records, Has(role),
+                    record => (record.DatePresent & bit) == 0 ? "Non renseignée" : (record.DateInvalid & bit) != 0 ? "Illisible"
+                        : (record.DateFuture & bit) != 0 ? "Future exclue" : "Lisible",
+                    at + (role == "due" ? "Les échéances futures sont normales. " : "Les dates historiques futures sont exclues des calculs. ")
+                        + "Une date lisible peut être incohérente avec une autre date ; consulter Chronologies incohérentes.",
+                    new[] { "Lisible", "Non renseignée", "Illisible", "Future exclue" });
+            }
+
+            AddDurations("inactivity", "Depuis la dernière modification", updatedActive.Select(record => (wallNow - record.Updated!.Value).TotalDays).ToArray(), updatedActive, "j",
+                at + "Durées calendaires des actifs avec une modification lisible, non future et non antérieure à l’ouverture connue. Ce n’est pas une mesure du temps travaillé.");
+            var resolvedToClosed = records.Where(record => record.Resolved.HasValue && record.Closed.HasValue && record.Closed >= record.Resolved).ToList();
+            AddDurations("resolution-closure", "Délai résolution → clôture", resolvedToClosed.Select(record => (record.Closed!.Value - record.Resolved!.Value).TotalHours).ToArray(), resolvedToClosed, "h",
+                "Durées calendaires des paires résolution/clôture présentes, lisibles, non futures et dans le bon ordre. Aucune durée n’est déduite du seul statut.");
+            var knownTypes = active.Count(record => record.Type != 0);
+            var typesAvailable = activeKnown && Has("type") && (active.Count == 0 || knownTypes > 0);
+            Count("active-incidents", "Incidents actifs", active.Where(record => record.Type == 1), typesAvailable,
+                "Actifs dont le type est Incident (ou code GLPI 1). Les types absents et personnalisés sont exclus.", knownTypes);
+            Count("active-requests", "Demandes actives", active.Where(record => record.Type == 2), typesAvailable,
+                "Actifs dont le type est Demande / Request (ou code GLPI 2). Les types absents et personnalisés sont exclus.", knownTypes);
+
+            string HoursBucket(double hours) => hours switch
+            {
+                < 1 => "Moins de 1 h", < 4 => "1 à moins de 4 h", < 24 => "4 à moins de 24 h",
+                < 72 => "1 à moins de 3 j", < 168 => "3 à moins de 7 j", < 720 => "7 à moins de 30 j", _ => "30 j et plus"
+            };
+            var durationOrder = new[] { "Moins de 1 h", "1 à moins de 4 h", "4 à moins de 24 h", "1 à moins de 3 j", "3 à moins de 7 j", "7 à moins de 30 j", "30 j et plus" };
+            Distribution("overdue-delay", "Retard calendaire des actifs", overdue, datesAvailable,
+                record => HoursBucket((wallNow - record.Due!.Value).TotalHours),
+                at + "Actifs déjà à échéance dépassée, répartis par durée écoulée depuis l’échéance affichée. Aucune règle SLA de calendrier ou de pause n’est appliquée.", durationOrder);
+            Distribution("due-horizon", "Échéances à venir des actifs", dueActive.Where(record => record.Due >= wallNow), datesAvailable,
+                record => HoursBucket((record.Due!.Value - wallNow).TotalHours),
+                at + "Actifs ayant une échéance lisible égale ou postérieure à l’heure du calcul, répartis par temps restant. Les échéances dépassées ou absentes sont exclues.", durationOrder);
+        }
+    }
+
+    public static List<DashboardColumn> ResolveColumns(IReadOnlyList<string> headers, DashboardSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        ArgumentNullException.ThrowIfNull(settings);
+        var normalized = headers.Select(Normalize).ToArray();
+        return Roles.Select(role =>
+        {
+            settings.ColumnMappings.TryGetValue(role.Key, out var configured);
+            var exact = !string.IsNullOrWhiteSpace(configured);
+            var matches = Enumerable.Range(0, headers.Count).Where(i => exact
+                ? string.Equals(headers[i], configured, StringComparison.Ordinal)
+                : HeaderMatches(role, headers[i]) || IsRenamedDuplicate(role, headers[i], normalized)).ToArray();
+            return new DashboardColumn(role.Key, role.Label, matches.Length == 1 ? matches[0] : null,
+                matches.Length == 1 ? headers[matches[0]] : configured ?? "", matches.Length == 1 ? exact ? "configured" : "auto" : matches.Length > 1 ? "ambiguous" : exact ? "missing-override" : "missing");
+        }).ToList();
+    }
+
+    private static bool HeaderMatches(DashboardRole role, string? header)
+    {
+        var normalized = Normalize(header);
+        if (role.Aliases.Any(alias => Normalize(alias) == normalized)) return true;
+        // Accept known ticket namespaces, not an arbitrary suffix match. For example,
+        // "Demandeur - ID" must never become the identifier of the ticket itself.
+        var parts = Regex.Split(header?.Trim() ?? "", @"\s+(?:-|–|—|>|/)\s+|\s*[:：>]\s*|[\r\n]+")
+            .Where(part => !string.IsNullOrWhiteSpace(part)).ToList();
+        if (parts.Count < 2) return false;
+        if (Normalize(parts[0]) is "ticket" or "tickets") parts.RemoveAt(0);
+        if (parts.Count > 1 && Normalize(parts[0]) is "general" or "caracteristiques" or "characteristics") parts.RemoveAt(0);
+        if (role.Key is "city" or "postal" && parts.Count == 2 && Normalize(parts[0]) is "lieu" or "location" or "localisation")
+            parts.RemoveAt(0);
+        return role.Aliases.Any(alias => Normalize(alias) == Normalize(string.Join(" - ", parts)));
+    }
+
+    private static bool IsRenamedDuplicate(DashboardRole role, string header, string[] normalizedHeaders)
+    {
+        // The native importer renames duplicate labels to "Label (2)". Keep this
+        // ambiguity visible instead of silently binding only the first occurrence.
+        var match = Regex.Match(header ?? "", @"^(.*) \((?:[2-9]|[1-9][0-9]+)\)$");
+        return match.Success && normalizedHeaders.Contains(Normalize(match.Groups[1].Value), StringComparer.Ordinal)
+            && HeaderMatches(role, match.Groups[1].Value);
+    }
+
+    public static void ValidateSettings(DashboardSettings settings)
+    {
+        if (settings.StaleDays is < 1 or > 3650 || settings.OldDays < settings.StaleDays || settings.OldDays > 3650 || settings.DueSoonHours is < 1 or > 720)
+            throw new InvalidOperationException("Tableau de bord : seuils de 1 à 3 650 jours, âge ancien ≥ inactivité, échéance de 1 à 720 heures.");
+        if (settings.DateCulture is not ("fr-FR" or "en-GB" or "en-US" or "invariant"))
+            throw new InvalidOperationException("Tableau de bord : format de dates non reconnu.");
+        if (settings.ColumnMappings == null || settings.ColumnMappings.Any(x => !Roles.Any(r => string.Equals(r.Key, x.Key, StringComparison.OrdinalIgnoreCase)) || (x.Value?.Length ?? 0) > 512))
+            throw new InvalidOperationException("Tableau de bord : correspondances de colonnes invalides.");
+    }
+
+    private static DashboardWeather Weather(DashboardSnapshot snapshot, int active, int unknown, List<DashboardSignal> signals, bool hasStatus, bool identityClean)
+    {
+        if (!hasStatus || snapshot.RowCount == 0 || active == 0 && unknown > 0)
+            return new("unknown", "Météo indéterminée", "◌", null, 0, "Aucun ensemble d’actifs fiable à évaluer. Vérifiez les colonnes et le périmètre du relevé.", signals);
+        if (active == 0)
+            return new(snapshot.Complete && unknown == 0 ? "sun" : "partial", snapshot.Complete && unknown == 0 ? "Aucun actif dans ce relevé" : "Aucun actif identifié · périmètre partiel", "☀", null, 0,
+                "Les statuts reconnus sont résolus ou clos. Cette météo concerne la recherche extraite uniquement.", signals);
+        var weight = signals.Sum(s => s.Weight);
+        if (weight == 0) return new("unknown", "Météo indéterminée", "◌", null, 0, "Les colonnes d’échéance, priorité, affectation ou dates manquent pour évaluer les actifs.", signals);
+        var score = signals.Sum(s => s.Weight * (100d * s.Count / s.Sample)) / weight;
+        var sufficient = snapshot.Complete && identityClean && unknown == 0 && weight >= 60
+            && signals.All(s => s.Sample >= Math.Ceiling(active * .8));
+        var state = score >= 45 ? "storm" : score >= 25 ? "rain" : score >= 10 ? "watch" : "sun";
+        var title = state switch { "storm" => "Orage · vigilance forte", "rain" => "Pluie · points à traiter", "watch" => "Vigilance · situation à surveiller", _ => "Soleil · peu de signaux détectés" };
+        if (!sufficient)
+        {
+            title = score < 10 ? "Météo partielle · données à compléter" : title + " · données partielles";
+            if (score < 10) state = "partial";
+        }
+        var symbol = state switch { "sun" => "☀", "watch" => "⛅", "rain" => "☂", "storm" => "ϟ", _ => "◌" };
+        return new(state, title, symbol, score, weight,
+            $"Indice indicatif {score:0.#}/100. Pondérations disponibles : {weight}/100. " +
+            "Chaque signal utilise son propre échantillon renseigné. " +
+            (sufficient ? "Les signaux disponibles couvrent au moins 80 % des actifs chacun. " : "Les données ne permettent pas une lecture complète. ") +
+            "Ce n’est ni une prévision, ni une mesure de capacité, ni un contrôle contractuel du SLA.", signals);
+    }
+
+    public static long EstimatedExportRows(DashboardSnapshot snapshot) => 4L + (snapshot.IsFiltered ? 2 : 0) + snapshot.Weather.Signals.Count + snapshot.Metrics.Count
+        + snapshot.Distributions.Sum(x => (long)x.Buckets.Count + (x.Available ? 0 : 1)) + 3L * snapshot.Timeline.Count + snapshot.Columns.Count + snapshot.Warnings.Count;
+
+    public static ExtractionResult ToExport(DashboardSnapshot snapshot)
+    {
+        var data = new ExtractionResult
+        {
+            Headers = new() { "Rubrique", "Indicateur", "Valeur", "Unité", "Échantillon / dénominateur", "Explication" },
+            SourceUrl = snapshot.SourceUrl, ExtractedAt = snapshot.CalculatedAt, Title = "Bilan du relevé GLPI", Scope = snapshot.Scope,
+            Complete = snapshot.Complete, Warnings = new(snapshot.Warnings), Status = $"Bilan de {snapshot.RowCount:N0} {snapshot.Grain}"
+        };
+        void Add(params string[] values) => data.Rows.Add(values);
+        Add("Périmètre", "Calcul", snapshot.CalculatedAt.ToString("O"), "", "", "Calcul local sur les lignes du relevé uniquement.");
+        Add("Périmètre", "Extraction", snapshot.ExtractedAt.ToString("O"), "", "", snapshot.Scope);
+        Add("Périmètre", snapshot.IsFiltered ? "Lignes du périmètre vérifié" : "Total annoncé", snapshot.ExpectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "Non disponible", "lignes", "", snapshot.Complete ? "Relevé source complet confirmé" : "Relevé source incomplet ou non confirmé");
+        if (snapshot.IsFiltered)
+        {
+            Add("Périmètre", "Vue sélectionnée", snapshot.ScopeLabel, "", "", "Toutes les valeurs de ce bilan sont recalculées sur ce périmètre du relevé.");
+            Add("Périmètre", "Relevé source", snapshot.SourceRowCount.ToString(CultureInfo.InvariantCulture), "lignes récupérées", snapshot.SourceExpectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "Total GLPI inconnu", "Un ticket affecté à plusieurs techniciens peut figurer dans plusieurs vues individuelles ; ne pas additionner leurs totaux.");
+        }
+        Add("Météo", snapshot.Weather.Title, snapshot.Weather.Score?.ToString("0.###", CultureInfo.InvariantCulture) ?? "Non disponible", "/100", snapshot.Weather.MeasuredWeight + "/100 de pondérations", snapshot.Weather.Description);
+        foreach (var signal in snapshot.Weather.Signals) Add("Météo", signal.Label, signal.Count.ToString(), snapshot.Grain, $"{signal.Sample} / {signal.Population} actifs", signal.Explanation);
+        foreach (var metric in snapshot.Metrics) Add("Indicateurs", metric.Label, metric.Value?.ToString("0.###", CultureInfo.InvariantCulture) ?? "Non disponible", metric.Unit, metric.Sample?.ToString() ?? "", metric.Explanation);
+        foreach (var dist in snapshot.Distributions)
+        {
+            if (!dist.Available) Add("Répartitions", dist.Title, "Non disponible", "", "", "Données nécessaires indisponibles ou sans échantillon exploitable. " + dist.Note);
+            foreach (var bucket in dist.Buckets) Add(dist.Title, bucket.Label, bucket.Count.ToString(), snapshot.Grain, dist.Denominator.ToString(), dist.Note);
+        }
+        foreach (var day in snapshot.Timeline)
+            foreach (var (role, title, values) in new[] { ("created", "Créations", day.Created), ("resolved", "Résolutions", day.Resolved), ("closed", "Clôtures", day.Closed) })
+                Add("Activité datée sur 30 jours", day.Date.ToString("yyyy-MM-dd") + " · " + title, snapshot.Column(role)?.Index.HasValue == true ? values.Length.ToString() : "Non disponible", snapshot.Grain, "", "Événements présents dans le relevé seulement ; pas un historique global.");
+        foreach (var col in snapshot.Columns) Add("Correspondances", col.Label, col.Header, "", col.State, col.Index.HasValue ? "Colonne utilisée" : "Indisponible");
+        foreach (var warning in snapshot.Warnings) Add("Qualité et limites", "Avertissement", "", "", "", warning);
+        return data;
+    }
+
+    /// <summary>Shared conservative GLPI actor splitting for dashboards and technician workspaces.</summary>
+    public static IReadOnlyList<string> SplitTechnicianNames(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return Array.Empty<string>();
+        var parts = Regex.Split(value, @"\r\n|[\r\n;]|\s+\|\s+");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<string>();
+        foreach (var part in parts)
+        {
+            var name = Regex.Replace(part.Normalize(NormalizationForm.FormC), @"\s+", " ").Trim();
+            if (name.Length == 0 || IsMissing(name)) continue;
+            if (seen.Add(name.ToUpperInvariant())) result.Add(name);
+        }
+        return result;
+    }
+
+    private static int DateFieldBit(string key) => key switch { "created" => 1, "updated" => 2, "resolved" => 4, "closed" => 8, "due" => 16, _ => 0 };
+    private static int TypeKind(string text) => Normalize(text) switch { "1" or "incident" => 1, "2" or "demande" or "request" => 2, _ => 0 };
+
+    public static string Normalize(string? text)
+    {
+        var builder = new StringBuilder();
+        foreach (var c in (text ?? "").Normalize(NormalizationForm.FormD))
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) builder.Append(char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : ' ');
+        return Regex.Replace(builder.ToString(), @"\s+", " ").Trim();
+    }
+    private static bool IsMissing(string? text) => Normalize(text) is "" or "aucun" or "aucune" or "none" or "null" or "non renseigne" or "non renseignee" or "non attribue" or "non attribuee" or "non affecte" or "non affectee" or "n a" or "n d" or "0";
+    private static string NormalizeId(string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0 || text.Length > 64) return "";
+        var groups = text.Split(new[] { ' ', '\u00a0', '\u202f' }, StringSplitOptions.RemoveEmptyEntries);
+        if (groups.Length > 1 && (groups[0].Length is < 1 or > 3 || groups.Skip(1).Any(group => group.Length != 3))) return "";
+        var digits = string.Concat(groups);
+        return digits.Length > 0 && digits.All(c => c is >= '0' and <= '9')
+            && ulong.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0
+            ? id.ToString(CultureInfo.InvariantCulture) : "";
+    }
+    public static int? Severity(string text) => Normalize(text) switch
+    {
+        "1" or "tres bas" or "tres basse" or "very low" => 1,
+        "2" or "bas" or "basse" or "low" => 2,
+        "3" or "moyen" or "moyenne" or "medium" => 3,
+        "4" or "haut" or "haute" or "high" => 4,
+        "5" or "tres haut" or "tres haute" or "very high" => 5,
+        _ => null
+    };
+    private static string SeverityLabel(int? value, bool masculine) => !masculine ? PriorityLabel(value) : value switch
+    { 1 => "Très bas", 2 => "Bas", 3 => "Moyen", 4 => "Haut", 5 => "Très haut", _ => "Non renseigné / inconnu" };
+    public static int Status(string text) => Normalize(text) switch
+    {
+        "1" or "nouveau" or "new" => 1,
+        "2" or "en cours attribue" or "processing assigned" or "assigned" or "attribue" => 2,
+        "3" or "en cours planifie" or "processing planned" or "planned" or "planifie" => 3,
+        "4" or "en attente" or "pending" or "waiting" => 4,
+        "5" or "resolu" or "solved" or "resolved" => 5,
+        "6" or "clos" or "closed" or "cloture" => 6,
+        _ => 0
+    };
+    public static int? Priority(string text) => Normalize(text) switch
+    {
+        "1" or "tres basse" or "very low" => 1, "2" or "basse" or "low" => 2,
+        "3" or "moyenne" or "medium" => 3, "4" or "haute" or "high" => 4,
+        "5" or "tres haute" or "very high" => 5, "6" or "majeure" or "major" => 6, _ => null
+    };
+    public static string StatusLabel(int value) => value switch { 1 => "Nouveau", 2 => "En cours — attribué", 3 => "En cours — planifié", 4 => "En attente", 5 => "Résolu", 6 => "Clos", _ => "Non classé" };
+    public static string PriorityLabel(int? value) => value switch { 1 => "Très basse", 2 => "Basse", 3 => "Moyenne", 4 => "Haute", 5 => "Très haute", 6 => "Majeure", _ => "Non renseignée / inconnue" };
+    private static string TypeLabel(string text) => Normalize(text) switch { "1" or "incident" => "Incident", "2" or "demande" or "request" => "Demande", "" => "Non renseigné", _ => text };
+    public static double? Percentile(double[] sorted, double probability)
+    {
+        if (sorted.Length == 0) return null;
+        var rank = (sorted.Length - 1) * probability; var low = (int)Math.Floor(rank); var high = (int)Math.Ceiling(rank);
+        return sorted[low] + (sorted[high] - sorted[low]) * (rank - low);
+    }
+    public static bool TryDate(string raw, string cultureName, TimeSpan offset, out DateTime value)
+    {
+        value = default;
+        raw = raw.Trim().Replace('\u00a0', ' ').Replace('\u202f', ' ');
+        if (raw.Length > 100 || !Regex.IsMatch(raw, @"\b(?:19|20|21)\d{2}\b")) return false;
+        if (Regex.IsMatch(raw, @"^\d{4}-\d{2}-\d{2}[T ].*(?:Z|[+-]\d{2}:?\d{2})$", RegexOptions.IgnoreCase)
+            && DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var zoned))
+        { value = zoned.ToOffset(offset).DateTime; return true; }
+        var isoFormats = new[] { "yyyy-MM-dd", "yyyy-MM-dd H:mm", "yyyy-MM-dd H:mm:ss", "yyyy-MM-dd H:mm:ss.FFFFFFF", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF", "yyyy-MM-dd'T'HH:mm" };
+        if (DateTime.TryParseExact(raw, isoFormats, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out value)) return true;
+        if (cultureName == "invariant") return false;
+        var date = cultureName == "en-US" ? "M/d/yyyy" : "d/M/yyyy";
+        var dateDash = cultureName == "en-US" ? "M-d-yyyy" : "d-M-yyyy";
+        var formats = new[] { date, date + " H:mm", date + " H:mm:ss", date + " h:mm tt", date + " h:mm:ss tt", dateDash, dateDash + " H:mm", dateDash + " H:mm:ss", "d MMM yyyy", "d MMM yyyy H:mm", "d MMMM yyyy", "d MMMM yyyy H:mm" };
+        return DateTime.TryParseExact(raw, formats, CultureInfo.GetCultureInfo(cultureName), DateTimeStyles.AllowWhiteSpaces, out value);
+    }
+}
