@@ -40,6 +40,10 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("SSO ayant retiré les filtres : recherche complète réouverte", CheckLostFilters),
     ("Nouvel onglet GLPI : choix automatique devant une connexion restée ouverte", CheckPopupChoice),
     ("Un clic GLPI 10 : page 2 visible, cinq lignes natives et Excel automatique", CheckNative10),
+    ("Annulation avant Excel : reçu natif intact et aucune phase Fichier prêt", () => CheckPipelineCancellation("excel-before")),
+    ("Annulation après Excel : fichier terminé conservé, aucun faux succès", () => CheckPipelineCancellation("excel-after")),
+    ("Annulation avant publication : le CSV seul ne devient pas un faux succès", () => CheckPipelineCancellation("final")),
+    ("Annulation avant CSV vide : aucune écriture démarrée après la demande", CheckCancelledEmptySave),
     ("Un clic : villes MA/Mars/Marseille enrichies dans CSV et Excel, reçu intact", () => CheckNativeCities(true)),
     ("Un clic sans Excel : CSV enrichi principal et métadonnées natives préservées", () => CheckNativeCities(false)),
     ("Un clic GLPI 11 : section All pages choisie et CSV incomplet signalé", CheckNative11Partial),
@@ -323,6 +327,58 @@ async Task CheckNativeCities(bool excel)
         Equal(run.ExcelPath, run.PrimaryPath); AssertWorkbook(run.ExcelPath!, 5, "Marseille", "Ville détectée");
     }
     else { Equal(enriched, run.PrimaryPath); True(run.ExcelPath == null, "Excel reste désactivé selon le réglage mémorisé."); }
+}
+
+async Task CheckPipelineCancellation(string point)
+{
+    string html = fixture10.Replace("data-count=\"1234\"", "data-count=\"5\"", StringComparison.Ordinal)
+        .Replace("De 1 à 20 sur 1 234", "De 1 à 5 sur 5", StringComparison.Ordinal);
+    string received = point == "excel-after" ? csvAll.Replace("=1+1", new string('z', 40_000), StringComparison.Ordinal) : csvAll;
+    await using var h = await Create(route => new Uri(route.Request.Url).AbsolutePath.EndsWith("/report.dynamic.php", StringComparison.Ordinal)
+        ? Download(route, received) : Html(route, html), target);
+    var settings = Settings(); settings.AutoSaveXlsx = point != "final";
+    using var cancellation = new CancellationTokenSource();
+    var automatic = new AutomaticExtractionService(h.Service);
+    var phases = new List<AutomaticRunPhase>(); var logs = new List<string>();
+    automatic.PhaseChanged += phase =>
+    {
+        phases.Add(phase);
+        if (point == "excel-before" && phase == AutomaticRunPhase.Saving) cancellation.Cancel();
+    };
+    automatic.Log += message =>
+    {
+        logs.Add(message);
+        if ((point == "excel-after" && message.StartsWith("EXCEL ·", StringComparison.Ordinal))
+            || (point == "final" && message.StartsWith("CONTRÔLE · 5 lignes chargées", StringComparison.Ordinal))) cancellation.Cancel();
+    };
+    bool cancelled = false;
+    try { await automatic.RunAsync(settings, null, cancellation.Token); }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { cancelled = true; }
+    True(cancelled && cancellation.IsCancellationRequested, "La demande doit remonter comme annulation, même après la lecture de tout le relevé.");
+    True(!phases.Contains(AutomaticRunPhase.Ready) && !logs.Any(message => message.Contains("· terminé,", StringComparison.Ordinal)),
+        "Une extraction annulée ne doit annoncer ni Fichier prêt, ni terminé.");
+    var native = Directory.GetFiles(settings.ExportFolder, "*.csv").Single();
+    Equal(received, Encoding.UTF8.GetString(await File.ReadAllBytesAsync(native)));
+    var workbooks = Directory.GetFiles(settings.ExportFolder, "*.xlsx");
+    Equal(point == "excel-after" ? 1 : 0, workbooks.Length);
+    if (workbooks.Length == 1) AssertWorkbook(workbooks[0], 5, "0001", "0005");
+    Equal(0, Directory.GetFiles(settings.ExportFolder, "*.part").Length);
+}
+
+async Task CheckCancelledEmptySave()
+{
+    const string html = "<!doctype html><html><body><a href='/logout.php'>Déconnexion</a><form data-search-itemtype='Computer' data-count='0' data-start='0' data-limit='20'><table class='search-results' id='empty-results'><thead><tr style='display:none'><th>ID</th></tr></thead><tbody><tr><td colspan='1'>No item found</td></tr></tbody></table></form></body></html>";
+    await using var h = await Create(route => Html(route, html), target);
+    var settings = Settings(); using var cancellation = new CancellationTokenSource();
+    var automatic = new AutomaticExtractionService(h.Service);
+    var phases = new List<AutomaticRunPhase>();
+    automatic.PhaseChanged += phase => { phases.Add(phase); if (phase == AutomaticRunPhase.Saving) cancellation.Cancel(); };
+    bool cancelled = false;
+    try { await automatic.RunAsync(settings, null, cancellation.Token); }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { cancelled = true; }
+    True(cancelled, "L’enregistrement du résultat vide doit respecter l’annulation reçue avant son démarrage.");
+    True(!phases.Contains(AutomaticRunPhase.Ready), "Aucun résultat prêt après annulation.");
+    Equal(0, Directory.GetFiles(settings.ExportFolder).Length);
 }
 
 async Task CheckNative11Partial()
