@@ -5,6 +5,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Xml.Linq;
 using GlpiPilot.Core;
@@ -16,7 +17,7 @@ namespace GlpiPilot.WindowsStartupChecks;
 /// Executes real production WPF controls on Windows. Does not construct MainWindow,
 /// read AppSettings, start BrowserService, or register production startup handlers.
 /// </summary>
-internal static class Program
+internal static partial class Program
 {
     private static readonly List<string> Passed = new();
     private static int _exitCode = 1;
@@ -34,9 +35,10 @@ internal static class Program
     private static CitySettingsView? _cityEditor;
     private static TourPlanningView? _tours;
     private static QueryWorkshopView? _queryEditor;
+    private static string? _screenshotsDirectory;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -48,6 +50,17 @@ internal static class Program
             Console.Error.WriteLine("NOT RUN: an interactive Windows desktop is required; no service/session-0 execution.");
             return 3;
         }
+        if (args.Length > 0 && args[0] == "--inspect-pack-window")
+            return PackWindowChecks.Run(args);
+        if (args.Length != 0)
+        {
+            if (args.Length != 2 || args[0] != "--screenshots" || string.IsNullOrWhiteSpace(args[1]))
+            {
+                Console.Error.WriteLine("Usage: WindowsStartupChecks [--screenshots <directory>] or --inspect-pack-window <pid> <exercise|verify-restore>");
+                return 3;
+            }
+            _screenshotsDirectory = Path.GetFullPath(args[1]);
+        }
         // A ThreadPool timer, not a DispatcherTimer: a hung dispatcher still fails.
         using var watchdog = new System.Threading.Timer(_ =>
         {
@@ -57,6 +70,7 @@ internal static class Program
         try
         {
             Directory.CreateDirectory(TemporaryRoot);
+            if (_screenshotsDirectory != null) Directory.CreateDirectory(_screenshotsDirectory);
             _stage = "real App resources";
             _app = new Application();
             _app.Resources = LoadProductionResources();
@@ -70,12 +84,15 @@ internal static class Program
             ThemeService.Apply("dark");
             Pass("Production App.xaml resource definitions loaded in an isolated WPF Application");
             var tabs = BuildViews();
+            var surface = new Grid();
+            surface.SetResourceReference(Panel.BackgroundProperty, "WindowBrush");
+            surface.Children.Add(tabs);
             _host = new Window
             {
                 Title = "GLPI Pilot — Windows UI checks (synthetic data)",
                 Width = 1280, Height = 850, MinWidth = 700, MinHeight = 500,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                Content = tabs
+                Content = surface
             };
             var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -89,7 +106,12 @@ internal static class Program
             _host.Loaded += async (_, _) =>
             {
                 try { await ExerciseViewsAsync(tabs, loaded.Task, rendered.Task); }
-                catch (Exception ex) { Fail(ex); }
+                catch (Exception ex)
+                {
+                    try { CaptureView("failure-current-view"); }
+                    catch (Exception captureError) { Console.Error.WriteLine("Could not capture the failing synthetic view: " + captureError.Message); }
+                    Fail(ex);
+                }
                 finally
                 {
                     await DisposeViewsAsync();
@@ -141,7 +163,7 @@ internal static class Program
         technicians.Dashboard.Show(personalSnapshot);
         var preferences = new TechnicianPreferences().With(identity, new() { Favorite = true, ActiveTarget = 8, Notes = "Note locale synthétique en mémoire." });
         technicians.Management.Show(TechnicianWorkloadService.Calculate(_cities.Data, settings, referenceTime: data.ExtractedAt), preferences);
-        Add(tabs, "Techniciens", technicians, true);
+        Add(tabs, "Techniciens", technicians, false);
         Pass("TechnicianWorkspaceView constructor, real team workload, local in-memory preferences and scoped DashboardView");
         AddReader(tabs, "Ticket · champs", new()
         {
@@ -189,16 +211,17 @@ internal static class Program
         _tours = new TourPlanningView(Path.Combine(TemporaryRoot, "tour-order.json"));
         DisposableViews.Add(_tours);
         _tours.ShowEmpty("Relevé synthétique : calcul lancé après l’ouverture réelle de la fenêtre.");
-        Add(tabs, "Tournées", _tours, true);
+        Add(tabs, "Tournées", _tours, false);
         Pass("TourPlanningView constructor with isolated temporary preference path");
         var emptyQueries = new QueryWorkshopView(); DisposableViews.Add(emptyQueries);
         emptyQueries.LoadSettings(new()); emptyQueries.ShowEmpty("Aucun relevé synthétique chargé.");
-        Add(tabs, "Requêtes · vide", emptyQueries, true);
+        Add(tabs, "Requêtes · vide", emptyQueries, false);
         _queryEditor = new QueryWorkshopView(); DisposableViews.Add(_queryEditor);
         _queryEditor.LoadSettings(Queries); _queryEditor.Show(_cities.Data, settings, _cities);
-        Add(tabs, "Requêtes · bibliothèque", _queryEditor, true);
-        Require(Queries.Queries.Count == 40, "Expected forty real built-in saved queries.");
-        Pass("QueryWorkshopView constructors, empty library and forty real saved query templates");
+        Add(tabs, "Requêtes · bibliothèque", _queryEditor, false);
+        Require(Queries.Queries.Any(query => query.BaseProbe == "total" && query.GroupBy == "role:city"),
+            "Expected the built-in total-by-city query used by the real preview check.");
+        Pass($"QueryWorkshopView constructors, empty library and {Queries.Queries.Count} real saved query templates");
         Require(tabs.Items.Count == 11, "Expected eleven synthetic view tabs.");
         return tabs;
     }
@@ -216,7 +239,7 @@ internal static class Program
         {
             Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(18)
-        } : content;
+        } : new Border { Child = content, Padding = new Thickness(18) };
         tabs.Items.Add(new TabItem { Header = title, Content = body, Tag = content });
     }
 
@@ -252,6 +275,7 @@ internal static class Program
             }
             Pass("Loaded and rendered: " + tab.Header);
         }
+        await ExerciseResponsiveViewsAsync(tabs);
         await ExerciseCityEditorAsync(tabs);
         await ExerciseTourAsync(tabs, effective);
         await ExerciseQueryEditorAsync(tabs);
@@ -276,7 +300,7 @@ internal static class Program
         Require(Descendants<Button>(dashboard).Any(button => AutomationProperties.GetName(button) == "Catalogue" && button.IsVisible),
             "The widget catalog editor did not open.");
         Require(Descendants<DashboardBoardPanel>(dashboard).Any(panel => panel.AllowDrop)
-            && Descendants<Thumb>(dashboard).Any(thumb => thumb.ToolTip as string == "Glisser pour ajuster largeur et hauteur" && thumb.IsEnabled),
+            && Descendants<Thumb>(dashboard).Any(thumb => AutomationProperties.GetName(thumb) == "Redimensionner le widget" && thumb.IsEnabled),
             "Customization did not enable widget dragging and resizing.");
         Require(Descendants<ComboBox>(dashboard).Any(), "Editor view did not contain its real selectors.");
         Pass("Real dashboard edit command creates editor, drag handles and resize controls");
@@ -288,6 +312,9 @@ internal static class Program
             Require(dashboard.ActualWidth > 0 && double.IsFinite(dashboard.ActualHeight), "Responsive dashboard produced invalid dimensions.");
             foreach (var panel in Descendants<DashboardBoardPanel>(dashboard))
                 Require(panel.ActualWidth > 0 && double.IsFinite(panel.ActualHeight), "Board panel produced invalid dimensions.");
+            Require(!Descendants<ScrollViewer>(dashboard).Any(scroll => scroll.IsVisible
+                && scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible && scroll.ScrollableHeight > 1),
+                "Dashboard customization introduced another vertical scrollbar inside its page.");
             Pass("Responsive layout at host width " + width);
         }
         _stage = "independent global and personal query widgets";
@@ -319,22 +346,26 @@ internal static class Program
                 await FlushLayoutAsync();
                 if (tab.Tag is TechnicianWorkspaceView technicians)
                 {
-                    var internalTabs = Descendants<TabControl>(technicians).Single();
+                    var internalTabs = FindSectionTabs(technicians, "TechnicianWorkspaceTabs");
                     foreach (var workspace in internalTabs.Items.Cast<TabItem>())
                     {
                         internalTabs.SelectedItem = workspace; await FlushLayoutAsync();
                         if (ReferenceEquals(workspace.Content, technicians.Management))
                         {
+                            await SelectSectionAsync(technicians.Management, "Comparaison");
                             var grid = Descendants<DataGrid>(technicians.Management).Single();
                             Require(grid.Items.Count == 2 && grid.IsReadOnly && grid.EnableRowVirtualization,
                                 "Real technician management data was not bound or virtualized.");
+                            await RenderSectionsAsync(technicians.Management, "TechnicianManagementTabs");
                         }
                     }
                 }
+                if (tab.Tag is TourPlanningView tour) await RenderSectionsAsync(tour, "TourWorkspaceTabs");
+                if (tab.Tag is QueryWorkshopView queries) await RenderSectionsAsync(queries, "QueryWorkspaceTabs");
             }
             Require(ThemeService.CurrentTheme == theme, "Theme switch did not apply.");
             Require(Application.Current.Resources["PanelBrush"] is SolidColorBrush, "Theme brush is missing.");
-            Pass("All eleven synthetic views and both technician workspaces rendered in theme: " + theme);
+            Pass("All eleven synthetic views, technician workspaces and tour/query sections rendered in theme: " + theme);
         }
         if (_failed) return;
         _exitCode = 0;
@@ -367,11 +398,14 @@ internal static class Program
         tours.MapRequested += (city, postal) => { mapCalls++; mapCity = city; mapPostal = postal; };
         tours.RowsRequested += (rows, _) => selectedRows = rows;
         tours.ExportRequested += data => exported = data;
+        await SelectSectionAsync(tours, "Plan de tournée");
         var steps = Descendants<DataGrid>(tours).Single(grid => AutomationProperties.GetName(grid) == "Étapes de la tournée dans l’ordre de visite");
+        await SelectSectionAsync(tours, "Étape sélectionnée");
         var tickets = Descendants<DataGrid>(tours).Single(grid => AutomationProperties.GetName(grid) == "Tickets de l’étape sélectionnée");
         Require(steps.Items.Count == 2 && tickets.Items.Count == 1 && steps.EnableRowVirtualization && tickets.EnableRowVirtualization,
             "Tour tables did not bind and virtualize their real results.");
         Require(mapCalls == 0 && !File.Exists(Path.Combine(TemporaryRoot, "tour-order.json")), "Initial tour unexpectedly performed an external action or saved an order.");
+        await SelectSectionAsync(tours, "Plan de tournée");
         Click(tours, "↓ Descendre"); await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10)); await FlushLayoutAsync();
         Require(tours.SelectedPlan!.Stops.Select(stop => stop.CityName).SequenceEqual(new[] { "Paris", "Lyon" }), "Displayed manual tour order was not applied.");
         Require(File.Exists(Path.Combine(TemporaryRoot, "tour-order.json")), "Manual visit order was not saved to the isolated temporary directory.");
@@ -379,6 +413,7 @@ internal static class Program
         Require(exported is { Rows.Count: 2 } && exported.Rows.Select(row => row[1]).SequenceEqual(new[] { "Paris", "Lyon" }), "Export event did not preserve the displayed visit order.");
         Click(tours, "Tous les tickets du plan");
         Require(selectedRows != null && selectedRows.SequenceEqual(new[] { 0, 1 }), "Tour drilldown did not retain original source indexes.");
+        await SelectSectionAsync(tours, "Étape sélectionnée");
         Click(tours, "Carte de la ville ↗");
         Require(mapCalls == 1 && mapCity == "Lyon" && mapPostal == "69000", "Explicit map event did not contain only the selected city and postal code.");
         Pass("Real tour controls reorder, save only to TEMP, export the displayed order and emit explicit drilldown/map actions");
@@ -401,19 +436,22 @@ internal static class Program
     {
         _stage = "query preview from real saved library";
         var editor = _queryEditor!; SelectView(tabs, editor); await FlushLayoutAsync();
+        await SelectSectionAsync(editor, "Bibliothèque");
         var library = Descendants<ListBox>(editor).Single(list => AutomationProperties.GetName(list).StartsWith("Bibliothèque de requêtes", StringComparison.Ordinal));
-        Require(library.Items.Count == 40 && library.SelectedItem != null && VirtualizingPanel.GetIsVirtualizing(library), "Forty saved query templates were not bound to the virtualized library.");
+        Require(library.Items.Count == Queries.Queries.Count && library.SelectedItem != null && VirtualizingPanel.GetIsVirtualizing(library), "The complete saved-query library was not bound to the virtualized list.");
         int[]? selectedRows = null; editor.RowsRequested += (rows, _) => selectedRows = rows;
         Click(editor, "Prévisualiser"); await editor.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10)); await FlushLayoutAsync();
         var rowsButton = Descendants<Button>(editor).Single(button => button.Content is string text && text.StartsWith("Voir les ", StringComparison.Ordinal) && text.EndsWith("lignes retenues", StringComparison.Ordinal));
         Require(rowsButton.IsEnabled, "The real query preview did not publish an actionable result.");
         rowsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Require(selectedRows != null && selectedRows.SequenceEqual(new[] { 0, 1, 2 }), "Saved total-by-city query lost original source rows.");
+        await SelectSectionAsync(editor, "Répartition");
         var buckets = Descendants<DataGrid>(editor).Single(grid => AutomationProperties.GetName(grid).StartsWith("Répartition complète", StringComparison.Ordinal));
         Require(buckets.Items.Count == 3 && buckets.EnableRowVirtualization, "Query grouped preview did not display three synthetic cities.");
         Pass("Real saved-query preview publishes exact source rows and a virtualized grouped result");
 
         _stage = "query draft and stale preview guards";
+        await SelectSectionAsync(editor, "Définition");
         var name = Descendants<TextBox>(editor).Single(box => AutomationProperties.GetName(box) == "Nom de la requête");
         name.Text = "Brouillon synthétique conservé";
         Require(!rowsButton.IsEnabled, "Editing a query retained actions on the old result.");
@@ -432,7 +470,23 @@ internal static class Program
         => tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(tab => ReferenceEquals(tab.Tag, view));
 
     private static Button FindButton(DependencyObject root, string title)
-        => Descendants<Button>(root).Single(button => button.Content as string == title);
+        => Descendants<Button>(root).Single(button => button.Content as string == title || AutomationProperties.GetName(button) == title);
+
+    private static TabControl FindSectionTabs(DependencyObject root, string automationId)
+        => Descendants<TabControl>(root).Single(control => AutomationProperties.GetAutomationId(control) == automationId);
+
+    private static async Task RenderSectionsAsync(DependencyObject root, string automationId)
+    {
+        var sections = FindSectionTabs(root, automationId);
+        var previous = sections.SelectedItem;
+        foreach (var section in sections.Items.Cast<TabItem>())
+        {
+            sections.SelectedItem = section; await FlushLayoutAsync();
+            Require(section.Content is FrameworkElement { IsLoaded: true, ActualWidth: > 0, ActualHeight: > 0 },
+                "The production section did not render in the current theme: " + section.Header);
+        }
+        sections.SelectedItem = previous; await FlushLayoutAsync();
+    }
 
     private static void Click(DependencyObject root, string title)
     {
@@ -462,6 +516,24 @@ internal static class Program
         _host!.UpdateLayout();
         await Dispatcher.Yield(DispatcherPriority.ContextIdle);
         if (_failed) throw new InvalidOperationException("An unhandled dispatcher exception was already reported.");
+    }
+
+    private static void CaptureView(string filename)
+    {
+        if (_screenshotsDirectory == null) return;
+        var surface = (FrameworkElement)_host!.Content;
+        var dpi = VisualTreeHelper.GetDpi(surface);
+        var width = checked((int)Math.Ceiling(surface.ActualWidth * dpi.DpiScaleX));
+        var height = checked((int)Math.Ceiling(surface.ActualHeight * dpi.DpiScaleY));
+        Require(width > 0 && height > 0, "Cannot capture an unrendered synthetic WPF view.");
+        var bitmap = new RenderTargetBitmap(width, height, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+        bitmap.Render(surface);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        var path = Path.Combine(_screenshotsDirectory, filename + ".png");
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+        Console.WriteLine($"CAPTURE: {filename}.png ({width}x{height}, real WPF rendering, synthetic data only)");
     }
     private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
     {
