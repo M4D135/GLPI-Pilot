@@ -240,6 +240,50 @@ public static class GlpiPilotCiWindow {
         if ($process.ExitCode -ne 0) { throw "The packaged app closed with code $($process.ExitCode)." }
         if ((Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -ne $settingsHash) { throw 'The synthetic settings file changed during startup or shutdown.' }
         $messages.Add('PASS: normal shutdown, exit code 0, exact synthetic settings preserved. No browser or SSO interaction requested.')
+
+        # User-initiated zoom must persist across two real EXE launches. Keep the
+        # no-interaction startup byte-preservation check above independent.
+        $process.Dispose(); $process = $null
+        $harness = Join-Path $OutputDirectory 'wpf-harness/WindowsStartupChecks.exe'
+        if (-not (Test-Path -LiteralPath $harness -PathType Leaf)) { throw 'The already validated Windows UI harness is unavailable.' }
+        foreach ($mode in @('exercise', 'verify-restore')) {
+            if (Test-Path -LiteralPath $startupLog) { Remove-Item -LiteralPath $startupLog -Force }
+            $process = [Diagnostics.Process]::new()
+            $process.StartInfo = $start
+            $clock.Restart()
+            if (-not $process.Start()) { throw "The packaged executable did not start for zoom $mode." }
+            $ready = $false
+            while ($clock.Elapsed.TotalSeconds -lt 90) {
+                $process.Refresh()
+                if ($process.HasExited) { throw "The pack exited before zoom $mode (code $($process.ExitCode))." }
+                $text = ''
+                if (Test-Path -LiteralPath $startupLog) {
+                    try { $text = [IO.File]::ReadAllText($startupLog) }
+                    catch [IO.IOException] { }
+                }
+                if ($text.Contains('[ÉCHEC]', [StringComparison]::Ordinal)) { throw "The packaged app reported a startup failure for zoom $mode." }
+                if ($text.Contains('[PRÊT]', [StringComparison]::Ordinal) -and $process.MainWindowHandle -ne [IntPtr]::Zero -and
+                    $process.MainWindowTitle -eq 'GLPI Pilot' -and [GlpiPilotCiWindow]::IsWindowVisible($process.MainWindowHandle)) {
+                    $ready = $true; break
+                }
+                Start-Sleep -Milliseconds 250
+            }
+            if (-not $ready) { throw "The pack did not render within 90 seconds for zoom $mode." }
+            $summary = if ($mode -eq 'exercise') { 'PASS: packaged window zoom exercise completed;' }
+                else { 'PASS: packaged window zoom persisted at 110 % after restart and reset to 100 % through the real button.' }
+            Invoke-CheckedProcess -Executable $harness -Arguments @('--inspect-pack-window', $process.Id.ToString(), $mode) `
+                -LogName ("pack-zoom-$mode.log") -TimeoutSeconds 60 -ExpectedSummary $summary
+            if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(10000)) { throw "Normal shutdown after zoom $mode did not finish within 10 seconds." }
+            if ($process.ExitCode -ne 0) { throw "The packaged app closed with code $($process.ExitCode) after zoom $mode." }
+            $saved = [IO.File]::ReadAllText($settings) | ConvertFrom-Json
+            $expectedZoom = if ($mode -eq 'exercise') { 110 } else { 100 }
+            if ($saved.InterfaceZoomPercent -ne $expectedZoom -or $saved.PortalUrl -ne 'https://glpi.example.invalid/front/ticket.php' -or
+                $saved.Theme -ne 'dark' -or $saved.ExportFolder -ne (Join-Path $sandbox 'exports') -or $saved.Dashboard.PersonalTechnician -ne 'alex exemple') {
+                throw "Zoom $mode did not preserve the synthetic source, theme, export folder, personal identity and expected scale."
+            }
+            $messages.Add("PASS: real packaged-window zoom $mode; saved zoom $expectedZoom %, other synthetic preferences preserved, normal shutdown.")
+            $process.Dispose(); $process = $null
+        }
         $passed = $true
     }
     catch {
@@ -279,14 +323,16 @@ try {
         'BclChecks' {
             $suites = @(
                 @{ Project = 'StartupDiagnosticsChecks'; Log = 'startup-diagnostics-checks.log'; Summary = 'Startup diagnostics: 14 passed, 0 failed.' },
-                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '37/37 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '78/78' },
-                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '23/23 checks passed.' },
+                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '39/39 vérifications de configuration réussies.' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '84/84' },
+                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '25/25 checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
                 @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '33/33' },
                 @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '60/60' },
                 @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '41/41' },
-                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '65/65 vérifications réussies.' }
+                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '69/69 vérifications réussies.' },
+                @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '38/38' },
+                @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' }
             )
             foreach ($suite in $suites) {
                 $project = 'tests/' + $suite.Project + '/' + $suite.Project + '.csproj'
@@ -299,6 +345,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('publish', 'tests/WindowsStartupChecks/WindowsStartupChecks.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=false', '-o', $harness) `
                 -LogName 'windows-startup-build.log' -TimeoutSeconds 420
             Invoke-CheckedProcess -Executable (Join-Path $harness 'WindowsStartupChecks.exe') `
+                -Arguments @('--screenshots', (Join-Path $logs 'ui-previews')) `
                 -LogName 'windows-startup-checks.log' -TimeoutSeconds 90 -ExpectedSummary 'real Windows UI checks completed; no browser or user settings accessed.'
         }
         'BuildPack' {
