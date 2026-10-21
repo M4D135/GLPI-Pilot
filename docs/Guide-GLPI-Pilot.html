@@ -45,12 +45,21 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 1.4.0</div>
+    <div class="eyebrow">Guide de prise en main · Version 1.5.0</div>
     <h1>GLPI Pilot</h1>
     <p>Relancer une recherche GLPI, analyser ses résultats et consulter le détail des tickets depuis une interface claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
   </header>
   <article>
+    <section id="nouveautes-150">
+      <h2>Une interface qui s’adapte</h2>
+      <p><strong>− / 100 % / +</strong>, en haut, règle toute l’interface de 75 à 150 %, par pas de 5 %. Le pourcentage revient à 100 % au clic. Raccourcis : <kbd>Ctrl +</kbd>, <kbd>Ctrl −</kbd>, <kbd>Ctrl 0</kbd> ou <kbd>Ctrl + molette</kbd>. Le réglage est mémorisé sur votre poste et conservé lors d’un import de configuration.</p>
+      <p>Les cartes du dashboard prennent la hauteur de leur contenu. Les explications se déplient, les longues listes possèdent une vue complète paginée avec recherche, et la météo utilise le défilement de la page. Une hauteur manuelle fixe un minimum ; les données ne sont pas coupées. Le catalogue affiche six sources par page, avec recherche globale.</p>
+      <p>Techniciens, Tournées et Requêtes séparent les tableaux et leurs formulaires en sous-onglets. Chaque tableau dispose de sa propre zone visible. La navigation et les actions du relevé se réorganisent avec la largeur disponible et le zoom.</p>
+      <h3>Suivi opérationnel</h3>
+      <p>Les nouvelles sondes suivent les tickets en attente anciens ou sans modification, les urgences sans technicien, les affectations à un groupe seul, les planifiés en retard, les catégories manquantes et les résolutions restant à clôturer. Les durées depuis résolution proposent moyenne, médiane, P90 et maximum. Chaque valeur garde son échantillon et ses limites.</p>
+      <p>L’atelier propose <strong>64 modèles</strong>. Pour une configuration existante, <strong>Modèles +</strong> ajoute les modèles absents au brouillon ; <strong>Enregistrer</strong> valide l’ajout. Les requêtes déjà présentes et leurs favoris restent identiques. Les nouveaux modèles proposent des répartitions par ville, technicien et groupe.</p>
+    </section>
     <section id="nouveautes-140">
       <h2>Le nouvel espace 1.4.0</h2>
       <p>La navigation devient latérale sur grand écran et compacte quand la fenêtre se réduit. <kbd>Ctrl K</kbd> retrouve les écrans et actions. <kbd>Ctrl 1</kbd> à <kbd>Ctrl 9</kbd> change d’onglet ; <kbd>Ctrl L</kbd> sélectionne la source, <kbd>Ctrl F</kbd> recherche le relevé, <kbd>Ctrl R</kbd> extrait et <kbd>Ctrl E</kbd> exporte en Excel.</p>
@@ -83,7 +92,7 @@
 
     <section id="requetes">
       <h2>Atelier de requêtes</h2>
-      <p>La bibliothèque contient <strong>40 modèles</strong> pour les villes, techniciens, échéances, activité et qualité. Rechercher, mettre en favoris, dupliquer, modifier ou créer une requête. Les brouillons sont conservés pendant les changements de relevé ; une erreur de sauvegarde laisse la saisie disponible pour réessayer.</p>
+      <p>La bibliothèque contient <strong>64 modèles</strong> pour les villes, techniciens, échéances, activité et qualité. Rechercher, mettre en favoris, dupliquer, modifier ou créer une requête. Les brouillons sont conservés pendant les changements de relevé ; une erreur de sauvegarde laisse la saisie disponible pour réessayer.</p>
       <ol>
         <li>Choisir une base : toutes les lignes, actifs, retards, hautes priorités ou une autre cohorte du relevé.</li>
         <li>Ajouter des conditions sur des rôles du dashboard ou des en-têtes exacts. Combiner toutes les conditions ou au moins une.</li>
@@ -340,7 +349,7 @@
 <p>Si aucune fenêtre n’apparaît, ouvrir <strong>wad\support\DIAGNOSTIC_DEMARRAGE.cmd</strong> dans le pack extrait. Le lanceur observe uniquement l’EXE de ce pack pendant vingt secondes, puis ouvre son rapport dans le Bloc-notes. Copier ce rapport pour l’analyse. Une instance encore active reste ouverte ; le lanceur ne ferme pas d’autres processus et ne modifie ni réglages ni session SSO.</p>
 <p>Fermer une ancienne instance de GLPI Pilot avant un nouvel essai, même si elle n’apparaît que dans le Gestionnaire des tâches. La cause exacte du blocage initial n’est pas encore confirmée sur le poste Windows de l’utilisateur.</p></section>
   </article>
-  <footer>GLPI Pilot 1.4.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 1.5.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

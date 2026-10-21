@@ -1,4 +1,4 @@
-GLPI Pilot 1.4.0 — packs PROD et DEV, compilation Windows
+GLPI Pilot 1.5.0 — packs PROD et DEV, compilation Windows
 
 DEUX PACKS COMPLETS
 Chaque ZIP contient exactement GLPI-Pilot.exe et le dossier wad à sa racine.
@@ -31,7 +31,10 @@ WORKFLOW GITHUB ACTIONS
 1. Contrôles du démarrage, configuration et moteurs locaux.
 2. Compilation et exécution de vrais contrôles WPF sur données synthétiques.
 3. Construction et contrôle du contenu des packs PROD et DEV.
-4. Extraction puis premier rendu de l’EXE PROD dans un état temporaire.
+4. Extraction puis premier rendu de l’EXE PROD dans un état temporaire,
+   fermeture normale et conservation exacte de l’état sans interaction.
+   Deux nouveaux lancements contrôlent les vrais boutons de zoom, leurs
+   bornes et la mémorisation à 110 %, puis le retour à 100 %.
 5. Publication des deux ZIP en artefacts si ces étapes réussissent.
 Les journaux sont joints également en cas d’échec. Les artefacts de travail
 sont conservés 30 jours ; les packs publiés dans Releases restent disponibles.
@@ -40,6 +43,9 @@ Le workflow utilise contents:read et ne publie pas lui-même de Release.
 Le contrôle du pack refuse tout état GLPI Pilot déjà présent sur le runner.
 Il vérifie le premier rendu, une vraie fenêtre visible et la fermeture
 normale, avec un délai global. Aucun portail GLPI ni SSO métier n’est lancé.
+Les contrôles WPF joignent des captures PNG synthétiques des deux thèmes,
+de plusieurs tailles et des zooms 100, 125 et 150 %. Les captures restent
+dans l’artefact de journaux ; elles ne contiennent aucune donnée utilisateur.
 
 PORTEE DES VERIFICATIONS
 La compilation croisée Linux pour Windows ne prouve pas un démarrage WPF.

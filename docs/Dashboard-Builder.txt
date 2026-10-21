@@ -1,4 +1,15 @@
-GLPI Pilot 1.4.0 — dashboards et atelier de requêtes
+GLPI Pilot 1.5.0 — dashboards et atelier de requêtes
+
+ZOOM ET DEFILEMENT
+Les boutons − / 100 % / + règlent l’interface de 75 à 150 %, par pas de 5 %.
+Ctrl+Plus, Ctrl+Moins, Ctrl+0 et Ctrl+molette offrent les mêmes commandes.
+Le pourcentage est mémorisé localement ; un import de configuration le conserve.
+Les cartes suivent leur contenu, sans ascenseur interne de consultation.
+Déplier une méthode de calcul agrandit la carte et repousse les suivantes.
+La hauteur manuelle est un minimum ; elle ne coupe pas le contenu.
+Les grandes listes ouvrent leur détail paginé et recherchable dans le dashboard.
+Le catalogue conserve une recherche globale et affiche six résultats par page.
+Les vues de gestion séparent tableaux et formulaires par sous-onglets.
 
 CHOISIR SON ESPACE
 Dashboard contient la vue globale du relevé.
@@ -62,7 +73,10 @@ retards, échéances, ancienneté et absence d’affectation par ville.
 Les mêmes définitions suivent le périmètre du technicien consulté.
 
 ATELIER DE REQUETES
-La bibliothèque commence avec 40 modèles, modifiables et duplicables.
+La bibliothèque commence avec 64 modèles, modifiables et duplicables.
+Modèles + ajoute les modèles manquants à la bibliothèque courante, puis
+Enregistrer les mémorise. Une définition déjà présente, même personnalisée,
+n’est pas remplacée et ses favoris sont conservés. Limite totale : 128.
 Rechercher une requête, choisir sa catégorie ou ses favoris.
 Une requête sélectionne une base de lignes : relevé, actifs, retards, etc.
 Ajouter jusqu’à 20 conditions, toutes requises (ET) ou au moins une (OU).

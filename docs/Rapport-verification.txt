@@ -1,159 +1,89 @@
-GLPI Pilot 1.4.0 — rapport de vérification
+GLPI Pilot 1.5.0 — rapport de vérification
 Date : 21 octobre 2026
 Cible : Windows x64, WPF, .NET 10 autonome
 
-RESULTAT ET PORTEE
-La compilation Windows, la publication autonome et 424 contrôles automatisés
-ont réussi dans cet environnement Linux. Ce total comprend 395 contrôles
-du moteur et de la configuration, et 29 scénarios avec Chromium sur des pages
-synthétiques interceptées. Il ne comprend aucun test d’exécution WPF Windows.
+ETAT A LA REDACTION
+L’application et le harnais Windows ont été compilés depuis Linux :
+0 erreur ; avertissement NU1900 lié à l’accès réseau limité au service NuGet
+de données de vulnérabilité. Ce résultat ne vaut ni exécution Windows ni
+audit de vulnérabilité réussi. Le résultat Windows 1.5.0 reste à établir
+par le workflow et ses journaux associés au commit exact de livraison.
 
-L’interface Windows, son premier rendu, le gestionnaire de fenêtres du poste,
-le SSO d’entreprise et le portail réel de l’utilisateur n’ont pas été exécutés
-ici. Le problème initial « l’EXE ne démarre plus » n’a pas encore de cause
-confirmée par un journal provenant du poste utilisateur. Les protections de
-démarrage, le lanceur de diagnostic et un harnais Windows sont inclus.
-La présence du workflow GitHub ne signifie pas qu’il a été exécuté.
+CONTROLES 1.5.0 EFFECTIVEMENT RELANCES LOCALEMENT
+ConfigurationChecks       39/39
+DashboardChecks           84/84
+DashboardLayoutChecks     25/25
+QueryChecks               69/69
+NativeImportChecks        38/38
+ExportChecks               6/6
+AutomationChecks          33/33 — Chromium synthétique local, hors total CI
+Les autres résultats de versions précédentes ne sont pas ajoutés à ce bilan.
+Les suites métier inchangées prévues par la CI doivent être relancées sur
+Windows ; leur présence dans le dépôt ne constitue pas un résultat réussi.
 
-FONCTIONS AJOUTEES OU ETENDUES
-- Navigation adaptative, palette Ctrl+K, source mémorisée et progression réelle.
-- Conservation du relevé précédent pendant une actualisation ou après échec.
-- Recherche sur toutes les lignes chargées ; aperçu limité à 10 000 résultats.
-- Colonnes d’aperçu sélectionnables, réordonnables et mémorisées localement.
-- Dispositions globales et personnelles indépendantes, neuf modèles, jauges,
-  anneaux, styles, objectifs, seuils, déplacement et redimensionnement.
-- Gestion d’équipe, repères locaux, favoris et accès au dashboard personnel.
-- Correspondances de villes avec variantes et enrichissement sans modifier
-  le fichier natif ni les cellules d’origine.
-- Indicateurs par ville et état du repérage, répartition et préparation
-  de tournées par équipe ou technicien.
-- Atelier avec 40 modèles de requêtes, conditions ET/OU, sept agrégats,
-  regroupements, prévisualisation et ajout aux dashboards.
-- Partage des villes, alias, requêtes et deux ensembles de dispositions.
+POINTS COUVERTS PAR LES MODIFICATIONS
+- Zoom local mémorisé, borné de 75 à 150 %, indépendant du partage de config.
+- Hauteur automatique des widgets ; hauteur manuelle conservée comme minimum.
+  Les contrôles de disposition couvrent aussi des contenus de 1 450 et
+  1 830 pixels, sans plafonnement ni chevauchement à quatre largeurs.
+- Listes complètes du dashboard paginées et recherchables ; méthodes et
+  explications repliables, indices source conservés pour retrouver les lignes.
+- Cohortes de suivi et durées supplémentaires ; 64 modèles de requêtes.
+  L’ajout des modèles manquants conserve les requêtes existantes et demande
+  un enregistrement explicite du brouillon.
+- Annulation de l’import et de la fin d’export : aucun résultat de réussite
+  n’est publié après une annulation reconnue ; les fichiers déjà terminés
+  sont conservés. Aucune cellule n’est recodée ou nettoyée par ce correctif.
 
-CONTROLES RELANCES SUR LE CODE 1.4.0
-Suite                         Résultat   Journal joint
-StartupDiagnosticsChecks      14/14      startup-diagnostics-checks-1.4.0.log
-ConfigurationChecks           37/37      configuration-checks-1.4.0.log
-DashboardChecks               78/78      dashboard-checks-1.4.0.log
-DashboardLayoutChecks         23/23      dashboard-layout-checks-1.4.0.log
-PreviewQueryChecks            44/44      preview-query-checks-1.4.0.log
-TechnicianWorkloadChecks       33/33      technician-workload-checks-1.4.0.log
-CityDetectionChecks           60/60      city-detection-checks-1.4.0.log
-TourPlanningChecks            41/41      tour-planning-checks-1.4.0.log
-QueryChecks                   65/65      query-checks-1.4.0.log
-AutomationChecks              29/29      automation-checks-1.4.0.log
-Total                        424/424
+VALIDATION WINDOWS EXIGEE AVANT LA LIVRAISON
+Le script build-tools/Invoke-WindowsCi.ps1 sépare quatre étapes obligatoires.
+Chaque processus a un délai maximal, un code de sortie contrôlé et, pour
+les suites de tests, un résumé de réussite attendu. Un échec bloque la suite.
 
-Les programmes de contrôle lient directement les fichiers de production.
-Les données, noms de personnes, villes et domaines de test sont synthétiques.
-Aucun cookie, compte SSO, export réel ou contenu de ticket de l’utilisateur
-n’est nécessaire à ces contrôles ni inclus dans le pack.
+1. BclChecks relance onze suites (453 contrôles attendus) sur données synthétiques :
+   démarrage, configuration, dashboard, dispositions, aperçu, techniciens,
+   villes, tournées, requêtes, import et export. Le code de production est utilisé.
+2. WpfChecks publie puis exécute WindowsStartupChecks sur un bureau Windows.
+   Il construit les vues réelles et vérifie leur rendu dans les deux thèmes.
+   Les scénarios de géométrie et les captures couvrent 1440 × 900 à 100 %
+   en clair, 960 × 720 à 150 % en clair et 1280 × 850 à 125 % en sombre.
+   Ils contrôlent le défilement du dashboard personnel, les cartes sans
+   ascenseur interne actif, l’expansion météo et l’absence de recouvrement.
+   Une liste de 43 catégories doit rester accessible sur toutes ses pages,
+   avec recherche hors première page, indices corrects et retour au dashboard.
+3. BuildPack fabrique les ZIP PROD et DEV ; contrôle leur contenu, toutes les
+   empreintes SHA-256, le commit source et l’identité de leur exécutable.
+4. PackStartup extrait PROD dans un espace temporaire isolé et lance son EXE.
+   Le premier lancement exige le marqueur [PRÊT], une fenêtre principale
+   visible, une fermeture normale, le code 0 et les réglages synthétiques
+   strictement inchangés. Un état GLPI Pilot déjà présent entraîne un refus.
+   Deux redémarrages supplémentaires exercent les vrais boutons par Windows
+   UI Automation : −, +, retour à 100 %, limites 75/150 %, commandes dans
+   une fenêtre 960 × 720 à 150 %. Le zoom laissé à 110 % doit être retrouvé
+   au redémarrage suivant puis remis à 100 % par le bouton réel.
+   Source, thème, dossier d’export et identité synthétiques restent préservés.
 
-POINTS METIER VERIFIES
-Villes : MA, Mars et Marseille peuvent désigner Marseille ; mots entiers,
-accents et casse, noms composés, alias partagés, plusieurs villes dans le
-titre, titres manquants, Unicode incorrect, indices et métadonnées préservés.
-La liste d’origine est conservée ; des cellules surnuméraires sans en-têtes
-ne sont pas tronquées pour forcer un enrichissement. Les quatre états de
-repérage sont disjoints et leurs sondes suivent le périmètre personnel.
+JOURNAUX ET PREUVES PRODUITS PAR LA CI
+Répertoire par défaut : artifacts/windows-ci/logs/.
+- startup-diagnostics-checks.log ; configuration-checks.log
+- dashboard-checks.log ; dashboard-layout-checks.log
+- preview-query-checks.log ; technician-workload-checks.log
+- city-detection-checks.log ; tour-planning-checks.log ; query-checks.log
+- native-import-checks.log ; export-checks.log
+- windows-startup-build.log ; windows-startup-checks.log
+- ui-previews/*.png : captures synthétiques ; capture de l’échec si possible
+- pack-build.log ; pack-sha256.txt ; executable-sha256.txt
+- pack-startup.log ; pack-startup/*.log : diagnostics réels de l’EXE extrait
+- pack-zoom-exercise.log ; pack-zoom-verify-restore.log : actions UIA et reprise
+Les journaux locaux d’import, d’export et de dispositions portent le suffixe
+1.5.0 dans artifacts ; ils ne remplacent pas ces preuves d’exécution Windows.
 
-Requêtes : une colonne requise absente ou ambiguë rend la requête indisponible,
-même en OU. Une cellule numérique ou date illisible ne suffit pas à valider
-une condition. En OU, une autre condition vraie permet de retenir la ligne ;
-en ET, toutes doivent être vraies et lisibles. Les lignes contenant une valeur
-illisible sont distinguées des lignes non retenues. Les critères restent
-littéraux, sans SQL, script ou expression régulière exécutée.
-
-Les pourcentages utilisent la population de base avant les conditions.
-Les sommes et moyennes sans contribution restent indisponibles. Les lignes
-filtrées et les contributeurs d’un agrégat sont distingués. Un regroupement
-compte des lignes, même lorsque l’indicateur principal est une somme ou une
-moyenne. Les affectations multiples respectent les règles du dashboard.
-Une requête personnelle ne peut pas sortir des lignes du technicien.
-L’annulation empêche la publication d’une bibliothèque partiellement calculée.
-
-Tournées : périmètres équipe/personne, conservation des tickets non localisés,
-priorités et échéances calculables, indices de lignes, exports complets,
-ordre manuel mémorisé et intégrité des préférences. L’ordre de proximité
-utilise des coordonnées renseignées et des distances à vol d’oiseau ; il ne
-produit pas d’itinéraire routier ni de temps de trajet.
-
-Extraction : SSO simulé, retour à la recherche filtrée, onglets, iframe,
-exports GLPI représentatifs, CSV toutes-pages et vérification Afficher tout,
-pagination, téléchargement incomplet, données multiligne et contrôles Unicode,
-conservation du reçu natif et cellules Excel sans formule exécutée.
-Les deux nouveaux scénarios vérifient la détection des villes dans le vrai
-parcours automatique avec et sans Excel. Le CSV natif est identique octet
-pour octet ; le CSV enrichi et l’Excel ont les lignes et colonnes attendues.
-Le test de fenêtre observe les commandes Playwright/CDP, pas le premier plan
-réel du gestionnaire de fenêtres Windows.
-
-Configuration : validation stricte du JSON brut avant normalisation, refus
-des champs inconnus ou dupliqués, limites, copies indépendantes et migration.
-Les définitions de villes et de requêtes se partagent ; leurs critères font
-partie du fichier transmis. L’identité personnelle, les objectifs et notes de
-gestion d’équipe, l’ordre de tournée, les colonnes de l’aperçu, le dossier local
-et le profil SSO restent sur le poste. Les diagnostics structurels n’impriment
-pas les noms de villes, les alias, les critères, les cellules ou l’identité.
-
-COMPILATION ET PUBLICATION
-SDK utilisé : .NET 10.0.402.
-Runtime autonome : .NET / WindowsDesktop 10.0.13.
-Pilote : Microsoft.Playwright 1.63.0.
-
-Le projet de production et le harnais WindowsStartupChecks ont été compilés
-en Release avec succès : 0 erreur et 2 avertissements NU1900.
-Journal : windows-startup-build-1.4.0.log.
-La publication autonome win-x64 a terminé avec le code 0 et un avertissement
-NU1900. Journal joint : build-publish-wpf-1.4.0.log.
-
-NU1900 indique que le service NuGet de données de vulnérabilité n’était pas
-joignable. Les dépendances déjà restaurées ont permis la compilation ; cette
-publication ne constitue pas un audit de vulnérabilité réussi.
-
-Les scripts PowerShell, le script de conditionnement Python et la structure
-YAML du workflow ont été analysés. Le résumé attendu par la CI correspond
-exactement au programme de 65 contrôles des requêtes. Cette validation de
-syntaxe ne remplace pas l’exécution des scripts sur Windows.
-Journal : packaging-script-checks-1.4.0.log.
-
-CONTROLES WINDOWS PREPARES, NON EXECUTES ICI
-WindowsStartupChecks construit onze vues réelles, applique les thèmes,
-exerce les graphiques, la prévisualisation asynchrone et les changements de
-source, puis observe leurs événements de rendu. Les préférences de tournée
-utilisent un dossier temporaire isolé. Aucun navigateur métier n’est ouvert.
-
-Le workflow .github/workflows/windows.yml prévoit ces contrôles, la création
-du pack et le lancement de son EXE extrait dans un état temporaire isolé.
-Le succès exige une fenêtre visible, le marqueur de premier rendu et une
-fermeture normale. Les délais sont bornés ; l’absence de session interactive
-Windows entraîne un refus explicite, sans prétendre à une réussite.
-Ce rapport décrit les contrôles locaux, avant exécution du workflow Windows.
-Les résultats Windows ultérieurs sont associés au commit exact dans l’onglet
-Actions du dépôt. Voir GitHub-et-compilation.txt et les notes de Release.
-
-JOURNAUX HISTORIQUES SEPARES, NON AJOUTES AU TOTAL 424
-Les suites spécialisées suivantes, inchangées, conservent leurs résultats
-1.3.0 : BrowserChecks 11/11, ExportChecks 6/6, NativeImportChecks 35/35 et
-TicketDetailChecks 27/27. Elles n’ont pas été relancées intégralement pour ce
-pack ; leurs journaux portent explicitement baseline-1.3.0.
-Les anciens contrôles DOM 1.1.0 / 1.1.1 sont aussi fournis comme historique.
-Le parcours automatique actuel exerce à nouveau les adaptateurs concernés.
-
-CONDITIONNEMENT DU PACK COMPLET
-Le conditionnement 1.4.0 exige la publication fraîche, ses journaux et les
-fichiers de support. Il contrôle les signatures PE x64/GUI, asInvoker et la
-version de l’EXE, le pilote Windows complet et son identité avec le pilote
-précédemment distribué, les sources nouvelles, les CRC des deux archives et
-les empreintes SHA-256 des fichiers. Il refuse d’écraser un pack existant.
-Le résultat de ces contrôles est conservé dans le manifeste de livraison.
-
-La distribution comporte désormais deux ZIP complets, PROD et DEV.
-Chacun contient uniquement GLPI-Pilot.exe et wad à sa racine. PROD comprend
-le pilote complet, les licences, la documentation et les diagnostics.
-DEV ajoute les sources complètes dépliées sous wad/sources. Les journaux de
-validation sont conservés dans les artefacts de contrôle et la livraison DEV.
-Aucun fichier d’un ancien pack n’est nécessaire. L’EXE doit rester accompagné
-de tout le dossier wad ; Edge ou Chrome doit être installé sur le poste.
-Le fichier SHA256SUMS.txt permet de contrôler les fichiers extraits.
+PORTEE ET LIMITES
+Les contrôles utilisent exclusivement des données et préférences synthétiques.
+Ils n’ouvrent pas le navigateur métier, n’authentifient aucun compte SSO et
+ne se connectent pas au portail réel de l’utilisateur. Les captures ne
+contiennent donc pas ses tickets. Le SSO, les droits, la version du portail
+et le maintien au premier plan sur le poste restent à confirmer sur ce poste.
+Une absence de bureau Windows interactif est signalée comme non-exécution,
+jamais comme réussite. Les résultats définitifs sont ceux du run du commit
+livré, avec ses journaux, ses captures et les empreintes des deux ZIP.
