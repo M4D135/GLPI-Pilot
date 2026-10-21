@@ -15,6 +15,8 @@ var checks = new List<(string Name, Action Run)>
     ("Requêtes : champs inconnus et dupliqués refusés à chaque niveau", CheckQueriesUnknownFields),
     ("Anciennes configurations : villes et requêtes récupérées sans données synthétiques", CheckLocalAnalyticsMigration),
     ("Anciens réglages : objets, chaînes et collections null normalisés", CheckOldNulls),
+    ("Zoom : valeur par défaut, pas de cinq et bornes sûres", CheckZoomBounds),
+    ("Zoom : préférence locale préservée pendant les imports et absente du partage", CheckZoomTransfer),
     ("Export portable : filtres conservés, secrets et dossier local exclus", CheckPortableExport),
     ("Import portable : aucune mutation et dossier du poste conservé", CheckPortableImport),
     ("Ancien settings.json : migration sans reprendre le dossier distant", CheckLegacy),
@@ -126,7 +128,7 @@ void CheckPortableExport()
         True(!json.Contains(forbidden, StringComparison.OrdinalIgnoreCase), "La configuration exportée ne doit pas contenir les données de session ni le dossier local.");
     using var document = JsonDocument.Parse(json);
     Equal("glpi-pilot.configuration", document.RootElement.GetProperty("Schema").GetString());
-    Equal(1, document.RootElement.GetProperty("SchemaVersion").GetInt32()); Equal("1.4.0", document.RootElement.GetProperty("AppVersion").GetString());
+    Equal(1, document.RootElement.GetProperty("SchemaVersion").GetInt32()); Equal("1.5.0", document.RootElement.GetProperty("AppVersion").GetString());
     string exportedUrl = document.RootElement.GetProperty("Settings").GetProperty("PortalUrl").GetString()!;
     True(exportedUrl.Contains("criteria%5B0%5D%5Bvalue%5D=notold", StringComparison.Ordinal) && exportedUrl.Contains("start=20", StringComparison.Ordinal), "Les critères et la position ne doivent pas être perdus.");
     Equal(originalUrl, settings.PortalUrl); True(settings.TicketDetails.UrlTemplate.Contains("PRIVATE-ID-TOKEN", StringComparison.Ordinal), "L’export ne doit pas modifier l’objet courant.");
@@ -169,6 +171,30 @@ void CheckLegacy()
     Equal("E:\\LOCAL", imported.ExportFolder); Equal("light", imported.Theme); Equal(180, imported.TimeoutSeconds);
     Equal("https://glpi.example.test/front/ticket.php?start=0", imported.PortalUrl);
     Equal(5000, imported.TicketDetails.MaxRowsPerSection); Equal(30, imported.Dashboard.OldDays);
+}
+
+void CheckZoomBounds()
+{
+    Equal(100, JsonSerializer.Deserialize<AppSettings>("{}")!.InterfaceZoomPercent);
+    foreach (var (input, expected) in new[] { (int.MinValue, 75), (0, 75), (74, 75), (75, 75), (77, 75), (78, 80), (103, 105), (149, 150), (150, 150), (int.MaxValue, 150) })
+    {
+        var settings = new AppSettings { InterfaceZoomPercent = input };
+        settings.Normalize(); Equal(expected, settings.InterfaceZoomPercent);
+        Equal(expected, settings.Copy().InterfaceZoomPercent);
+    }
+}
+
+void CheckZoomTransfer()
+{
+    var source = Sample(); source.InterfaceZoomPercent = 80;
+    var destination = Sample(); destination.InterfaceZoomPercent = 125;
+    string path = Path.Combine(temporary, "zoom-local.json");
+    ConfigurationTransferService.Export(path, source);
+    True(!File.ReadAllText(path).Contains("InterfaceZoomPercent", StringComparison.Ordinal), "Le zoom de l’écran ne doit pas être transmis à un collègue.");
+    Equal(125, ConfigurationTransferService.Import(path, destination).InterfaceZoomPercent);
+    Equal(125, ConfigurationTransferService.Import(Write("{\"Theme\":\"light\",\"InterfaceZoomPercent\":80}"), destination).InterfaceZoomPercent);
+    Equal(125, destination.InterfaceZoomPercent); Equal(80, source.InterfaceZoomPercent);
+    Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"1.5.0\",\"Settings\":{\"InterfaceZoomPercent\":80}}"), destination));
 }
 
 void CheckEnvelope()
@@ -363,7 +389,7 @@ void CheckLayoutsRoundTrip()
         {
             new() { Id = "board-analysis", Name = "Analyse du relevé", Widgets = new()
             {
-                new() { Id = "metric-one", Kind = "metric", SourceKey = "active", Title = "Ma charge", Span = 4, Height = 220, Accent = "teal", Style = "outline", Presentation = "compact", Locked = true },
+                new() { Id = "metric-one", Kind = "metric", SourceKey = "active", Title = "Ma charge", Span = 4, Height = 220, AutoHeight = false, Accent = "teal", Style = "outline", Presentation = "compact", Locked = true },
                 new() { Id = "note-one", Kind = "note", Title = "Consignes", Note = "Texte libre\nDeuxième ligne", Span = 8, Height = 320, Accent = "purple", Style = "accent", Hidden = true },
                 new() { Id = "status-bars", Kind = "distribution", SourceKey = "status", Span = 6, Height = 480, TopCount = 15, Presentation = "list", ShowDescription = false }
             } },
@@ -378,6 +404,7 @@ void CheckLayoutsRoundTrip()
     Equal("metric-one", board.Widgets[0].Id); Equal("Ma charge", board.Widgets[0].Title); Equal("teal", board.Widgets[0].Accent);
     Equal("outline", board.Widgets[0].Style); Equal(4, board.Widgets[0].Span); Equal(220, board.Widgets[0].Height);
     True(board.Widgets[0].Locked, "Le verrouillage doit être partagé.");
+    True(!board.Widgets[0].AutoHeight && board.Widgets[1].AutoHeight, "Les hauteurs automatique et minimale manuelle doivent être partagées.");
     Equal("Texte libre\nDeuxième ligne", board.Widgets[1].Note); True(board.Widgets[1].Hidden, "Un widget masqué reste dans la disposition.");
     Equal("list", board.Widgets[2].Presentation); Equal(15, board.Widgets[2].TopCount); True(!board.Widgets[2].ShowDescription, "L’option d’explication est conservée.");
     var copied = imported.Copy(); copied.Dashboard.Layout.Boards[0].Widgets[0].Title = "Modifié";
@@ -554,7 +581,7 @@ void CheckLayoutTypes()
     foreach (object widget in new object[]
     {
         new { Id = "w", Kind = "script" }, new { Id = "w", Style = "unknown" }, new { Id = "w", Accent = "#bad" },
-        new { Id = "w", Presentation = "unknown" }, new { Id = "w", Hidden = "true" }, new { Id = "w", ShowDescription = 1 },
+        new { Id = "w", Presentation = "unknown" }, new { Id = "w", Hidden = "true" }, new { Id = "w", ShowDescription = 1 }, new { Id = "w", AutoHeight = "true" },
         new { Id = "w", OnClick = "delete" }, new { Id = "w", Html = "<script>test</script>" }
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(new[] { widget })), Sample()));
     foreach (string json in new[] { "{\"Dashboard\":{\"Layout\":{\"Version\":2}}}", "{\"Dashboard\":{\"Layout\":{\"Boards\":null}}}", "{\"Dashboard\":{\"Layout\":{\"Script\":\"x\"}}}" })
