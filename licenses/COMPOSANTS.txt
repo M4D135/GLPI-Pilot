@@ -1,0 +1,32 @@
+GLPI Pilot 1.1.2 — composants redistribués
+
+.NET et Windows Desktop Runtime 10.0.13 : licences Microsoft .NET ci-jointes.
+Microsoft.Playwright 1.63.0 : licence MIT ci-jointe.
+Pilote JavaScript Playwright : licence et notices dans wad/.playwright/package.
+Node.js du pilote Playwright : licence dans wad/.playwright/node/LICENSE.
+
+Edge et Chrome ne sont pas redistribués dans ce pack. Le logiciel utilise le
+navigateur déjà installé sur le poste et n’installe pas de navigateur au lancement.
+
+Le Chromium utilisé pendant les tests sous Linux ne fait pas partie du pack.
+GLPI Pilot est un outil indépendant et n’est pas un produit officiel GLPI.
+
+Sources techniques consultées pour la construction :
+https://playwright.dev/dotnet/docs/browsers
+https://playwright.dev/dotnet/docs/api/class-browsertype
+https://playwright.dev/dotnet/docs/downloads
+https://learn.microsoft.com/en-us/dotnet/core/deploying/
+https://help.glpi-project.org/documentation/readme-1-1/search
+
+Sources complémentaires du correctif 1.1.1 :
+https://github.com/glpi-project/glpi/blob/9.5.13/inc/html.class.php
+https://github.com/glpi-project/glpi/blob/9.5.13/inc/dropdown.class.php
+https://github.com/glpi-project/glpi/blob/9.1.7/inc/dropdown.class.php
+https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-locksetforegroundwindow
+https://chromedevtools.github.io/devtools-protocol/tot/Browser/
+
+Sources complémentaires du correctif 1.1.2 :
+- Microsoft Office Open XML ST_Xstring (contrôles, CR et échappements littéraux) :
+  https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/bd0aa042-434a-4ca7-b25f-4e1fd25a954d
+- Priorité de fenêtre WPF (suspendue pour l’accès explicite au navigateur) :
+  https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.topmost?view=windowsdesktop-10.0
