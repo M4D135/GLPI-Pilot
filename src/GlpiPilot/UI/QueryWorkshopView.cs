@@ -19,7 +19,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     private readonly TextBox _search = Input("Rechercher dans mes requêtes", 250);
     private readonly ComboBox _categoryFilter = Selector("Filtrer les requêtes par catégorie");
     private readonly CheckBox _favoritesOnly = Check("Favoris seulement");
-    private readonly ListBox _libraryList = new() { Height = 340, DisplayMemberPath = nameof(LibraryEntry.Label), Margin = new Thickness(0, 10, 0, 0) };
+    private readonly ListBox _libraryList = new() { MinHeight = 0, DisplayMemberPath = nameof(LibraryEntry.Label), Margin = new Thickness(0, 10, 0, 0) };
     private readonly TextBlock _libraryCount = Text("Aucune requête", 12, "MutedBrush");
     private readonly TextBlock _sourceInfo = Text("Chargez un relevé pour prévisualiser vos requêtes. Vous pouvez déjà les préparer.", 12, "MutedBrush");
     private readonly TextBlock _status = Text("Choisissez une requête ou créez la vôtre.", 12, "MutedBrush");
@@ -38,11 +38,14 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     private readonly TextBlock _conditionCount = Text("Aucune condition supplémentaire", 12, "MutedBrush");
     private readonly TextBlock _widgetHint = Text("Enregistrez la bibliothèque avant d’ajouter un widget.", 12, "MutedBrush");
     private readonly StackPanel _editorFields = new();
+    private readonly TabControl _sections = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+    private readonly TabItem _definitionTab = new() { Header = "Définition" }, _conditionsTab = new() { Header = "Conditions" }, _resultTab = new() { Header = "Résultat" }, _distributionTab = new() { Header = "Répartition" };
     private readonly DataGrid _conditions = EditableGrid();
     private readonly ObservableCollection<ConditionRow> _conditionRows = new();
     private readonly ObservableCollection<QueryChoice> _fields = new(), _optionalFields = new(), _bases = new();
     private readonly DataGridComboBoxColumn _conditionFieldColumn = new();
     private readonly Button _new = Command("Nouvelle"), _duplicate = Command("Dupliquer"), _delete = Command("Supprimer");
+    private readonly Button _templates = Command("Ajouter les modèles manquants");
     private readonly Button _addCondition = Command("Ajouter une condition"), _removeCondition = Command("Retirer la sélection");
     private readonly Button _save = Command("Enregistrer la bibliothèque"), _restore = Command("Rétablir les réglages enregistrés");
     private readonly Button _preview = Command("Prévisualiser"), _cancelPreview = Command("Annuler le calcul");
@@ -71,6 +74,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     public QueryWorkshopView()
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        VerticalContentAlignment = VerticalAlignment.Stretch;
         _optionalFields.Add(new QueryChoice("", "Aucun / non utilisé"));
         foreach (var choice in QueryService.BaseProbes) _bases.Add(choice);
         EnsureFields(Array.Empty<string>());
@@ -84,23 +88,30 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         };
         _widgetScope.ItemsSource = new[] { new QueryChoice("global", "Dashboard global"), new QueryChoice("personal", "Dashboard personnel") };
         _widgetScope.SelectedValue = "global";
-        _description.AcceptsReturn = true; _description.TextWrapping = TextWrapping.Wrap; _description.Height = 68;
-        _description.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _description.AcceptsReturn = true; _description.TextWrapping = TextWrapping.Wrap; _description.MinHeight = 68;
+        _description.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
         _confirmation.SetResourceReference(Border.BackgroundProperty, "NoticeBrush");
 
-        var root = new StackPanel();
-        var introduction = new StackPanel();
-        introduction.Children.Add(Text("Atelier de requêtes", 23, "TextBrush", FontWeights.SemiBold));
-        introduction.Children.Add(Text("Composez vos propres indicateurs à partir du relevé : choisissez un périmètre, ajoutez vos conditions, puis transformez le résultat en widget global ou personnel.", 13, "MutedBrush", margin: new Thickness(0, 8, 0, 10)));
-        introduction.Children.Add(_sourceInfo); root.Children.Add(Card(introduction));
-        var workspace = new Grid { Margin = new Thickness(0, 16, 0, 0) };
-        workspace.ColumnDefinitions.Add(new() { Width = new GridLength(285) }); workspace.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        workspace.RowDefinitions.Add(new() { Height = GridLength.Auto }); workspace.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var library = BuildLibrary(); var editor = BuildEditor();
-        library.VerticalAlignment = editor.VerticalAlignment = VerticalAlignment.Top;
-        library.Margin = new Thickness(0, 0, 16, 0); Grid.SetColumn(editor, 1);
-        workspace.Children.Add(library); workspace.Children.Add(editor); root.Children.Add(workspace);
-        root.Children.Add(BuildPreview()); Content = root;
+        var root = new Grid();
+        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var header = new StackPanel();
+        var commands = new WrapPanel();
+        commands.Children.Add(Text("Requêtes", 23, "TextBrush", FontWeights.SemiBold, new Thickness(0, 0, 18, 7)));
+        _save.SetResourceReference(Button.StyleProperty, "PrimaryButton");
+        _save.Content = "Enregistrer"; _save.ToolTip = "Enregistrer toute la bibliothèque de requêtes";
+        commands.Children.Add(_save); commands.Children.Add(_preview);
+        header.Children.Add(commands); root.Children.Add(header);
+        AutomationProperties.SetAutomationId(_sections, "QueryWorkspaceTabs");
+        _sections.Items.Add(new TabItem { Header = "Bibliothèque", Content = BuildLibrary() });
+        _definitionTab.Content = BuildEditor(); _sections.Items.Add(_definitionTab);
+        _conditionsTab.Content = BuildConditions(); _sections.Items.Add(_conditionsTab);
+        _resultTab.Content = BuildPreview(); _sections.Items.Add(_resultTab);
+        _distributionTab.Content = BuildDistribution(); _sections.Items.Add(_distributionTab);
+        Grid.SetRow(_sections, 1); root.Children.Add(_sections);
+        _status.Margin = new Thickness(0, 8, 0, 0); Grid.SetRow(_status, 2); root.Children.Add(_status);
+        Content = root;
         ConfigureConditionColumns();
         _conditions.ItemsSource = _conditionRows;
         VirtualizingPanel.SetIsVirtualizing(_libraryList, true); VirtualizingPanel.SetVirtualizationMode(_libraryList, VirtualizationMode.Recycling);
@@ -117,6 +128,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         foreach (var field in new[] { _baseProbe, _match, _aggregate, _aggregateField, _groupBy }) field.SelectionChanged += (_, _) => MarkEdited();
         _conditions.SelectionChanged += (_, _) => UpdateEnabled();
         _new.Click += (_, _) => EditAction(NewQuery); _duplicate.Click += (_, _) => EditAction(DuplicateQuery);
+        _templates.Click += (_, _) => EditAction(AddMissingTemplates);
         _delete.Click += (_, _) => AskDelete(); _restore.Click += (_, _) => AskRestore();
         _addCondition.Click += (_, _) => EditAction(AddCondition); _removeCondition.Click += (_, _) => EditAction(RemoveConditions);
         _save.Click += (_, _) => RequestSave();
@@ -125,15 +137,6 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         _preview.Click += (_, _) => StartPreview(); _cancelPreview.Click += (_, _) => InvalidatePreview("Calcul annulé. Votre brouillon est conservé.");
         _addMetric.Click += (_, _) => RequestWidget(false); _addDistribution.Click += (_, _) => RequestWidget(true);
         AttachPreviewHandlers();
-        workspace.SizeChanged += (_, _) =>
-        {
-            var narrow = workspace.ActualWidth < 930;
-            workspace.ColumnDefinitions[0].Width = narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(285);
-            workspace.ColumnDefinitions[1].Width = narrow ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-            Grid.SetColumn(editor, narrow ? 0 : 1); Grid.SetRow(editor, narrow ? 1 : 0);
-            library.Margin = narrow ? new Thickness(0, 0, 0, 14) : new Thickness(0, 0, 16, 0);
-            _libraryList.Height = narrow ? 210 : 340;
-        };
         LoadEditor(); RebuildLibrary(); UpdateEnabled();
     }
 
@@ -291,7 +294,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         finally { _loading = previousLoading; }
         RebuildLibrary();
         InvalidatePreview("Nouvelle requête. Prévisualisez-la avant de l’enregistrer.");
-        SetStatus("Brouillons non enregistrés.", "WarningBrush"); _name.Focus(); _name.SelectAll();
+        SetStatus("Brouillons non enregistrés.", "WarningBrush"); _sections.SelectedItem = _definitionTab; _name.Focus(); _name.SelectAll();
     }
 
     private void AskDelete()
@@ -312,6 +315,24 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         AskConfirmation("Rétablir la dernière bibliothèque enregistrée et abandonner tous les brouillons de cette page ?", "Rétablir la bibliothèque", () => LoadSettings(_saved));
     }
 
+    private void AddMissingTemplates()
+    {
+        CommitDraft();
+        var added = _working.AddMissingTemplates();
+        if (added == 0)
+        {
+            SetStatus(_working.Queries.Count >= MaximumQueries
+                ? "Bibliothèque pleine : aucun modèle ajouté. Vous pouvez libérer une place en supprimant une requête."
+                : "Tous les modèles disponibles sont déjà présents. Vos requêtes sont conservées.", "MutedBrush");
+            return;
+        }
+        _dirty = true; EnsureSavedFields();
+        if (SelectedQuery == null) { _selectedId = _working.Queries.FirstOrDefault()?.Id; LoadEditor(); }
+        RebuildLibrary();
+        InvalidatePreview("Modèles ajoutés au brouillon. Prévisualisez une requête pour vérifier son résultat.");
+        SetStatus($"{added:N0} modèle(s) ajouté(s). Les requêtes existantes sont conservées. Cliquez sur Enregistrer pour garder cet ajout.", "WarningBrush");
+    }
+
     private void RequestWidget(bool distribution)
     {
         if (_busy || _disposed || _dirty || SelectedQuery is not { } query || !_saved.Queries.Any(item => item.Id == query.Id)) return;
@@ -329,6 +350,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     private void AskConfirmation(string message, string confirm, Action action)
     {
         _confirmationAction = action; _confirmationText.Text = message; _confirm.Content = confirm;
+        _sections.SelectedItem = _definitionTab;
         AutomationProperties.SetName(_confirm, confirm); _confirmation.Visibility = Visibility.Visible; _keep.Focus(); _confirmation.BringIntoView();
     }
 
@@ -376,7 +398,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     {
         var grid = new DataGrid { AutoGenerateColumns = false, CanUserAddRows = false, CanUserDeleteRows = false, CanUserSortColumns = false,
             EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Extended,
-            SelectionUnit = DataGridSelectionUnit.FullRow, Height = 220, RowHeight = 40, Margin = new Thickness(0, 8, 0, 10) };
+            SelectionUnit = DataGridSelectionUnit.FullRow, MinHeight = 0, RowHeight = 40, Margin = new Thickness(0, 8, 0, 10) };
         VirtualizingPanel.SetIsVirtualizing(grid, true); VirtualizingPanel.SetVirtualizationMode(grid, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(grid, true); return grid;
     }
 }

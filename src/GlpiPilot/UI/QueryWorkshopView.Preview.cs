@@ -17,12 +17,13 @@ public sealed partial class QueryWorkshopView
     private readonly TextBlock _previewExplanation = Text("", 12, "MutedBrush");
     private readonly TextBlock _bucketTitle = Text("Répartition des lignes retenues", 14, "TextBrush", FontWeights.SemiBold);
     private readonly TextBlock _bucketNote = Text("", 12, "MutedBrush");
-    private readonly StackPanel _bucketPanel = new() { Visibility = Visibility.Collapsed };
+    private readonly Grid _bucketPanel = new() { Visibility = Visibility.Collapsed };
+    private readonly TextBlock _distributionEmpty = Text("Prévisualisez une requête avec un regroupement pour consulter ici toutes ses catégories.", 14, "MutedBrush");
     private readonly DataGrid _buckets = new()
     {
         AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false,
         EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Single,
-        SelectionUnit = DataGridSelectionUnit.FullRow, Height = 230, RowHeight = 36, Margin = new Thickness(0, 9, 0, 10)
+        SelectionUnit = DataGridSelectionUnit.FullRow, MinHeight = 0, RowHeight = 36, Margin = new Thickness(0, 9, 0, 10)
     };
     private readonly Button _previewRows = Command("Voir les lignes retenues"), _contributionRows = Command("Voir les contributions au calcul"), _bucketRows = Command("Voir les lignes de cette catégorie");
     private QueryResult? _previewResult;
@@ -34,25 +35,42 @@ public sealed partial class QueryWorkshopView
     {
         var panel = new StackPanel();
         var heading = new DockPanel();
-        var actions = new WrapPanel(); actions.Children.Add(_preview); actions.Children.Add(_cancelPreview);
-        _preview.SetResourceReference(Button.StyleProperty, "PrimaryButton"); DockPanel.SetDock(actions, Dock.Right); heading.Children.Add(actions);
+        DockPanel.SetDock(_cancelPreview, Dock.Right); heading.Children.Add(_cancelPreview);
         heading.Children.Add(Text("Prévisualisation", 18, "TextBrush", FontWeights.SemiBold)); panel.Children.Add(heading);
+        _sourceInfo.Margin = new Thickness(0, 6, 0, 8); panel.Children.Add(_sourceInfo);
         panel.Children.Add(Text("Calcul explicite sur le dernier relevé chargé. Modifier une condition ou changer de relevé invalide le résultat précédent.", 12, "MutedBrush", margin: new Thickness(0, 3, 0, 12)));
         panel.Children.Add(_previewValue); panel.Children.Add(_previewSample);
         _previewMessage.Margin = new Thickness(0, 10, 0, 0); _previewExplanation.Margin = new Thickness(0, 6, 0, 0);
         panel.Children.Add(_previewMessage); panel.Children.Add(_previewExplanation);
         var rowActions = new WrapPanel { Margin = new Thickness(0, 12, 0, 4) }; rowActions.Children.Add(_previewRows); rowActions.Children.Add(_contributionRows); panel.Children.Add(rowActions);
-        _bucketPanel.Children.Add(_bucketTitle); _bucketPanel.Children.Add(_bucketNote); _bucketPanel.Children.Add(_buckets); _bucketPanel.Children.Add(_bucketRows); panel.Children.Add(_bucketPanel);
+        var openDistribution = Command("Consulter la répartition →");
+        openDistribution.Click += (_, _) => _sections.SelectedItem = _distributionTab; panel.Children.Add(openDistribution);
+        Section(panel, "Utiliser cette requête dans un dashboard", "Le widget reprend la requête enregistrée. Son résultat se recalculera avec les prochains relevés et le périmètre du dashboard.");
+        _widgetScope.MaxWidth = 300; _widgetScope.HorizontalAlignment = HorizontalAlignment.Stretch; panel.Children.Add(_widgetScope);
+        var widgets = new WrapPanel(); widgets.Children.Add(_addMetric); widgets.Children.Add(_addDistribution); panel.Children.Add(widgets); panel.Children.Add(_widgetHint);
+        return FormViewport(Card(panel));
+    }
+
+    private FrameworkElement BuildDistribution()
+    {
+        var panel = new Grid();
+        _distributionEmpty.HorizontalAlignment = HorizontalAlignment.Center;
+        _distributionEmpty.VerticalAlignment = VerticalAlignment.Center;
+        _distributionEmpty.MaxWidth = 440; _distributionEmpty.Margin = new Thickness(18);
+        panel.Children.Add(_distributionEmpty);
+        _bucketPanel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        _bucketPanel.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        _bucketPanel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var heading = new StackPanel(); heading.Children.Add(_bucketTitle); heading.Children.Add(_bucketNote);
+        _bucketPanel.Children.Add(heading); Grid.SetRow(_buckets, 1); _bucketPanel.Children.Add(_buckets);
+        Grid.SetRow(_bucketRows, 2); _bucketPanel.Children.Add(_bucketRows); panel.Children.Add(_bucketPanel);
         _buckets.Columns.Add(new DataGridTextColumn { Header = "Catégorie", Width = new DataGridLength(1, DataGridLengthUnitType.Star), MinWidth = 200,
             Binding = new Binding(nameof(DashboardBucket.Label)) { Mode = BindingMode.OneWay } });
         _buckets.Columns.Add(new DataGridTextColumn { Header = "Lignes", Width = 130,
             Binding = new Binding(nameof(DashboardBucket.Count)) { Mode = BindingMode.OneWay, StringFormat = "N0" } });
         VirtualizingPanel.SetIsVirtualizing(_buckets, true); VirtualizingPanel.SetVirtualizationMode(_buckets, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(_buckets, true);
         AutomationProperties.SetName(_buckets, "Répartition complète des résultats de la requête, double-cliquer pour voir les lignes");
-        Section(panel, "Utiliser cette requête dans un dashboard", "Le widget reprend la requête enregistrée. Son résultat se recalculera avec les prochains relevés et le périmètre du dashboard.");
-        _widgetScope.MaxWidth = 300; _widgetScope.HorizontalAlignment = HorizontalAlignment.Left; _widgetScope.Width = 280; panel.Children.Add(_widgetScope);
-        var widgets = new WrapPanel(); widgets.Children.Add(_addMetric); widgets.Children.Add(_addDistribution); panel.Children.Add(widgets); panel.Children.Add(_widgetHint);
-        var card = Card(panel); card.Margin = new Thickness(0, 16, 0, 0); return card;
+        return panel;
     }
 
     private void AttachPreviewHandlers()
@@ -106,12 +124,13 @@ public sealed partial class QueryWorkshopView
         _previewValue.Text = "—"; _previewSample.Text = _source == null ? "Aucun relevé chargé" : "Résultat à recalculer";
         _previewRows.Content = "Voir les lignes retenues"; _contributionRows.Content = "Voir les contributions au calcul";
         _previewMessage.Text = message; _previewMessage.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); _previewExplanation.Text = "";
-        _buckets.ItemsSource = null; _bucketPanel.Visibility = Visibility.Collapsed; UpdateEnabled();
+        _buckets.ItemsSource = null; _bucketPanel.Visibility = Visibility.Collapsed; _distributionEmpty.Visibility = Visibility.Visible; UpdateEnabled();
     }
 
     private void StartPreview()
     {
         if (_busy || _disposed || _source == null || _sourceSettings == null || _previewRunning) return;
+        _sections.SelectedItem = _resultTab;
         try
         {
             CommitDraft(); if (SelectedQuery is not { } current) return;
@@ -162,7 +181,7 @@ public sealed partial class QueryWorkshopView
             _contributionRows.Content = result.Available ? $"Voir les {metric.Rows.Length:N0} contributions au calcul" : "Voir les contributions au calcul";
             if (result.Distribution is { } distribution)
             {
-                _bucketPanel.Visibility = Visibility.Visible; _bucketTitle.Text = distribution.Title;
+                _bucketPanel.Visibility = Visibility.Visible; _distributionEmpty.Visibility = Visibility.Collapsed; _bucketTitle.Text = distribution.Title;
                 _bucketNote.Text = distribution.Available
                     ? distribution.Note + $" · {distribution.Buckets.Count:N0} catégories · base : {distribution.Denominator:N0} lignes"
                     : "Répartition indisponible. " + distribution.Note;

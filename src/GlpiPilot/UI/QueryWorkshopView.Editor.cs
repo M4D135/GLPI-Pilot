@@ -16,23 +16,41 @@ public sealed partial class QueryWorkshopView
 
     private FrameworkElement BuildLibrary()
     {
-        var panel = new StackPanel();
-        panel.Children.Add(Text("Mes requêtes", 17, "TextBrush", FontWeights.SemiBold));
-        panel.Children.Add(Text("Bibliothèque partagée avec votre configuration", 11, "MutedBrush", margin: new Thickness(0, 4, 0, 12)));
-        var actions = new WrapPanel(); actions.Children.Add(_new); actions.Children.Add(_duplicate); actions.Children.Add(_delete); panel.Children.Add(actions);
-        Field(panel, "Rechercher", _search); Field(panel, "Catégorie", _categoryFilter);
-        panel.Children.Add(_favoritesOnly); panel.Children.Add(_libraryCount); panel.Children.Add(_libraryList);
+        var panel = new Grid();
+        panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var filters = new StackPanel();
+        var actions = new WrapPanel(); actions.Children.Add(_new); actions.Children.Add(_duplicate); actions.Children.Add(_delete);
+        _templates.Content = "Modèles +"; _templates.ToolTip = "Ajouter les modèles manquants à ce brouillon, sans remplacer les requêtes existantes";
+        actions.Children.Add(_templates); filters.Children.Add(actions);
+        var searchFields = new Grid();
+        searchFields.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        searchFields.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        var searchField = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; Field(searchField, "Rechercher", _search); searchFields.Children.Add(searchField);
+        var categoryField = new StackPanel(); Field(categoryField, "Catégorie", _categoryFilter); Grid.SetColumn(categoryField, 1); searchFields.Children.Add(categoryField);
+        filters.Children.Add(searchFields);
+        var libraryInfo = new WrapPanel(); libraryInfo.Children.Add(_favoritesOnly); _libraryCount.Margin = new Thickness(12, 0, 0, 4); libraryInfo.Children.Add(_libraryCount);
+        filters.Children.Add(libraryInfo); panel.Children.Add(filters);
+        Grid.SetRow(_libraryList, 1); panel.Children.Add(_libraryList);
         ScrollViewer.SetHorizontalScrollBarVisibility(_libraryList, ScrollBarVisibility.Disabled);
         var itemStyle = new Style(typeof(ListBoxItem), TryFindResource(typeof(ListBoxItem)) as Style);
         itemStyle.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(nameof(LibraryEntry.Label)) { Mode = BindingMode.OneWay }));
         _libraryList.ItemContainerStyle = itemStyle;
-        _restore.Margin = new Thickness(0, 14, 0, 0); _restore.Content = Text("Rétablir les réglages enregistrés", 12); panel.Children.Add(_restore);
-        return Card(panel);
+        _libraryList.ToolTip = "Bibliothèque partagée avec votre configuration. Sélectionnez une requête, puis ouvrez sa définition ou prévisualisez-la.";
+        var footer = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var edit = Command("Modifier la requête →"); edit.Click += (_, _) => _sections.SelectedItem = _definitionTab;
+        edit.Content = "Modifier →"; edit.ToolTip = "Ouvrir la définition de la requête sélectionnée";
+        footer.Children.Add(edit);
+        _restore.Content = "Rétablir"; _restore.ToolTip = "Rétablir les réglages enregistrés et abandonner les brouillons de bibliothèque"; footer.Children.Add(_restore);
+        Grid.SetRow(footer, 2); panel.Children.Add(footer);
+        return panel;
     }
 
     private FrameworkElement BuildEditor()
     {
         var panel = new StackPanel(); panel.Children.Add(_editorTitle); panel.Children.Add(_noQuery);
+        panel.Children.Add(Text("Composez vos indicateurs à partir du relevé : définissez le périmètre et le calcul ici, puis vos critères dans Conditions. Prévisualisez le résultat avant de l’enregistrer ou de l’ajouter à un dashboard.", 12, "MutedBrush", margin: new Thickness(0, 6, 0, 10)));
         var confirm = new StackPanel(); confirm.Children.Add(_confirmationText);
         var confirmActions = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) }; confirmActions.Children.Add(_confirm); confirmActions.Children.Add(_keep);
         confirm.Children.Add(confirmActions); _confirmation.Child = confirm; panel.Children.Add(_confirmation);
@@ -42,23 +60,42 @@ public sealed partial class QueryWorkshopView
         Grid.SetColumn(_favorite, 1); _favorite.VerticalAlignment = VerticalAlignment.Center; identity.Children.Add(_favorite); _editorFields.Children.Add(identity);
         Section(_editorFields, "1 · Choisir le périmètre", "Les conditions sont appliquées aux lignes de ce périmètre de départ.");
         Field(_editorFields, "Sonde de départ", _baseProbe);
-        Section(_editorFields, "2 · Définir les conditions", "Sans condition supplémentaire, la requête garde tout son périmètre de départ. En mode OU, une condition vraie suffit, même si une autre cellule est illisible. Une colonne requise absente rend la requête indisponible.");
-        Field(_editorFields, "Combiner les conditions", _match);
-        var conditionActions = new WrapPanel(); conditionActions.Children.Add(_addCondition); conditionActions.Children.Add(_removeCondition); conditionActions.Children.Add(_conditionCount);
-        _editorFields.Children.Add(conditionActions); _editorFields.Children.Add(_conditions);
-        AutomationProperties.SetName(_conditions, "Conditions de la requête, champs opérateurs et valeurs modifiables");
-        _editorFields.Children.Add(Text("Utilisez les champs sémantiques pour retrouver les colonnes configurées, ou une colonne exacte du relevé. « Est vide » et « Est renseigné » n’attendent pas de valeur. Pour les dates, vous pouvez saisir AAAA-MM-JJ ; les durées sont exprimées en jours.", 11, "MutedBrush"));
-        Section(_editorFields, "3 · Calculer et regrouper", "Le résultat indiquera les données réellement utilisables. Une colonne absente ne devient pas une valeur zéro.");
+        Section(_editorFields, "2 · Calculer et regrouper", "Le résultat indiquera les données réellement utilisables. Une colonne absente ne devient pas une valeur zéro.");
         var calculation = new Grid(); calculation.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); calculation.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         var aggregatePanel = new StackPanel { Margin = new Thickness(0, 0, 14, 0) }; Field(aggregatePanel, "Calcul", _aggregate); calculation.Children.Add(aggregatePanel);
         var valuePanel = new StackPanel(); Field(valuePanel, "Champ du calcul", _aggregateField); Grid.SetColumn(valuePanel, 1); calculation.Children.Add(valuePanel); _editorFields.Children.Add(calculation);
         _editorFields.Children.Add(_aggregateHint); Field(_editorFields, "Répartition par · facultative", _groupBy);
         _editorFields.Children.Add(Text("Le regroupement compte les lignes retenues par catégorie. Il reste distinct d’une somme, d’une moyenne ou d’un autre calcul numérique.", 11, "MutedBrush"));
+        Section(_editorFields, "3 · Définir les conditions", "Sans condition supplémentaire, tout le périmètre est conservé. En mode OU, une condition vraie suffit, même si une autre cellule est illisible. Une colonne requise absente rend la requête indisponible.");
+        _editorFields.Children.Add(Text("Utilisez les champs sémantiques pour retrouver les colonnes configurées, ou une colonne exacte du relevé. « Est vide » et « Est renseigné » n’attendent pas de valeur. Pour les dates, vous pouvez saisir AAAA-MM-JJ ; les durées sont exprimées en jours.", 11, "MutedBrush"));
+        var openConditions = Command("Définir les conditions →"); openConditions.Click += (_, _) => _sections.SelectedItem = _conditionsTab;
+        openConditions.Margin = new Thickness(0, 16, 0, 0); _editorFields.Children.Add(openConditions);
         panel.Children.Add(_editorFields);
-        var saveActions = new WrapPanel { Margin = new Thickness(0, 17, 0, 4) }; _save.SetResourceReference(Button.StyleProperty, "PrimaryButton");
-        saveActions.Children.Add(_save); panel.Children.Add(saveActions); panel.Children.Add(_status);
-        return Card(panel);
+        return FormViewport(Card(panel));
     }
+
+    private FrameworkElement BuildConditions()
+    {
+        var panel = new Grid();
+        panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var header = new StackPanel();
+        Field(header, "Combiner les conditions", _match);
+        var actions = new WrapPanel(); actions.Children.Add(_addCondition); actions.Children.Add(_removeCondition); actions.Children.Add(_conditionCount); header.Children.Add(actions);
+        panel.Children.Add(header); Grid.SetRow(_conditions, 1); panel.Children.Add(_conditions);
+        AutomationProperties.SetName(_conditions, "Conditions de la requête, champs opérateurs et valeurs modifiables");
+        var help = Text("Dates : AAAA-MM-JJ · durées : jours. Les explications complètes restent dans Définition.", 11, "MutedBrush");
+        Grid.SetRow(help, 2); panel.Children.Add(help);
+        return panel;
+    }
+
+    private static ScrollViewer FormViewport(UIElement content) => new()
+    {
+        Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false,
+        Padding = new Thickness(0, 4, 8, 8)
+    };
 
     private static void Field(Panel panel, string label, Control control)
     {
@@ -221,10 +258,12 @@ public sealed partial class QueryWorkshopView
     {
         var allowed = !_busy && !_disposed; var selected = SelectedQuery;
         _new.IsEnabled = allowed && _working.Queries.Count < MaximumQueries;
+        _templates.IsEnabled = allowed;
         _duplicate.IsEnabled = allowed && selected != null && _working.Queries.Count < MaximumQueries;
         _delete.IsEnabled = allowed && selected != null; _restore.IsEnabled = allowed && _dirty;
         _search.IsEnabled = _categoryFilter.IsEnabled = _favoritesOnly.IsEnabled = _libraryList.IsEnabled = allowed;
         _editorFields.IsEnabled = allowed && selected != null;
+        _match.IsEnabled = _conditions.IsEnabled = allowed && selected != null;
         _conditions.IsReadOnly = !allowed;
         _addCondition.IsEnabled = allowed && selected != null && _conditionRows.Count < MaximumConditions;
         _removeCondition.IsEnabled = allowed && _conditions.SelectedItems.Count > 0;

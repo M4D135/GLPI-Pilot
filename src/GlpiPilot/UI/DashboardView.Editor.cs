@@ -35,9 +35,7 @@ public sealed partial class DashboardView
             BuildWidgetEditor(body, actions, selected);
         else if (_editorMode == "boards") BuildBoardsEditor(body);
         else BuildLibrary(body);
-        _editorScroller = new ScrollViewer { Content = body, MaxHeight = 580, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, FocusVisualStyle = null, Padding = new Thickness(0, 0, 4, 0) };
-        content.Children.Add(_editorScroller); content.Children.Add(actions);
+        content.Children.Add(body); content.Children.Add(actions);
         _contextHelp = Text("Survolez une option ou utilisez Tab pour comprendre son effet. Les changements appliqués sont enregistrés automatiquement.", 11, "MutedBrush");
         var hint = new Border { Child = _contextHelp, Padding = new Thickness(11), Margin = new Thickness(0, 13, 0, 0), CornerRadius = new CornerRadius(9) };
         hint.SetResourceReference(Border.BackgroundProperty, "NoticeBrush"); content.Children.Add(hint);
@@ -68,24 +66,28 @@ public sealed partial class DashboardView
                 ("without-technician", "Actifs sans technicien"), ("without-group", "Actifs sans groupe"), ("multi-technician", "Actifs avec plusieurs techniciens"),
                 ("active-no-due", "Actifs sans échéance renseignée"), ("due-today", "Échéances aujourd’hui"), ("due-tomorrow", "Échéances demain"), ("due-week", "Échéances d’ici la fin de semaine"),
                 ("new-unassigned", "Nouveaux sans affectation"), ("high-overdue", "Priorités hautes en retard"), ("high-stale", "Priorités hautes sans modification récente"),
+                ("pending-old", "Tickets en attente anciens"), ("pending-stale", "Tickets en attente sans modification récente"), ("new-stale", "Nouveaux sans modification récente"),
+                ("high-without-technician", "Priorités hautes sans technicien"), ("overdue-without-technician", "Échéances dépassées sans technicien"), ("group-only", "Actifs affectés à un groupe sans technicien"),
+                ("planned-overdue", "Tickets planifiés en retard"), ("old-without-technician", "Tickets anciens sans technicien"), ("active-no-category", "Actifs sans catégorie"),
+                ("resolved-aging", "Résolus en attente de clôture"), ("resolved-no-date", "Résolus sans date de résolution exploitable"), ("high-incidents", "Incidents actifs de priorité haute"),
                 ("missing-category", "Catégorie non renseignée"), ("missing-requester", "Demandeur non renseigné"),
                 ("invalid-dates", "Dates non interprétables"), ("future-dates", "Dates historiques futures"), ("inconsistent-dates", "Chronologie incohérente"),
                 ("active-incidents", "Incidents actifs"), ("active-requests", "Demandes actives")
             })
-                yield return new("metric", key, label, "Indicateurs", "Un chiffre calculé sur votre périmètre, avec accès aux lignes correspondantes.");
+                yield return new("metric", key, label, CatalogCategory("metric", key), "Un chiffre calculé sur votre périmètre, avec accès aux lignes correspondantes.");
             foreach (var (key, label) in new[] { ("completed-share", "Part résolue ou close"), ("active-share", "Part active"), ("pending-share", "Part des actifs en attente"), ("unassigned-share", "Part sans affectation"), ("overdue-share", "Part à échéance dépassée"), ("high-share", "Part de priorités hautes"), ("without-technician-share", "Part sans technicien"), ("without-group-share", "Part sans groupe") })
-                yield return new("metric", key, label, "Indicateurs", "Une proportion sur l’échantillon exploitable. La base de calcul reste affichée après chargement du relevé.");
+                yield return new("metric", key, label, CatalogCategory("metric", key), "Une proportion sur l’échantillon exploitable. La base de calcul reste affichée après chargement du relevé.");
             foreach (var (key, label) in new[] { ("city-matched", "Villes reconnues"), ("city-unmatched", "Sans correspondance de ville"), ("city-ambiguous", "Correspondances ambiguës"), ("city-no-title", "Titre indisponible pour la ville"), ("city-coverage", "Couverture des correspondances") })
                 yield return new("metric", key, label, "Localisation", "Une mesure issue du dictionnaire de villes et des titres exploitables du relevé.");
             yield return new("distribution", "city-detection", "État des correspondances de villes", "Localisation", "Villes reconnues, absences de correspondance, ambiguïtés et titres indisponibles.");
-            foreach (var (key, label) in new[] { ("age", "Âge des actifs"), ("inactivity", "Ancienneté de la dernière modification"), ("resolution", "Délai ouverture → résolution"), ("closure", "Délai ouverture → clôture"), ("resolution-closure", "Délai résolution → clôture") })
+            foreach (var (key, label) in new[] { ("age", "Âge des actifs"), ("inactivity", "Ancienneté de la dernière modification"), ("resolution", "Délai ouverture → résolution"), ("closure", "Délai ouverture → clôture"), ("resolution-closure", "Délai résolution → clôture"), ("resolved-waiting", "Attente de clôture des résolus") })
                 foreach (var (suffix, statistic) in new[] { ("mean", "moyenne"), ("median", "médiane"), ("p90", "90e percentile"), ("max", "maximum") })
-                    yield return new("metric", key + "-" + suffix, label + " · " + statistic, "Indicateurs", "Durée calendaire issue des dates exploitables du relevé, avec son échantillon. Ne mesure pas le temps de travail.");
+                    yield return new("metric", key + "-" + suffix, label + " · " + statistic, CatalogCategory("metric", key + "-" + suffix), "Durée calendaire issue des dates exploitables du relevé, avec son échantillon. Ne mesure pas le temps de travail.");
             foreach (var (key, label) in new[] { ("created", "Créations"), ("resolved", "Résolutions datées"), ("closed", "Clôtures datées") })
                 foreach (var days in new[] { 7, 30 })
                     yield return new("metric", key + "-" + days, label + " sur " + days + " j", "Indicateurs", "Événements datés des lignes récupérées, sur la période glissante indiquée.");
             foreach (var (key, label) in new[] { ("status", "Statuts"), ("priority", "Priorités"), ("active-priority", "Priorités des actifs"), ("age", "Âge des actifs"), ("inactivity", "Dernière modification des actifs"), ("urgency", "Urgences"), ("impact", "Impacts"), ("type", "Incidents et demandes"), ("active-type", "Types des actifs"), ("assignment-coverage", "Couverture des affectations"), ("overdue-delay", "Retard des échéances"), ("due-horizon", "Horizon des échéances") })
-                yield return new("distribution", key, label, "Répartitions", "Une répartition consultable en barres, en anneau, en tableau ou en liste compacte.");
+                yield return new("distribution", key, label, CatalogCategory("distribution", key), "Une répartition consultable en barres, en anneau ou en liste. Toutes les catégories restent accessibles avec recherche.");
             foreach (var role in DashboardService.Roles.Where(role => role.Key is "group" or "assignee" or "category" or "entity" or "requester" or "location" or "city" or "postal" or "source" or "updatedBy"))
             {
                 yield return new("distribution", role.Key, role.Label + " · relevé", CatalogCategory("distribution", role.Key), "Les valeurs de cette colonne dans le périmètre du relevé.");
@@ -93,7 +95,7 @@ public sealed partial class DashboardView
                     yield return new("distribution", "active-" + role.Key, role.Label + " · actifs", CatalogCategory("distribution", "active-" + role.Key), "Les valeurs de cette colonne parmi les lignes actives reconnues.");
             }
             foreach (var role in DashboardService.Roles.Where(role => role.Key is "created" or "updated" or "resolved" or "closed" or "due"))
-                yield return new("distribution", "quality-" + role.Key, "Qualité · " + role.Label, "Répartitions", "Disponibilité et validité des valeurs de date présentes dans cette colonne.");
+                yield return new("distribution", "quality-" + role.Key, "Qualité · " + role.Label, CatalogCategory("distribution", "quality-" + role.Key), "Disponibilité et validité des valeurs de date présentes dans cette colonne.");
         }
     }
 
@@ -101,6 +103,15 @@ public sealed partial class DashboardView
     {
         if (key.StartsWith("query:", StringComparison.Ordinal) || key.StartsWith("query-group:", StringComparison.Ordinal)) return "Mes requêtes";
         if (key.StartsWith("city-", StringComparison.Ordinal) || key is "city" or "location" or "postal" or "active-city" or "active-location" or "active-postal") return "Localisation";
+        if (key.StartsWith("quality-", StringComparison.Ordinal) || key is "unique" or "duplicate" or "missing-id" or "unknown-status" or "missing-category" or "missing-requester" or "invalid-dates" or "future-dates" or "inconsistent-dates" or "resolved-no-date" or "active-no-category" or "completed-no-solution") return "Qualité des données";
+        if (key.StartsWith("age-", StringComparison.Ordinal) || key.StartsWith("inactivity-", StringComparison.Ordinal)
+            || key.StartsWith("resolution-", StringComparison.Ordinal) || key.StartsWith("closure-", StringComparison.Ordinal)
+            || key.StartsWith("resolved-waiting-", StringComparison.Ordinal) || key is "age" or "inactivity") return "Durées et ancienneté";
+        if (key.Contains("overdue", StringComparison.Ordinal) || key.StartsWith("due-", StringComparison.Ordinal) || key is "soon" or "active-no-due") return "Échéances";
+        if (key.Contains("technician", StringComparison.Ordinal) || key.Contains("unassigned", StringComparison.Ordinal)
+            || key is "without-group" or "without-group-share" or "group-only" or "group" or "active-group" or "assignee" or "active-assignee" or "assignment-coverage") return "Affectations";
+        if (key.StartsWith("high", StringComparison.Ordinal) || key.StartsWith("pending-", StringComparison.Ordinal)
+            || key is "old" or "stale" or "new-stale" or "major" or "resolved-aging") return "Priorités et suivi";
         return kind == "metric" ? "Indicateurs" : "Répartitions";
     }
 
@@ -133,8 +144,9 @@ public sealed partial class DashboardView
         void Track(Button button) { libraryButtons.Add(button); }
         bool Matches(string value) => string.IsNullOrWhiteSpace(_libraryQuery)
             || CultureInfo.CurrentCulture.CompareInfo.IndexOf(value, _libraryQuery.Trim(), CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
-        void Fill()
+        void Fill(bool resetPage = false)
         {
+            if (resetPage) _libraryPage = 0;
             _commands.RemoveAll(pair => libraryButtons.Contains(pair.Button)); libraryButtons.Clear(); list.Children.Clear();
             _libraryQuery = search.Text; _libraryCategory = Selected(category);
             _libraryAvailableOnly = available.IsChecked == true; _libraryFavoritesOnly = favorites.IsChecked == true;
@@ -142,8 +154,25 @@ public sealed partial class DashboardView
                 && (!_libraryAvailableOnly || CatalogAvailable(item))
                 && (!_libraryFavoritesOnly || _libraryFavorites.Contains(FavoriteKey(item)))
                 && (Matches(item.Label) || Matches(item.Description))).ToArray();
-            count.Text = $"{results.Length} widget(s) affiché(s) · {all.Count(CatalogAvailable)} disponibles";
-            foreach (var group in results.GroupBy(item => item.Category))
+            const int pageSize = 6;
+            var pageCount = Math.Max(1, (results.Length + pageSize - 1) / pageSize);
+            _libraryPage = Math.Clamp(_libraryPage, 0, pageCount - 1);
+            var visible = results.Skip(_libraryPage * pageSize).Take(pageSize).ToArray();
+            count.Text = $"{results.Length:N0} résultat(s) sur {all.Length:N0} sources · {all.Count(CatalogAvailable):N0} disponibles au total";
+            void Pager()
+            {
+                if (pageCount == 1) return;
+                var pager = new WrapPanel { Margin = new Thickness(0, 8, 0, 3) };
+                var previous = DescribedCommand("←", "Page précédente du catalogue", () => { _libraryPage--; Fill(); }, _libraryPage > 0);
+                Help(previous, "Catalogue · page précédente", "Afficher les six widgets précédents du catalogue filtré.");
+                pager.Children.Add(previous); Track(previous);
+                pager.Children.Add(Text($"Page {_libraryPage + 1} / {pageCount}", 11, "MutedBrush", margin: new Thickness(2, 9, 10, 0)));
+                var next = DescribedCommand("→", "Page suivante du catalogue", () => { _libraryPage++; Fill(); }, _libraryPage + 1 < pageCount);
+                Help(next, "Catalogue · page suivante", "Afficher les six widgets suivants du catalogue filtré.");
+                pager.Children.Add(next); Track(next); list.Children.Add(pager);
+            }
+            Pager();
+            foreach (var group in visible.GroupBy(item => item.Category))
             {
                 list.Children.Add(Text(group.Key, 11, "MutedBrush", FontWeights.SemiBold, new Thickness(0, 11, 0, 7)));
                 foreach (var item in group)
@@ -152,7 +181,7 @@ public sealed partial class DashboardView
                     var heading = new DockPanel();
                     var add = Text("+", 18, "AccentBrush", FontWeights.SemiBold, new Thickness(10, 0, 0, 0)); DockPanel.SetDock(add, Dock.Right); heading.Children.Add(add);
                     heading.Children.Add(Text(item.Label, 12, weight: FontWeights.SemiBold)); content.Children.Add(heading);
-                    var description = Text(item.Description, 11, "MutedBrush", margin: new Thickness(0, 5, 0, 0)); description.MaxHeight = 34; content.Children.Add(description);
+                    var description = Text(PreviewText(item.Description, 140), 11, "MutedBrush", margin: new Thickness(0, 5, 0, 0)); content.Children.Add(description);
                     var used = Board.Widgets.Count(widget => widget.Kind == item.Kind && widget.SourceKey == item.Key);
                     var unavailable = _data != null && !CatalogAvailable(item);
                     if (unavailable) content.Children.Add(Text("Données à renseigner", 10, "WarningBrush", margin: new Thickness(0, 6, 0, 0)));
@@ -160,6 +189,7 @@ public sealed partial class DashboardView
                     var button = Command(content, () => AddWidget(item), Board.Widgets.Count < 60);
                     button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.Padding = new Thickness(11); button.Margin = new Thickness(0, 0, 0, 7);
                     Help(button, "Ajouter · " + item.Label, "Ajouter ce widget à la disposition puis régler son apparence. Une source indisponible restera signalée tant que sa colonne n’est pas reconnue.");
+                    button.ToolTip = item.Description;
                     var row = new Grid(); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                     row.Children.Add(button); Track(button);
                     var favorite = _libraryFavorites.Contains(FavoriteKey(item));
@@ -171,6 +201,7 @@ public sealed partial class DashboardView
                     Grid.SetColumn(star, 1); row.Children.Add(star); Track(star); list.Children.Add(row);
                 }
             }
+            Pager();
             if (results.Length == 0)
             {
                 list.Children.Add(Text("Aucun widget ne correspond à ces filtres.", 12, "MutedBrush", margin: new Thickness(0, 14, 0, 10)));
@@ -178,9 +209,9 @@ public sealed partial class DashboardView
                 list.Children.Add(clear); Track(clear);
             }
         }
-        Fill(); search.TextChanged += (_, _) => Fill(); category.SelectionChanged += (_, _) => Fill();
-        available.Checked += (_, _) => Fill(); available.Unchecked += (_, _) => Fill();
-        favorites.Checked += (_, _) => Fill(); favorites.Unchecked += (_, _) => Fill();
+        Fill(); search.TextChanged += (_, _) => Fill(true); category.SelectionChanged += (_, _) => Fill(true);
+        available.Checked += (_, _) => Fill(true); available.Unchecked += (_, _) => Fill(true);
+        favorites.Checked += (_, _) => Fill(true); favorites.Unchecked += (_, _) => Fill(true);
         if (Board.Widgets.Count >= 60) body.Children.Add(Text("Cette disposition contient déjà 60 widgets. Retirez-en un ou créez une autre disposition.", 12, "WarningBrush", margin: new Thickness(0, 10, 0, 0)));
         var hidden = Board.Widgets.Where(widget => widget.Hidden).ToArray();
         if (hidden.Length > 0)
@@ -241,13 +272,13 @@ public sealed partial class DashboardView
         }
         appearance.Children.Add(swatches);
         var presentationPanel = new StackPanel(); appearance.Children.Add(presentationPanel);
-        var presentation = Select(presentationPanel, "Présentation", new[] { new Choice("bars", "Barres / détaillée"), new Choice("list", "Tableau"), new Choice("compact", "Compacte"), new Choice("donut", "Anneau"), new Choice("gauge", "Jauge avec objectif") }, widget.Presentation);
+        var presentation = Select(presentationPanel, "Présentation", new[] { new Choice("bars", "Barres / détaillée"), new Choice("list", "Liste chiffrée"), new Choice("compact", "Compacte"), new Choice("donut", "Anneau"), new Choice("gauge", "Jauge avec objectif") }, widget.Presentation);
         void ConfigurePresentation()
         {
             var selected = Selected(presentation);
             var choices = Selected(kind) switch
             {
-                "distribution" => new[] { new Choice("bars", "Barres"), new Choice("donut", "Anneau"), new Choice("list", "Tableau"), new Choice("compact", "Liste compacte") },
+                "distribution" => new[] { new Choice("bars", "Barres"), new Choice("donut", "Anneau"), new Choice("list", "Liste chiffrée"), new Choice("compact", "Liste compacte") },
                 "metric" => new[] { new Choice("bars", "Détaillée"), new Choice("gauge", "Jauge avec objectif"), new Choice("compact", "Compacte") },
                 _ => new[] { new Choice("bars", "Détaillée"), new Choice("compact", "Compacte") }
             };
@@ -256,7 +287,7 @@ public sealed partial class DashboardView
         ConfigurePresentation();
         var topPanel = new StackPanel(); appearance.Children.Add(topPanel);
         var top = Input(topPanel, "Valeurs visibles · de 3 à 30", widget.TopCount.ToString(), 2);
-        Help(top, "Nombre de valeurs visibles", "Choisir combien de barres ou valeurs afficher d’abord. Les autres valeurs restent accessibles dans le tableau complet du widget.");
+        Help(top, "Nombre de valeurs visibles", "Choisir combien de barres ou valeurs afficher d’abord. La liste complète du widget reste accessible avec recherche et pagination.");
         var descriptions = Check(appearance, "Afficher les explications", widget.ShowDescription);
 
         var gaugePanel = new StackPanel { Margin = new Thickness(0, 13, 0, 0) }; appearance.Children.Add(gaugePanel);
@@ -269,15 +300,21 @@ public sealed partial class DashboardView
         var critical = Input(gaugePanel, "Seuil critique · facultatif", widget.CriticalValue?.ToString("G", CultureInfo.CurrentCulture) ?? "", 40);
         Help(warning, "Seuil de vigilance de cette jauge", "Déclencher la couleur de vigilance quand la valeur atteint ou dépasse ce seuil si plus bas est préférable, ou atteint ce seuil en baissant si plus haut est préférable.");
         Help(critical, "Seuil critique de cette jauge", "Le seuil critique prime sur la vigilance. Il doit être au-dessus du seuil de vigilance si plus bas est préférable, et au-dessous si plus haut est préférable.");
-        gaugePanel.Children.Add(Text("Les nombres acceptent la virgule ou le point. La jauge est bornée graphiquement ; la valeur et le rapport à l’objectif restent affichés. Une hauteur de 320 px facilite sa lecture.", 11, "MutedBrush", margin: new Thickness(0, 10, 0, 0)));
+        gaugePanel.Children.Add(Text("Les nombres acceptent la virgule ou le point. La jauge est bornée graphiquement ; la valeur et le rapport à l’objectif restent affichés. La hauteur automatique s’adapte au contenu.", 11, "MutedBrush", margin: new Thickness(0, 10, 0, 0)));
 
         var sizing = Section(body, "Taille et position", "La largeur s’adapte à la fenêtre ; vos dimensions préférées restent mémorisées.", false);
         var span = Select(sizing, "Largeur de la carte", Enumerable.Range(3, 10).Select(value => new Choice(value.ToString(), $"{100d * value / 12:0.#} % · {value}/12")), widget.Span.ToString());
-        var height = Input(sizing, "Hauteur · de 160 à 960", widget.Height.ToString(), 3);
+        var autoHeight = Check(sizing, "Adapter la hauteur au contenu", widget.AutoHeight);
+        Help(autoHeight, "Hauteur automatique du widget", "Réduire les espaces vides. Les détails dépliés agrandissent la carte et restent accessibles dans le défilement principal.");
+        var height = Input(sizing, "Hauteur minimale manuelle · 160 à 960", widget.Height.ToString(), 3);
+        height.IsEnabled = !widget.AutoHeight;
+        autoHeight.Checked += (_, _) => height.IsEnabled = false;
+        autoHeight.Unchecked += (_, _) => height.IsEnabled = true;
+        sizing.Children.Add(Text("En mode manuel, la hauteur choisie reste un minimum. La carte peut grandir pour afficher tout son contenu. La valeur manuelle est conservée lorsque vous revenez en automatique.", 11, "MutedBrush", margin: new Thickness(0, 8, 0, 0)));
         var presets = new UniformGrid { Columns = 2, Margin = new Thickness(0, 12, 0, 0) };
         foreach (var (label, width, pixels) in new[] { ("Petit", 3, 200), ("Moyen", 4, 340), ("Large", 6, 340), ("Pleine largeur", 12, 420) })
         {
-            var size = DescribedCommand(label, "Préparer cette largeur et cette hauteur. Appliquer enregistre la nouvelle taille.", () => { span.SelectedValue = width.ToString(); height.Text = pixels.ToString(); });
+            var size = DescribedCommand(label, "Préparer cette largeur et une hauteur minimale manuelle. Appliquer enregistre la nouvelle taille.", () => { span.SelectedValue = width.ToString(); height.Text = pixels.ToString(); autoHeight.IsChecked = false; });
             size.Padding = new Thickness(8, 6, 8, 6); presets.Children.Add(size);
         }
         sizing.Children.Add(presets);
@@ -311,7 +348,7 @@ public sealed partial class DashboardView
             var selectedKind = Selected(kind);
             notePanel.Visibility = selectedKind == "note" ? Visibility.Visible : Visibility.Collapsed;
             presentationPanel.Visibility = selectedKind is "distribution" or "metric" or "weather" ? Visibility.Visible : Visibility.Collapsed;
-            topPanel.Visibility = selectedKind == "distribution" && Selected(presentation) != "list" ? Visibility.Visible : Visibility.Collapsed;
+            topPanel.Visibility = selectedKind == "distribution" ? Visibility.Visible : Visibility.Collapsed;
             gaugePanel.Visibility = selectedKind == "metric" && Selected(presentation) == "gauge" ? Visibility.Visible : Visibility.Collapsed;
         };
         kind.SelectionChanged += (_, _) => { FillSources(); ConfigurePresentation(); updateOptions(); refreshPreview(); };
@@ -321,7 +358,7 @@ public sealed partial class DashboardView
         var utility = Section(body, "Autres actions", "La duplication et la suppression peuvent être annulées pendant la session.", false);
         utility.Children.Add(DescribedCommand("Dupliquer ce widget", "Ajouter une copie indépendante du widget avec ses réglages actuels enregistrés.", () => Change(() =>
         {
-            var clone = widget.Copy(); clone.Id = DashboardLayoutSettings.NewId(); clone.Locked = false; clone.Hidden = false; clone.Title = WidgetTitle(widget); if (clone.Title.Length > 170) clone.Title = clone.Title[..170]; clone.Title += " · copie";
+            var clone = widget.Copy(); clone.Id = DashboardLayoutSettings.NewId(); clone.Locked = false; clone.Hidden = false; clone.Title = PreviewText(WidgetTitle(widget), 170) + " · copie";
             Board.Widgets.Insert(Board.Widgets.IndexOf(widget) + 1, clone); _selectedWidget = clone.Id;
         }), Board.Widgets.Count < 60));
         var remove = DescribedCommand("Supprimer ce widget", "Retirer ce widget de la disposition. Annuler permet de le retrouver pendant la session.", () => Change(() => { Board.Widgets.Remove(widget); _selectedWidget = null; _editorMode = "library"; }), !widget.Locked);
@@ -332,7 +369,7 @@ public sealed partial class DashboardView
         {
             if (!int.TryParse(height.Text, out var h) || h is < 160 or > 960 || !int.TryParse(top.Text, out var n) || n is < 3 or > 30)
             { error.Text = "Vérifiez la hauteur (160 à 960) et les valeurs visibles (3 à 30)."; return; }
-            if (!explicitlyUnlocked && locked.IsChecked == true && (h != widget.Height || Selected(span) != widget.Span.ToString()))
+            if (!explicitlyUnlocked && locked.IsChecked == true && (h != widget.Height || Selected(span) != widget.Span.ToString() || (autoHeight.IsChecked == true) != widget.AutoHeight))
             { error.Text = "Déverrouillez le widget pour appliquer une nouvelle taille."; return; }
             if ((Selected(kind) is "metric" or "distribution") && (source == null || string.IsNullOrWhiteSpace(Selected(source))))
             { error.Text = "Choisissez une source de données pour ce widget."; return; }
@@ -346,7 +383,7 @@ public sealed partial class DashboardView
             {
                 widget.Title = title.Text.Trim(); widget.Kind = Selected(kind); widget.SourceKey = source is null ? "" : Selected(source);
                 widget.Style = Selected(styles); widget.Accent = Selected(accents); widget.Presentation = Selected(presentation);
-                widget.Span = int.Parse(Selected(span), CultureInfo.InvariantCulture); widget.Height = h; widget.TopCount = n; widget.Note = note.Text;
+                widget.Span = int.Parse(Selected(span), CultureInfo.InvariantCulture); widget.Height = h; widget.AutoHeight = autoHeight.IsChecked == true; widget.TopCount = n; widget.Note = note.Text;
                 widget.ShowDescription = descriptions.IsChecked == true; widget.Locked = locked.IsChecked == true; widget.Hidden = hidden.IsChecked == true;
                 widget.TargetValue = targetValue; widget.WarningValue = warningValue; widget.CriticalValue = criticalValue; widget.LowerIsBetter = lowerIsBetter;
             });
@@ -362,7 +399,7 @@ public sealed partial class DashboardView
         body.Children.Add(DescribedCommand("Renommer", "Enregistrer le nouveau nom de la disposition actuelle.", () => { if (string.IsNullOrWhiteSpace(name.Text)) { error.Text = "Choisissez un nom pour cette disposition."; return; } Change(() => Board.Name = name.Text.Trim()); }));
         body.Children.Add(DescribedCommand("Dupliquer cette disposition", "Créer une copie indépendante avec les mêmes widgets et styles.", () => Change(() =>
         {
-            var copy = Board.Copy(); copy.Id = DashboardLayoutSettings.NewId(); copy.Name = (copy.Name.Length > 110 ? copy.Name[..110] : copy.Name) + " · copie"; foreach (var widget in copy.Widgets) widget.Id = DashboardLayoutSettings.NewId(); _layout.Boards.Add(copy); _layout.ActiveBoardId = copy.Id; _selectedWidget = null;
+            var copy = Board.Copy(); copy.Id = DashboardLayoutSettings.NewId(); copy.Name = PreviewText(copy.Name, 110) + " · copie"; foreach (var widget in copy.Widgets) widget.Id = DashboardLayoutSettings.NewId(); _layout.Boards.Add(copy); _layout.ActiveBoardId = copy.Id; _selectedWidget = null;
         }), _layout.Boards.Count < 12));
         body.Children.Add(error);
         body.Children.Add(Text("Partir d’un modèle", 14, weight: FontWeights.SemiBold, margin: new Thickness(0, 16, 0, 5)));

@@ -12,7 +12,7 @@ namespace GlpiPilot.UI;
 public sealed class TourPlanningView : UserControl, IDisposable
 {
     private readonly string _orderPreferencesPath;
-    private readonly ComboBox _technician = new() { MinWidth = 260, MaxWidth = 430, DisplayMemberPath = "Name", SelectedValuePath = "Key", Margin = new Thickness(8, 0, 18, 0) };
+    private readonly ComboBox _technician = new() { MinWidth = 180, MaxWidth = 390, DisplayMemberPath = "Name", SelectedValuePath = "Key", Margin = new Thickness(8, 0, 18, 6) };
     private readonly CheckBox _allStatuses = new() { IsChecked = false, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _summary = Label("Préparer les tournées", 25, "TextBrush", FontWeights.SemiBold);
     private readonly TextBlock _scopeNote = Label("Extrayez un relevé et configurez vos villes pour préparer les étapes.", 13, "MutedBrush");
@@ -21,8 +21,8 @@ public sealed class TourPlanningView : UserControl, IDisposable
     private readonly TextBlock _selectionTitle = Label("Sélectionnez une étape", 19, "TextBrush", FontWeights.SemiBold);
     private readonly TextBlock _selectionNote = Label("", 12, "MutedBrush");
     private readonly TextBlock _ticketNote = Label("", 12, "MutedBrush");
-    private readonly DataGrid _steps = Table(330);
-    private readonly DataGrid _tickets = Table(250);
+    private readonly DataGrid _steps = Table();
+    private readonly DataGrid _tickets = Table();
     private readonly Button _settings, _export, _allRows, _alphabetical, _priorities, _dueDates, _up, _down, _proximity;
     private readonly Button _unlocated, _ambiguous, _unknownStatus, _stopRows, _stopActive, _stopHigh, _stopOverdue, _map;
     private CityEnrichmentResult? _report, _publishedReport;
@@ -47,13 +47,17 @@ public sealed class TourPlanningView : UserControl, IDisposable
     {
         _orderPreferencesPath = orderPreferencesPath ?? Path.Combine(AppPaths.DataRoot, "tour-order.json");
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        var root = new StackPanel();
-        var heading = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
+        VerticalContentAlignment = VerticalAlignment.Stretch;
+        var root = new Grid();
+        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var header = new StackPanel();
+        var heading = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        _summary.Margin = new Thickness(0, 0, 18, 4); heading.Children.Add(_summary);
         _settings = Command("Configurer les villes", () => { if (!_busy && !_disposed) SettingsRequested?.Invoke(); });
-        DockPanel.SetDock(_settings, Dock.Right); heading.Children.Add(_settings);
-        heading.Children.Add(_summary); root.Children.Add(heading);
-        _scopeNote.Margin = new Thickness(0, 0, 0, 14); root.Children.Add(_scopeNote);
-        var scope = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
+        heading.Children.Add(_settings); header.Children.Add(heading);
+        var scope = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
         scope.Children.Add(Label("Périmètre", 12, "MutedBrush"));
         _technician.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(VirtualizingStackPanel)));
         VirtualizingPanel.SetIsVirtualizing(_technician, true);
@@ -63,8 +67,19 @@ public sealed class TourPlanningView : UserControl, IDisposable
         scope.Children.Add(_technician);
         _allStatuses.Content = Label("Inclure tous les statuts", 12, "TextBrush");
         _allStatuses.ToolTip = "Par défaut, seuls les actifs dont le statut est reconnu entrent dans le plan. Cette option inclut aussi les résolus, clos et statuts non classés.";
-        scope.Children.Add(_allStatuses); root.Children.Add(scope);
-        root.Children.Add(Label("Une étape correspond à une ville confirmée par votre référentiel. Les tickets dont le titre mentionne plusieurs villes restent à vérifier. La ville déduite du titre ne prouve pas qu’une intervention sur place est nécessaire.", 12, "MutedBrush", margin: new Thickness(0, 0, 0, 14)));
+        scope.Children.Add(_allStatuses); header.Children.Add(scope); root.Children.Add(header);
+        var sections = new TabControl { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+        AutomationProperties.SetAutomationId(sections, "TourWorkspaceTabs");
+        Grid.SetRow(sections, 1); root.Children.Add(sections);
+        var planView = new Grid();
+        planView.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        planView.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        planView.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        sections.Items.Add(new TabItem { Header = "Plan de tournée", Content = planView });
+        var detailTab = new TabItem { Header = "Étape sélectionnée" }; sections.Items.Add(detailTab);
+        var information = new StackPanel();
+        information.Children.Add(_scopeNote);
+        information.Children.Add(Label("Une étape correspond à une ville confirmée par votre référentiel. Les tickets dont le titre mentionne plusieurs villes restent à vérifier. La ville déduite du titre ne prouve pas qu’une intervention sur place est nécessaire.", 12, "MutedBrush", margin: new Thickness(0, 12, 0, 14)));
 
         var orders = new WrapPanel();
         _alphabetical = Command("A → Z", () => ChangeOrder(TourOrderKind.Alphabetical));
@@ -75,8 +90,11 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _proximity = Command("Proximité à vol d’oiseau", ProximitySelected);
         _proximity.ToolTip = "Partir de l’étape sélectionnée, puis choisir à chaque fois la ville la plus proche à vol d’oiseau. Toutes les villes doivent avoir des coordonnées. Aucun itinéraire routier ni horaire n’est calculé.";
         foreach (var button in new[] { _alphabetical, _priorities, _dueDates, _up, _down, _proximity }) orders.Children.Add(button);
-        root.Children.Add(orders);
-        _orderNote.Margin = new Thickness(0, 9, 0, 8); root.Children.Add(_orderNote);
+        _priorities.Content = "Priorités"; _priorities.ToolTip = "Ordonner les étapes par priorités actives";
+        _dueDates.Content = "Échéances"; _dueDates.ToolTip = "Ordonner les étapes par échéances actives";
+        _proximity.Content = "Proximité";
+        planView.Children.Add(orders);
+        _orderNote.Margin = new Thickness(0, 9, 0, 8); information.Children.Add(_orderNote);
 
         // Column sorting is deliberately disabled: the displayed order is the exported visit order.
         AddColumn(_steps, "Étape", nameof(StepRow.Number), 72);
@@ -89,7 +107,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
         AddColumn(_steps, "1re échéance active", nameof(StepRow.FirstActiveDue), 168, "dd/MM/yyyy HH:mm");
         AddColumn(_steps, "Statuts inconnus", nameof(StepRow.UnknownStatusCount), 140, "N0");
         _steps.FrozenColumnCount = 2;
-        AutomationProperties.SetName(_steps, "Étapes de la tournée dans l’ordre de visite"); root.Children.Add(_steps);
+        AutomationProperties.SetName(_steps, "Étapes de la tournée dans l’ordre de visite"); Grid.SetRow(_steps, 1); planView.Children.Add(_steps);
         var actions = new WrapPanel { Margin = new Thickness(0, 10, 0, 6) };
         _allRows = Command("Tous les tickets du plan", () => { if (CurrentPlan() is { } plan) RaiseRows(plan.SelectedRows, plan.ScopeLabel + " · " + plan.StatusLabel); });
         _unlocated = Command("Non localisés", () => { if (CurrentPlan() is { } plan) RaiseRows(plan.UnlocatedRows, "Tournée · non localisés"); });
@@ -99,12 +117,28 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _export.SetResourceReference(BackgroundProperty, "ActionBrush");
         _export.SetResourceReference(ForegroundProperty, "OnActionBrush");
         _export.SetResourceReference(BorderBrushProperty, "ActionBorderBrush");
-        foreach (var button in new[] { _allRows, _unlocated, _ambiguous, _unknownStatus, _export }) actions.Children.Add(button);
-        root.Children.Add(actions);
-        _status.Margin = new Thickness(0, 6, 0, 16); root.Children.Add(_status);
+        _allRows.Content = "Tickets du plan"; _allRows.ToolTip = "Voir tous les tickets du plan";
+        _export.Content = "Exporter…"; _export.ToolTip = "Exporter le plan de tournée";
+        actions.Children.Add(_allRows); actions.Children.Add(_export);
+        actions.Children.Add(Command("Étape sélectionnée →", () => sections.SelectedItem = detailTab));
+        Grid.SetRow(actions, 2); planView.Children.Add(actions);
+        var qualityActions = new WrapPanel();
+        foreach (var button in new[] { _unlocated, _ambiguous, _unknownStatus }) qualityActions.Children.Add(button);
+        information.Children.Add(Label("Vérifier les lignes du périmètre", 16, "TextBrush", FontWeights.SemiBold, new Thickness(0, 12, 0, 8)));
+        information.Children.Add(qualityActions);
+        sections.Items.Add(new TabItem { Header = "Périmètre et qualité", Content = new ScrollViewer
+        {
+            Content = Card(information), VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Padding = new Thickness(0, 4, 8, 8)
+        } });
+        _status.Margin = new Thickness(0, 6, 0, 0); Grid.SetRow(_status, 2); root.Children.Add(_status);
 
-        var detail = new StackPanel(); detail.Children.Add(_selectionTitle);
-        _selectionNote.Margin = new Thickness(0, 8, 0, 10); detail.Children.Add(_selectionNote);
+        var detail = new Grid();
+        detail.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        detail.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        detail.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var detailHeader = new StackPanel(); detailHeader.Children.Add(_selectionTitle);
+        _selectionNote.Margin = new Thickness(0, 8, 0, 10); detailHeader.Children.Add(_selectionNote);
         var stopActions = new WrapPanel();
         _stopRows = Command("Tickets de l’étape", () => RaiseStopRows("total"));
         _stopActive = Command("Actifs", () => RaiseStopRows("active"));
@@ -112,17 +146,21 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _stopOverdue = Command("Échéances dépassées", () => RaiseStopRows("overdue"));
         _map = Command("Carte de la ville ↗", OpenSelectedCityMap);
         _map.ToolTip = "Ouvrir une carte uniquement après ce clic. Seuls le nom de ville et le code postal seront utilisés, jamais le contenu des tickets.";
+        _stopRows.Content = "Tous"; _stopRows.ToolTip = "Voir tous les tickets de l’étape";
+        _stopHigh.Content = "Priorités"; _stopHigh.ToolTip = "Voir les priorités hautes de l’étape";
+        _stopOverdue.Content = "Retards"; _stopOverdue.ToolTip = "Voir les échéances dépassées de l’étape";
+        _map.Content = "Carte ↗";
         foreach (var button in new[] { _stopRows, _stopActive, _stopHigh, _stopOverdue, _map }) stopActions.Children.Add(button);
-        detail.Children.Add(stopActions);
+        detailHeader.Children.Add(stopActions); detail.Children.Add(detailHeader);
         AddColumn(_tickets, "ID", nameof(TourTicket.Id), 90);
         AddColumn(_tickets, "Titre", nameof(TourTicket.Title), 430);
         AddColumn(_tickets, "Statut", nameof(TourTicket.Status), 160);
         AddColumn(_tickets, "Priorité", nameof(TourTicket.Priority), 120);
         AddColumn(_tickets, "Échéance", nameof(TourTicket.Due), 170);
         _tickets.Margin = new Thickness(0, 12, 0, 0);
-        AutomationProperties.SetName(_tickets, "Tickets de l’étape sélectionnée"); detail.Children.Add(_tickets);
-        _ticketNote.Margin = new Thickness(0, 8, 0, 0); detail.Children.Add(_ticketNote);
-        root.Children.Add(Card(detail));
+        AutomationProperties.SetName(_tickets, "Tickets de l’étape sélectionnée"); Grid.SetRow(_tickets, 1); detail.Children.Add(_tickets);
+        _ticketNote.Margin = new Thickness(0, 8, 0, 0); Grid.SetRow(_ticketNote, 2); detail.Children.Add(_ticketNote);
+        detailTab.Content = detail;
         Content = root;
 
         // Handlers are attached only after every referenced control has been constructed.
@@ -475,11 +513,11 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _stopOverdue.IsEnabled = available && selected?.Stop.OverdueCount > 0;
     }
 
-    private static DataGrid Table(double height)
+    private static DataGrid Table()
     {
         var grid = new DataGrid
         {
-            AutoGenerateColumns = false, IsReadOnly = true, Height = height, MinHeight = 180, RowHeight = 36,
+            AutoGenerateColumns = false, IsReadOnly = true, MinHeight = 0, RowHeight = 36,
             EnableRowVirtualization = true, EnableColumnVirtualization = true, CanUserAddRows = false, CanUserDeleteRows = false,
             CanUserSortColumns = false, CanUserReorderColumns = true, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.FullRow
         };
@@ -497,6 +535,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
     private static Button Command(string title, Action action)
     {
         var button = new Button { Content = title, Margin = new Thickness(0, 0, 8, 6), Padding = new Thickness(12, 7, 12, 7), FontSize = 12, MinHeight = 36 };
+        AutomationProperties.SetName(button, title);
         button.Click += (_, _) => action(); return button;
     }
     private static TextBlock Label(string text, double size, string brush, FontWeight? weight = null, Thickness? margin = null)

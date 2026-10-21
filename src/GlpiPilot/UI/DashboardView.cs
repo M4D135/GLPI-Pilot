@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using GlpiPilot.Core;
@@ -24,10 +23,10 @@ public sealed partial class DashboardView : UserControl
     private FrameworkElement? _toolbar, _editor;
     private TextBlock? _saveLabel;
     private TextBlock? _contextHelp;
-    private ScrollViewer? _editorScroller;
     private string? _selectedWidget;
     private string _editorMode = "library", _emptyMessage = "Lancez Extraire tout pour calculer vos indicateurs.";
     private string _libraryQuery = "", _libraryCategory = "all";
+    private int _libraryPage;
     private readonly HashSet<string> _libraryFavorites = new(StringComparer.Ordinal);
     private bool _libraryAvailableOnly, _libraryFavoritesOnly;
     private bool _busy, _editing, _saveSuccess = true;
@@ -47,6 +46,7 @@ public sealed partial class DashboardView : UserControl
     }
     public void SetLayout(DashboardLayoutSettings layout, bool clearHistory = true)
     {
+        ClearDetailView();
         _layout = layout.Copy(); _layout.Normalize();
         if (clearHistory) { _undo.Clear(); _redo.Clear(); }
         Render();
@@ -66,8 +66,8 @@ public sealed partial class DashboardView : UserControl
         if (_editor != null) _editor.IsEnabled = !busy;
     }
     public void ShowEmpty(string message = "Lancez Extraire tout. Votre disposition est conservée ; les widgets se rempliront avec le relevé.")
-    { _data = null; _emptyMessage = message; Render(); }
-    public void Show(DashboardSnapshot data) { _data = data; Render(); }
+    { ClearDetailView(); _data = null; _emptyMessage = message; Render(); }
+    public void Show(DashboardSnapshot data) { ClearDetailView(); _data = data; Render(); }
 
     public bool AddQueryWidget(string sourceKey, string title, bool distribution)
     {
@@ -93,9 +93,13 @@ public sealed partial class DashboardView : UserControl
     private void Render()
     {
         _body.Children.Clear(); _commands.Clear(); _resizers.Clear(); _layout.Normalize();
-        _contextHelp = null; _editorScroller = null;
+        _contextHelp = _saveLabel = null; _toolbar = _editor = null;
         if (_selectedWidget != null && Board.Widgets.All(widget => widget.Id != _selectedWidget)) _selectedWidget = null;
         BuildHeader();
+        if (_detailBuilder != null)
+        {
+            BuildDetailView(); SetBusy(_busy); return;
+        }
         BuildToolbar();
         var workspace = new Grid(); workspace.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); workspace.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         workspace.RowDefinitions.Add(new() { Height = GridLength.Auto }); workspace.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -109,7 +113,7 @@ public sealed partial class DashboardView : UserControl
         workspace.Children.Add(boardSurface);
         if (_editing)
         {
-            var editor = BuildEditor(); var editorScroller = _editorScroller;
+            var editor = BuildEditor();
             _editor = editor; Grid.SetColumn(editor, 1); workspace.Children.Add(editor);
             workspace.SizeChanged += (_, _) =>
             {
@@ -118,25 +122,25 @@ public sealed partial class DashboardView : UserControl
                 Grid.SetRow(boardSurface, narrow ? 1 : 0);
                 editor.Width = narrow ? double.NaN : 340;
                 editor.Margin = narrow ? new Thickness(0, 0, 0, 16) : new Thickness(18, 0, 0, 0);
-                if (editorScroller != null) editorScroller.MaxHeight = narrow ? 360 : 580;
             };
         }
         else _editor = null;
         _body.Children.Add(workspace);
-        if (_data != null) _body.Children.Add(Text("Cliquez sur un indicateur, une barre ou la légende d’un anneau pour retrouver ses lignes. Les tableaux se consultent aussi par double-clic. Les colonnes absentes restent signalées.", 11, "MutedBrush", margin: new Thickness(0, 18, 0, 12)));
+        if (_data != null) _body.Children.Add(Text("Cliquez sur un indicateur, une barre ou une légende pour retrouver ses lignes. Les listes complètes s’ouvrent depuis chaque carte. Les colonnes absentes restent signalées.", 11, "MutedBrush", margin: new Thickness(0, 14, 0, 8)));
         SetBusy(_busy);
     }
 
     private FrameworkElement WidgetCard(DashboardWidgetSettings widget)
     {
-        var frame = new Border { Tag = widget.Id, Padding = new Thickness(16), CornerRadius = new CornerRadius(widget.Style == "minimal" ? 0 : 14), BorderThickness = new Thickness(widget.Style == "outline" ? 2 : 1), ClipToBounds = true };
+        var frame = new Border { Tag = widget.Id, Padding = new Thickness(14), CornerRadius = new CornerRadius(widget.Style == "minimal" ? 0 : 14), BorderThickness = new Thickness(widget.Style == "outline" ? 2 : 1) };
+        AutomationProperties.SetAutomationId(frame, "DashboardWidget." + widget.Kind + "." + widget.Id);
         frame.SetResourceReference(Border.BackgroundProperty, widget.Style == "minimal" ? "WindowBrush" : "PanelBrush");
         frame.SetResourceReference(Border.BorderBrushProperty, widget.Style == "minimal" ? "WindowBrush" : "LineBrush");
         if (widget.Style is "outline" or "accent") frame.BorderBrush = Accent(widget.Accent);
         if (widget.Style == "accent") frame.BorderThickness = new Thickness(4, 1, 1, 1);
         if (_editing && _selectedWidget == widget.Id) frame.SetResourceReference(Border.BorderBrushProperty, "AccentBrush");
         var content = new Grid(); content.RowDefinitions.Add(new() { Height = GridLength.Auto }); content.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var top = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var top = new DockPanel { Margin = new Thickness(0, 0, 0, 9) };
         if (_editing)
         {
             var edit = Mini("Modifier", "Ouvrir les options de ce widget dans le panneau de personnalisation.", () => OpenEditor("widget", widget.Id)); DockPanel.SetDock(edit, Dock.Right); top.Children.Add(edit);
@@ -155,13 +159,14 @@ public sealed partial class DashboardView : UserControl
             frame.DragOver += (_, e) => { e.Effects = CanDrop(e) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; AutoScroll(e); };
             frame.Drop += (_, e) => { if (CanDrop(e)) MoveWidget((string)e.Data.GetData(DragFormat), widget.Id); e.Handled = true; };
         }
-        var title = Text(WidgetTitle(widget), 14, weight: FontWeights.SemiBold); title.TextTrimming = TextTrimming.CharacterEllipsis; title.MaxHeight = 42; title.ToolTip = WidgetTitle(widget); top.Children.Add(title);
+        var title = Text(WidgetTitle(widget), 14, weight: FontWeights.SemiBold); title.ToolTip = WidgetTitle(widget); top.Children.Add(title);
         content.Children.Add(top);
         var inner = WidgetContent(widget); Grid.SetRow(inner, 1); content.Children.Add(inner);
         if (_editing)
         {
             var footer = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
-            var resize = new Thumb { Width = 21, Height = 21, Cursor = widget.Locked ? Cursors.Arrow : Cursors.SizeNWSE, IsEnabled = !widget.Locked, ToolTip = "Glisser pour ajuster largeur et hauteur", Background = Brushes.Transparent };
+            var resize = new Thumb { Width = 21, Height = 21, Cursor = widget.Locked ? Cursors.Arrow : Cursors.SizeNWSE, IsEnabled = !widget.Locked, ToolTip = "Glisser pour ajuster la largeur ; un déplacement vertical définit une hauteur minimale.", Background = Brushes.Transparent };
+            AutomationProperties.SetName(resize, "Redimensionner le widget");
             _resizers.Add((resize, !widget.Locked));
             var factory = new FrameworkElementFactory(typeof(TextBlock)); factory.SetValue(TextBlock.TextProperty, "↘"); factory.SetValue(TextBlock.FontSizeProperty, 19d); factory.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); resize.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = factory };
             DockPanel.SetDock(resize, Dock.Right); footer.Children.Add(resize);
@@ -169,15 +174,25 @@ public sealed partial class DashboardView : UserControl
             order.Children.Add(Mini("↑", "Déplacer ce widget avant le précédent.", () => MoveBy(widget, -1), !widget.Locked && Board.Widgets.IndexOf(widget) > 0));
             order.Children.Add(Mini("↓", "Déplacer ce widget après le suivant.", () => MoveBy(widget, 1), !widget.Locked && Board.Widgets.IndexOf(widget) < Board.Widgets.Count - 1));
             DockPanel.SetDock(order, Dock.Right); footer.Children.Add(order);
-            footer.Children.Add(Text(widget.Locked ? "Verrouillé" : $"{100d * widget.Span / 12:0.#} % · {widget.Height}px", 10, "MutedBrush"));
+            footer.Children.Add(Text((widget.Locked ? "Verrouillé · " : $"{100d * widget.Span / 12:0.#} % · ")
+                + (widget.AutoHeight ? "hauteur auto" : $"min. {widget.Height}px"), 10, "MutedBrush"));
             DashboardLayoutSettings? before = null; double dx = 0, dy = 0; var originalSpan = widget.Span; var originalHeight = widget.Height;
-            resize.DragStarted += (_, _) => { if (_busy) return; before = _layout.Copy(); dx = dy = 0; originalSpan = widget.Span; originalHeight = widget.Height; };
+            resize.DragStarted += (_, _) =>
+            {
+                if (_busy) return; before = _layout.Copy(); dx = dy = 0; originalSpan = widget.Span;
+                originalHeight = widget.AutoHeight ? (int)Math.Clamp(Math.Ceiling(frame.ActualHeight), 160, 960) : widget.Height;
+            };
             resize.DragDelta += (_, e) =>
             {
                 if (_busy || before is null || widget.Locked) return;
                 dx += e.HorizontalChange; dy += e.VerticalChange;
                 widget.Span = Math.Clamp(originalSpan + (int)Math.Round(dx / Math.Max(40, (_boardPanel?.ActualWidth ?? 1000) / 12)), 3, 12);
-                widget.Height = Math.Clamp(originalHeight + (int)Math.Round(dy / 20) * 20, 160, 960); _boardPanel?.InvalidateMeasure();
+                if (Math.Abs(dy) >= 10)
+                {
+                    widget.AutoHeight = false;
+                    widget.Height = Math.Clamp(originalHeight + (int)Math.Round(dy / 20) * 20, 160, 960);
+                }
+                _boardPanel?.InvalidateMeasure();
             };
             resize.DragCompleted += (_, e) => { if (before is null) return; if (e.Canceled || _busy) _layout = before; else { PushUndo(before); Persist(); } Render(); };
             Grid.SetRow(footer, 2); content.Children.Add(footer);
@@ -244,10 +259,5 @@ public sealed partial class DashboardView : UserControl
         // Medium chroma decorative accents remain legible in both palettes; body text uses theme resources.
         var color = name switch { "teal" => "#248F97", "green" => "#4A9569", "orange" => "#BA7A2E", "red" => "#C65B5B", "purple" => "#8B71C6", "slate" => "#7A8797", _ => "#4887DB" };
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)); brush.Freeze(); return brush;
-    }
-    private static DataGrid ReadOnlyGrid()
-    {
-        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, SelectionMode = DataGridSelectionMode.Single, EnableRowVirtualization = true, EnableColumnVirtualization = true, HeadersVisibility = DataGridHeadersVisibility.Column, RowHeaderWidth = 0, MinHeight = 100 };
-        VirtualizingPanel.SetIsVirtualizing(grid, true); return grid;
     }
 }

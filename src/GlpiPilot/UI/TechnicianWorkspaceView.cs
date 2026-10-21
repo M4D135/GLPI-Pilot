@@ -24,7 +24,7 @@ public sealed class TechnicianWorkspaceView : UserControl
     private readonly Button _personal;
     private readonly Button _team;
     private readonly Button _previous, _next;
-    private readonly TabControl _workspaces = new() { Margin = new Thickness(0, 18, 0, 0) };
+    private readonly TabControl _workspaces = new() { Margin = new Thickness(0, 12, 0, 0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     private readonly TabItem _managementTab, _dashboardTab;
     private readonly List<Button> _tabButtons = new();
     private TechnicianEntry[] _filteredEntries = Array.Empty<TechnicianEntry>();
@@ -44,17 +44,20 @@ public sealed class TechnicianWorkspaceView : UserControl
     public TechnicianWorkspaceView()
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        var root = new StackPanel();
-        var heading = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+        VerticalContentAlignment = VerticalAlignment.Stretch;
+        var root = new Grid();
+        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        var heading = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        heading.Children.Add(Label("Techniciens", 23, "TextBrush", FontWeights.SemiBold, new Thickness(0, 0, 20, 6)));
         _team = Command("Vue d’équipe", () => TeamRequested?.Invoke());
-        DockPanel.SetDock(_team, Dock.Right); heading.Children.Add(_team);
-        var titles = new StackPanel();
-        titles.Children.Add(Label("L’équipe et votre espace", 25, "TextBrush", FontWeights.SemiBold));
-        titles.Children.Add(Label("Comparez les charges du relevé, retrouvez vos favoris et ouvrez le dashboard de chaque technicien.", 13, "MutedBrush", new Thickness(0, 6, 20, 0)));
-        heading.Children.Add(titles); root.Children.Add(heading);
+        _team.Content = "Équipe"; _team.ToolTip = "Ouvrir le dashboard global de l’équipe";
+        _team.Margin = new Thickness(0, 0, 8, 6); heading.Children.Add(_team);
+        root.Children.Add(heading);
 
         var identityContent = new StackPanel();
         identityContent.Children.Add(Label("MON ESPACE", 11, "MutedBrush", FontWeights.SemiBold));
+        identityContent.Children.Add(Label("Comparez les charges du relevé, retrouvez vos favoris et ouvrez le dashboard de chaque technicien.", 13, "MutedBrush", new Thickness(0, 6, 0, 12)));
         var identityRow = new WrapPanel { Margin = new Thickness(0, 9, 0, 8) };
         _identity.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(VirtualizingStackPanel)));
         VirtualizingPanel.SetIsVirtualizing(_identity, true);
@@ -70,23 +73,26 @@ public sealed class TechnicianWorkspaceView : UserControl
         _saveIdentity.ToolTip = "Mémoriser le technicien choisi et ouvrir son tableau de bord.";
         identityRow.Children.Add(_saveIdentity);
         _personal = Command("Mon tableau de bord", () => PersonalRequested?.Invoke());
+        _personal.Content = "Mon dashboard"; _personal.ToolTip = "Ouvrir le tableau de bord de mon identité mémorisée";
         _personal.SetResourceReference(BackgroundProperty, "ActionBrush");
         _personal.SetResourceReference(ForegroundProperty, "OnActionBrush");
         _personal.SetResourceReference(BorderBrushProperty, "ActionBorderBrush");
-        identityRow.Children.Add(_personal);
+        _personal.Margin = new Thickness(0, 0, 8, 6); heading.Children.Add(_personal);
         identityContent.Children.Add(identityRow); identityContent.Children.Add(_identityNote);
         _openPersonalAfterExtraction.Content = Label("Ouvrir mon espace après une extraction réussie", 12, "TextBrush");
         _openPersonalAfterExtraction.ToolTip = "Après Extraire tout, ouvrir le tableau de bord de l’identité mémorisée. Ce choix reste sur ce poste et ne déclenche aucune extraction au lancement.";
         AutomationProperties.SetName(_openPersonalAfterExtraction, "Ouvrir mon espace après une extraction réussie");
         identityContent.Children.Add(_openPersonalAfterExtraction);
-        root.Children.Add(Card(identityContent));
 
         var dashboardContent = new StackPanel();
-        _managementTab = new TabItem { Header = "Gestion de l’équipe", Content = Management };
-        _dashboardTab = new TabItem { Header = "Dashboard du technicien", Content = dashboardContent };
+        AutomationProperties.SetAutomationId(_workspaces, "TechnicianWorkspaceTabs");
+        _managementTab = new TabItem { Header = "Équipe", ToolTip = "Gestion de l’équipe : comparaison des charges et fiches locales", Content = Management };
+        // The dashboard owns content height; this is its only vertical viewport.
+        _dashboardTab = new TabItem { Header = "Dashboard", ToolTip = "Dashboard du technicien sélectionné", Content = Viewport(dashboardContent) };
         _workspaces.Items.Add(_managementTab); _workspaces.Items.Add(_dashboardTab);
+        _workspaces.Items.Add(new TabItem { Header = "Mon identité", Content = Viewport(Card(identityContent)) });
         _workspaces.SelectedItem = _managementTab;
-        root.Children.Add(_workspaces);
+        Grid.SetRow(_workspaces, 1); root.Children.Add(_workspaces);
 
         var toolbar = new WrapPanel { Margin = new Thickness(0, 18, 0, 8), VerticalAlignment = VerticalAlignment.Center };
         toolbar.Children.Add(Label("TECHNICIENS", 11, "MutedBrush", FontWeights.SemiBold, new Thickness(0, 0, 16, 0)));
@@ -268,6 +274,7 @@ public sealed class TechnicianWorkspaceView : UserControl
     private static Button Command(string title, Action action)
     {
         var button = new Button { Content = title, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(12, 7, 12, 7), FontSize = 12, MinHeight = 36 };
+        AutomationProperties.SetName(button, title);
         button.Click += (_, _) => action(); return button;
     }
     private static TextBlock Label(string text, double size, string brush, FontWeight? weight = null, Thickness? margin = null)
@@ -282,4 +289,10 @@ public sealed class TechnicianWorkspaceView : UserControl
         var border = new Border { Child = content, Padding = new Thickness(18), CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1) };
         border.SetResourceReference(Border.BackgroundProperty, "PanelBrush"); border.SetResourceReference(Border.BorderBrushProperty, "LineBrush"); return border;
     }
+    private static ScrollViewer Viewport(UIElement content) => new()
+    {
+        Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false,
+        Padding = new Thickness(0, 4, 8, 8)
+    };
 }

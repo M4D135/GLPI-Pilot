@@ -9,13 +9,13 @@ public sealed partial class DashboardView
 {
     private void BuildHeader()
     {
-        var header = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
-        var titles = new StackPanel { Margin = new Thickness(0, 0, 24, 12), MaxWidth = 680 };
+        var header = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var titles = new StackPanel { Margin = new Thickness(0, 0, 20, 8), MaxWidth = 680 };
         titles.Children.Add(Text(_data?.IsFiltered == true ? "VUE TECHNICIEN" : "VUE D’ÉQUIPE", 10, "MutedBrush", FontWeights.SemiBold));
-        titles.Children.Add(Text(_data?.IsFiltered == true ? _data.ScopeLabel : "Tableau de bord", 28, weight: FontWeights.SemiBold, margin: new Thickness(0, 4, 0, 0)));
+        titles.Children.Add(Text(_data?.IsFiltered == true ? _data.ScopeLabel : "Tableau de bord", 24, weight: FontWeights.SemiBold, margin: new Thickness(0, 3, 0, 0)));
         titles.Children.Add(Text(_data is null ? "Votre espace de suivi, composé à votre façon."
             : $"{_data.RowCount:N0} {_data.Grain} · relevé du {_data.ExtractedAt:dd/MM/yyyy à HH:mm} · calcul à {_data.CalculatedAt:HH:mm}",
-            12, "MutedBrush", margin: new Thickness(0, 7, 0, 0)));
+            12, "MutedBrush", margin: new Thickness(0, 5, 0, 0)));
         header.Children.Add(titles);
         var actions = new WrapPanel { Margin = new Thickness(0, 11, 0, 0) };
         actions.Children.Add(DescribedCommand("Bilan Excel", "Exporter les indicateurs du périmètre actuellement affiché, y compris les avertissements.", () => ExportRequested?.Invoke(), _data != null));
@@ -24,7 +24,7 @@ public sealed partial class DashboardView
         header.Children.Add(actions); _body.Children.Add(header);
         if (_data is null) return;
 
-        var metadata = new WrapPanel { Margin = new Thickness(0, 0, 0, 15) };
+        var metadata = new WrapPanel { Margin = new Thickness(0, 0, 0, 7) };
         metadata.Children.Add(Chip(_data.Complete ? "Complet confirmé" : "Périmètre à confirmer", _data.Complete ? "SuccessBrush" : "WarningBrush"));
         if (_data.IsFiltered)
             metadata.Children.Add(Chip($"Vue filtrée · {_data.RowCount:N0} / {_data.SourceRowCount:N0} lignes du relevé"));
@@ -33,16 +33,18 @@ public sealed partial class DashboardView
         if (_data.Warnings.Count > 0)
             metadata.Children.Add(Chip($"{_data.Warnings.Count:N0} avertissement(s) · voir Qualité", "WarningBrush"));
         _body.Children.Add(metadata);
-        _body.Children.Add(Text("Les filtres de l’aperçu ne réduisent pas ce dashboard. Les chiffres suivent le périmètre indiqué ci-dessus.", 11, "MutedBrush", margin: new Thickness(0, -4, 0, 15)));
+        _body.Children.Add(Text("Périmètre indiqué ci-dessus · les filtres de l’aperçu ne réduisent pas ce dashboard.", 11, "MutedBrush", margin: new Thickness(0, -2, 0, 10)));
     }
 
     private void BuildToolbar()
     {
         var content = new StackPanel();
-        var heading = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+        var heading = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
         heading.Children.Add(Text(_editing ? "Personnalisation en cours" : "Votre disposition", 13, _editing ? "AccentBrush" : "TextBrush", FontWeights.SemiBold, new Thickness(0, 0, 14, 0)));
         var hidden = Board.Widgets.Count(widget => widget.Hidden);
         heading.Children.Add(Text($"{Board.Widgets.Count - hidden} widget(s) visible(s)" + (hidden > 0 ? $" · {hidden} masqué(s)" : ""), 11, "MutedBrush"));
+        _saveLabel = Text(_saveMessage, 11, _saveSuccess ? "MutedBrush" : "ErrorBrush", margin: new Thickness(12, 0, 0, 0));
+        heading.Children.Add(_saveLabel);
         content.Children.Add(heading);
         var bar = new WrapPanel();
         var boards = new ComboBox { Width = 230, Margin = new Thickness(0, 0, 10, 8), ItemsSource = _layout.Boards, DisplayMemberPath = nameof(DashboardBoardSettings.Name), SelectedItem = Board };
@@ -70,11 +72,9 @@ public sealed partial class DashboardView
             content.Children.Add(history);
             content.Children.Add(Text("Déplacez les cartes par leur poignée ou leurs flèches. Le coin inférieur droit ajuste leur taille. « Modifier » ouvre leurs options.", 11, "MutedBrush", margin: new Thickness(0, 0, 0, 10)));
         }
-        _saveLabel = Text(_saveMessage, 11, _saveSuccess ? "MutedBrush" : "ErrorBrush");
-        content.Children.Add(_saveLabel);
         if (!_saveSuccess && !_editing)
             content.Children.Add(DescribedCommand("Enregistrer", "Réessayer l’enregistrement de la disposition après l’erreur précédente.", Persist));
-        var frame = Card(content); frame.Padding = new Thickness(16, 13, 16, 13); frame.Margin = new Thickness(0, 0, 0, 18);
+        var frame = Card(content); frame.Padding = new Thickness(14, 11, 14, 4); frame.Margin = new Thickness(0, 0, 0, 14);
         _toolbar = frame; _body.Children.Add(frame);
     }
 
