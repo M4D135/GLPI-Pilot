@@ -215,7 +215,7 @@
                                 </Grid>
                                 <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource PanelBrush}" ClipToBounds="True">
                                     <Grid>
-                                        <DataGrid x:Name="TicketGrid" IsReadOnly="True" AutoGenerateColumns="True" ClipboardCopyMode="IncludeHeader" RowHeight="Auto" MinRowHeight="36" SelectionUnit="CellOrRowHeader" Background="{DynamicResource PanelBrush}" Foreground="{DynamicResource TextBrush}" ToolTip="Lecture seule. Ctrl+C copie les cellules sélectionnées." />
+                                        <DataGrid x:Name="TicketGrid" IsReadOnly="True" AutoGenerateColumns="True" ClipboardCopyMode="IncludeHeader" RowHeight="NaN" MinRowHeight="36" SelectionUnit="CellOrRowHeader" Background="{DynamicResource PanelBrush}" Foreground="{DynamicResource TextBrush}" ToolTip="Lecture seule. Ctrl+C copie les cellules sélectionnées." />
                                         <ContentControl x:Name="TicketReaderHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
                                         <Border x:Name="TicketEmptyPanel" Background="{DynamicResource PanelBrush}" IsHitTestVisible="False">
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="470" Margin="24">
