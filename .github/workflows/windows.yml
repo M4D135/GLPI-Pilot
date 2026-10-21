@@ -1,0 +1,137 @@
+name: Windows — tests et packs PROD / DEV
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'docs/**'
+      - 'support/**'
+      - 'licenses/**'
+      - 'README.md'
+      - 'build.ps1'
+      - 'build-tools/Invoke-WindowsCi.ps1'
+      - '.github/workflows/windows.yml'
+      - 'global.json'
+      - 'NuGet.Config'
+      - 'nuget.config'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+
+# No release, repository write, package publishing or external secret is needed.
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 · contrôles réels et publication
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+    steps:
+      - name: Récupérer les sources
+        # Official release v7.0.1; immutable commit verified through the GitHub API.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Installer le SDK .NET 10 stable
+        id: dotnet
+        # Official release v6.0.0.
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: ga
+          architecture: x64
+
+      - name: Sélectionner le SDK et préparer les journaux
+        env:
+          CI_DOTNET_SDK: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          if (-not (Test-Path -LiteralPath global.json)) {
+            @{ sdk = @{ version = $env:CI_DOTNET_SDK; rollForward = 'latestPatch'; allowPrerelease = $false } } |
+              ConvertTo-Json -Depth 3 | Set-Content -LiteralPath global.json -Encoding utf8
+          }
+          New-Item -ItemType Directory -Path artifacts/windows-ci/logs -Force | Out-Null
+          dotnet --info | Tee-Object -FilePath artifacts/windows-ci/logs/dotnet-info.log
+          if ($LASTEXITCODE -ne 0) { throw '.NET information unavailable.' }
+          "Commit: $env:GITHUB_SHA`nRunner: $env:RUNNER_OS / $env:RUNNER_ARCH`nImage: $env:ImageOS / $env:ImageVersion" |
+            Set-Content -LiteralPath artifacts/windows-ci/logs/build-context.log -Encoding utf8
+
+      - name: Diagnostics, configurations et moteurs de pilotage
+        timeout-minutes: 12
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
+
+      - name: Construire et exécuter les contrôles WPF réels
+        timeout-minutes: 10
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage WpfChecks
+
+      - name: Construire les packs PROD et DEV (exe + wad)
+        id: pack
+        timeout-minutes: 12
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
+
+      - name: Vérifier le premier rendu du pack PROD extrait en état isolé
+        timeout-minutes: 2
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup
+
+      - name: Joindre le pack PROD Windows validé
+        id: upload_prod
+        # Official release v7.0.2. Upload the ready ZIP directly, without a second ZIP wrapper.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          path: ${{ steps.pack.outputs.prod-pack-path }}
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+      - name: Joindre le pack DEV Windows complet
+        id: upload_dev
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          path: ${{ steps.pack.outputs.dev-pack-path }}
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+      - name: Résumé du résultat Windows
+        env:
+          PROD_URL: ${{ steps.upload_prod.outputs.artifact-url }}
+          DEV_URL: ${{ steps.upload_dev.outputs.artifact-url }}
+        run: |
+          @"
+          ## Validation Windows terminée
+          - Contrôles des diagnostics, configurations, dashboards, dispositions, recherche, techniciens, villes, tournées et requêtes : exécutés avec succès.
+          - WindowsStartupChecks : contrôles WPF de production chargés et rendus sous Windows, délai maximal 90 s.
+          - Pack PROD extrait : fenêtre principale visible, marqueur ContentRendered reçu, configuration synthétique inchangée, fermeture normale.
+          - [Télécharger PROD]($env:PROD_URL) · [Télécharger DEV]($env:DEV_URL).
+          - Chaque ZIP contient uniquement GLPI-Pilot.exe et wad à sa racine ; DEV inclut les sources dépliées.
+          - Les deux packs utilisent le même exécutable vérifié ; empreintes de chaque fichier contrôlées.
+          - Artefacts conservés 30 jours, connexion GitHub requise.
+          - Les journaux et le SHA-256 sont joints séparément. Aucun portail GLPI, SSO ou navigateur métier n’a été testé.
+          "@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Conserver les journaux, même en cas d’échec
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/windows-ci/logs/
+          if-no-files-found: warn
+          retention-days: 14
+
