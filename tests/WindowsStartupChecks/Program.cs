@@ -5,6 +5,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Xml.Linq;
 using GlpiPilot.Core;
 using GlpiPilot.UI;
 
@@ -20,7 +21,7 @@ internal static class Program
     private static int _exitCode = 1;
     private static bool _failed;
     private static Window? _host;
-    private static HarnessApplication? _app;
+    private static Application? _app;
     private static string _stage = "initialisation";
     private static readonly string TemporaryRoot = Path.Combine(Path.GetTempPath(), "GLPI-WindowsStartupChecks-" + Guid.NewGuid().ToString("N"));
     private static readonly List<IDisposable> DisposableViews = new();
@@ -56,9 +57,8 @@ internal static class Program
         {
             Directory.CreateDirectory(TemporaryRoot);
             _stage = "real App resources";
-            _app = new HarnessApplication();
-            _app.InitializeComponent();
-            _app.StartupUri = null;
+            _app = new Application();
+            _app.Resources = LoadProductionResources();
             _app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             _app.DispatcherUnhandledException += (_, args) =>
             {
@@ -67,7 +67,7 @@ internal static class Program
                 _app.Shutdown(1);
             };
             ThemeService.Apply("dark");
-            Pass("Real App.xaml resources loaded through App.InitializeComponent");
+            Pass("Production App.xaml resource definitions loaded in an isolated WPF Application");
             var tabs = BuildViews();
             _host = new Window
             {
@@ -519,19 +519,26 @@ internal static class Program
         Console.Error.WriteLine(exception);
     }
 
-    private sealed class HarnessApplication : GlpiPilot.App
+    private static ResourceDictionary LoadProductionResources()
     {
-        protected override void OnStartup(StartupEventArgs e)
-        {
-            // Intentionally do not call GlpiPilot.App.OnStartup: it constructs the
-            // production MainWindow and owns the user's process/session/profile.
-            // The host passed to Run() is the only window this harness creates.
-        }
-
-        protected override void OnExit(ExitEventArgs e)
-        {
-            // App.OnExit writes production startup diagnostics. The harness owns
-            // its console report and must not access the user's diagnostic path.
-        }
+        // Link the actual production XAML into this test assembly: no copied styles
+        // can drift from the app. An App subclass in another assembly cannot load
+        // App's BAML, and a real App schedules production OnStartup in its constructor.
+        // The separate PackStartup stage verifies the real compiled App and main window.
+        using var stream = typeof(Program).Assembly.GetManifestResourceStream("GlpiPilot.WindowsStartupChecks.ProductionApp.xaml")
+            ?? throw new InvalidDataException("The linked production App.xaml resource is missing.");
+        var root = XDocument.Load(stream).Root
+            ?? throw new InvalidDataException("The linked production App.xaml is empty.");
+        XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+        Require(root.Name == presentation + "Application", "Expected the production Application XAML root.");
+        var resources = root.Element(presentation + "Application.Resources")
+            ?? throw new InvalidDataException("Production Application.Resources is missing.");
+        var dictionary = new XElement(presentation + "ResourceDictionary",
+            root.Attributes().Where(attribute => attribute.IsNamespaceDeclaration), resources.Nodes());
+        using var reader = dictionary.CreateReader();
+        var result = (ResourceDictionary)System.Windows.Markup.XamlReader.Load(reader);
+        Require(result.Contains("AppWindowStyle") && result.Contains("WindowBrush") && result.Contains(typeof(TabControl)),
+            "Production resources did not contain the expected window, theme and tab styles.");
+        return result;
     }
 }

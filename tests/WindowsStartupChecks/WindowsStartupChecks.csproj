@@ -13,5 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/GlpiPilot/GlpiPilot.csproj" />
+    <EmbeddedResource Include="../../src/GlpiPilot/App.xaml"
+                      LogicalName="GlpiPilot.WindowsStartupChecks.ProductionApp.xaml" />
   </ItemGroup>
 </Project>
