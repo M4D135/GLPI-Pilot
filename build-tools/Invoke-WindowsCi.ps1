@@ -1,0 +1,326 @@
+#requires -Version 7.2
+<#
+.SYNOPSIS
+Builds and runs the Windows CI stages without modifying production app code.
+.DESCRIPTION
+The WPF harness runs real controls and has an external 90-second process deadline.
+PackStartup is restricted to an interactive GitHub-hosted Windows runner. It refuses
+any existing GLPI-Pilot state, redirects only that absent app directory to a unique
+temporary sandbox through a junction, and never changes Windows known-folder settings.
+Only synthetic settings are used. No extraction, browser launch or SSO is requested.
+This script does not imply that Windows checks passed until each executable succeeds.
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [ValidateSet('BclChecks', 'WpfChecks', 'BuildPack', 'PackStartup')]
+    [string]$Stage,
+    [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/windows-ci')
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+if (-not $IsWindows) { throw 'These CI stages require Windows; a cross-build is not a Windows test.' }
+$repository = Split-Path -Parent $PSScriptRoot
+$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+$logs = Join-Path $OutputDirectory 'logs'
+New-Item -ItemType Directory -Path $logs -Force | Out-Null
+$utf8 = [Text.UTF8Encoding]::new($false)
+
+function Invoke-CheckedProcess {
+    param(
+        [Parameter(Mandatory)][string]$Executable,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory)][string]$LogName,
+        [int]$TimeoutSeconds = 300,
+        [string]$ExpectedSummary = ''
+    )
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $Executable
+    $start.WorkingDirectory = $repository
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.StandardOutputEncoding = $utf8
+    $start.StandardErrorEncoding = $utf8
+    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    $stdout = $null; $stderr = $null; $timedOut = $false
+    try {
+        if (-not $process.Start()) { throw "Could not start $LogName." }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            $timedOut = $true
+            $process.Kill($true)
+            [void]$process.WaitForExit(5000)
+        }
+        if (-not $stdout.Wait(5000) -or -not $stderr.Wait(5000)) { throw "Output capture did not finish for $LogName." }
+        $report = $stdout.Result + $stderr.Result
+        if ($timedOut) { $report += "`nFAIL: process deadline of $TimeoutSeconds seconds exceeded.`n" }
+        [IO.File]::WriteAllText((Join-Path $logs $LogName), $report, $utf8)
+        Write-Host $report
+        if ($timedOut) { throw "$LogName exceeded its $TimeoutSeconds-second deadline." }
+        if ($process.ExitCode -ne 0) { throw "$LogName failed with exit code $($process.ExitCode)." }
+        if ($ExpectedSummary -and -not $report.Contains($ExpectedSummary, [StringComparison]::Ordinal)) {
+            throw "$LogName exited without the expected successful test summary."
+        }
+    }
+    finally {
+        if ($stdout -and -not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) }
+        $process.Dispose()
+    }
+}
+
+function Get-Pack {
+    param([ValidateSet('PROD', 'DEV')][string]$Edition = 'PROD')
+    $pattern = 'GLPI-Pilot_*_' + $Edition + '_Windows-x64.zip'
+    $files = @(Get-ChildItem -LiteralPath (Join-Path $OutputDirectory 'release') -Filter $pattern -File)
+    if ($files.Count -ne 1) { throw "Expected exactly one $Edition Windows ZIP from build.ps1." }
+    return $files[0]
+}
+
+function Get-EntryHash {
+    param([IO.Compression.ZipArchiveEntry]$Entry)
+    $stream = $Entry.Open()
+    try { return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream)).ToLowerInvariant() }
+    finally { $stream.Dispose() }
+}
+
+function Assert-PackContents {
+    param([IO.FileInfo]$Pack, [ValidateSet('PROD', 'DEV')][string]$Edition = 'PROD')
+    $archive = [IO.Compression.ZipFile]::OpenRead($Pack.FullName)
+    try {
+        $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+        $top = @($entries | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique)
+        if ($top.Count -ne 2 -or $top -notcontains 'GLPI-Pilot.exe' -or $top -notcontains 'wad') {
+            throw "$Edition ZIP must contain only GLPI-Pilot.exe and wad at its root."
+        }
+        $required = @(
+            'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
+            'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
+            'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
+            'wad/version.json', 'wad/SHA256SUMS.txt'
+        )
+        if ($Edition -eq 'DEV') {
+            $required += @(
+                'wad/sources/build.ps1', 'wad/sources/README.md',
+                'wad/sources/src/GlpiPilot/GlpiPilot.csproj',
+                'wad/sources/tests/WindowsStartupChecks/Program.cs',
+                'wad/sources/build-tools/Invoke-WindowsCi.ps1',
+                'wad/sources/.github/workflows/windows.yml'
+            )
+        }
+        foreach ($name in $required) { if ($entries -notcontains $name) { throw "Incomplete $Edition pack: $name is missing." } }
+        if ($Edition -eq 'PROD' -and ($entries | Where-Object { $_ -like 'wad/sources/*' })) { throw 'PROD unexpectedly contains development sources.' }
+        if ($entries | Where-Object { $_ -match '(^|/)(settings\.json|Browser|Profiles|Exports)(/|$)|(^|/)\.node\.exe\.' }) {
+            throw 'Application state or a partial transfer is present in the pack.'
+        }
+        $manifestReader = [IO.StreamReader]::new($archive.GetEntry('wad/SHA256SUMS.txt').Open(), [Text.Encoding]::UTF8, $true)
+        try { $lines = $manifestReader.ReadToEnd() -split '\r?\n' }
+        finally { $manifestReader.Dispose() }
+        $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($line in $lines) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            if ($line -notmatch '^([a-f0-9]{64})  (.+)$') { throw "Invalid SHA-256 manifest in $Edition." }
+            $expected = $Matches[1]; $name = $Matches[2]
+            if (-not $seen.Add($name)) { throw "Duplicate manifest path: $name" }
+            $entry = $archive.GetEntry($name)
+            if ($null -eq $entry -or (Get-EntryHash $entry) -ne $expected) { throw "Missing or corrupted $Edition file: $name" }
+        }
+        $fileEntries = @($archive.Entries | Where-Object { -not $_.FullName.EndsWith('/') })
+        if ($seen.Count -ne $fileEntries.Count - 1) { throw "$Edition manifest does not cover every packaged file." }
+        $metadataReader = [IO.StreamReader]::new($archive.GetEntry('wad/version.json').Open(), [Text.Encoding]::UTF8, $true)
+        try { $metadata = $metadataReader.ReadToEnd() | ConvertFrom-Json }
+        finally { $metadataReader.Dispose() }
+        $exeHash = Get-EntryHash $archive.GetEntry('GLPI-Pilot.exe')
+        if ($metadata.distribution -ne $Edition -or $metadata.executable_sha256 -ne $exeHash) { throw "$Edition metadata does not match its executable." }
+        if ($env:GITHUB_SHA -and $metadata.source_commit -ne $env:GITHUB_SHA) { throw "$Edition is not associated with the current source commit." }
+        Write-Host "PASS: $Edition root, required files and all $($seen.Count) SHA-256 entries verified. EXE_SHA256=$exeHash"
+        return $exeHash
+    }
+    finally { $archive.Dispose() }
+}
+
+function Test-PackStartup {
+    if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows') {
+        throw 'PackStartup only runs in a disposable GitHub-hosted Windows job; no local user profile is modified.'
+    }
+    if (-not [Environment]::UserInteractive -or [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0) {
+        throw 'NOT RUN: the full pack test requires an interactive Windows desktop, not a service/session-0 process.'
+    }
+    if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { throw 'The runner temporary directory is unavailable.' }
+    if (Get-Process -Name 'GLPI-Pilot' -ErrorAction SilentlyContinue) { throw 'An existing GLPI-Pilot process prevents an isolated startup test.' }
+    $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if (-not [IO.Directory]::Exists($localData)) { throw 'The Windows LocalApplicationData known folder is unavailable.' }
+    $stateLink = Join-Path $localData 'GLPI-Pilot'
+    # Enumerating the parent also catches a pre-existing dangling junction.
+    if (Get-ChildItem -LiteralPath $localData -Force | Where-Object Name -EQ 'GLPI-Pilot') {
+        throw 'Existing GLPI-Pilot application state detected. It will not be moved, read or overwritten.'
+    }
+    $sandbox = Join-Path $env:RUNNER_TEMP ('glpi-pilot-pack-check-' + [guid]::NewGuid().ToString('N'))
+    $state = Join-Path $sandbox 'state'
+    $temporary = Join-Path $sandbox 'temp'
+    $extract = Join-Path $sandbox 'pack'
+    $packLogs = Join-Path $logs 'pack-startup'
+    New-Item -ItemType Directory -Path $state, $temporary, $extract, $packLogs -Force | Out-Null
+    $messages = [Collections.Generic.List[string]]::new()
+    $process = $null; $linkCreated = $false; $passed = $false
+    try {
+        $pack = Get-Pack
+        [void](Assert-PackContents $pack -Edition PROD)
+        [IO.Compression.ZipFile]::ExtractToDirectory($pack.FullName, $extract)
+        $executable = Join-Path $extract 'GLPI-Pilot.exe'
+        # Explicit synthetic state; the app must preserve the exact file on startup.
+        $settings = Join-Path $state 'settings.json'
+        @{
+            PortalUrl = 'https://glpi.example.invalid/front/ticket.php'
+            Theme = 'dark'
+            ExportFolder = (Join-Path $sandbox 'exports')
+            Dashboard = @{ PersonalTechnician = 'alex exemple' }
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $settings -Encoding utf8
+        $settingsHash = (Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash
+        New-Item -ItemType Junction -Path $stateLink -Target $state | Out-Null
+        $linkCreated = $true
+        $target = [IO.DirectoryInfo]::new($stateLink).ResolveLinkTarget($true)
+        if ($null -eq $target -or $target.FullName -ne [IO.Path]::GetFullPath($state)) { throw 'The temporary application-state junction could not be verified.' }
+        $messages.Add('Synthetic state redirected to a unique runner temporary sandbox; no previous application state existed.')
+
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class GlpiPilotCiWindow {
+    [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+}
+'@
+        $start = [Diagnostics.ProcessStartInfo]::new()
+        $start.FileName = $executable
+        $start.WorkingDirectory = Split-Path -Parent $executable
+        $start.UseShellExecute = $false
+        # Process-only paths also isolate fallback logs and single-file extraction.
+        $start.Environment['TEMP'] = $temporary
+        $start.Environment['TMP'] = $temporary
+        $start.Environment['DOTNET_BUNDLE_EXTRACT_BASE_DIR'] = Join-Path $sandbox 'bundle'
+        $process = [Diagnostics.Process]::new()
+        $process.StartInfo = $start
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        if (-not $process.Start()) { throw 'The packaged executable did not start.' }
+        $ready = $false
+        $startupLog = Join-Path $state 'Logs/demarrage-dernier.log'
+        while ($clock.Elapsed.TotalSeconds -lt 90) {
+            $process.Refresh()
+            if ($process.HasExited) { throw "The pack exited before its first render (code $($process.ExitCode))." }
+            $text = ''
+            if (Test-Path -LiteralPath $startupLog) {
+                try { $text = [IO.File]::ReadAllText($startupLog) }
+                catch [IO.IOException] { } # The app can be replacing its bounded latest-copy file.
+            }
+            if ($text.Contains('[ÉCHEC]', [StringComparison]::Ordinal)) { throw 'The packaged app reported a startup failure; see the attached startup log.' }
+            $window = $process.MainWindowHandle
+            if ($text.Contains('[PRÊT]', [StringComparison]::Ordinal) -and $window -ne [IntPtr]::Zero -and $process.MainWindowTitle -eq 'GLPI Pilot') {
+                $rectangle = [GlpiPilotCiWindow+Rect]::new()
+                [uint32]$windowProcess = 0
+                [void][GlpiPilotCiWindow]::GetWindowThreadProcessId($window, [ref]$windowProcess)
+                $ready = [GlpiPilotCiWindow]::IsWindowVisible($window) -and
+                    [GlpiPilotCiWindow]::GetWindowRect($window, [ref]$rectangle) -and
+                    $windowProcess -eq $process.Id -and $rectangle.Right -gt $rectangle.Left -and $rectangle.Bottom -gt $rectangle.Top
+                if ($ready) { break }
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (-not $ready) { throw 'Pack startup exceeded 90 seconds without both ContentRendered evidence and a visible main window.' }
+        $messages.Add('PASS: the extracted standalone executable reached ContentRendered and owns a visible nonzero main window.')
+        if (-not $process.CloseMainWindow()) { throw 'The visible main window did not accept a normal close request.' }
+        $remaining = [Math]::Min(10000, [Math]::Max(0, [int](90000 - $clock.Elapsed.TotalMilliseconds)))
+        if (-not $process.WaitForExit($remaining)) { throw 'The packaged app did not close within the startup-test deadline.' }
+        if ($process.ExitCode -ne 0) { throw "The packaged app closed with code $($process.ExitCode)." }
+        if ((Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -ne $settingsHash) { throw 'The synthetic settings file changed during startup or shutdown.' }
+        $messages.Add('PASS: normal shutdown, exit code 0, exact synthetic settings preserved. No browser or SSO interaction requested.')
+        $passed = $true
+    }
+    catch {
+        $messages.Add('FAIL: ' + $_.Exception.Message)
+        throw
+    }
+    finally {
+        try {
+            if ($process) {
+                try { if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) } }
+                finally { $process.Dispose() }
+            }
+            foreach ($directory in @((Join-Path $state 'Logs'), (Join-Path $temporary 'GLPI-Pilot/Logs'))) {
+                if (Test-Path -LiteralPath $directory) {
+                    Get-ChildItem -LiteralPath $directory -Filter '*.log' -File | Copy-Item -Destination $packLogs -Force
+                }
+            }
+            [IO.File]::WriteAllLines((Join-Path $logs 'pack-startup.log'), $messages, $utf8)
+            foreach ($message in $messages) { Write-Host $message }
+        }
+        finally {
+            if ($linkCreated) {
+                $target = [IO.DirectoryInfo]::new($stateLink).ResolveLinkTarget($true)
+                if ($null -eq $target -or $target.FullName -ne [IO.Path]::GetFullPath($state)) { throw 'Unexpected junction target during cleanup; application state was left untouched.' }
+                # Delete the junction itself, never recursively delete anything in a user profile.
+                [IO.Directory]::Delete($stateLink, $false)
+            }
+            Remove-Item -LiteralPath $sandbox -Recurse -Force
+        }
+    }
+    if (-not $passed) { throw 'Pack startup did not complete.' }
+}
+
+Push-Location $repository
+try {
+    switch ($Stage) {
+        'BclChecks' {
+            $suites = @(
+                @{ Project = 'StartupDiagnosticsChecks'; Log = 'startup-diagnostics-checks.log'; Summary = 'Startup diagnostics: 14 passed, 0 failed.' },
+                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '37/37 vérifications de configuration réussies.' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '78/78' },
+                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '23/23 checks passed.' },
+                @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
+                @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '33/33' },
+                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '60/60' },
+                @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '41/41' },
+                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '65/65 vérifications réussies.' }
+            )
+            foreach ($suite in $suites) {
+                $project = 'tests/' + $suite.Project + '/' + $suite.Project + '.csproj'
+                Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', $project, '-c', 'Release', '-p:PlaywrightPlatform=win') `
+                    -LogName $suite.Log -TimeoutSeconds 180 -ExpectedSummary $suite.Summary
+            }
+        }
+        'WpfChecks' {
+            $harness = Join-Path $OutputDirectory 'wpf-harness'
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('publish', 'tests/WindowsStartupChecks/WindowsStartupChecks.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=false', '-o', $harness) `
+                -LogName 'windows-startup-build.log' -TimeoutSeconds 420
+            Invoke-CheckedProcess -Executable (Join-Path $harness 'WindowsStartupChecks.exe') `
+                -LogName 'windows-startup-checks.log' -TimeoutSeconds 90 -ExpectedSummary 'real Windows UI checks completed; no browser or user settings accessed.'
+        }
+        'BuildPack' {
+            $release = Join-Path $OutputDirectory 'release'
+            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'build.ps1'), '-OutputDirectory', $release, '-ValidationDirectory', $logs) `
+                -LogName 'pack-build.log' -TimeoutSeconds 660
+            $exeHashes = @{}; $hashLines = [Collections.Generic.List[string]]::new()
+            foreach ($edition in @('PROD', 'DEV')) {
+                $pack = Get-Pack -Edition $edition
+                $exeHashes[$edition] = Assert-PackContents $pack -Edition $edition
+                $digest = (Get-FileHash -LiteralPath $pack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                $hashLines.Add("$digest  $($pack.Name)")
+                if ($env:GITHUB_OUTPUT) {
+                    "$($edition.ToLowerInvariant())-pack-path=$($pack.FullName)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+                }
+                Write-Host "Complete $edition Windows pack: $($pack.Name); SHA-256: $digest"
+            }
+            if ($exeHashes['PROD'] -ne $exeHashes['DEV']) { throw 'PROD and DEV do not contain the same executable.' }
+            [IO.File]::WriteAllText((Join-Path $logs 'pack-sha256.txt'), (($hashLines -join "`n") + "`n"), $utf8)
+            [IO.File]::WriteAllText((Join-Path $logs 'executable-sha256.txt'), ($exeHashes['PROD'] + "  GLPI-Pilot.exe`n"), $utf8)
+        }
+        'PackStartup' { Test-PackStartup }
+    }
+}
+finally { Pop-Location }
