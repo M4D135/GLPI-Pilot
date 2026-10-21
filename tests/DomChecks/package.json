@@ -1,0 +1,15 @@
+{
+  "name": "glpi-pilot-dom-checks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local browser-fixture checks for the GLPI Pilot DOM adapter",
+  "scripts": {
+    "test": "node run.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

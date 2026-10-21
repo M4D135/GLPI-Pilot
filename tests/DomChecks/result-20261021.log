@@ -1,0 +1,51 @@
+GLPI Pilot DOM adapter checks
+Started UTC: 2026-10-21T09:53:52.791Z
+Node: v24.19.0 | Playwright: 1.62.1
+Browser: 138.0.7204.0
+PASS 01 - One data table is discovered
+PASS 02 - Expected total is parsed
+PASS 03 - Business Suivant button outside pagination is excluded
+PASS 04 - Accents, icon labels and leading zeros are preserved
+PASS 05 - Stable row identifiers are extracted
+PASS 06 - Bridge reinstallation is idempotent
+PASS 07 - Signature changes when page data changes
+PASS 08 - Last page contains the remaining row
+PASS 09 - Last-page Next control is disabled
+PASS 10 - DOM extraction does not silently rewrite raw cell values
+PASS 11 - Visual picker suppresses the underlying action
+PASS 12 - Next picker returns the selected control
+PASS 13 - Table picker returns the expected selection kind
+PASS 14 - Table picker resolves the enclosing table
+PASS 15 - Escape cancels visual selection
+PASS 16 - Picker overlays are cleaned up
+PASS 17 - Nested detail tables are excluded from the inventory
+PASS 18 - Merged and duplicate headers become unique column names
+PASS 19 - Row spans and visible form-control values are read
+PASS 20 - Line breaks are kept and nested table content is excluded
+PASS 21 - Accessible icon label is extracted
+PASS 22 - Count is parsed next to inline navigation controls
+PASS 23 - Password and hidden-input values are excluded
+PASS 24 - Hidden columns are excluded
+PASS 25 - ARIA-grid result count is parsed
+PASS 26 - Potentially virtualized grids produce a warning
+PASS 27 - Empty-state message is not exported as a record
+PASS 28 - First record is retained when headers are absent
+PASS 29 - Conflicting next-page destinations are ambiguous
+PASS 30 - Multiple unprovably equivalent Next buttons are ambiguous
+PASS 31 - Header suffix collisions still produce unique names
+PASS 32 - Grouped total is parsed without an item noun
+PASS 33 - Duplicated links to the same next page are accepted
+PASS 34 - Authentication fixture is recognized as waiting
+PASS 35 - Hidden application tables are excluded during authentication
+PASS 36 - Completed fixture exposes the authenticated hint
+PASS 37 - Application table appears after simulated authentication
+PASS 38 - Authentication password never appears in extracted data
+PASS 39 - Grouped numeric IDs produce stable keys for spaces, NBSP and narrow spaces
+PASS 40 - Displayed ID spaces remain in exported cell values
+PASS 41 - Displayed narrow spaces remain in exported cell values
+PASS 42 - A repeated all-TH tbody header is excluded without dropping actual data rows
+PASS 43 - Header-like TD data and explicit row-header TH data are retained
+PASS 44 - Official data-count takes precedence over pager text
+PASS 45 - A declared GLPI zero total is preserved
+PASS 46 - Invalid data-count falls back to the visible associated pager
+46 browser adapter checks passed.
