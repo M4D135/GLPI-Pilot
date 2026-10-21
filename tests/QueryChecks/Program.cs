@@ -29,12 +29,48 @@ QueryResult Run(ExtractionResult source, SavedQuery query, DashboardSettings? se
     return QueryService.Evaluate(source, settings, snapshot, query);
 }
 
-Test("Forty stable validated templates leave room for personal queries", () =>
+Test("Sixty-four stable validated templates leave room for personal queries", () =>
 {
     var library = QueryLibrarySettings.CreateDefault(); library.Validate();
-    Assert(library.Queries.Count == 40 && library.Queries.Select(query => query.Id).Distinct().Count() == 40);
+    Assert(library.Queries.Count == 64 && library.Queries.Select(query => query.Id).Distinct().Count() == 64);
     Assert(library.Queries.Select(query => query.Id).SequenceEqual(QueryLibrarySettings.CreateDefault().Queries.Select(query => query.Id)));
     Assert(library.Queries.Count(query => query.GroupBy == "role:city") >= 20 && library.Queries.All(query => query.Aggregate == "count"));
+});
+Test("Missing templates are added once and preserve edited templates and custom queries", () =>
+{
+    var library = QueryLibrarySettings.CreateDefault(); library.Queries = library.Queries.Take(40).ToList();
+    var existing = library.Queries[0]; existing.Name = "Mon modèle adapté"; existing.Favorite = true;
+    var custom = Query("role:title", "contains", "perso"); library.Queries.Add(custom);
+    Assert(library.AddMissingTemplates() == 24 && library.Queries.Count == 65);
+    Assert(ReferenceEquals(existing, library.Queries[0]) && existing.Name == "Mon modèle adapté" && existing.Favorite);
+    Assert(library.Queries.Contains(custom) && library.AddMissingTemplates() == 0);
+    library.Validate();
+});
+Test("Adding templates respects the library capacity without replacing personal work", () =>
+{
+    var library = new QueryLibrarySettings { Queries = Enumerable.Range(0, QueryLibrarySettings.MaximumQueries - 2).Select(_ => Query()).ToList() };
+    var ids = library.Queries.Select(query => query.Id).ToArray();
+    Assert(library.AddMissingTemplates() == 2 && library.Queries.Count == QueryLibrarySettings.MaximumQueries);
+    Assert(library.Queries.Take(ids.Length).Select(query => query.Id).SequenceEqual(ids));
+    Assert(library.AddMissingTemplates() == 0); library.Validate();
+});
+Test("Invalid query libraries fail before any template is added", () =>
+{
+    var invalid = Query(); invalid.BaseProbe = "unknown";
+    var library = new QueryLibrarySettings { Queries = new() { invalid } };
+    Throws<InvalidDataException>(() => library.AddMissingTemplates());
+    Assert(library.Queries.Count == 1 && ReferenceEquals(library.Queries[0], invalid));
+});
+Test("Operational queries use real source rows within the personal scope", () =>
+{
+    var source = Table(new[] { "ID", "Statut", "Priorité", "Attribué à - Technicien", "Ville" },
+        new[] { "1", "Nouveau", "Haute", "", "Marseille" },
+        new[] { "2", "En cours (attribué)", "Très haute", "", "Lyon" },
+        new[] { "3", "Clos", "Majeure", "", "Marseille" });
+    var query = Query(basis: "high-without-technician", groupBy: "role:city");
+    var result = Run(source, query, rows: new[] { 1, 2 });
+    Assert(result.Available && result.Rows.SequenceEqual(new[] { 1 }) && result.Metric.Value == 1);
+    Assert(result.Distribution!.Buckets.Single().Rows.SequenceEqual(new[] { 1 }));
 });
 Test("Native base choices exclude percentages, averages and other queries", () =>
 {
@@ -362,11 +398,11 @@ Test("Appending a library twice replaces only its own metrics and groups", () =>
     QueryService.AppendDashboardQueries(snapshot, source, new(), new());
     Assert(snapshot.Metrics.All(metric => !metric.Key.StartsWith("query:", StringComparison.Ordinal)) && snapshot.Metric("total") == total);
 });
-Test("The forty-template library evaluates through available and unavailable data honestly", () =>
+Test("The sixty-four-template library evaluates through available and unavailable data honestly", () =>
 {
     var source = Simple("A", "B"); var snapshot = DashboardService.Calculate(source, new(), now);
     QueryService.AppendDashboardQueries(snapshot, source, new(), QueryLibrarySettings.CreateDefault());
-    Assert(snapshot.Metrics.Count(metric => metric.Key.StartsWith("query:", StringComparison.Ordinal)) == 40);
+    Assert(snapshot.Metrics.Count(metric => metric.Key.StartsWith("query:", StringComparison.Ordinal)) == 64);
     Assert(snapshot.Metrics.Where(metric => metric.Key.StartsWith("query:", StringComparison.Ordinal)).Any(metric => metric.Value is null));
 });
 Test("Every documented configuration size limit is checked on raw values", () =>
