@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr"><meta charset="utf-8"><title>Fixture GLPI legacy — export adjacent à six tables</title>
+<style>body{font:14px Arial}td,th{padding:5px}.tab_cadre_pager{width:100%}.tab_cadre_fixehov{width:100%}.toolbar{margin:10px}.select2-container{display:inline-block}button{min-width:24px;min-height:24px}</style>
+<main id="legacy-page">
+  <table id="legacy-navigation"><tr><td>Navigation de la fixture</td></tr></table>
+  <form name="searchformTicket" id="legacy-search-form" method="get" action="ticket.php">
+    <table class="tab_cadre_fixe" id="legacy-criteria"><tr><th>Critères</th><th>Valeur</th></tr><tr><td><select name="criteria[0][field]"><option value="12">Champ de test</option></select></td><td><select name="criteria[0][value]"><option value="notold">Filtre de test</option></select></td></tr></table>
+  </form>
+  <div class="toolbar">
+    <table class="tab_cadre_pager" id="legacy-pager-top"><tr>
+      <th class="left"><span title="Début">|‹</span></th>
+      <th class="left"><span title="Précédent">‹</span></th>
+      <td class="tab_bg_2">
+        <form method="POST" action="ticket.php?sort=1&amp;order=DESC&amp;start=0&amp;criteria%5B0%5D%5Bvalue%5D=notold" id="legacy-limit-form-top">
+          Affichage (nombre d’éléments)
+          <select name="glpilist_limit" id="legacy-limit-top" onchange="submit()"><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="9999999">9999999</option></select>
+          <input type="hidden" name="_glpi_csrf_token" value="FAKE-TOKEN-DO-NOT-DIAGNOSE">
+        </form>
+      </td>
+      <td class="tab_bg_2 responsive_hidden">
+        <form method="GET" action="report.dynamic.php" id="legacy-export">
+          <input type="hidden" name="item_type" value="Ticket">
+          <input type="hidden" name="start" value="0">
+          <input type="hidden" name="criteria[0][value]" value="notold">
+          <select name="display_type" id="legacy-format">
+            <option value="2">Page courante en PDF paysage</option><option value="4">Page courante en PDF portrait</option><option value="1">Page courante en SLK</option><option value="3">Page courante en CSV</option>
+            <option value="-2">Toutes les pages en PDF paysage</option><option value="-4">Toutes les pages en PDF portrait</option><option value="-1">Toutes les pages en SLK</option><option value="-3">Toutes les pages en CSV</option>
+          </select>
+          <button type="submit" name="export" class="unstyled pointer" title="Exporter" id="legacy-submit"><i class="far fa-save">💾</i><span class="sr-only">Exporter</span></button>
+        </form>
+      </td>
+      <td class="tab_bg_2 b" id="legacy-range-top">De 1 à 20 sur 828</td>
+      <th class="right"><a href="ticket.php?start=20"><i title="Suivant">›</i></a></th>
+      <th class="right"><a href="ticket.php?start=808"><i title="Fin">›|</i></a></th>
+    </tr></table>
+  </div>
+  <form name="massformTicket" id="massformTicket" method="POST" action="massiveaction.php">
+    <table id="legacy-business-toolbar"><tr><th>Actions</th><td><button type="submit" name="massiveaction">Actions de test</button></td></tr></table>
+    <div class="center"><table class="tab_cadre_fixehov" id="legacy-results">
+      <thead><tr><th>ID</th><th>Champ 2</th><th>Champ 3</th><th>Champ 4</th><th>Champ 5</th><th>Champ 6</th><th>Champ 7</th><th>Champ 8</th><th>Champ 9</th><th>Champ 10</th><th>Champ 11</th><th>Champ 12</th><th>Champ 13</th><th>Champ 14</th><th>Champ 15</th><th>Champ 16</th></tr></thead>
+      <tbody id="legacy-rows"></tbody>
+    </table></div>
+  </form>
+  <div class="toolbar">
+    <table class="tab_cadre_pager" id="legacy-pager-bottom"><tr>
+      <th class="left"><span title="Début">|‹</span></th><th class="left"><span title="Précédent">‹</span></th>
+      <td class="tab_bg_2"><form method="POST" action="ticket.php?sort=1&amp;order=DESC&amp;start=0&amp;criteria%5B0%5D%5Bvalue%5D=notold" id="legacy-limit-form-bottom">
+        Affichage (nombre d’éléments)
+        <select name="glpilist_limit" id="legacy-limit-bottom" onchange="submit()"><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="9999999">9999999</option></select>
+        <input type="hidden" name="_glpi_csrf_token" value="FAKE-TOKEN-DO-NOT-DIAGNOSE">
+      </form></td>
+      <td class="tab_bg_2 b" id="legacy-range-bottom">De 1 à 20 sur 828</td>
+      <th class="right"><a href="ticket.php?start=20"><i title="Suivant">›</i></a></th>
+      <th class="right"><a href="ticket.php?start=808"><i title="Fin">›|</i></a></th>
+    </tr></table>
+  </div>
+</main>
+<script>
+  window.businessSubmits = 0;
+  document.querySelector('#massformTicket').addEventListener('submit', event => { event.preventDefault(); window.businessSubmits++; });
+  window.renderLegacyRows = (size, total) => {
+    const tbody = document.querySelector('#legacy-rows');
+    tbody.replaceChildren();
+    for (let i = 1; i <= size; i++) {
+      const row = document.createElement('tr');
+      for (let col = 1; col <= 16; col++) {
+        const cell = document.createElement('td');
+        cell.textContent = col === 1 ? (6000000 + i).toLocaleString('fr-FR') : 'Fixture ' + i + ' / ' + col;
+        row.append(cell);
+      }
+      tbody.append(row);
+    }
+    for (const id of ['legacy-range-top', 'legacy-range-bottom']) document.getElementById(id).textContent = 'De ' + (total ? 1 : 0) + ' à ' + size + ' sur ' + total;
+    for (const id of ['legacy-limit-top', 'legacy-limit-bottom']) document.getElementById(id).value = size >= total ? '9999999' : '20';
+  };
+  renderLegacyRows(20, 828);
+</script></html>

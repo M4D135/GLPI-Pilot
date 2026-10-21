@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Fixture — Attente SSO</title><style>body{font:16px Segoe UI;margin:40px}table{border-collapse:collapse}td,th{padding:12px;border:1px solid #aaa}button{padding:12px}</style></head><body>
+<div id="auth"><h1>Authentification du portail</h1><p>Simulation locale : aucune donnée n’est envoyée.</p><label>Mot de passe de démonstration <input type="password" value="SECRET-NE-PAS-LIRE"></label><button id="simulate">Simuler la fin du SSO</button></div>
+<main id="application" hidden><a id="logout" href="logout.php">Déconnexion</a><h1 id="ready">Accueil GLPI</h1><table id="result"><thead><tr><th>ID</th><th>Nom</th></tr></thead><tbody><tr data-id="7"><td>7</td><td>Poste connecté</td></tr></tbody></table></main>
+<script>document.getElementById('simulate').onclick=()=>{document.getElementById('auth').hidden=true;document.getElementById('application').hidden=false;};</script></body></html>

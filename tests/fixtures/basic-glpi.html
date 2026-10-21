@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Fixture GLPI — Ordinateurs</title>
+<style>body{font:16px Segoe UI,sans-serif;margin:32px;color:#172554}table{border-collapse:collapse;width:100%}th,td{padding:12px;border:1px solid #cbd5e1}nav{margin:18px 0}.pagination{display:flex;gap:18px;align-items:center}.disabled{opacity:.5}button,a{padding:8px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden}</style></head>
+<body><header><a href="logout.php">Déconnexion</a></header><main>
+<h1>Ordinateurs</h1><button id="export-all" onclick="document.getElementById('business-action').textContent='Export déclenché'">Exporter toutes les pages</button>
+<button id="business-next" onclick="document.getElementById('business-action').textContent='Action métier déclenchée'">Suivant</button>
+<p id="business-action">Aucune action métier déclenchée</p>
+<table id="search-results" aria-label="Parc informatique"><thead><tr><th><input type="checkbox" aria-label="Tout sélectionner"></th><th>ID</th><th>Nom</th><th>État</th><th>Numéro de série</th></tr></thead><tbody id="computer-rows"></tbody></table>
+<nav aria-label="Pagination des ordinateurs"><div class="pagination"><span class="pagination-info" id="page-summary"></span><button id="previous" aria-label="Page précédente">Précédent</button><span id="page-number"></span><button id="next" aria-label="Page suivante">Suivant</button></div></nav>
+</main><script>
+const pages=[[[101,'P-MA-001','En service','000123'],[102,'P-MA-002','À préparer','000124']],[[103,'P-MA-003','En service','000125'],[104,'P-MA-004','Réserve','000126']],[[105,'P-MA-005','En service','=00127']]];
+let current=0;
+function render(){document.getElementById('computer-rows').innerHTML=pages[current].map(r=>`<tr data-id="${r[0]}" data-itemtype="Computer"><td><input type="checkbox" aria-label="Sélectionner ${r[1]}"></td><td>${r[0]}</td><td><a href="/front/computer.form.php?id=${r[0]}">${r[1]}</a></td><td><span title="${r[2]}">●</span> ${r[2]}</td><td>${r[3]}</td></tr>`).join('');document.getElementById('page-summary').textContent=`Affichage de ${current*2+1} à ${Math.min(current*2+2,5)} sur 5 éléments`;document.getElementById('page-number').textContent=`Page ${current+1} sur 3`;document.getElementById('previous').disabled=current===0;document.getElementById('next').disabled=current===2;}
+document.getElementById('next').addEventListener('click',()=>{if(current<2){current++;render();}});document.getElementById('previous').addEventListener('click',()=>{if(current>0){current--;render();}});render();
+</script></body></html>
