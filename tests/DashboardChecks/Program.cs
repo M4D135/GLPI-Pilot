@@ -616,6 +616,78 @@ Test("Cancellation requested while enumerating a sparse subset still cancels the
     Check(cancelled);
 });
 
+Test("Operational intersections preserve exact active source rows", () =>
+{
+    var d = Calc();
+    foreach (var (key, rows) in new (string, int[])[]
+    {
+        ("pending-old", Array.Empty<int>()), ("pending-stale", Array.Empty<int>()),
+        ("new-stale", new[] { 0 }), ("high-without-technician", new[] { 0, 5 }),
+        ("overdue-without-technician", new[] { 0 }), ("group-only", new[] { 5 }),
+        ("planned-overdue", Array.Empty<int>()), ("old-without-technician", new[] { 5 }),
+        ("active-no-category", Array.Empty<int>()), ("resolved-aging", Array.Empty<int>()),
+        ("resolved-no-date", Array.Empty<int>()), ("high-incidents", new[] { 0, 5 })
+    })
+    {
+        Equal(d.Metric(key)!.Value, rows.Length, key);
+        Check(d.Metric(key)!.Rows.SequenceEqual(rows), key);
+    }
+    Equal(d.Metric("resolved-waiting-mean")!.Value, 6, "days since resolution");
+    Check(d.Metric("resolved-waiting-mean")!.Rows.SequenceEqual(new[] { 2 }));
+});
+Test("Pending age and inactivity thresholds use different dates and inclusive boundaries", () =>
+{
+    var source = Sample(); source.Rows[1][5] = "21/09/2026 12:00"; source.Rows[1][6] = "14/10/2026 12:00";
+    var d = Calc(source);
+    Check(d.Metric("pending-old")!.Rows.SequenceEqual(new[] { 1 }));
+    Check(d.Metric("pending-stale")!.Rows.SequenceEqual(new[] { 1 }));
+    var changed = Calc(source, new() { StaleDays = 8, OldDays = 31 });
+    Equal(changed.Metric("pending-old")!.Value, 0, "age threshold");
+    Equal(changed.Metric("pending-stale")!.Value, 0, "modification threshold");
+    Check(d.Metric("pending-old")!.Explanation.Contains("date de passage en attente n’est pas connue", StringComparison.Ordinal));
+});
+Test("Operational probes remain unavailable when their semantic columns are absent", () =>
+{
+    var source = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "1", "Ticket" } } };
+    var d = Calc(source);
+    foreach (var key in new[] { "pending-old", "pending-stale", "new-stale", "high-without-technician", "overdue-without-technician", "group-only", "planned-overdue", "old-without-technician", "active-no-category", "resolved-aging", "resolved-no-date", "high-incidents", "resolved-waiting-mean" })
+        Check(d.Metric(key)!.Value is null && d.Metric(key)!.Rows.Length == 0, key);
+});
+Test("Unreadable pending dates do not create zero-risk observations", () =>
+{
+    var source = Sample(); source.Rows = new() { source.Rows[1] }; source.Rows[0][5] = "illisible"; source.Rows[0][6] = "22/10/2026 12:00"; source.ExpectedTotal = 1;
+    var d = Calc(source);
+    Check(d.Metric("pending-old")!.Value is null && d.Metric("pending-stale")!.Value is null);
+    Equal(d.Metric("new-stale")!.Value, 0, "no new tickets");
+});
+Test("Resolution follow-up excludes closed, future and impossible dates and separates absent from invalid", () =>
+{
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Date d'ouverture", "Date de résolution" },
+        Rows = new()
+        {
+            new[] { "1", "Résolu", "01/10/2026 12:00", "14/10/2026 12:00" },
+            new[] { "2", "Clos", "01/10/2026 12:00", "02/10/2026 12:00" },
+            new[] { "3", "Résolu", "01/10/2026 12:00", "22/10/2026 12:00" },
+            new[] { "4", "Résolu", "20/10/2026 12:00", "10/10/2026 12:00" },
+            new[] { "5", "Résolu", "01/10/2026 12:00", "" },
+            new[] { "6", "Résolu", "01/10/2026 12:00", "illisible" }
+        }
+    };
+    var d = Calc(source);
+    Check(d.Metric("resolved-aging")!.Rows.SequenceEqual(new[] { 0 }) && d.Metric("resolved-aging")!.Sample == 1);
+    Check(d.Metric("resolved-no-date")!.Rows.SequenceEqual(new[] { 4 }) && d.Metric("resolved-no-date")!.Sample == 5);
+    Equal(d.Metric("resolved-waiting-median")!.Value, 7, "waiting median");
+});
+Test("Operational drill-downs remain within the personal source subset", () =>
+{
+    var d = DashboardService.CalculateSubset(Sample(), new(), new[] { 2, 5 }, "Personnel", clock);
+    Check(d.Metric("high-without-technician")!.Rows.SequenceEqual(new[] { 5 }));
+    Check(d.Metric("resolved-waiting-max")!.Rows.SequenceEqual(new[] { 2 }));
+    Check(d.Metric("overdue-without-technician")!.Value is null, "The scoped active ticket has no readable deadline; it must not become a zero-risk sample.");
+});
+
 int failures = 0;
 foreach (var (name, run) in tests)
 {
