@@ -277,7 +277,14 @@ Test("Failed atomic write leaves the previous applied preferences and file intac
     applied.Save(path); var before = File.ReadAllBytes(path);
     var destinationDirectory = TestPath("directory-instead-of-file"); Directory.CreateDirectory(destinationDirectory);
     var candidate = applied.With("Alice", new() { ActiveTarget = 20 });
-    Throws<IOException>(() => candidate.Save(destinationDirectory));
+    var rejected = false;
+    try { candidate.Save(destinationDirectory); }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+    {
+        // Windows reports an existing directory as access denied; Unix reports an I/O error.
+        rejected = true;
+    }
+    Check(rejected && Directory.Exists(destinationDirectory));
     Check(applied.Get("Alice").ActiveTarget == 10 && File.ReadAllBytes(path).SequenceEqual(before));
     Check(Directory.GetFiles(temporary, "*.tmp").Length == 0);
 });
