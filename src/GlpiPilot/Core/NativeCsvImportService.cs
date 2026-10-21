@@ -40,8 +40,9 @@ public static class NativeCsvImportService
         var encoding = DetectEncoding(file, cancellationToken);
         diagnostics?.Invoke($"CSV natif : encodage={encoding.Name} ; BOM={(encoding.PreambleBytes == 0 ? "absent" : encoding.Name + " (" + encoding.PreambleBytes.ToString(CultureInfo.InvariantCulture) + " octets)")} ; repli Windows-1252={(encoding.Fallback ? "oui" : "non")}.");
         var text = ValidateText(file, encoding, cancellationToken, diagnostics);
+        cancellationToken.ThrowIfCancellationRequested();
         RejectMarkupOrOtherText(text.Prefix);
-        var preamble = DetectPreamble(file, encoding);
+        var preamble = DetectPreamble(file, encoding, cancellationToken);
         char delimiter = preamble.Delimiter ?? DetectDelimiter(file, encoding, preamble.SkipLines, cancellationToken);
         string delimiterName = delimiter == ';' ? "point-virgule" : delimiter == ',' ? "virgule" : "tabulation";
         diagnostics?.Invoke($"CSV natif : séparateur={delimiterName} (U+{(int)delimiter:X4}) ; lignes de préambule={preamble.SkipLines.ToString(CultureInfo.InvariantCulture)}.");
@@ -61,7 +62,7 @@ public static class NativeCsvImportService
             result.Warnings.Add($"Le CSV contient {text.UnusualControlCount:N0} caractère(s) de contrôle inhabituels. Les valeurs et le fichier natif sont conservés ; certains signes peuvent mal s’afficher. Les codes et leurs positions sont disponibles dans le diagnostic d’import.");
 
         using var reader = OpenReader(file, encoding);
-        SkipLines(reader, preamble.SkipLines);
+        SkipLines(reader, preamble.SkipLines, cancellationToken);
         string[]? header = null;
         long sourceRows = 0;
         bool lastColumnAlwaysEmpty = true;
@@ -89,10 +90,14 @@ public static class NativeCsvImportService
         {
             terminalColumnRemoved = true;
             header = header[..^1];
-            for (int i = 0; i < result.Rows.Count; i++) result.Rows[i] = result.Rows[i][..^1];
+            for (int i = 0; i < result.Rows.Count; i++)
+            {
+                if ((i & 0x3FF) == 0) cancellationToken.ThrowIfCancellationRequested();
+                result.Rows[i] = result.Rows[i][..^1];
+            }
         }
         if (header.Length > 16_384) throw Invalid("Le CSV dépasse la limite de 16 384 colonnes du fichier Excel.");
-        result.Headers = UniqueHeaders(header, out bool renamed);
+        result.Headers = UniqueHeaders(header, out bool renamed, cancellationToken);
         if (renamed) result.Warnings.Add("Les en-têtes vides ou en double ont reçu un nom unique. Les valeurs et les lignes sont conservées.");
 
         bool capped = sourceRows > result.Rows.Count;
@@ -112,6 +117,7 @@ public static class NativeCsvImportService
                 ? $"Import natif partiel : {result.Rows.Count:N0} / {sourceRows:N0} lignes du fichier"
                 : $"Export natif importé : {result.Rows.Count:N0} lignes — exhaustivité à vérifier";
         diagnostics?.Invoke($"CSV natif : lignes source={sourceRows.ToString(CultureInfo.InvariantCulture)} ; lignes chargées={result.Rows.Count.ToString(CultureInfo.InvariantCulture)} ; colonnes source={sourceColumns.ToString(CultureInfo.InvariantCulture)} ; colonnes finales={result.Headers.Count.ToString(CultureInfo.InvariantCulture)} ; colonne terminale retirée={(terminalColumnRemoved ? "oui" : "non")} ; total attendu={expectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "inconnu"} ; complet={(result.Complete ? "oui" : "non")}.");
+        cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
 
@@ -257,20 +263,35 @@ public static class NativeCsvImportService
             throw Invalid("GLPI a renvoyé un document JSON au lieu du tableau CSV attendu.");
     }
 
-    private static Preamble DetectPreamble(FileStream file, EncodingInfo encoding)
+    private static Preamble DetectPreamble(FileStream file, EncodingInfo encoding, CancellationToken ct)
     {
         using var reader = OpenReader(file, encoding);
         int skip = 0;
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
+        while (true)
         {
-            if (line.Length == 0) { skip++; continue; }
-            if (!line.StartsWith("sep=", StringComparison.OrdinalIgnoreCase)) return new(skip, null);
-            if (line.Length != 5 || !Delimiters.Contains(line[4]))
+            ct.ThrowIfCancellationRequested();
+            int first = reader.Read();
+            if (first < 0) throw Invalid("Le téléchargement ne contient que des lignes vides.");
+            if (first is '\r' or '\n')
+            {
+                if (first == '\r' && reader.Peek() == '\n') _ = reader.Read();
+                skip++; continue;
+            }
+            // Only the five-character directive is relevant. Reading a whole
+            // first line here could allocate hundreds of MiB before field limits
+            // and cancellation in the CSV parser were ever reached.
+            if (first is not ('s' or 'S')) return new(skip, null);
+            foreach (char expected in "ep=")
+            {
+                int next = reader.Read();
+                if (next != expected && next != char.ToUpperInvariant(expected)) return new(skip, null);
+            }
+            int delimiter = reader.Read();
+            int end = reader.Read();
+            if (delimiter < 0 || !Delimiters.Contains((char)delimiter) || end is not (-1 or '\r' or '\n'))
                 throw Invalid("La directive CSV sep= indique un séparateur non pris en charge. Séparateurs acceptés : point-virgule, virgule, tabulation.");
-            return new(skip + 1, line[4]);
+            return new(skip + 1, (char)delimiter);
         }
-        throw Invalid("Le téléchargement ne contient que des lignes vides.");
     }
 
     private static char DetectDelimiter(FileStream file, EncodingInfo encoding, int skipLines, CancellationToken ct)
@@ -283,7 +304,7 @@ public static class NativeCsvImportService
             try
             {
                 using var reader = OpenReader(file, encoding);
-                SkipLines(reader, skipLines);
+                SkipLines(reader, skipLines, ct);
                 int columns = 0, records = 0;
                 bool consistent = true;
                 foreach (var record in ReadRecords(reader, delimiter, skipLines + 1, ct))
@@ -315,9 +336,14 @@ public static class NativeCsvImportService
         return new StreamReader(file, encoding.Encoding, detectEncodingFromByteOrderMarks: false, bufferSize: 65_536, leaveOpen: true);
     }
 
-    private static void SkipLines(TextReader reader, int count)
+    private static void SkipLines(TextReader reader, int count, CancellationToken ct)
     {
-        for (int i = 0; i < count; i++) _ = reader.ReadLine();
+        for (int i = 0; i < count; i++)
+        {
+            if ((i & 0xFF) == 0) ct.ThrowIfCancellationRequested();
+            _ = reader.ReadLine();
+        }
+        ct.ThrowIfCancellationRequested();
     }
 
     private static IEnumerable<CsvRecord> ReadRecords(TextReader reader, char delimiter, int firstLine, CancellationToken ct)
@@ -396,7 +422,7 @@ public static class NativeCsvImportService
         }
     }
 
-    private static List<string> UniqueHeaders(string[] header, out bool renamed)
+    private static List<string> UniqueHeaders(string[] header, out bool renamed, CancellationToken ct)
     {
         var bases = header.Select((h, i) => string.IsNullOrWhiteSpace(h) ? $"Colonne {i + 1}" : h.Trim()).ToArray();
         var reserved = new HashSet<string>(bases, StringComparer.OrdinalIgnoreCase);
@@ -405,11 +431,16 @@ public static class NativeCsvImportService
         renamed = false;
         for (int i = 0; i < bases.Length; i++)
         {
+            if ((i & 0xFF) == 0) ct.ThrowIfCancellationRequested();
             string name = bases[i];
             if (!used.Add(name))
             {
                 int suffix = 2;
-                do { name = bases[i] + " (" + (suffix++).ToString(CultureInfo.InvariantCulture) + ")"; }
+                do
+                {
+                    if ((suffix & 0xFF) == 0) ct.ThrowIfCancellationRequested();
+                    name = bases[i] + " (" + (suffix++).ToString(CultureInfo.InvariantCulture) + ")";
+                }
                 while (reserved.Contains(name) || !used.Add(name));
             }
             if (name != header[i]) renamed = true;

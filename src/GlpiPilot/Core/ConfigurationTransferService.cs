@@ -10,7 +10,7 @@ public static class ConfigurationTransferService
 {
     public const string Schema = "glpi-pilot.configuration";
     public const int SchemaVersion = 1;
-    public const string ApplicationVersion = "1.4.0";
+    public const string ApplicationVersion = "1.5.0";
     public const int MaximumFileBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true, MaxDepth = 24 };
@@ -31,7 +31,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Name", "Widgets" };
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter" };
+    { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter" };
     private static readonly HashSet<string> MappingKeys = new(StringComparer.OrdinalIgnoreCase)
     { "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "updatedBy", "resolved", "closed", "due", "assignee", "group", "requester", "category", "entity", "location", "city", "postal", "source", "solution" };
     private static readonly HashSet<string> CitySettingsProperties = new(StringComparer.OrdinalIgnoreCase)
@@ -96,7 +96,7 @@ public static class ConfigurationTransferService
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || app.Major != 1 || app.Minor is < 0 or > 4)
+                    !Version.TryParse(appVersion.GetString(), out var app) || app.Major != 1 || app.Minor is < 0 or > 5)
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);
@@ -105,7 +105,7 @@ public static class ConfigurationTransferService
             {
                 // Older local settings.json files can be migrated explicitly, but their
                 // local folder never replaces the destination machine's folder.
-                var legacyProperties = new HashSet<string>(Shareable, StringComparer.OrdinalIgnoreCase) { "ExportFolder" };
+                var legacyProperties = new HashSet<string>(Shareable, StringComparer.OrdinalIgnoreCase) { "ExportFolder", "InterfaceZoomPercent" };
                 RequireProperties(root, legacyProperties);
                 if (!root.EnumerateObject().Any(property => Shareable.Contains(property.Name)))
                     throw Invalid("Le fichier ne contient pas de configuration GLPI Pilot reconnue.");
@@ -117,6 +117,7 @@ public static class ConfigurationTransferService
             var imported = JsonSerializer.Deserialize<AppSettings>(filtered.ToArray(), JsonOptions)
                 ?? throw Invalid("Les réglages de configuration sont absents.");
             imported.ExportFolder = current.ExportFolder;
+            imported.InterfaceZoomPercent = current.InterfaceZoomPercent;
             imported.Dashboard ??= new();
             imported.Dashboard.PersonalTechnician = current.Dashboard?.PersonalTechnician ?? "";
             imported.Dashboard.OpenPersonalAfterExtraction = current.Dashboard?.OpenPersonalAfterExtraction ?? false;
@@ -343,7 +344,7 @@ public static class ConfigurationTransferService
                 var lowerIsBetter = Find(widget, "LowerIsBetter") is not { ValueKind: JsonValueKind.False };
                 if (warning.HasValue && critical.HasValue && (lowerIsBetter ? critical < warning : critical > warning))
                     throw Invalid("Le seuil critique du widget doit être au-delà du seuil d’avertissement dans le sens défavorable choisi.");
-                foreach (string boolean in new[] { "ShowDescription", "Hidden", "Locked", "LowerIsBetter" })
+                foreach (string boolean in new[] { "ShowDescription", "Hidden", "Locked", "LowerIsBetter", "AutoHeight" })
                     if (Find(widget, boolean) is { } value && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                         throw Invalid("Une option de widget doit valoir vrai ou faux.");
             }

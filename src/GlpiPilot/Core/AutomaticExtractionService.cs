@@ -15,9 +15,20 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var runId = Guid.NewGuid().ToString("N")[..8];
         void Stage(string message, AutomaticRunPhase? phase = null)
         {
+            ct.ThrowIfCancellationRequested();
             if (phase.HasValue) PhaseChanged?.Invoke(phase.Value);
             Log?.Invoke($"AUTO {runId} +{clock.Elapsed.TotalSeconds:F1}s · {message}");
             progress?.Report(new(0, 0, null, message));
+            ct.ThrowIfCancellationRequested();
+        }
+        async Task<ExportResult> WriteExportAsync(Func<ExportResult> write)
+        {
+            ct.ThrowIfCancellationRequested();
+            // A write already started is atomic and finishes before observing
+            // cancellation. Keep that valid file, but never publish Ready for it.
+            var exported = await Task.Run(write, ct);
+            ct.ThrowIfCancellationRequested();
+            return exported;
         }
         Stage("Ouverture de la recherche et attente du SSO…", AutomaticRunPhase.Connection);
         var navigation = settings.Copy();
@@ -39,12 +50,13 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             if (data.Headers.Count > 0)
             {
                 primaryPath = NewPath(settings.ExportFolder, "GLPI-0-resultat", ".csv");
-                await Task.Run(() => ExportService.WriteCsv(data, primaryPath));
+                await WriteExportAsync(() => ExportService.WriteCsv(data, primaryPath));
             }
             else
             {
                 primaryPath = NewPath(settings.ExportFolder, "GLPI-0-resultat", ".txt");
-                await File.WriteAllTextAsync(primaryPath, $"GLPI Pilot 1.4.0\n{data.Status}\nDate : {DateTimeOffset.Now:O}\nSource : {data.SourceUrl}\nGLPI ne fournit pas d’en-têtes pour cette recherche vide.\n", ct);
+                await File.WriteAllTextAsync(primaryPath, $"GLPI Pilot {ConfigurationTransferService.ApplicationVersion}\n{data.Status}\nDate : {DateTimeOffset.Now:O}\nSource : {data.SourceUrl}\nGLPI ne fournit pas d’en-têtes pour cette recherche vide.\n", ct);
+                ct.ThrowIfCancellationRequested();
             }
         }
         else if (settings.AutoMode == "pagination")
@@ -54,7 +66,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             data.Scope = "Recherche rechargée avec start=0, puis pages suivantes";
             if (data.Headers.Count == 0) throw new InvalidOperationException("L’extraction n’a produit aucune colonne exploitable.");
             var csvPath = NewPath(settings.ExportFolder, data.Complete ? "GLPI" : "GLPI-a-verifier", ".csv");
-            await Task.Run(() => ExportService.WriteCsv(data, csvPath));
+            await WriteExportAsync(() => ExportService.WriteCsv(data, csvPath));
             primaryPath = csvPath;
         }
         else
@@ -66,7 +78,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 (data, table) = await browser.ReadAllDisplayedAsync(table, settings, progress, ct);
                 settings.RememberTable(table);
                 primaryPath = NewPath(settings.ExportFolder, "GLPI-liste-complete", ".csv");
-                await Task.Run(() => ExportService.WriteCsv(data, primaryPath));
+                await WriteExportAsync(() => ExportService.WriteCsv(data, primaryPath));
             }
             else
             {
@@ -93,7 +105,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     settings.RememberTable(table);
                     data.Warnings.Add("Le fichier natif reçu n’a pas pu être lu comme CSV et a été conservé intact. Ce résultat provient de la liste complète affichée dans GLPI, avec vérification du total ; les valeurs correspondent au texte visible.");
                     primaryPath = NewPath(settings.ExportFolder, "GLPI-liste-complete", ".csv");
-                    await Task.Run(() => ExportService.WriteCsv(data, primaryPath));
+                    await WriteExportAsync(() => ExportService.WriteCsv(data, primaryPath));
                 }
             }
         }
@@ -105,20 +117,22 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             Stage("Repérage des villes et enregistrement du CSV enrichi…", AutomaticRunPhase.Saving);
             var enrichedPath = NewPath(settings.ExportFolder, "GLPI-villes", ".csv");
             ct.ThrowIfCancellationRequested();
-            await Task.Run(() => ExportService.WriteCsv(data, enrichedPath));
+            await WriteExportAsync(() => ExportService.WriteCsv(data, enrichedPath));
             primaryPath = enrichedPath;
             Log?.Invoke($"VILLES · reconnues={cities.MatchedCount}, sans correspondance={cities.UnmatchedCount}, ambiguës={cities.AmbiguousCount}, titre indisponible={cities.TitleUnavailableCount} ; fichier natif conservé intact.");
         }
         foreach (var warning in data.Warnings) Log?.Invoke("CONTRÔLE · " + warning);
         Log?.Invoke($"CONTRÔLE · {data.Rows.Count} lignes chargées, {data.Headers.Count} colonnes ; total attendu={data.ExpectedTotal?.ToString() ?? "inconnu"}, conforme={data.Complete}.");
+        ct.ThrowIfCancellationRequested();
         if (settings.AutoSaveXlsx && data.Headers.Count > 0)
         {
             Stage("Enregistrement automatique du classeur Excel…", AutomaticRunPhase.Saving);
             excelPath = NewPath(settings.ExportFolder, data.Complete ? "GLPI" : "GLPI-a-verifier", ".xlsx");
-            var exported = await Task.Run(() => ExportService.WriteXlsx(data, excelPath));
+            var exported = await WriteExportAsync(() => ExportService.WriteXlsx(data, excelPath));
             if (exported.TruncatedCells > 0) Log?.Invoke($"EXCEL · {exported.TruncatedCells} cellules trop longues pour Excel ; détail dans la feuille Informations, CSV conservé.");
             primaryPath = excelPath;
         }
+        ct.ThrowIfCancellationRequested();
         Log?.Invoke($"AUTO {runId} +{clock.Elapsed.TotalSeconds:F1}s · terminé, {data.Rows.Count:N0} lignes, fichiers enregistrés.");
         PhaseChanged?.Invoke(AutomaticRunPhase.Ready);
         return new(data, table, primaryPath, nativePath, excelPath, cities);

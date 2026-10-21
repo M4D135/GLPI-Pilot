@@ -54,6 +54,17 @@ public sealed class QueryLibrarySettings
         }
     }
 
+    /// <summary>Adds only absent stable template IDs, without replacing user edits or favorites.</summary>
+    public int AddMissingTemplates()
+    {
+        Validate();
+        var existing = Queries.Select(query => query.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var additions = CreateDefault().Queries.Where(query => !existing.Contains(query.Id))
+            .Take(MaximumQueries - Queries.Count).Select(query => query.Copy()).ToList();
+        Queries.AddRange(additions);
+        return additions.Count;
+    }
+
     public static QueryLibrarySettings CreateDefault()
     {
         var result = new QueryLibrarySettings();
@@ -111,6 +122,30 @@ public sealed class QueryLibrarySettings
         Add("active-no-due", "Actifs sans échéance par ville", "Qualité", "active-no-due", "role:city");
         Add("multi-technician", "Attributions multiples par ville", "Organisation", "multi-technician", "role:city");
         Add("invalid-dates", "Dates illisibles par ville", "Qualité", "invalid-dates", "role:city");
+        foreach (var (basis, label) in new[]
+        {
+            ("pending-old", "En attente · anciens"), ("pending-stale", "En attente · sans modification"),
+            ("new-stale", "Nouveaux sans modification"), ("high-without-technician", "Hautes priorités sans technicien"),
+            ("overdue-without-technician", "Retards sans technicien"), ("group-only", "Affectés à un groupe seul"),
+            ("planned-overdue", "Planifiés à échéance dépassée"), ("old-without-technician", "Anciens sans technicien"),
+            ("active-no-category", "Actifs sans catégorie"), ("resolved-aging", "Résolus · clôture à suivre"),
+            ("resolved-no-date", "Résolus sans date"), ("high-incidents", "Incidents en priorité haute")
+        }) Add("operations-city-" + basis, label + " par ville", "Suivi opérationnel", basis, "role:city",
+            "Cohorte calculée avec les colonnes disponibles et les seuils du dashboard. Les dates sont calendaires ; les transitions de statut, pauses SLA et temps de travail ne sont pas reconstitués.");
+        foreach (var (basis, label) in new[]
+        {
+            ("pending-old", "En attente · anciens"), ("pending-stale", "En attente · sans modification"),
+            ("new-stale", "Nouveaux sans modification"), ("planned-overdue", "Planifiés à échéance dépassée"),
+            ("active-no-category", "Actifs sans catégorie"), ("resolved-aging", "Résolus · clôture à suivre"),
+            ("high-incidents", "Incidents en priorité haute")
+        }) Add("operations-technician-" + basis, label + " par technicien", "Suivi techniciens", basis, "role:assignee",
+            "Liste de suivi du relevé courant, sans classement de performance. Une attribution multiple apparaît dans chaque groupe de technicien concerné.");
+        foreach (var (basis, label) in new[]
+        {
+            ("group-only", "Affectés à un groupe seul"), ("high-without-technician", "Hautes priorités sans technicien"),
+            ("overdue-without-technician", "Retards sans technicien"), ("old-without-technician", "Anciens sans technicien"),
+            ("resolved-aging", "Résolus · clôture à suivre")
+        }) Add("operations-group-" + basis, label + " par groupe", "Suivi des groupes", basis, "role:group");
         result.Validate();
         return result;
     }
@@ -216,6 +251,12 @@ internal static class QueryCatalog
         new("due-tomorrow", "Échéances demain"), new("due-week", "Échéances restantes de la semaine"),
         new("new-unassigned", "Nouveaux sans technicien ni groupe"), new("high-overdue", "Hautes priorités à échéance dépassée"),
         new("high-stale", "Hautes priorités sans modification récente"),
+        new("pending-old", "En attente · tickets anciens"), new("pending-stale", "En attente · sans modification récente"),
+        new("new-stale", "Nouveaux sans modification récente"), new("high-without-technician", "Hautes priorités sans technicien"),
+        new("overdue-without-technician", "Retards sans technicien"), new("group-only", "Actifs affectés à un groupe seul"),
+        new("planned-overdue", "Planifiés à échéance dépassée"), new("old-without-technician", "Tickets anciens sans technicien"),
+        new("active-no-category", "Actifs sans catégorie"), new("resolved-aging", "Résolus · clôture à suivre"),
+        new("resolved-no-date", "Résolus sans date de résolution"), new("high-incidents", "Incidents actifs en priorité haute"),
         new("missing-category", "Catégorie non renseignée"), new("missing-requester", "Demandeur non renseigné"),
         new("duplicate", "Identifiants de ticket répétés"), new("missing-id", "Identifiant inexploitable"),
         new("invalid-dates", "Dates illisibles"), new("future-dates", "Dates historiques futures"),

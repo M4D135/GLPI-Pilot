@@ -398,6 +398,57 @@ public static class DashboardService
             Count("active-requests", "Demandes actives", active.Where(record => record.Type == 2), typesAvailable,
                 "Actifs dont le type est Demande / Request (ou code GLPI 2). Les types absents et personnalisés sont exclus.", knownTypes);
 
+            // Current-state intersections keep the source row identity and use only
+            // the dates that can actually be read. No transition history is inferred.
+            var pending = active.Where(record => record.Status == 4).ToList();
+            var pendingDated = datedActive.Where(record => record.Status == 4).ToList();
+            var pendingUpdated = updatedActive.Where(record => record.Status == 4).ToList();
+            var newTickets = active.Where(record => record.Status == 1).ToList();
+            var newUpdated = updatedActive.Where(record => record.Status == 1).ToList();
+            Count("pending-old", "En attente · tickets anciens", old.Where(record => record.Status == 4),
+                activeKnown && Has("created") && (pending.Count == 0 || pendingDated.Count > 0),
+                at + $"Statut actuellement En attente, ouverture depuis au moins {settings.OldDays} jours. L’âge est celui du ticket ; la date de passage en attente n’est pas connue.", pendingDated.Count, "warning");
+            Count("pending-stale", "En attente · sans modification récente", stale.Where(record => record.Status == 4),
+                activeKnown && Has("updated") && (pending.Count == 0 || pendingUpdated.Count > 0),
+                at + $"Statut actuellement En attente, dernière modification exploitable depuis au moins {settings.StaleDays} jours. Ce n’est ni la durée en attente ni une preuve d’inactivité.", pendingUpdated.Count, "warning");
+            Count("new-stale", "Nouveaux · sans modification récente", stale.Where(record => record.Status == 1),
+                activeKnown && Has("updated") && (newTickets.Count == 0 || newUpdated.Count > 0),
+                at + $"Statut Nouveau et dernière modification exploitable depuis au moins {settings.StaleDays} jours. Les dates futures ou antérieures à l’ouverture connue sont exclues.", newUpdated.Count, "warning");
+            Count("high-without-technician", "Hautes priorités sans technicien", high.Where(record => record.TechnicianCount == 0),
+                activeKnown && Has("priority") && Has("assignee") && (active.Count == 0 || prioritySample.Count > 0),
+                "Actifs en priorité haute, très haute ou majeure, sans technicien nommé. Un groupe peut être affecté. Échantillon : actifs dont la priorité est reconnue.", prioritySample.Count, "error");
+            Count("overdue-without-technician", "Retards sans technicien", overdue.Where(record => record.TechnicianCount == 0),
+                datesAvailable && Has("assignee"),
+                at + "Actifs à échéance calendaire dépassée sans technicien nommé. Un groupe peut être présent. Les pauses et calendriers SLA ne sont pas interprétés.", dueActive.Count, "error");
+            Count("group-only", "Actifs affectés à un groupe seul", active.Where(record => record.TechnicianCount == 0 && !IsMissing(record.Group)),
+                activeKnown && Has("assignee") && Has("group"),
+                "Un groupe est renseigné mais aucun technicien n’est nommé. Cela ne signifie pas que le ticket n’est pas pris en charge par l’équipe.", active.Count);
+            var planned = active.Where(record => record.Status == 3).ToList();
+            var plannedDated = dueActive.Count(record => record.Status == 3);
+            Count("planned-overdue", "Planifiés à échéance dépassée", overdue.Where(record => record.Status == 3),
+                activeKnown && Has("due") && (planned.Count == 0 || plannedDated > 0),
+                at + "Statut En cours (planifié) et échéance affichée dépassée. L’échéance n’est pas la date prévue d’intervention ; aucune planification de tâche n’est déduite.", plannedDated, "warning");
+            Count("old-without-technician", "Tickets anciens sans technicien", old.Where(record => record.TechnicianCount == 0),
+                activeKnown && Has("created") && Has("assignee") && (active.Count == 0 || datedActive.Count > 0),
+                at + $"Actifs ouverts depuis au moins {settings.OldDays} jours, sans technicien nommé. Âge calendaire depuis une ouverture lisible ; un groupe peut être affecté.", datedActive.Count, "warning");
+            Count("active-no-category", "Actifs sans catégorie", active.Where(record => IsMissing(Cell(data.Rows[record.Index], "category"))),
+                activeKnown && Has("category"), "Actifs reconnus dont la catégorie est vide ou explicitement non renseignée.", active.Count, "warning");
+            var awaitingClosure = records.Where(record => record.Status == 5).ToList();
+            var resolvedDated = awaitingClosure.Where(record => record.Resolved.HasValue
+                && (!record.Created.HasValue || record.Resolved >= record.Created)).ToList();
+            Count("resolved-aging", "Résolus · clôture à suivre", resolvedDated.Where(record => (wallNow - record.Resolved!.Value).TotalDays >= settings.StaleDays),
+                activeKnown && Has("resolved") && (awaitingClosure.Count == 0 || resolvedDated.Count > 0),
+                at + $"Statut actuellement Résolu et date de résolution depuis au moins {settings.StaleDays} jours. La règle de clôture automatique et l’état d’approbation ne sont pas connus.", resolvedDated.Count, "warning");
+            Count("resolved-no-date", "Résolus sans date de résolution", awaitingClosure.Where(record => (record.DatePresent & DateFieldBit("resolved")) == 0),
+                activeKnown && Has("resolved"),
+                "Statut actuellement Résolu avec une cellule de résolution vide ou explicitement non renseignée. Les valeurs illisibles sont suivies séparément, pas assimilées à des dates absentes.", awaitingClosure.Count, "warning");
+            AddDurations("resolved-waiting", "Résolus · depuis la résolution", resolvedDated.Select(record => (wallNow - record.Resolved!.Value).TotalDays).ToArray(), resolvedDated, "j",
+                at + "Jours calendaires depuis la résolution des lignes actuellement au statut Résolu. Dates lisibles, non futures, non antérieures à l’ouverture connue. Ce délai ne mesure ni l’approbation de la solution ni une obligation de clôture.");
+            var incidentPriority = active.Where(record => record.Type == 1 && record.Priority.HasValue).ToList();
+            Count("high-incidents", "Incidents actifs en priorité haute", incidentPriority.Where(record => record.Priority >= 4),
+                typesAvailable && Has("priority") && (active.All(record => record.Type != 1) || incidentPriority.Count > 0),
+                "Actifs de type Incident en priorité haute, très haute ou majeure. Les types et priorités non reconnus sont exclus.", incidentPriority.Count, "warning");
+
             string HoursBucket(double hours) => hours switch
             {
                 < 1 => "Moins de 1 h", < 4 => "1 à moins de 4 h", < 24 => "4 à moins de 24 h",

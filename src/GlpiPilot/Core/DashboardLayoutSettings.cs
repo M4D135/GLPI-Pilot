@@ -183,6 +183,7 @@ public sealed class DashboardWidgetSettings
     public string Title { get; set; } = "";
     public int Span { get; set; } = 4;
     public int Height { get; set; } = 320;
+    public bool AutoHeight { get; set; } = true;
     public string Style { get; set; } = "surface";
     public string Accent { get; set; } = "blue";
     public string Presentation { get; set; } = "bars";
@@ -231,7 +232,8 @@ public sealed record DashboardPlacement(string Id, int Column, int Span, double 
 public static class DashboardLayoutEngine
 {
     public static int EffectiveSpan(int requested, double width) => width < 650 ? 12 : width < 1000 ? Math.Max(6, requested) : requested;
-    public static IReadOnlyList<DashboardPlacement> Arrange(IEnumerable<DashboardWidgetSettings> widgets, double width, double gap = 14)
+    public static IReadOnlyList<DashboardPlacement> Arrange(IEnumerable<DashboardWidgetSettings> widgets, double width, double gap = 14,
+        IReadOnlyDictionary<string, double>? measuredHeights = null)
     {
         var columns = new double[12]; var result = new List<DashboardPlacement>();
         foreach (var widget in widgets.Where(x => !x.Hidden))
@@ -243,7 +245,8 @@ public static class DashboardLayoutEngine
                 var top = columns.Skip(col).Take(span).Max();
                 if (top < bestTop) { bestTop = top; bestColumn = col; }
             }
-            var height = Math.Clamp(widget.Height, 160, 960);
+            var height = measuredHeights != null && measuredHeights.TryGetValue(widget.Id, out var measured)
+                && double.IsFinite(measured) && measured > 0 ? measured : Math.Clamp(widget.Height, 160, 960);
             result.Add(new(widget.Id, bestColumn, span, bestTop, height));
             for (var col = bestColumn; col < bestColumn + span; col++) columns[col] = bestTop + height + gap;
         }

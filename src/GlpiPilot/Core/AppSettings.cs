@@ -5,9 +5,13 @@ namespace GlpiPilot.Core;
 
 public sealed class AppSettings
 {
+    public const int MinimumInterfaceZoomPercent = 75;
+    public const int MaximumInterfaceZoomPercent = 150;
+    public const int InterfaceZoomStep = 5;
     public string PortalUrl { get; set; } = "";
     public string BrowserChannel { get; set; } = "msedge";
     public string Theme { get; set; } = "dark";
+    public int InterfaceZoomPercent { get; set; } = 100;
     public string AutoMode { get; set; } = "native";
     public bool AutoSaveXlsx { get; set; } = true;
     public string ReadySelector { get; set; } = "";
@@ -78,6 +82,7 @@ public sealed class AppSettings
 
     public void Normalize()
     {
+        InterfaceZoomPercent = NormalizeInterfaceZoom(InterfaceZoomPercent);
         PortalUrl ??= "";
         BrowserChannel ??= "msedge";
         Theme ??= "dark";
@@ -107,4 +112,7 @@ public sealed class AppSettings
         Queries ??= QueryLibrarySettings.CreateDefault();
         Queries.Normalize();
     }
+
+    public static int NormalizeInterfaceZoom(int value) =>
+        (Math.Clamp(value, MinimumInterfaceZoomPercent, MaximumInterfaceZoomPercent) + 2) / InterfaceZoomStep * InterfaceZoomStep;
 }
