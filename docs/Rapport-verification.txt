@@ -45,8 +45,9 @@ les suites de tests, un résumé de réussite attendu. Un échec bloque la suite
    villes, tournées, requêtes, import et export. Le code de production est utilisé.
 2. WpfChecks publie puis exécute WindowsStartupChecks sur un bureau Windows.
    Il construit les vues réelles et vérifie leur rendu dans les deux thèmes.
-   Les scénarios de géométrie et les captures couvrent 1440 × 900 à 100 %
-   en clair, 960 × 720 à 150 % en clair et 1280 × 850 à 125 % en sombre.
+   Les scénarios demandent 1440 × 900 à 100 % en clair, 960 × 720 à 150 %
+   en clair et 1280 × 850 à 125 % en sombre. Windows peut borner la fenêtre
+   à son bureau disponible ; les dimensions effectives sont journalisées.
    Ils contrôlent le défilement du dashboard personnel, les cartes sans
    ascenseur interne actif, l’expansion météo et l’absence de recouvrement.
    Une liste de 43 catégories doit rester accessible sur toutes ses pages,
