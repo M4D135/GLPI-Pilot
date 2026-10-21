@@ -192,7 +192,14 @@ void CheckAtomicFailure()
     string folderTarget = Path.Combine(temporary, "existing-directory.xlsx");
     Directory.CreateDirectory(folderTarget);
     File.WriteAllText(Path.Combine(folderTarget, "sentinel.txt"), "original");
-    Throws<IOException>(() => ExportService.WriteXlsx(Sample(), folderTarget));
+    bool rejected = false;
+    try { ExportService.WriteXlsx(Sample(), folderTarget); }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+    {
+        // Windows reports an existing directory as access denied; Unix reports an I/O error.
+        rejected = true;
+    }
+    True(rejected && Directory.Exists(folderTarget), "La destination répertoire doit être refusée et préservée.");
     Equal("original", File.ReadAllText(Path.Combine(folderTarget, "sentinel.txt")));
     Equal(0, Directory.GetFiles(temporary, ".glpi-export-*.tmp").Length);
 
