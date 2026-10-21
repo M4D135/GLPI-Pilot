@@ -14,8 +14,10 @@ public sealed class TourPlanningView : UserControl, IDisposable
     private readonly string _orderPreferencesPath;
     private readonly ComboBox _technician = new() { MinWidth = 180, MaxWidth = 390, DisplayMemberPath = "Name", SelectedValuePath = "Key", Margin = new Thickness(8, 0, 18, 6) };
     private readonly CheckBox _allStatuses = new() { IsChecked = false, VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _summary = Label("Préparer les tournées", 25, "TextBrush", FontWeights.SemiBold);
+    private readonly TextBlock _summary = Label("Préparer les tournées", 18, "TextBrush", FontWeights.SemiBold);
     private readonly TextBlock _scopeNote = Label("Extrayez un relevé et configurez vos villes pour préparer les étapes.", 13, "MutedBrush");
+    private readonly TextBlock _planContext = Label("Choisissez le périmètre dans « Périmètre et qualité ».", 12, "MutedBrush");
+    private readonly TextBlock _planNote = Label("", 12, "MutedBrush");
     private readonly TextBlock _status = Label("", 12, "MutedBrush");
     private readonly TextBlock _orderNote = Label("", 12, "MutedBrush");
     private readonly TextBlock _selectionTitle = Label("Sélectionnez une étape", 19, "TextBrush", FontWeights.SemiBold);
@@ -49,14 +51,13 @@ public sealed class TourPlanningView : UserControl, IDisposable
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
         var root = new Grid();
-        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new StackPanel();
+        var information = new StackPanel();
         var heading = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
         _summary.Margin = new Thickness(0, 0, 18, 4); heading.Children.Add(_summary);
         _settings = Command("Configurer les villes", () => { if (!_busy && !_disposed) SettingsRequested?.Invoke(); });
-        heading.Children.Add(_settings); header.Children.Add(heading);
+        heading.Children.Add(_settings); information.Children.Add(heading);
         var scope = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
         scope.Children.Add(Label("Périmètre", 12, "MutedBrush"));
         _technician.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(VirtualizingStackPanel)));
@@ -67,20 +68,24 @@ public sealed class TourPlanningView : UserControl, IDisposable
         scope.Children.Add(_technician);
         _allStatuses.Content = Label("Inclure tous les statuts", 12, "TextBrush");
         _allStatuses.ToolTip = "Par défaut, seuls les actifs dont le statut est reconnu entrent dans le plan. Cette option inclut aussi les résolus, clos et statuts non classés.";
-        scope.Children.Add(_allStatuses); header.Children.Add(scope); root.Children.Add(header);
+        scope.Children.Add(_allStatuses); information.Children.Add(scope);
         var sections = new TabControl { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
         AutomationProperties.SetAutomationId(sections, "TourWorkspaceTabs");
-        Grid.SetRow(sections, 1); root.Children.Add(sections);
+        root.Children.Add(sections);
         var planView = new Grid();
         planView.RowDefinitions.Add(new() { Height = GridLength.Auto });
         planView.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         planView.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sections.Items.Add(new TabItem { Header = "Plan de tournée", Content = planView });
         var detailTab = new TabItem { Header = "Étape sélectionnée" }; sections.Items.Add(detailTab);
-        var information = new StackPanel();
         information.Children.Add(_scopeNote);
         information.Children.Add(Label("Une étape correspond à une ville confirmée par votre référentiel. Les tickets dont le titre mentionne plusieurs villes restent à vérifier. La ville déduite du titre ne prouve pas qu’une intervention sur place est nécessaire.", 12, "MutedBrush", margin: new Thickness(0, 12, 0, 14)));
+        information.Children.Add(_planNote);
 
+        var planHeader = new StackPanel();
+        _planContext.TextWrapping = TextWrapping.NoWrap;
+        _planContext.TextTrimming = TextTrimming.CharacterEllipsis;
+        _planContext.Margin = new Thickness(0, 0, 0, 6); planHeader.Children.Add(_planContext);
         var orders = new WrapPanel();
         _alphabetical = Command("A → Z", () => ChangeOrder(TourOrderKind.Alphabetical));
         _priorities = Command("Priorités actives", () => ChangeOrder(TourOrderKind.Priorities));
@@ -93,7 +98,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _priorities.Content = "Priorités"; _priorities.ToolTip = "Ordonner les étapes par priorités actives";
         _dueDates.Content = "Échéances"; _dueDates.ToolTip = "Ordonner les étapes par échéances actives";
         _proximity.Content = "Proximité";
-        planView.Children.Add(orders);
+        planHeader.Children.Add(orders); planView.Children.Add(planHeader);
         _orderNote.Margin = new Thickness(0, 9, 0, 8); information.Children.Add(_orderNote);
 
         // Column sorting is deliberately disabled: the displayed order is the exported visit order.
@@ -108,7 +113,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
         AddColumn(_steps, "Statuts inconnus", nameof(StepRow.UnknownStatusCount), 140, "N0");
         _steps.FrozenColumnCount = 2;
         AutomationProperties.SetName(_steps, "Étapes de la tournée dans l’ordre de visite"); Grid.SetRow(_steps, 1); planView.Children.Add(_steps);
-        var actions = new WrapPanel { Margin = new Thickness(0, 10, 0, 6) };
+        var actions = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         _allRows = Command("Tous les tickets du plan", () => { if (CurrentPlan() is { } plan) RaiseRows(plan.SelectedRows, plan.ScopeLabel + " · " + plan.StatusLabel); });
         _unlocated = Command("Non localisés", () => { if (CurrentPlan() is { } plan) RaiseRows(plan.UnlocatedRows, "Tournée · non localisés"); });
         _ambiguous = Command("Ambigus", () => { if (CurrentPlan() is { } plan) RaiseRows(plan.AmbiguousRows, "Tournée · localisation ambiguë"); });
@@ -126,20 +131,25 @@ public sealed class TourPlanningView : UserControl, IDisposable
         foreach (var button in new[] { _unlocated, _ambiguous, _unknownStatus }) qualityActions.Children.Add(button);
         information.Children.Add(Label("Vérifier les lignes du périmètre", 16, "TextBrush", FontWeights.SemiBold, new Thickness(0, 12, 0, 8)));
         information.Children.Add(qualityActions);
+        information.Children.Add(Label("Lire l’étape sélectionnée", 16, "TextBrush", FontWeights.SemiBold, new Thickness(0, 16, 0, 8)));
+        information.Children.Add(_selectionNote);
+        information.Children.Add(Label("Dans Étape sélectionnée, double-cliquez sur une ligne de ticket pour la retrouver dans l’aperçu du relevé.", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 0)));
         sections.Items.Add(new TabItem { Header = "Périmètre et qualité", Content = new ScrollViewer
         {
             Content = Card(information), VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Padding = new Thickness(0, 4, 8, 8)
         } });
-        _status.Margin = new Thickness(0, 6, 0, 0); Grid.SetRow(_status, 2); root.Children.Add(_status);
+        _status.Margin = new Thickness(0, 6, 0, 0); _status.Visibility = Visibility.Collapsed;
+        Grid.SetRow(_status, 1); root.Children.Add(_status);
 
         var detail = new Grid();
         detail.RowDefinitions.Add(new() { Height = GridLength.Auto });
         detail.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         detail.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var detailHeader = new StackPanel(); detailHeader.Children.Add(_selectionTitle);
-        _selectionNote.Margin = new Thickness(0, 8, 0, 10); detailHeader.Children.Add(_selectionNote);
-        var stopActions = new WrapPanel();
+        _selectionTitle.TextWrapping = TextWrapping.NoWrap;
+        _selectionTitle.TextTrimming = TextTrimming.CharacterEllipsis;
+        var stopActions = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         _stopRows = Command("Tickets de l’étape", () => RaiseStopRows("total"));
         _stopActive = Command("Actifs", () => RaiseStopRows("active"));
         _stopHigh = Command("Priorités hautes", () => RaiseStopRows("high"));
@@ -157,9 +167,10 @@ public sealed class TourPlanningView : UserControl, IDisposable
         AddColumn(_tickets, "Statut", nameof(TourTicket.Status), 160);
         AddColumn(_tickets, "Priorité", nameof(TourTicket.Priority), 120);
         AddColumn(_tickets, "Échéance", nameof(TourTicket.Due), 170);
-        _tickets.Margin = new Thickness(0, 12, 0, 0);
+        _tickets.Margin = new Thickness(0, 6, 0, 0);
         AutomationProperties.SetName(_tickets, "Tickets de l’étape sélectionnée"); Grid.SetRow(_tickets, 1); detail.Children.Add(_tickets);
-        _ticketNote.Margin = new Thickness(0, 8, 0, 0); Grid.SetRow(_ticketNote, 2); detail.Children.Add(_ticketNote);
+        _ticketNote.Margin = new Thickness(0, 8, 0, 0); _ticketNote.Visibility = Visibility.Collapsed;
+        Grid.SetRow(_ticketNote, 2); detail.Children.Add(_ticketNote);
         detailTab.Content = detail;
         Content = root;
 
@@ -306,6 +317,8 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _summary.Text = $"{plan.Stops.Count:N0} étapes · {plan.SelectedRows.Count:N0} {plan.Grain} dans le plan";
         _scopeNote.Text = plan.ScopeLabel + " · " + plan.StatusLabel + $" · relevé de {plan.SourceRowCount:N0} lignes"
             + (plan.SourceComplete ? " · source complète" : " · source partielle ou non confirmée");
+        _planContext.Text = plan.ScopeLabel + " · " + plan.StatusLabel + $" · {plan.Stops.Count:N0} étapes · {plan.SelectedRows.Count:N0} {plan.Grain}";
+        _planContext.ToolTip = _scopeNote.Text + "\nModifier ce périmètre dans Périmètre et qualité.";
         _orderNote.Text = plan.OrderLabel + ". L’ordre est mémorisé sur ce poste par technicien et mode de statuts. "
             + (plan.CanUseProximity ? $"Trajet entre étapes : environ {plan.StraightLineDistanceKm:N1} km à vol d’oiseau, sans départ extérieur ni retour."
                 : plan.Stops.Count <= 1 ? "La proximité se calcule à partir de deux étapes."
@@ -314,8 +327,9 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _unlocated.Content = $"Non localisés · {plan.UnlocatedRows.Count:N0}";
         _ambiguous.Content = $"Ambigus · {plan.AmbiguousRows.Count:N0}";
         _unknownStatus.Content = $"Statuts non classés · {plan.UnknownStatusRows.Count:N0}";
-        SetStatus(plan.Message + (!plan.AllStatuses ? $" {plan.ExcludedCompletedCount:N0} résolus ou clos exclus du plan."
-            + (plan.UnknownStatusRows.Count > 0 ? $" {plan.UnknownStatusRows.Count:N0} statuts inconnus exclus et accessibles ci-dessus." : "") : ""), !plan.Available);
+        _planNote.Text = plan.Message + (!plan.AllStatuses ? $" {plan.ExcludedCompletedCount:N0} résolus ou clos exclus du plan."
+            + (plan.UnknownStatusRows.Count > 0 ? $" {plan.UnknownStatusRows.Count:N0} statuts inconnus exclus et accessibles dans cette rubrique." : "") : "");
+        ShowPlanStatus(plan);
         _updatingControls = true;
         try
         {
@@ -347,17 +361,19 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _detailOperation?.Cancel(); var generation = ++_detailGeneration;
         if (CurrentPlan() is not { } plan || _steps.SelectedItem is not StepRow row)
         {
-            _selectionTitle.Text = "Aucune étape sélectionnée"; _selectionNote.Text = "Les lignes non localisées et ambiguës restent accessibles au-dessus.";
-            _tickets.ItemsSource = null; _ticketPlan = null; _ticketCityId = ""; _detailLoading = false; _ticketNote.Text = "";
+            _selectionTitle.Text = "Aucune étape sélectionnée"; _selectionTitle.ToolTip = null;
+            _selectionNote.Text = "Les lignes non localisées et ambiguës restent accessibles dans cette rubrique.";
+            _tickets.ItemsSource = null; _ticketPlan = null; _ticketCityId = ""; _detailLoading = false; SetTicketNote("");
             UpdateEnabled(); return;
         }
         var stop = row.Stop;
         _selectionTitle.Text = $"Étape {row.Number} · {stop.CityName}";
-        _selectionNote.Text = $"{stop.Count:N0} {plan.Grain} · {stop.UnknownStatusCount:N0} statuts inconnus. "
+        _selectionTitle.ToolTip = _selectionTitle.Text;
+        _selectionNote.Text = stop.CityName + $" · {stop.Count:N0} {plan.Grain} · {stop.UnknownStatusCount:N0} statuts inconnus. "
             + $"Priorités évaluables : {stop.PrioritySample:N0} / {stop.ActiveCount?.ToString("N0") ?? "—"} actifs ; échéances lisibles : {stop.DueSample:N0} / {stop.ActiveCount?.ToString("N0") ?? "—"} actifs."
             + " Les retards sont calendaires ; les règles de suspension du SLA ne sont pas déduites.";
         var operation = new CancellationTokenSource(); _detailOperation = operation; _detailLoading = true;
-        _ticketNote.Text = "Chargement des tickets de cette étape…"; UpdateEnabled();
+        SetTicketNote("Chargement des tickets de cette étape…"); UpdateEnabled();
         _detailTask = LoadSelectedDetailAsync(plan, stop.CityId, generation, operation);
     }
 
@@ -369,7 +385,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
             if (_disposed || operation.IsCancellationRequested || generation != _detailGeneration || !ReferenceEquals(plan, SelectedPlan)
                 || !ReferenceEquals(_report, _publishedReport) || _publishedGeneration != _generation || (_steps.SelectedItem as StepRow)?.Stop.CityId != cityId) return;
             _tickets.ItemsSource = tickets; _ticketPlan = plan; _ticketCityId = cityId;
-            _ticketNote.Text = $"{tickets.Count:N0} lignes du relevé. Double-cliquez sur une ligne pour la retrouver dans l’aperçu.";
+            SetTicketNote("");
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -378,7 +394,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
                 && ReferenceEquals(_report, _publishedReport) && _publishedGeneration == _generation)
             {
                 _tickets.ItemsSource = null; _ticketPlan = null;
-                _ticketNote.Text = "Les tickets de cette étape ne peuvent pas être affichés. Sélectionnez de nouveau l’étape.";
+                SetTicketNote("Les tickets de cette étape ne peuvent pas être affichés. Sélectionnez de nouveau l’étape.");
                 Log?.Invoke("TOURNÉES · détail d’étape indisponible (" + error.GetType().Name + ").");
             }
         }
@@ -429,7 +445,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
         {
             var data = await Task.Run(() => TourPlanningService.ToExport(plan, operation.Token), operation.Token);
             if (!OperationCurrent(report, generation, operation) || !ReferenceEquals(plan, SelectedPlan)) return;
-            _calculating = false; UpdateEnabled();
+            _calculating = false; ShowPlanStatus(plan); UpdateEnabled();
             if (CurrentPlan() != null) ExportRequested?.Invoke(data);
         }
         catch (OperationCanceledException) { }
@@ -478,8 +494,10 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _updatingControls = true;
         try { _steps.ItemsSource = null; _tickets.ItemsSource = null; _technician.ItemsSource = null; }
         finally { _updatingControls = false; }
-        _summary.Text = "Préparer les tournées"; _scopeNote.Text = message; _orderNote.Text = "";
-        _selectionTitle.Text = "Aucune étape sélectionnée"; _selectionNote.Text = ""; _ticketNote.Text = ""; SetStatus(""); UpdateEnabled();
+        _summary.Text = "Préparer les tournées"; _scopeNote.Text = message; _orderNote.Text = ""; _planNote.Text = "";
+        _planContext.Text = "Choisissez le périmètre dans « Périmètre et qualité »."; _planContext.ToolTip = message;
+        _selectionTitle.Text = "Aucune étape sélectionnée"; _selectionTitle.ToolTip = null; _selectionNote.Text = "";
+        SetTicketNote(""); SetStatus(message); UpdateEnabled();
     }
 
     public void Dispose()
@@ -489,7 +507,21 @@ public sealed class TourPlanningView : UserControl, IDisposable
     }
 
     private void SetStatus(string message, bool warning = false)
-    { _status.Text = message; _status.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "MutedBrush"); }
+    {
+        _status.Text = message; _status.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _status.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "MutedBrush");
+    }
+
+    private void ShowPlanStatus(TourPlan plan)
+    {
+        SetStatus(!plan.Available ? plan.Message
+            : plan.Stops.Count == 0 ? "Aucune étape localisée. Consultez Périmètre et qualité pour vérifier le relevé."
+            : !plan.SourceComplete ? "Relevé partiel ou non confirmé : le plan porte uniquement sur les lignes récupérées." : "",
+            !plan.Available || !plan.SourceComplete);
+    }
+
+    private void SetTicketNote(string message)
+    { _ticketNote.Text = message; _ticketNote.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible; }
 
     private void UpdateEnabled()
     {

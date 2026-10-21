@@ -22,7 +22,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     private readonly ListBox _libraryList = new() { MinHeight = 0, DisplayMemberPath = nameof(LibraryEntry.Label), Margin = new Thickness(0, 10, 0, 0) };
     private readonly TextBlock _libraryCount = Text("Aucune requête", 12, "MutedBrush");
     private readonly TextBlock _sourceInfo = Text("Chargez un relevé pour prévisualiser vos requêtes. Vous pouvez déjà les préparer.", 12, "MutedBrush");
-    private readonly TextBlock _status = Text("Choisissez une requête ou créez la vôtre.", 12, "MutedBrush");
+    private readonly TextBlock _status = Text("", 12, "MutedBrush");
     private readonly TextBlock _editorTitle = Text("Votre première requête", 18, "TextBrush", FontWeights.SemiBold);
     private readonly TextBox _name = Input("Nom de la requête", 120);
     private readonly TextBox _description = Input("Description de la requête", 1200);
@@ -98,10 +98,11 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var header = new StackPanel();
         var commands = new WrapPanel();
-        commands.Children.Add(Text("Requêtes", 23, "TextBrush", FontWeights.SemiBold, new Thickness(0, 0, 18, 7)));
         _save.SetResourceReference(Button.StyleProperty, "PrimaryButton");
         _save.Content = "Enregistrer"; _save.ToolTip = "Enregistrer toute la bibliothèque de requêtes";
         commands.Children.Add(_save); commands.Children.Add(_preview);
+        _libraryCount.Margin = new Thickness(12, 0, 0, 7);
+        commands.Children.Add(_libraryCount);
         header.Children.Add(commands); root.Children.Add(header);
         AutomationProperties.SetAutomationId(_sections, "QueryWorkspaceTabs");
         _sections.Items.Add(new TabItem { Header = "Bibliothèque", Content = BuildLibrary() });
@@ -110,7 +111,8 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         _resultTab.Content = BuildPreview(); _sections.Items.Add(_resultTab);
         _distributionTab.Content = BuildDistribution(); _sections.Items.Add(_distributionTab);
         Grid.SetRow(_sections, 1); root.Children.Add(_sections);
-        _status.Margin = new Thickness(0, 8, 0, 0); Grid.SetRow(_status, 2); root.Children.Add(_status);
+        _status.Margin = new Thickness(0, 8, 0, 0); _status.Visibility = Visibility.Collapsed;
+        Grid.SetRow(_status, 2); root.Children.Add(_status);
         Content = root;
         ConfigureConditionColumns();
         _conditions.ItemsSource = _conditionRows;
@@ -145,7 +147,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         ArgumentNullException.ThrowIfNull(settings);
         if (_disposed) return;
         settings.Validate();
-        var selected = _selectedId;
+        var selected = _selectedId; var confirmingSave = _savePending;
         var previousLoading = _loading; _loading = true;
         try
         {
@@ -157,7 +159,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         finally { _loading = previousLoading; }
         RebuildLibrary();
         InvalidatePreview("Bibliothèque chargée. Prévisualisez la requête choisie sur le relevé actuel.");
-        SetStatus("Bibliothèque enregistrée chargée.", "MutedBrush"); UpdateEnabled();
+        SetStatus(confirmingSave ? "Bibliothèque enregistrée." : "", "MutedBrush"); UpdateEnabled();
     }
 
     public void Show(ExtractionResult source, DashboardSettings settings, CityEnrichmentResult? cities = null)
@@ -358,7 +360,8 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
 
     private void SetStatus(string message, string brush)
     {
-        _status.Text = message; _status.SetResourceReference(TextBlock.ForegroundProperty, brush);
+        _status.Text = message; _status.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _status.SetResourceReference(TextBlock.ForegroundProperty, brush);
         AutomationProperties.SetLiveSetting(_status, AutomationLiveSetting.Polite);
     }
 

@@ -17,6 +17,7 @@ public sealed partial class QueryWorkshopView
     private readonly TextBlock _previewExplanation = Text("", 12, "MutedBrush");
     private readonly TextBlock _bucketTitle = Text("Répartition des lignes retenues", 14, "TextBrush", FontWeights.SemiBold);
     private readonly TextBlock _bucketNote = Text("", 12, "MutedBrush");
+    private readonly TextBlock _bucketSummary = Text("", 12, "MutedBrush");
     private readonly Grid _bucketPanel = new() { Visibility = Visibility.Collapsed };
     private readonly TextBlock _distributionEmpty = Text("Prévisualisez une requête avec un regroupement pour consulter ici toutes ses catégories.", 14, "MutedBrush");
     private readonly DataGrid _buckets = new()
@@ -42,6 +43,7 @@ public sealed partial class QueryWorkshopView
         panel.Children.Add(_previewValue); panel.Children.Add(_previewSample);
         _previewMessage.Margin = new Thickness(0, 10, 0, 0); _previewExplanation.Margin = new Thickness(0, 6, 0, 0);
         panel.Children.Add(_previewMessage); panel.Children.Add(_previewExplanation);
+        _bucketNote.Margin = new Thickness(0, 6, 0, 0); panel.Children.Add(_bucketNote);
         var rowActions = new WrapPanel { Margin = new Thickness(0, 12, 0, 4) }; rowActions.Children.Add(_previewRows); rowActions.Children.Add(_contributionRows); panel.Children.Add(rowActions);
         var openDistribution = Command("Consulter la répartition →");
         openDistribution.Click += (_, _) => _sections.SelectedItem = _distributionTab; panel.Children.Add(openDistribution);
@@ -61,7 +63,8 @@ public sealed partial class QueryWorkshopView
         _bucketPanel.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _bucketPanel.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         _bucketPanel.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var heading = new StackPanel(); heading.Children.Add(_bucketTitle); heading.Children.Add(_bucketNote);
+        _bucketTitle.TextWrapping = TextWrapping.NoWrap; _bucketTitle.TextTrimming = TextTrimming.CharacterEllipsis;
+        var heading = new StackPanel(); heading.Children.Add(_bucketTitle); heading.Children.Add(_bucketSummary);
         _bucketPanel.Children.Add(heading); Grid.SetRow(_buckets, 1); _bucketPanel.Children.Add(_buckets);
         Grid.SetRow(_bucketRows, 2); _bucketPanel.Children.Add(_bucketRows); panel.Children.Add(_bucketPanel);
         _buckets.Columns.Add(new DataGridTextColumn { Header = "Catégorie", Width = new DataGridLength(1, DataGridLengthUnitType.Star), MinWidth = 200,
@@ -124,6 +127,7 @@ public sealed partial class QueryWorkshopView
         _previewValue.Text = "—"; _previewSample.Text = _source == null ? "Aucun relevé chargé" : "Résultat à recalculer";
         _previewRows.Content = "Voir les lignes retenues"; _contributionRows.Content = "Voir les contributions au calcul";
         _previewMessage.Text = message; _previewMessage.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); _previewExplanation.Text = "";
+        _bucketNote.Text = ""; _bucketSummary.Text = "";
         _buckets.ItemsSource = null; _bucketPanel.Visibility = Visibility.Collapsed; _distributionEmpty.Visibility = Visibility.Visible; UpdateEnabled();
     }
 
@@ -182,6 +186,10 @@ public sealed partial class QueryWorkshopView
             if (result.Distribution is { } distribution)
             {
                 _bucketPanel.Visibility = Visibility.Visible; _distributionEmpty.Visibility = Visibility.Collapsed; _bucketTitle.Text = distribution.Title;
+                _bucketTitle.ToolTip = distribution.Title;
+                _bucketSummary.Text = distribution.Available
+                    ? $"{distribution.Buckets.Count:N0} catégories · base : {distribution.Denominator:N0} lignes · détails dans Résultat"
+                    : "Répartition indisponible · détails dans Résultat";
                 _bucketNote.Text = distribution.Available
                     ? distribution.Note + $" · {distribution.Buckets.Count:N0} catégories · base : {distribution.Denominator:N0} lignes"
                     : "Répartition indisponible. " + distribution.Note;
