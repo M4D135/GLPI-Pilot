@@ -2,6 +2,17 @@
 
 Application Windows autonome avec interface graphique pour extraire une recherche GLPI au moyen du navigateur et du SSO du portail. Aucun accès API, base de données ou serveur n’est nécessaire.
 
+## Télécharger : PROD ou DEV
+
+Les deux packs complets sont proposés dans les [Releases du dépôt](https://github.com/M4D135/GLPI-Pilot/releases).
+
+| Pack | Usage | Contenu à la racine du ZIP |
+| --- | --- | --- |
+| **PROD — Windows x64** | Utiliser GLPI Pilot, sans installation de .NET | `GLPI-Pilot.exe` et `wad/` |
+| **DEV — Windows x64** | Utiliser le même logiciel et reprendre son développement | `GLPI-Pilot.exe` et `wad/` ; sources et tests dans `wad/sources/` |
+
+Extraire le ZIP entier dans un dossier, puis ouvrir **GLPI-Pilot.exe**. Le dossier **wad** accompagne toujours l’exécutable. Le pack DEV inclut également les scripts de compilation, le workflow Windows et la documentation technique. La commande GitHub **Code → Download ZIP** télécharge les sources du dépôt ; les exécutables se trouvent dans les deux packs des Releases.
+
 ## Démarrage en un clic
 
 1. Extraire entièrement le ZIP, puis ouvrir `GLPI-Pilot.exe`. Garder le dossier `wad` à côté.
@@ -187,7 +198,7 @@ Les journaux quotidiens se trouvent dans `%LOCALAPPDATA%\GLPI-Pilot\Logs`. Les e
 
 ## Contenu et compilation
 
-Le dossier racine contient `GLPI-Pilot.exe` et `wad`. Ce dernier contient le pilote `.playwright`, le guide HTML et le rapport de vérification dans `docs`, les licences, le support et les sources dans `sources/GLPI-Pilot-Sources.zip`.
+Chaque pack possède exactement deux entrées à sa racine : `GLPI-Pilot.exe` et `wad`. Le dossier `wad` contient le pilote `.playwright`, la documentation dans `docs`, les licences, les diagnostics de démarrage et les empreintes SHA-256. Le pack DEV ajoute les sources complètes dépliées dans `wad/sources` ; le pack PROD contient les fichiers nécessaires à l’utilisation.
 
 Projet C# WPF, .NET 10, publication autonome Windows x64. Avec le SDK .NET 10 installé :
 
