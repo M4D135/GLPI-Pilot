@@ -26,7 +26,7 @@ public sealed class TechnicianManagementView : UserControl
         AutoGenerateColumns = false, IsReadOnly = true, MinHeight = 0,
         EnableRowVirtualization = true, EnableColumnVirtualization = true, CanUserAddRows = false,
         CanUserDeleteRows = false, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.FullRow,
-        RowHeight = 38, FrozenColumnCount = 2, Margin = new Thickness(0, 8, 0, 8)
+        RowHeight = 38, FrozenColumnCount = 2, Margin = new Thickness(0, 8, 0, 0)
     };
     private readonly CheckBox _favorite = new() { Margin = new Thickness(0, 0, 20, 0) };
     private readonly TextBox _target = new() { Width = 105, MaxLength = 6, Margin = new Thickness(8, 0, 12, 0) };
@@ -38,6 +38,14 @@ public sealed class TechnicianManagementView : UserControl
     private readonly WrapPanel _metricActions = new() { Margin = new Thickness(0, 12, 0, 12) };
     private readonly List<Button> _metricButtons = new();
     private readonly Button _refresh, _dashboard, _save, _unassigned, _multiple;
+    // The workspace adds its dashboard and identity pages to this navigation instead
+    // of nesting a second row of tabs above a height-constrained comparison table.
+    internal TabControl Navigation { get; } = new()
+    {
+        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        VerticalContentAlignment = VerticalAlignment.Stretch
+    };
+    internal TabItem ComparisonSection { get; }
     private ICollectionView? _view;
     private TechnicianWorkloadSnapshot? _snapshot;
     private TechnicianPreferences _preferences = new();
@@ -56,26 +64,28 @@ public sealed class TechnicianManagementView : UserControl
         var root = new Grid();
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var sections = new TabControl { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+        var sections = Navigation;
         AutomationProperties.SetAutomationId(sections, "TechnicianManagementTabs");
         var comparison = new Grid();
         comparison.RowDefinitions.Add(new() { Height = GridLength.Auto });
         comparison.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        comparison.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        sections.Items.Add(new TabItem { Header = "Comparaison", Content = comparison });
-        var selectedTab = new TabItem { Header = "Fiche du technicien" }; sections.Items.Add(selectedTab);
+        ComparisonSection = new TabItem { Header = "Comparaison", Content = comparison };
+        sections.Items.Add(ComparisonSection);
+        var selectedTab = new TabItem { Header = "Fiche", ToolTip = "Fiche du technicien sélectionné et repères enregistrés sur ce poste" }; sections.Items.Add(selectedTab);
         root.Children.Add(sections);
         var intro = new StackPanel();
-        intro.Children.Add(Label("Lire les charges du relevé", 18, "TextBrush", FontWeights.SemiBold));
+        intro.Children.Add(_summary);
         _scope.Margin = new Thickness(0, 8, 0, 0); intro.Children.Add(_scope);
         intro.Children.Add(Label("Charge visible dans ce relevé. Un ticket partagé figure chez chaque technicien concerné ; les colonnes des techniciens ne s’additionnent pas. Les objectifs sont des repères locaux modifiables.", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 0)));
+        intro.Children.Add(Label("Dans le tableau, cliquez sur un en-tête pour trier puis sélectionnez une ligne. L’onglet Fiche permet de consulter ses tickets et ses repères locaux ; un double-clic sur la ligne ouvre son dashboard.", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 0)));
         sections.Items.Add(new TabItem { Header = "Périmètre", Content = Viewport(Card(intro)) });
 
-        var comparisonHeader = new StackPanel();
-        var comparisonHeading = new DockPanel();
-        _count.Margin = new Thickness(12, 0, 0, 0); DockPanel.SetDock(_count, Dock.Right); comparisonHeading.Children.Add(_count);
-        comparisonHeading.Children.Add(_summary); comparisonHeader.Children.Add(comparisonHeading);
-        var toolbar = new WrapPanel { Margin = new Thickness(0, 8, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var comparisonHeader = new DockPanel();
+        _count.Margin = new Thickness(12, 0, 0, 0);
+        _count.VerticalAlignment = VerticalAlignment.Center;
+        _count.TextWrapping = TextWrapping.NoWrap;
+        DockPanel.SetDock(_count, Dock.Right); comparisonHeader.Children.Add(_count);
+        var toolbar = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
         toolbar.Children.Add(Label("Nom", 12, "MutedBrush", margin: new Thickness(0, 0, 6, 0)));
         AutomationProperties.SetName(_search, "Rechercher un technicien dans la gestion de l’équipe");
         toolbar.Children.Add(_search);
@@ -109,7 +119,7 @@ public sealed class TechnicianManagementView : UserControl
         ScrollViewer.SetCanContentScroll(_grid, true);
         AutomationProperties.SetName(_grid, "Comparaison des charges des techniciens, triable par en-tête");
         Grid.SetRow(_grid, 1); comparison.Children.Add(_grid);
-        var overviewActions = new WrapPanel();
+        var overviewActions = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
         _unassigned = Command("Voir les lignes sans technicien", () =>
         { if (_snapshot != null) RowsRequested?.Invoke(_snapshot.UnassignedRows, "Sans technicien renseigné · tous statuts"); });
         _multiple = Command("Voir les affectations multiples", () =>
@@ -117,10 +127,9 @@ public sealed class TechnicianManagementView : UserControl
         _unassigned.Content = "Sans technicien"; _unassigned.ToolTip = "Voir les lignes sans technicien";
         _multiple.Content = "Multi-affectés"; _multiple.ToolTip = "Voir les affectations multiples";
         overviewActions.Children.Add(_unassigned); overviewActions.Children.Add(_multiple);
-        var openSelected = Command("Fiche du technicien →", () => sections.SelectedItem = selectedTab);
-        openSelected.Content = "Fiche →"; openSelected.ToolTip = "Consulter la fiche et les repères du technicien sélectionné"; overviewActions.Children.Add(openSelected);
-        Grid.SetRow(overviewActions, 2); comparison.Children.Add(overviewActions);
-        _status.Margin = new Thickness(0, 8, 0, 0); Grid.SetRow(_status, 1); root.Children.Add(_status);
+        intro.Children.Add(overviewActions);
+        _status.Margin = new Thickness(0, 8, 0, 0); _status.Visibility = Visibility.Collapsed;
+        Grid.SetRow(_status, 1); root.Children.Add(_status);
 
         var selected = new StackPanel();
         var selectedHeading = new DockPanel();
@@ -169,7 +178,7 @@ public sealed class TechnicianManagementView : UserControl
             : snapshot.Roster.Message;
         SetMessage(!snapshot.Global.Complete
             ? "Relevé incomplet ou non confirmé : les charges portent uniquement sur les lignes récupérées."
-            : "Cliquez sur un en-tête pour trier, puis sélectionnez une ligne pour consulter les tickets et les repères locaux.", !snapshot.Global.Complete);
+            : "", !snapshot.Global.Complete);
         RebuildRows(selectedKey); UpdateEnabled();
     }
 
@@ -190,7 +199,7 @@ public sealed class TechnicianManagementView : UserControl
     {
         _snapshot = null; _view = null; _grid.ItemsSource = null; _loading = false;
         _summary.Text = "Gestion de l’équipe"; _scope.Text = message; _count.Text = "";
-        SetMessage(""); ShowSelection(); UpdateEnabled();
+        SetMessage(message); ShowSelection(); UpdateEnabled();
     }
 
     public void SetPreferences(TechnicianPreferences preferences, string message, bool warning = false)
@@ -319,7 +328,11 @@ public sealed class TechnicianManagementView : UserControl
     }
 
     private void SetMessage(string message, bool warning = false)
-    { _status.Text = message; _status.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "MutedBrush"); }
+    {
+        _status.Text = message;
+        _status.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _status.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "MutedBrush");
+    }
 
     private void UpdateEnabled()
     {

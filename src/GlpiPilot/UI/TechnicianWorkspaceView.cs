@@ -24,7 +24,7 @@ public sealed class TechnicianWorkspaceView : UserControl
     private readonly Button _personal;
     private readonly Button _team;
     private readonly Button _previous, _next;
-    private readonly TabControl _workspaces = new() { Margin = new Thickness(0, 12, 0, 0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+    private readonly TabControl _workspaces;
     private readonly TabItem _managementTab, _dashboardTab;
     private readonly List<Button> _tabButtons = new();
     private TechnicianEntry[] _filteredEntries = Array.Empty<TechnicianEntry>();
@@ -45,15 +45,13 @@ public sealed class TechnicianWorkspaceView : UserControl
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
-        var root = new Grid();
-        root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        var heading = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
-        heading.Children.Add(Label("Techniciens", 23, "TextBrush", FontWeights.SemiBold, new Thickness(0, 0, 20, 6)));
+        var dashboardContent = new StackPanel();
+        var heading = new WrapPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 8) };
+        heading.Children.Add(Label("Tableaux de bord", 18, "TextBrush", FontWeights.SemiBold, new Thickness(0, 0, 20, 6)));
         _team = Command("Vue d’équipe", () => TeamRequested?.Invoke());
-        _team.Content = "Équipe"; _team.ToolTip = "Ouvrir le dashboard global de l’équipe";
+        _team.Content = "Dashboard d’équipe"; _team.ToolTip = "Ouvrir le dashboard global de l’équipe";
         _team.Margin = new Thickness(0, 0, 8, 6); heading.Children.Add(_team);
-        root.Children.Add(heading);
+        dashboardContent.Children.Add(heading);
 
         var identityContent = new StackPanel();
         identityContent.Children.Add(Label("MON ESPACE", 11, "MutedBrush", FontWeights.SemiBold));
@@ -84,15 +82,18 @@ public sealed class TechnicianWorkspaceView : UserControl
         AutomationProperties.SetName(_openPersonalAfterExtraction, "Ouvrir mon espace après une extraction réussie");
         identityContent.Children.Add(_openPersonalAfterExtraction);
 
-        var dashboardContent = new StackPanel();
+        // All technician pages share one tab row. Keeping Management as the visual
+        // parent also preserves its bounded, virtualized comparison table.
+        _workspaces = Management.Navigation;
         AutomationProperties.SetAutomationId(_workspaces, "TechnicianWorkspaceTabs");
-        _managementTab = new TabItem { Header = "Équipe", ToolTip = "Gestion de l’équipe : comparaison des charges et fiches locales", Content = Management };
+        _managementTab = Management.ComparisonSection;
+        _managementTab.Header = "Équipe";
+        _managementTab.ToolTip = "Comparer les charges des techniciens du relevé";
         // The dashboard owns content height; this is its only vertical viewport.
         _dashboardTab = new TabItem { Header = "Dashboard", ToolTip = "Dashboard du technicien sélectionné", Content = Viewport(dashboardContent) };
-        _workspaces.Items.Add(_managementTab); _workspaces.Items.Add(_dashboardTab);
-        _workspaces.Items.Add(new TabItem { Header = "Mon identité", Content = Viewport(Card(identityContent)) });
+        _workspaces.Items.Insert(1, _dashboardTab);
+        _workspaces.Items.Insert(_workspaces.Items.Count - 1, new TabItem { Header = "Mon identité", Content = Viewport(Card(identityContent)) });
         _workspaces.SelectedItem = _managementTab;
-        Grid.SetRow(_workspaces, 1); root.Children.Add(_workspaces);
 
         var toolbar = new WrapPanel { Margin = new Thickness(0, 18, 0, 8), VerticalAlignment = VerticalAlignment.Center };
         toolbar.Children.Add(Label("TECHNICIENS", 11, "MutedBrush", FontWeights.SemiBold, new Thickness(0, 0, 16, 0)));
@@ -110,7 +111,7 @@ public sealed class TechnicianWorkspaceView : UserControl
         _rosterNote.Margin = new Thickness(0, 0, 0, 8); dashboardContent.Children.Add(_rosterNote);
         _selectionNote.Margin = new Thickness(0, 0, 0, 16); dashboardContent.Children.Add(_selectionNote);
         dashboardContent.Children.Add(Dashboard);
-        Content = root;
+        Content = Management;
         _identity.SelectionChanged += (_, _) => UpdateEnabled();
         _filter.TextChanged += (_, _) => { _tabPage = 0; RenderTabs(resetScroll: true); };
         _openPersonalAfterExtraction.Checked += PersonalPreference_Changed;
