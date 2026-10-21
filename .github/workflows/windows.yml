@@ -84,8 +84,8 @@ jobs:
         timeout-minutes: 12
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
 
-      - name: Vérifier le premier rendu du pack PROD extrait en état isolé
-        timeout-minutes: 2
+      - name: Vérifier le démarrage, le zoom et sa mémorisation dans le pack PROD
+        timeout-minutes: 8
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup
 
       - name: Joindre le pack PROD Windows validé
@@ -119,6 +119,8 @@ jobs:
           - Contrôles des diagnostics, configurations, dashboards, dispositions, recherche, techniciens, villes, tournées et requêtes : exécutés avec succès.
           - WindowsStartupChecks : contrôles WPF de production chargés et rendus sous Windows, délai maximal 90 s.
           - Pack PROD extrait : fenêtre principale visible, marqueur ContentRendered reçu, configuration synthétique inchangée, fermeture normale.
+          - Zoom de la fenêtre réelle : boutons +/−/100 %, bornes 75–150 %, fenêtre compacte, mémorisation à 110 % et retour à 100 % après redémarrage.
+          - Captures des vues Windows en thèmes clair/sombre et à plusieurs tailles jointes aux journaux.
           - [Télécharger PROD]($env:PROD_URL) · [Télécharger DEV]($env:DEV_URL).
           - Chaque ZIP contient uniquement GLPI-Pilot.exe et wad à sa racine ; DEV inclut les sources dépliées.
           - Les deux packs utilisent le même exécutable vérifié ; empreintes de chaque fichier contrôlées.
