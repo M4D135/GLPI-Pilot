@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using GlpiPilot.Core;
 using GlpiPilot.UI;
@@ -29,12 +30,16 @@ internal static partial class Program
             await FlushLayoutAsync();
             ScrollViewToTop(dashboard);
             await FlushLayoutAsync();
+            Console.WriteLine($"VIEWPORT: requested={scenario.Width:0}x{scenario.Height:0}; actual window={_host.ActualWidth:0.#}x{_host.ActualHeight:0.#}; "
+                + $"client={((FrameworkElement)_host.Content).ActualWidth:0.#}x{((FrameworkElement)_host.Content).ActualHeight:0.#}; "
+                + $"logical test surface={tabs.ActualWidth:0.#}x{tabs.ActualHeight:0.#}; zoom={scenario.Zoom:P0}; theme={scenario.Theme}");
             AssertDashboardGeometry(dashboard);
             AssertVisibleInHost(FindButton(dashboard, "Personnaliser"), "dashboard customization");
             AssertVisibleInHost(FindButton(dashboard, "+ Ajouter un widget"), "dashboard widget catalog");
             CaptureView("dashboard-" + scenario.Name + "-" + scenario.Theme);
-            Pass($"Dashboard cards fit their board without nested vertical bars at {scenario.Zoom:P0}, {scenario.Width:0}×{scenario.Height:0}, {scenario.Theme}");
+            Pass($"Dashboard cards fit their board without nested vertical bars at {scenario.Zoom:P0}, actual window {_host.ActualWidth:0.#}×{_host.ActualHeight:0.#}, {scenario.Theme}");
 
+            _stage = $"personal dashboard {scenario.Name} / {scenario.Theme}";
             _technicians!.ShowTechnicianDashboard();
             SelectView(tabs, _technicians); await FlushLayoutAsync();
             ScrollViewToTop(_technicians.Dashboard); await FlushLayoutAsync();
@@ -48,14 +53,15 @@ internal static partial class Program
             {
                 await ExerciseExpandedWeatherAsync(tabs, dashboard);
                 await ExerciseCompleteDistributionAsync(tabs, dashboard);
+                _stage = "technician comparison / small-150 / light";
                 SelectView(tabs, _technicians); await FlushLayoutAsync();
                 await SelectSectionAsync(_technicians, "Équipe");
-                await SelectSectionAsync(_technicians.Management, "Comparaison");
                 var technicianGrid = Descendants<DataGrid>(_technicians.Management).Single();
                 AssertBoundedVirtualList(technicianGrid, "technician comparison");
                 CaptureView("technicians-small-150-light");
                 Pass("Technician comparison remains bounded and virtualized without a surrounding page scroller at 150 %");
 
+                _stage = "tour steps / small-150 / light";
                 SelectView(tabs, _tours!); await FlushLayoutAsync();
                 await SelectSectionAsync(_tours!, "Plan de tournée");
                 var tourGrid = Descendants<DataGrid>(_tours!).Single(grid => System.Windows.Automation.AutomationProperties.GetName(grid) == "Étapes de la tournée dans l’ordre de visite");
@@ -63,6 +69,7 @@ internal static partial class Program
                 CaptureView("tour-small-150-light");
                 Pass("Tour steps remain bounded and virtualized without a surrounding page scroller at 150 %");
 
+                _stage = "query library / small-150 / light";
                 SelectView(tabs, _queryEditor!); await FlushLayoutAsync();
                 await SelectSectionAsync(_queryEditor!, "Bibliothèque");
                 var library = Descendants<ListBox>(_queryEditor!).Single(list => System.Windows.Automation.AutomationProperties.GetName(list).StartsWith("Bibliothèque de requêtes", StringComparison.Ordinal));
@@ -213,12 +220,40 @@ internal static partial class Program
 
     private static void AssertBoundedVirtualList(ItemsControl list, string label)
     {
-        Require(list.IsLoaded && list.ActualWidth > 0 && list.ActualHeight > 40 && double.IsFinite(list.ActualHeight),
-            "The " + label + " has no usable bounded viewport.");
+        var usable = list.IsLoaded && list.ActualWidth > 0 && list.ActualHeight > 40 && double.IsFinite(list.ActualHeight);
+        if (!usable) LogLayoutAncestors(list);
+        Require(usable,
+            $"The {label} has no usable bounded viewport: loaded={list.IsLoaded}, actual={list.ActualWidth:0.#}x{list.ActualHeight:0.#}, required height > 40.");
         Require(!VerticalScrollAncestors(list).Any(), "The " + label + " is nested inside a vertical page scroller.");
         Require(list is DataGrid grid ? grid.EnableRowVirtualization : VirtualizingPanel.GetIsVirtualizing(list),
             "The " + label + " lost virtualization.");
         AssertVisibleInHost(list, label);
+        if (list is DataGrid populated && populated.Items.Count > 0)
+        {
+            var row = populated.ItemContainerGenerator.ContainerFromIndex(0) as DataGridRow;
+            Require(row is { IsLoaded: true, ActualHeight: > 0 }, "The " + label + " did not realize its first data row.");
+            DependencyObject? parent = row;
+            while (parent != null && parent is not ScrollContentPresenter) parent = VisualTreeHelper.GetParent(parent);
+            Require(parent is ScrollContentPresenter, "The " + label + " has no data-row viewport.");
+            var viewport = (ScrollContentPresenter)parent!;
+            var rowBounds = row!.TransformToAncestor(viewport).TransformBounds(new Rect(row.RenderSize));
+            if (rowBounds.Top < -1 || rowBounds.Bottom > viewport.ActualHeight + 1) LogLayoutAncestors(populated);
+            Require(rowBounds.Top >= -1 && rowBounds.Bottom <= viewport.ActualHeight + 1,
+                $"The {label} clips its first data row: top={rowBounds.Top:0.#}, bottom={rowBounds.Bottom:0.#}, data viewport height={viewport.ActualHeight:0.#}.");
+        }
+    }
+
+    private static void LogLayoutAncestors(FrameworkElement element)
+    {
+        for (DependencyObject? current = element; current != null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is not FrameworkElement part) continue;
+            var rows = part is Grid grid ? "; rows=" + string.Join(",", grid.RowDefinitions.Select(row => $"{row.Height}:{row.ActualHeight:0.#}")) : "";
+            var id = AutomationProperties.GetAutomationId(part);
+            Console.Error.WriteLine($"LAYOUT: {part.GetType().Name}{(id.Length == 0 ? "" : " #" + id)}; "
+                + $"actual={part.ActualWidth:0.#}x{part.ActualHeight:0.#}; desired={part.DesiredSize.Width:0.#}x{part.DesiredSize.Height:0.#}; "
+                + $"margin={part.Margin}; visibility={part.Visibility}{rows}");
+        }
     }
 
     private static void AssertVisibleInHost(FrameworkElement element, string label)

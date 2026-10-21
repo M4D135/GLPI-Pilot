@@ -346,19 +346,11 @@ internal static partial class Program
                 await FlushLayoutAsync();
                 if (tab.Tag is TechnicianWorkspaceView technicians)
                 {
-                    var internalTabs = FindSectionTabs(technicians, "TechnicianWorkspaceTabs");
-                    foreach (var workspace in internalTabs.Items.Cast<TabItem>())
-                    {
-                        internalTabs.SelectedItem = workspace; await FlushLayoutAsync();
-                        if (ReferenceEquals(workspace.Content, technicians.Management))
-                        {
-                            await SelectSectionAsync(technicians.Management, "Comparaison");
-                            var grid = Descendants<DataGrid>(technicians.Management).Single();
-                            Require(grid.Items.Count == 2 && grid.IsReadOnly && grid.EnableRowVirtualization,
-                                "Real technician management data was not bound or virtualized.");
-                            await RenderSectionsAsync(technicians.Management, "TechnicianManagementTabs");
-                        }
-                    }
+                    await RenderSectionsAsync(technicians, "TechnicianWorkspaceTabs");
+                    await SelectSectionAsync(technicians, "Équipe");
+                    var grid = Descendants<DataGrid>(technicians.Management).Single();
+                    Require(grid.Items.Count == 2 && grid.IsReadOnly && grid.EnableRowVirtualization,
+                        "Real technician management data was not bound or virtualized.");
                 }
                 if (tab.Tag is TourPlanningView tour) await RenderSectionsAsync(tour, "TourWorkspaceTabs");
                 if (tab.Tag is QueryWorkshopView queries) await RenderSectionsAsync(queries, "QueryWorkspaceTabs");
