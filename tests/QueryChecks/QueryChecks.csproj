@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/GlpiPilot/Core/QuerySettings.cs" Link="QuerySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/QueryService.cs" Link="QueryService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="CitySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="CityDetectionService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="ExportModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="DashboardService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="DashboardModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardSettings.cs" Link="DashboardSettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardLayout*.cs" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
