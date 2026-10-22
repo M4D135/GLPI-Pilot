@@ -199,11 +199,14 @@ void CheckZoomTransfer()
 
 void CheckEnvelope()
 {
+    // Version 3 is the current portable schema; future major versions stay refused.
+    var current = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.0.0\",\"Settings\":{}}"), Sample());
+    Equal(Sample().InterfaceZoomPercent, current.InterfaceZoomPercent);
     foreach (string json in new[]
     {
         "{\"Schema\":\"wrong\",\"SchemaVersion\":1,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":2,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
-        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.0.0\",\"Settings\":{}}",
+        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"4.0.0\",\"Settings\":{}}",
         "{\"PortalUrl\":\"https://glpi.test/front/ticket.php\",\"portalurl\":\"https://other.test\"}",
         "{\"Dashboard\":{\"ColumnMappings\":{\"id\":\"ID\",\"ID\":\"Autre\"}}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));

@@ -1,25 +1,29 @@
-GLPI Pilot 2.1.0 — protocole et preuves de vérification
+GLPI Pilot 3.0.0 — protocole et preuves de vérification
 Date : 22 octobre 2026
-Cible : Windows x64, WPF, .NET 10 autonome
+Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
 IDENTIFIER LA LIVRAISON
-Le commit exact est inscrit dans wad/version.json avec la version, l’édition
-et le SHA-256 de l’exécutable. wad/SHA256SUMS.txt couvre chaque fichier livré.
-Le workflow du même commit doit avoir réussi :
+Le commit exact est inscrit dans wad/version.json avec la version, l’édition,
+le SHA-256 de l’exécutable et la version du runtime WebView2 fixe fourni.
+wad/SHA256SUMS.txt couvre chaque fichier livré. Le workflow du même commit
+constitue la preuve de validation Windows :
 https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 Une version déjà publiée pour un autre commit ne peut pas être remplacée.
-Les étapes non exécutées ne sont jamais présentées comme des réussites.
+La présence des tests ou leur compilation ne constitue pas leur exécution.
 
 VALIDATION LOCALE AVANT LA CHAINE WINDOWS
-Les suites métier utilisent données, fichiers et profils synthétiques.
-Les contrôles de navigateur utilisent des routes de test interceptées ;
-aucun portail privé ni fournisseur d’assistance/routage/météo n’est contacté.
+Les suites métier utilisent des données et profils temporaires synthétiques.
+Les contrôles de navigateur interceptent les routes de test : aucun portail
+privé ni fournisseur d’assistance, de routage ou de météo n’est contacté.
+Les contrôles WebView portables chargent les vrais modules HTML/CSS/JS et
+appellent les vrais moteurs C# à travers WebBridge. Ils vérifient notamment
+la CSP stricte, les opérations autorisées et les résultats périmés refusés.
 Les projets Windows peuvent être compilés depuis Linux pour vérifier leurs
-références ; cela ne prouve ni le rendu WPF ni l’exécution d’un EXE Windows.
-La restauration locale utilise NuGetAudit=false lorsque le service d’audit
+références ; cela ne prouve ni le rendu WebView2 Windows ni le démarrage EXE.
+NuGetAudit=false peut être utilisé localement lorsque le service d’audit
 est inaccessible. Ce résultat ne constitue pas un audit de dépendances.
-Les comptes définitifs sont fournis par les résumés des processus dans les
-journaux du workflow, après le gel du code de la livraison.
+Les nombres définitifs figurent dans les résumés des processus du workflow
+et doivent être lus sur le commit exact de la livraison.
 
 SUITES METIER OBLIGATOIRES (BclChecks)
 18 projets : StartupDiagnosticsChecks, StartupResilienceChecks,
@@ -29,88 +33,117 @@ CityDetectionChecks, TourPlanningChecks, QueryChecks, AnalyticsChecks,
 CompletionChecks, UpdateChecks, LanguageAssistantChecks, NativeImportChecks
 et ExportChecks.
 
-Couverture complémentaire 2.1 :
-- profils et identités isolés, correspondances locales/archives protégées ;
+Couverture complémentaire :
+- profils et identités isolés, correspondances locales et archives protégées ;
 - checkpoints, ordonnancement, horaires fixes, recettes et santé des sources ;
 - variations d’alertes, contributeurs, résolution et conflits d’import ;
-- calendriers et capacités matin/après-midi, contraintes de sites et tournées ;
+- calendriers, capacités, contraintes de sites et étapes de tournées verrouillées ;
 - événements du traitement, relations, documents et brouillons ;
 - cohortes, anomalies, durées incertaines, index et effectifs datés ;
-- reconstruction de filtres et identité personnelle dans les archives ;
+- reconstruction des filtres et de l’identité personnelle dans les archives ;
 - DSL et citations de l’assistant, sans appel réel à un fournisseur ;
 - inventaires, archives de mise à jour, signature et restauration ;
-- sauvegarde des nouveaux paramètres avant migration de version.
+- sauvegarde des paramètres avant migration de version.
 
-NAVIGATEUR ET DOM (BrowserChecks)
+NAVIGATEUR GLPI ET DOM (BrowserChecks)
 BrowserChecks, AutomationChecks, TicketDetailChecks et NativeDomChecks.
-35 scénarios de collecte/reprise, 33 d’automatisation, 32 de lecture/action
-sur fiches synthétiques et 82 contrôles DOM sont attendus à ce stade.
 Les processus, codes de sortie et résumés sont contrôlés par le script CI.
 Les tests incluent portée modifiée après SSO, réseau temporaire/durable,
 reprise valide/incompatible, export corrompu, annulation et divergence de
 cellules malgré des identifiants identiques. Les formulaires Select2 et
 éditeurs de texte sont testés sans écrire dans un portail réel.
 
-INTERFACE WPF (WpfChecks)
-Vrais contrôles de production sur bureau Windows interactif : thèmes
-clair/sombre, tailles et zooms variés, dashboards, requêtes, lieux/tournées,
-lecteurs, travail personnel, historique, qualité, alertes et calendriers.
-Les nouvelles vérifications couvrent correspondances, conflits, reprise des
-tableaux, moniteur disponible, assistant, inventaire des sites, carte,
-exports PNG/PDF et faits structurés du traitement.
-Délai global de 90 secondes, indépendant du dispatcher ; diagnostic et
-captures synthétiques conservés en cas d’échec. Le nombre réussi est écrit
-par le harnais, sans assimiler une compilation à une exécution.
+INTERFACE LOCALE ET PONT C# (WebViewChecks)
+WebViewChecks : shell complet, 25 espaces, thèmes, navigation, tableaux,
+filtres, tri, colonnes, petite fenêtre et absence d’erreurs JavaScript/CSP.
+RuntimeSessionChecks : contexte des sources/imports/archives, formulaires
+périmés, sélection de page/table, annulation active et en attente, fermeture
+avec sauvegarde du dernier brouillon et récupération après échec d’écriture.
+AnalyticsBridgeChecks : dashboards éditables, historique global/personnel/
+filtré avec ruptures explicites, requêtes, populations, assistant et exports.
+WorkplaceBridgeChecks : tickets, notes, lecture, brouillons, soumission
+synthétique unique, reçus durables, techniciens, calendriers et répartition.
+TerrainBridgeChecks et TerrainWebChecks : villes/sites, synonymes, règles,
+priorités, tournées, verrous, consentements externes et assistant de mise à jour.
+Les captures de cette étape proviennent de Chromium avec le vrai pont C# ;
+elles ne sont pas présentées comme des captures de l’hôte Windows natif.
 
 CONSTRUCTION (BuildPack)
 Deux ZIP : PROD et DEV, exactement GLPI-Pilot.exe + wad à la racine.
 Sources, tests et outils uniquement dans wad/sources du pack DEV.
-Même EXE dans les deux packs, pilote Playwright Windows complet, guides,
-support et licences inclus. SHA-256 de tous les fichiers et commit source
-vérifiés. Aucun profil SSO, relevé, clé, réglage personnel ni cache inclus.
+Même EXE dans les deux packs, pilote Playwright Windows complet, interface
+locale wad/web, runtime WebView2 fixe intégral, guides, support et licences.
+Le CAB Microsoft et les 257 fichiers du runtime sont vérifiés par empreinte ;
+14 contrôles hors ligne vérifient aussi la validation du paquet de runtime.
+Le build utilise un cache NuGet explicitement fourni ou une restauration
+en ligne explicitement autorisée. Aucun repli réseau implicite en mode hors ligne.
+SHA-256 de tous les fichiers et commit source contrôlés. Aucun profil SSO,
+relevé, clé, réglage personnel ou cache de navigation n’est inclus.
 La signature Authenticode est vérifiée lorsqu’un certificat est configuré.
 Sans certificat fourni, le journal indique NotConfigured et l’EXE est non signé.
 
-DEMARRAGE DU PACK (PackStartup)
-Extraction et lancement réel du pack PROD dans un espace temporaire isolé,
-réservé au runner GitHub Windows hébergé. Refus d’un état GLPI Pilot existant.
-Fenêtre visible, marqueur ContentRendered, fermeture normale et code 0.
-Le deuxième lancement rappelle l’instance minimisée puis se termine.
-Vrais boutons de zoom, bornes 75/150 %, reprise à 110 % après redémarrage,
-puis retour à 100 %. Les autres préférences synthétiques sont préservées.
+DEMARRAGE DU PACK WINDOWS (PackStartup)
+Extraction et lancement réel du pack PROD dans un espace temporaire marqué.
+Le profil GLPI Pilot de test est explicitement isolé ; refus d’une instance
+préexistante. Le harnais peut être exécuté sur un bureau Windows interactif
+autorisé, sur le runner ou dans la VM de laboratoire.
+Vérifications : fenêtre visible, runtime fixe du pack, interface locale prête,
+fermeture normale, réglages inchangés sans interaction, démonstration,
+25 espaces, thèmes, petite fenêtre, instance unique et restauration minimisée.
+Zoom natif à 125 %, retour clavier à 100 % et reprise à 110 % après redémarrage.
+Le point de contrôle navigateur est uniquement accessible sur la boucle locale,
+avec une option de test et un profil temporaire vérifié ; il n’est pas activé
+au démarrage normal du produit. Les captures concernent des données fictives.
+Limite interne de cinq minutes et limite externe de six minutes ; nettoyage
+limité aux processus et dossiers détenus par le harnais.
 
 MISE A JOUR REELLE (UpdateStartup)
 Quatre scénarios sur copies du pack PROD, sans téléchargement externe :
 1. Refus d’une transaction tant que le processus de l’installation existe.
 2. EXE verrouillé : remplacement refusé ; restauration bloquée conserve
    sauvegardes et diagnostic plutôt que de détruire la copie récupérable.
-3. Remplacement réel, nouveau processus et acquittement du premier rendu.
-4. Echec de démarrage provoqué : arrêt du processus détenu et restauration
+3. Remplacement réel, nouveau processus et acquittement de l’interface prête.
+4. Echec de démarrage provoqué : arrêt des processus détenus et restauration
    des fichiers précédents avec contrôle de leurs empreintes.
-Le harnais dispose d’une limite interne de quatre minutes et d’une limite
-externe de cinq minutes ; seuls ses processus et dossiers sont nettoyés.
+Le démarrage actualisé dispose de 210 secondes pour produire son acquittement.
+Le harnais a une limite interne de quinze minutes, externe de seize minutes.
+Les copies sont nettoyées entre scénarios ; l’archive initiale et les octets des
+réglages sont contrôlés. Aucun profil utilisateur existant n’est modifié.
+Les scénarios utilisent des copies du même binaire et des métadonnées de version
+synthétiques ; ils ne démontrent pas toutes les migrations depuis une ancienne EXE.
 
 PUBLICATION
-Le job Release dépend de la réussite du job Windows. Il promeut les ZIP
-exacts de ses artefacts, contrôle version, commit, empreinte EXE et identité
-des deux exécutables, puis joint les notes de version du commit testé.
-Les étapes ne publient pas un binaire local différent après validation.
+Le job Release dépend de la réussite de toutes les étapes du job Windows.
+Il promeut les ZIP exacts de ses artefacts, contrôle version, commit, empreinte
+EXE et identité des deux exécutables, puis joint les notes du commit testé.
+Aucun autre binaire local n’est substitué après la validation.
 
 PREUVES A CONSULTER
 Artefact windows-checks-<run_id>-<tentative> :
 - journaux des 18 suites métier et des suites navigateur/DOM ;
-- windows-startup-build.log et windows-startup-checks.log ;
-- ui-previews/*.png, rendu WPF réel sur données synthétiques ;
-- pack-build.log, pack-sha256.txt, executable-sha256.txt ;
-- pack-startup.log, pack-zoom-exercise.log, pack-zoom-verify-restore.log ;
-- windows-update-build.log, windows-update-checks.log et diagnostics associés.
+- webviewchecks.log, runtimesessionchecks.log, analyticsbridgechecks.log,
+  workplacebridgechecks.log, terrainbridgechecks.log, terrain-webview-checks.log ;
+- web-preview/*.png, interface portable avec pont C# réel ;
+- runtime-packaging-checks.log, pack-build.log, pack-sha256.txt,
+  executable-sha256.txt et état de signature ;
+- windows-startup-build.log, windows-startup-checks.log et native-webview/*,
+  preuves issues du vrai pack Windows avec le runtime WebView2 fourni ;
+- windows-update-build.log, windows-update-checks.log et windows-update/*.
 Les journaux sont conservés 14 jours, les artefacts de packs 30 jours.
-Les ZIP promus sont disponibles durablement dans la Release de la version.
+Les ZIP promus restent disponibles dans la Release de la version.
+
+INFRASTRUCTURE DOMENIA
+Le document v2/REPRISE.md de Domenia est la référence du laboratoire :
+VM DOMENIA-FIRSTRUN-20261020, Windows 11, 4 vCPU et 8 Gio, session interactive
+conservée. Le SDK et le cache hors ligne sont dans C:\DomeniaDev\dotnet et
+C:\DomeniaDev\cache\nuget. Les commandes dédiées figurent dans
+GitHub-et-compilation.txt. La connexion SSH privée et les essais dans cette VM
+ne sont pas attestés par une réussite sur le runner hébergé GitHub.
 
 LIMITES RESTANTES
 Le point 197 du registre exige encore le portail/SSO privé, les extensions,
 les droits et les essais veille/multi-écrans physiques du poste utilisateur.
 Le point 198 exige un certificat de signature de confiance fourni à la chaîne.
-Une réussite sur fixtures n’atteste pas ces deux prérequis externes.
+Une réussite sur données synthétiques n’atteste pas ces deux prérequis externes.
 Les inconnues, trous d’observation, limites et hypothèses restent visibles.
 Une absence de ticket n’est jamais comptée comme une résolution.

@@ -1,57 +1,59 @@
-using System.Runtime.CompilerServices;
-using System.Windows;
 using GlpiPilot.Core;
+using GlpiPilot.Desktop;
 
 namespace GlpiPilot;
 
-/// <summary>Records startup before WPF resources or the main window are created.</summary>
 internal static class Program
 {
     private static int _failureReported;
-
     [STAThread]
     public static int Main()
     {
-        if (UpdateService.TryRunMaintenance(Environment.GetCommandLineArgs().Skip(1).ToArray(), out var maintenanceCode)) return maintenanceCode;
+        var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
+        if (UpdateService.TryRunMaintenance(args, out var maintenanceCode)) return maintenanceCode;
         StartupDiagnostics.Start(AppPaths.ApplicationVersion);
-        try { return RunApplication(); }
-        catch (Exception error)
+        try
         {
-            ReportStartupFailure(error);
-            return 1;
+            ApplicationConfiguration.Initialize();
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            using var instance = new SingleInstanceCoordinator();
+            if (!instance.IsPrimary)
+            {
+                StartupDiagnostics.Step("Rappel de l’instance déjà ouverte");
+                if (!instance.ActivateExistingAsync().GetAwaiter().GetResult())
+                    MessageBox.Show("GLPI Pilot est déjà ouvert. Retrouvez sa fenêtre dans la barre des tâches ; son démarrage peut encore être en cours.", "GLPI Pilot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return 0;
+            }
+            var prepared = false;
+            try { var backup = StartupBackupService.Prepare(AppPaths.DataRoot, AppPaths.ApplicationVersion); prepared = true; StartupDiagnostics.Step(backup.Message); }
+            catch (Exception error) { StartupDiagnostics.Step("Sauvegarde préalable : " + AppPaths.SafeError(error)); }
+            using var window = new MainForm(args, prepared);
+            instance.Listen(window.ActivateExisting, error => AppPaths.AppendLog("Activation : " + AppPaths.SafeError(error)));
+            Application.ThreadException += (_, eventArgs) =>
+            {
+                if (!StartupDiagnostics.IsReady) { ReportStartupFailure(eventArgs.Exception); window.Close(); }
+                else window.ReportError(eventArgs.Exception);
+            };
+            AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+            { if (eventArgs.ExceptionObject is Exception error) StartupDiagnostics.CaptureFailure(StartupDiagnostics.CurrentStage, error); };
+            TaskScheduler.UnobservedTaskException += (_, eventArgs) => { AppPaths.AppendLog("Traitement de fond : " + AppPaths.SafeError(eventArgs.Exception)); eventArgs.SetObserved(); };
+            StartupDiagnostics.Step("Ouverture de l’hôte Windows et de l’interface WebView2");
+            Application.Run(window);
+            StartupDiagnostics.Step("Arrêt de l’application");
+            return window.ExitCode;
         }
+        catch (Exception error) { ReportStartupFailure(error); return 1; }
     }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static int RunApplication()
-    {
-        StartupDiagnostics.Step("Création de l’application WPF");
-        var app = new App();
-        app.RegisterExceptionHandlers();
-        StartupDiagnostics.Step("Chargement des ressources de l’interface");
-        app.InitializeComponent();
-        StartupDiagnostics.Step("Démarrage de la boucle Windows");
-        return app.Run();
-    }
-
     internal static void ReportStartupFailure(Exception error)
     {
         if (Interlocked.Exchange(ref _failureReported, 1) != 0) return;
         StartupDiagnostics.CaptureFailure(StartupDiagnostics.CurrentStage, error);
-        try { ShowStartupFailure(error); }
-        catch { /* A missing UI dependency must not prevent the file diagnostic. */ }
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ShowStartupFailure(Exception error)
-    {
-        var path = StartupDiagnostics.LogPath;
-        var diagnostic = string.IsNullOrWhiteSpace(path)
-            ? "Le journal n’a pas pu être écrit. Lancez DIAGNOSTIC_DEMARRAGE.cmd dans wad\\support pour recueillir le résultat du lancement."
-            : "Le diagnostic de démarrage est enregistré ici :\n" + path + "\n\nVous pouvez copier le contenu de ce fichier pour identifier le blocage.";
-        MessageBox.Show("GLPI Pilot n’a pas pu ouvrir sa fenêtre.\n\nÉtape : "
-            + StartupDiagnostics.CurrentStage + "\n" + AppPaths.SafeError(error)
-            + "\n\nÀ essayer :\n" + StartupDiagnostics.RecoveryAdvice(error)
-            + "\n\n" + diagnostic, "GLPI Pilot — démarrage interrompu", MessageBoxButton.OK, MessageBoxImage.Error);
+        try
+        {
+            MessageBox.Show("GLPI Pilot n’a pas pu ouvrir son interface.\n\n" + AppPaths.SafeError(error) +
+                "\n\nRelancez GLPI-Pilot.exe depuis le pack complet, avec son dossier wad.\n\nDiagnostic :\n" + StartupDiagnostics.LogPath,
+                "GLPI Pilot — démarrage interrompu", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        catch { /* Keep startup evidence when the desktop is unavailable. */ }
     }
 }

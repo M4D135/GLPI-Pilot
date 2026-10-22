@@ -1,0 +1,41 @@
+.work-heading { margin-bottom: 1.4rem; }
+.work-heading h1 { margin: 0 0 .35rem; }
+.work-note { color: var(--muted, #68758c); line-height: 1.55; white-space: pre-wrap; margin: .45rem 0 .85rem; }
+.work-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 38rem; overflow: auto; font: inherit; line-height: 1.55; margin: .5rem 0; }
+.work-ticket-layout { display: grid; grid-template-columns: minmax(230px, .29fr) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
+.work-ticket-browser { min-width: 0; position: sticky; top: 1rem; max-height: calc(100vh - 13rem); overflow: auto; }
+.work-ticket-reader { min-width: 0; padding: 1.2rem; border: 1px solid var(--border, #dbe2ec); border-radius: 14px; background: var(--surface, #fff); }
+.work-open-tabs, .work-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: .7rem 0 1rem; }
+.work-open-ticket { display: flex; max-width: 28rem; }
+.work-open-ticket > button:first-child { max-width: 24rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-tabs { border-bottom: 1px solid var(--border, #dbe2ec); padding-bottom: .8rem; }
+.work-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .8rem; }
+.work-editor { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; line-height: 1.55; }
+.work-check { display: inline-flex; align-items: flex-start; gap: .5rem; margin: .35rem .5rem .35rem 0; max-width: 100%; overflow-wrap: anywhere; }
+.work-check > input { margin-top: .2rem; flex-shrink: 0; }
+.work-checklist > .toolbar { flex-wrap: nowrap; }
+.work-checklist input[type=text] { flex: 1; min-width: 0; }
+.work-personal-editor .card, .work-technician-editor .card { margin: 1rem 0; }
+.work-reader-body, .work-day-editor { min-width: 0; }
+.work-day-editor { margin-top: 1.2rem; }
+.work-ticket-heading h2 { overflow-wrap: anywhere; margin-top: 0; }
+.work-section-content { max-height: 65vh; overflow: auto; scroll-behavior: auto; }
+.work-timeline-event { padding: 1rem 1.1rem; margin: .7rem 0 .7rem .75rem; border-left: 3px solid var(--accent, #4169d8); background: var(--surface-2, #f3f6fc); border-radius: 0 10px 10px 0; }
+.work-timeline details { padding: .4rem 0; }
+.work-timeline summary { cursor: pointer; font-weight: 650; padding: .5rem; }
+.work-reading-marker { border-block: 1px dashed var(--accent, #4169d8); color: var(--accent, #3458bb); padding: .65rem .5rem; margin: .9rem 0; font-size: .85rem; font-weight: 650; }
+.work-changed, .work-cell-changed { background: var(--warning-soft, #fff1cb); }
+.work-cell-changed { display: block; padding: .3rem; border-radius: 4px; }
+.work-urgent { color: var(--danger, #b52b38); font-weight: 700; }
+.work-write-plan { border-left: 4px solid var(--warning, #c18b20); padding-left: 1rem; }
+.work-receipt { padding: .8rem; border: 1px solid var(--border, #dbe2ec); border-radius: 10px; margin: .65rem 0; }
+.work-receipt > summary { display: flex; gap: .6rem; cursor: pointer; align-items: center; }
+.work-job-progress { min-height: 2rem; }
+.work-action-status { padding: .5rem 0; }
+.work-technician-editor { max-width: 1050px; }
+.work-technician-editor td input, .work-technician-editor td select { max-width: 14rem; min-width: 5rem; }
+.work-page-count { align-self: center; color: var(--muted, #68758c); font-size: .85rem; }
+@media (max-width: 1100px) { .work-ticket-layout { grid-template-columns: 1fr; } .work-ticket-browser { position: static; max-height: 24rem; } }
+@media (max-width: 650px) { .work-ticket-reader { padding: .7rem; } .work-form-grid { grid-template-columns: 1fr; } .work-tabs button { flex: 1 0 42%; } }
+@media (prefers-reduced-motion: reduce) { .work-section-content { scroll-behavior: auto; } }
+@media (forced-colors: active) { .work-changed, .work-cell-changed { outline: 2px solid Highlight; } .work-reading-marker { border-color: Highlight; } }

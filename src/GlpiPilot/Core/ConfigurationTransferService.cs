@@ -108,7 +108,7 @@ public static class ConfigurationTransferService
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1)))
+                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor == 0)))
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);

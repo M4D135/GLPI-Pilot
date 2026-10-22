@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 2.1.0</div>
+    <div class="eyebrow">Guide de prise en main · Version 3.0.0</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -53,17 +53,17 @@
   <article>
     <section id="demarrer">
       <h2>1. Installer le pack et reprendre ses réglages</h2>
-      <p>Choisir <strong>PROD</strong> pour utiliser le logiciel ou <strong>DEV</strong> pour disposer aussi de ses sources et tests. Extraire tout le ZIP : sa racine doit contenir <code>GLPI-Pilot.exe</code> et <code>wad</code>. Lancer l’EXE en conservant ces deux éléments ensemble. .NET et le pilote Playwright sont inclus ; Edge ou Chrome doit être installé et autorisé sur le poste.</p>
+      <p>Choisir <strong>PROD</strong> pour utiliser le logiciel ou <strong>DEV</strong> pour disposer aussi de ses sources et tests. Extraire tout le ZIP : sa racine doit contenir <code>GLPI-Pilot.exe</code> et <code>wad</code>. Lancer l’EXE en conservant ces deux éléments ensemble. .NET, le runtime fixe WebView2 et le pilote Playwright sont inclus. L’interface fonctionne localement ; Edge ou Chrome doit être installé et autorisé pour la collecte GLPI et son SSO.</p>
       <p>Pour une mise à jour, fermer l’ancienne application et extraire le nouveau pack dans un nouveau dossier. Les préférences restent dans les données locales du compte Windows. Une sauvegarde précède la première ouverture d’une nouvelle version. Un deuxième lancement rappelle la fenêtre déjà ouverte.</p>
       <p>Si les fichiers téléchargés sont bloqués, <code>wad\support\DEBLOQUER_TOUT.cmd</code> débloque le dossier complet de cette application et ses sous-dossiers.</p>
     </section>
     <section id="extraction">
       <h2>2. Préparer sa recherche, puis extraire en un clic</h2>
       <ol>
-        <li>Dans <strong>Extraction</strong>, coller l’adresse complète de la recherche GLPI, avec ses critères. Choisir Edge ou Chrome et le dossier des exports dans les réglages.</li>
-        <li>Cliquer sur <strong>Extraire tout</strong>. Le logiciel mémorise la source, ouvre son navigateur, attend le SSO et retrouve la recherche.</li>
-        <li>Si une intervention est nécessaire, cliquer sur <strong>Voir le navigateur</strong>, effectuer l’étape demandée puis revenir dans GLPI Pilot. Le logiciel ne renseigne pas les identifiants.</li>
-        <li>Lire le bilan : lignes récupérées, méthode employée, totalité vérifiée ou limites à examiner. Ouvrir le fichier depuis le bouton du dernier export.</li>
+        <li>Dans <strong>Collecte GLPI</strong>, coller l’adresse complète de la recherche GLPI, avec ses critères. Choisir Edge ou Chrome et le dossier des exports dans les réglages.</li>
+        <li>Cliquer sur <strong>Lancer la collecte</strong>. Le logiciel mémorise la source, ouvre son navigateur, attend le SSO et retrouve la recherche.</li>
+        <li>Si une intervention est nécessaire, cliquer sur <strong>Afficher le navigateur</strong>, effectuer l’étape demandée puis revenir dans GLPI Pilot. Le logiciel ne renseigne pas les identifiants.</li>
+        <li>Lire le bilan : lignes récupérées, méthode employée, totalité vérifiée ou limites à examiner. Consulter ensuite le relevé et ses commandes d’export.</li>
       </ol>
       <p>Le navigateur utilise un profil dédié. Si le portail ouvre seulement l’accueil, utiliser les outils manuels pour préparer la recherche puis reprendre l’adresse de la page du navigateur. Les filtres stockés uniquement dans la session GLPI dépendent de cette session ; les repères peuvent demander un premier réglage sur une interface personnalisée.</p>
       <h3>Méthodes et contrôle du résultat</h3>
@@ -74,13 +74,13 @@
     <section id="interface">
       <h2>3. Adapter l’interface</h2>
       <p><strong>− / 100 % / +</strong> règle le zoom de 75 à 150 %, par pas de 5 %. Les raccourcis sont <kbd>Ctrl +</kbd>, <kbd>Ctrl −</kbd>, <kbd>Ctrl 0</kbd> et <kbd>Ctrl + molette</kbd>. Le zoom est mémorisé sur le poste. Le bouton soleil/lune choisit le thème clair ou sombre.</p>
-      <p>Dans <strong>Sources et organisation</strong>, régler séparément la densité des tableaux, la couleur d’accent, le contraste renforcé, la réduction des animations, le suivi du thème Windows et les colonnes figées. Le mode concentration masque le journal et le contexte secondaire. Les dimensions de la fenêtre sont mémorisées lorsqu’elles changent.</p>
+      <p>Dans <strong>Configuration</strong>, régler séparément la densité des tableaux, la couleur d’accent, le contraste renforcé, la réduction des animations, le suivi du thème Windows et les colonnes figées. Le mode concentration F11 masque la navigation latérale. Ctrl + K permet de changer d’écran. Les dimensions de la fenêtre sont mémorisées lorsqu’elles changent.</p>
       <p>La navigation s’adapte à la largeur. Les tableaux et formulaires disposent de sous-onglets ; les éditeurs de colonnes, la palette de commandes et l’import de configuration restent dans la fenêtre principale.</p>
     </section>
     <section id="tableau">
       <h2>4. Rechercher, filtrer, trier et importer</h2>
-      <p>La recherche et les filtres portent sur toutes les lignes chargées, avant la limite d’affichage de 10 000 lignes. La recherche inclut les colonnes masquées. Un clic sur un en-tête trie le résultat ; <kbd>Maj + clic</kbd> ajoute un niveau de tri.</p>
-      <p><strong>Colonnes</strong> règle visibilité, ordre et largeur. <strong>Vues</strong> mémorise recherche, filtres par colonne, jusqu’à quatre niveaux de tri et présentation. Une vue reste liée à la structure exacte des en-têtes pour ne pas appliquer un filtre à une autre colonne.</p>
+      <p>La recherche et les filtres portent sur toutes les lignes chargées, avant l’affichage paginé de 50 à 500 lignes. La recherche inclut les colonnes masquées. Un clic sur un en-tête trie le résultat ; <kbd>Maj + clic</kbd> ajoute un niveau de tri.</p>
+      <p><strong>Colonnes</strong> règle visibilité, ordre et largeur. <strong>Vues mémorisées</strong> mémorise recherche, filtres par colonne, jusqu’à quatre niveaux de tri et présentation. Une vue reste liée à la structure exacte des en-têtes pour ne pas appliquer un filtre à une autre colonne.</p>
       <p>L’export complet conserve toutes les lignes et colonnes du relevé. <strong>Exporter la vue</strong> utilise les critères courants et les colonnes visibles, y compris les lignes correspondantes au-delà de l’aperçu.</p>
       <p>Les outils manuels importent un <strong>CSV ou XLSX</strong> local sans connexion au portail. Le lecteur Excel utilise la première feuille visible et les valeurs enregistrées ; il n’exécute pas les formules. La provenance du fichier reste indiquée, avec une exhaustivité GLPI non confirmée.</p>
     </section>
@@ -153,22 +153,23 @@
         <tr><td>Documentation et sources</td><td><code>wad\docs</code> pour les guides ; <code>wad\sources</code> dans DEV pour le projet complet.</td></tr>
       </tbody></table>
     </section>
-    <section id="nouveautes-21">
-      <h2>15. Les nouveaux parcours de la version 2.1</h2>
-      <p><strong>Données → Correspondances</strong> présente les rôles, formats, fuseau et dictionnaires puis un aperçu brut/interprété. <kbd>F2</kbd> ouvre une cellule complète. Les en-têtes filtrent tout le relevé ; le panier conserve des identités distinctes par installation et type d’objet.</p>
+    <section id="nouveautes-30">
+      <h2>15. L’interface WebView2 de la version 3.0</h2>
+      <p>L’hôte C# minimal affiche les modules web locaux ; les calculs, contrôles et écritures restent dans le moteur C#. L’interface n’utilise ni CDN ni serveur local. Un changement de source invalide les résultats périmés et la fermeture attend la sauvegarde des brouillons.</p>
+      <p><strong>Correspondances</strong> présente les rôles, formats, fuseau et dictionnaires puis un aperçu brut/interprété. <kbd>F2</kbd> ouvre une cellule complète. Les champs des en-têtes filtrent tout le relevé ; le panier conserve des identités distinctes par installation et type d’objet.</p>
       <p>Historique propose mouvements, cohortes, transferts, incertitudes, projections et taux fondés sur des effectifs datés. Le dashboard exporte PNG/PDF avec cartouche et un rapport HTML complet autonome.</p>
-      <p><strong>Sources et organisation → Confort et maintenance</strong> regroupe les palettes adaptées, le choix du moniteur, la navigation personnelle, le diagnostic relisible, l’assistant de langage naturel et la mise à jour. <kbd>F11</kbd> active la concentration ; <kbd>Ctrl K</kbd> garde la navigation accessible.</p>
-      <p>Le parcours détaillé, les options réseau et le retour arrière sont expliqués dans <a href="Guide-2.1.md">Guide-2.1.md</a>. Préparer, générer, prévisualiser et appliquer restent des actions distinctes.</p>
+      <p><strong>Configuration</strong> regroupe les palettes adaptées, le choix du moniteur et la navigation personnelle. <strong>Opérations et journal</strong>, <strong>Assistant de langage</strong> et <strong>Mise à jour et retour arrière</strong> ont chacun leur écran. <kbd>F11</kbd> active la concentration ; <kbd>Ctrl K</kbd> garde la navigation accessible.</p>
+      <p>Le parcours détaillé, les options réseau et le retour arrière sont expliqués dans <a href="Guide-3.0.md">Guide-3.0.md</a>. Préparer, générer, prévisualiser et appliquer restent des actions distinctes.</p>
     </section>
     <section class="rule" id="validation">
       <h2>Validation et périmètre</h2>
-      <p>La publication exige les contrôles des moteurs, les parcours navigateur sur données synthétiques, le rendu WPF sous Windows, le lancement du pack extrait, le second lancement et la persistance du zoom. Les journaux et captures du workflow correspondent au commit inscrit dans <code>wad\version.json</code>. Les empreintes des fichiers sont incluses.</p>
+      <p>La publication exige les contrôles des moteurs, les parcours navigateur sur données synthétiques, le rendu dans le vrai hôte WebView2 sous Windows, le lancement du pack extrait, le second lancement et la persistance du zoom. Les journaux et captures du workflow correspondent au commit inscrit dans <code>wad\version.json</code>. Les empreintes des fichiers sont incluses.</p>
       <p>Le portail privé, son SSO et ses personnalisations ne sont pas accessibles à ces tests. Les notes, corrections, tournées et scénarios restent locaux. Les écritures GLPI assistées exigent préparation, confirmation explicite et contrôle du résultat. Routage, météo et génération externe restent facultatifs et demandent configuration et consentement. La mise à jour vérifiée conserve une sauvegarde et contrôle le démarrage. La signature d’éditeur nécessite un certificat de confiance non fourni pour cette livraison.</p>
       <p>Les guides spécialisés précisent les méthodes et limites : <code>Dashboards-et-extraction.md</code>, <code>Travail-personnel-et-techniciens.md</code>, <code>Requetes-villes-tournees.md</code> et <code>Historique-qualite-automatisation.md</code>. Le suivi des 200 propositions reste dans <code>Suivi-200-ameliorations.md</code>.</p>
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 2.1.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 3.0.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

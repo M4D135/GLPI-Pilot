@@ -1,6 +1,6 @@
 # Vérifications de l’adaptateur DOM
 
-Ces 46 vérifications ouvrent uniquement les fixtures HTML du projet. Elles n’utilisent aucun compte, profil de navigation existant, serveur GLPI ou fournisseur SSO. Les contrôles concernent l’extraction des cellules, la pagination, la sélection visuelle et les états d’authentification simulés. Ils couvrent aussi les identifiants GLPI affichés avec des espaces, les en-têtes répétés dans le corps du tableau et le total officiel `data-count`. Ils ne constituent pas une validation de l’interface WPF ou d’un SSO réel.
+Ces 46 vérifications ouvrent uniquement les fixtures HTML du projet. Elles n’utilisent aucun compte, profil de navigation existant, serveur GLPI ou fournisseur SSO. Les contrôles concernent l’extraction des cellules, la pagination, la sélection visuelle et les états d’authentification simulés. Ils couvrent aussi les identifiants GLPI affichés avec des espaces, les en-têtes répétés dans le corps du tableau et le total officiel `data-count`. Ils ne constituent pas une validation du véritable hôte WinForms/WebView2 ou d’un SSO réel.
 
 ## Prérequis
 

@@ -23,14 +23,14 @@ public sealed class AnalyticsPopulationStore
 {
     public const int MaximumEntries = 10000, MaximumBytes = 4 * 1024 * 1024;
     private readonly string _path;
-    private sealed class Document { public int Version { get; set; } = 1; public List<SitePopulationEntry> Entries { get; set; } = new(); }
-    private static readonly JsonSerializerOptions Json = new() { MaxDepth = 12, WriteIndented = true };
+    private sealed class Document { public int Version { get; set; } public List<SitePopulationEntry>? Entries { get; set; } }
+    private static readonly JsonSerializerOptions Json = new() { MaxDepth = 12, WriteIndented = true, PropertyNameCaseInsensitive = true };
     public AnalyticsPopulationStore(string? path = null) => _path = Path.GetFullPath(path ?? Path.Combine(AppPaths.DataRoot, "site-populations.json"));
     public IReadOnlyList<SitePopulationEntry> Load() => File.Exists(_path) ? Read(_path) : Array.Empty<SitePopulationEntry>();
     public IReadOnlyList<SitePopulationEntry> LoadOrEmpty(out string warning)
     {
         try { warning = ""; return Load(); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { warning = "Inventaire daté indisponible : " + AppPaths.SafeError(error); return Array.Empty<SitePopulationEntry>(); }
     }
     public static IReadOnlyList<SitePopulationEntry> Read(string path)
@@ -44,7 +44,7 @@ public sealed class AnalyticsPopulationStore
     public static void Write(string path, IEnumerable<SitePopulationEntry> entries)
     {
         var copy = entries.Take(MaximumEntries + 1).Select(e => e.Copy()).ToList(); Validate(copy);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new Document { Entries = copy }, Json);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new Document { Version = 1, Entries = copy }, Json);
         if (bytes.Length > MaximumBytes) throw new InvalidDataException("Le référentiel d’effectifs dépasse 4 Mio.");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";

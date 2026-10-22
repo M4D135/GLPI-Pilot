@@ -35,6 +35,11 @@ public sealed class UpdatePackageMetadata
     [JsonPropertyName("source_commit")] public string SourceCommit { get; set; } = "";
     [JsonPropertyName("executable_sha256")] public string ExecutableSha256 { get; set; } = "";
     [JsonPropertyName("self_contained")] public bool SelfContained { get; set; }
+    [JsonPropertyName("ui")] public string Ui { get; set; } = "";
+    [JsonPropertyName("webview2_sdk")] public string WebView2Sdk { get; set; } = "";
+    [JsonPropertyName("webview2_runtime")] public string WebView2Runtime { get; set; } = "";
+    [JsonPropertyName("webview2_runtime_sha256")] public string WebView2RuntimeSha256 { get; set; } = "";
+    [JsonPropertyName("webview2_loader")] public string WebView2Loader { get; set; } = "";
 }
 public sealed record UpdateSignature(string Status, string Publisher, string CertificateSha256)
 {
@@ -125,6 +130,7 @@ public static partial class UpdateService
         if (hashes.Count != files.Count - 1 || hashes.Keys.Any(name => !files.ContainsKey(name) || name == "wad/SHA256SUMS.txt")) throw new InvalidDataException("L’inventaire SHA-256 ne couvre pas exactement tous les fichiers du pack.");
         var metadata = JsonSerializer.Deserialize<UpdatePackageMetadata>(ReadEntry(files["wad/version.json"], 32768, ct), JsonOptions) ?? throw new InvalidDataException("Provenance de version vide.");
         ValidateMetadata(metadata, expectedCommit, hashes["GLPI-Pilot.exe"]);
+        ValidateWebViewPackage(metadata, files.Keys);
         if (!Version.TryParse(currentVersion, out var current) || !Version.TryParse(metadata.Version, out var next) || !allowOlder && next <= current) throw new InvalidDataException("Le pack doit être plus récent que la version installée. Le retour à une version conservée dispose de sa propre action.");
         var prepared = new PreparedUpdate { InstallRoot = installRoot, WorkRoot = Path.Combine(updatesRoot, Guid.NewGuid().ToString("N")), ArchiveSha256 = archiveHash, Package = metadata, Files = hashes };
         if (Within(prepared.WorkRoot, installRoot) || Within(installRoot, prepared.WorkRoot)) throw new InvalidDataException("Le dossier de préparation doit être séparé du dossier d’installation.");
@@ -163,6 +169,27 @@ public static partial class UpdateService
             || !Version.TryParse(metadata.Version, out var version) || version.Build < 0 || metadata.Version.Length > 40 || !IsCommit(metadata.SourceCommit)
             || !metadata.SourceCommit.Equals(commit, StringComparison.OrdinalIgnoreCase) || !IsHash(metadata.ExecutableSha256) || !metadata.ExecutableSha256.Equals(executableHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("La provenance du pack ne correspond pas au produit, à la plateforme, au commit ou à l’exécutable attendu.");
+    }
+
+    internal static readonly string[] RequiredWebViewFiles =
+    [
+        "wad/web/index.html", "wad/web/css/app.css", "wad/web/js/app.js", "wad/web/js/bridge.js", "wad/web/js/ui.js",
+        "wad/runtime/webview2/msedgewebview2.exe", "wad/runtime/webview2/msedge.dll", "wad/runtime/webview2/msedge_elf.dll",
+        "wad/runtime/webview2/icudtl.dat", "wad/runtime/webview2/resources.pak", "wad/runtime/webview2/v8_context_snapshot.bin",
+        "wad/runtime/webview2/Locales/en-US.pak", "wad/runtime/webview2/Locales/fr.pak",
+        "wad/licenses/WebView2-FixedRuntime-LICENSE.html", "wad/licenses/WebView2-SDK-LICENSE.txt"
+    ];
+    private static void ValidateWebViewPackage(UpdatePackageMetadata metadata, IEnumerable<string> paths)
+    {
+        // Retain the verified v2 rollback format. Every v3+ pack must carry its
+        // actual local WebView application and fixed runtime, never an installer.
+        if (!Version.TryParse(metadata.Version, out var applicationVersion) || applicationVersion.Major < 3) return;
+        if (metadata.Ui != "webview2" || metadata.WebView2Loader != "bundled-native-x64" || !IsHash(metadata.WebView2RuntimeSha256)
+            || !Version.TryParse(metadata.WebView2Runtime, out var runtime) || runtime.Revision < 0 || runtime.Major <= 0
+            || !Version.TryParse(metadata.WebView2Sdk, out var sdk) || sdk.Revision < 0 || sdk.Major <= 0)
+            throw new InvalidDataException("Le pack WebView doit déclarer son runtime fixe, le SDK, le chargeur natif intégré et l’empreinte du CAB Microsoft.");
+        var files = paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (RequiredWebViewFiles.Any(path => !files.Contains(path))) throw new InvalidDataException("Le pack WebView est incomplet : interface locale, runtime fixe ou licences absents.");
     }
     public static string ValidRelativePath(string name)
     {

@@ -1,0 +1,13 @@
+{
+  "version": "154.0.4258.62",
+  "architecture": "x64",
+  "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/b92cd7d9-6976-4f34-9708-47e80937c287/Microsoft.WebView2.FixedVersionRuntime.154.0.4258.62.x64.cab",
+  "sha256": "e8f55a4bde27c7f82512402b56a58539b5ec8928be4e500e077b6f66c9ef4668",
+  "bytes": 308020625,
+  "expanded_bytes": 701153191,
+  "file_count": 257,
+  "files_sha256": "1eb092830cdbb1b607bdbde9f5e4385e136423dfc955d7b33a41f7da5fc5b8f2",
+  "download_page": "https://developer.microsoft.com/en-us/microsoft-edge/webview2/",
+  "verification": "SHA-256 measured from the exact official Microsoft CAB; all extracted files independently hashed.",
+  "license_source": "https://developer.microsoft.com/microsoft-edge/api/eula/webview2?locale=en-us&fixed=true"
+}

@@ -25,8 +25,17 @@ Dictionary<string, byte[]> Payload(string version = "2.0.0")
         ["wad/docs/help.txt"] = Encoding.UTF8.GetBytes("Help " + version),
         ["wad/version.json"] = JsonSerializer.SerializeToUtf8Bytes(new UpdatePackageMetadata { Application = "GLPI Pilot", Version = version, Edition = "PROD", Target = "win-x64", SelfContained = true, SourceCommit = Commit, ExecutableSha256 = Hash(executable) })
     };
-    files["wad/SHA256SUMS.txt"] = Encoding.UTF8.GetBytes(string.Join('\n', files.Select(pair => Hash(pair.Value) + "  " + pair.Key)) + "\n"); return files;
+    if (Version.Parse(version).Major >= 3)
+    {
+        var metadata = JsonSerializer.Deserialize<UpdatePackageMetadata>(files["wad/version.json"])!;
+        metadata.Ui = "webview2"; metadata.WebView2Sdk = "1.0.4258.31"; metadata.WebView2Runtime = "154.0.4258.62";
+        metadata.WebView2RuntimeSha256 = new string('e', 64); metadata.WebView2Loader = "bundled-native-x64";
+        files["wad/version.json"] = JsonSerializer.SerializeToUtf8Bytes(metadata);
+        foreach (var name in UpdateService.RequiredWebViewFiles) files[name] = Encoding.UTF8.GetBytes("WebView fixture " + name);
+    }
+    Seal(files); return files;
 }
+void Seal(Dictionary<string, byte[]> files) { files.Remove("wad/SHA256SUMS.txt"); files["wad/SHA256SUMS.txt"] = Encoding.UTF8.GetBytes(string.Join('\n', files.Select(pair => Hash(pair.Value) + "  " + pair.Key)) + "\n"); }
 string NewDirectory(string name) { var path = Path.Combine(root, name + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 string Install()
 {
@@ -100,6 +109,45 @@ Test("Inventory must cover exactly the archive and include the Windows browser d
     var files = Payload(); files["wad/extra.txt"] = Encoding.UTF8.GetBytes("unlisted"); Reject<InvalidDataException>(() => Prepare(Zip(files)));
     files = Payload(); files.Remove("wad/.playwright/package/cli.js"); Reject<InvalidDataException>(() => Prepare(Zip(files)));
     files = Payload(); files.Remove("wad/SHA256SUMS.txt"); Reject<InvalidDataException>(() => Prepare(Zip(files)));
+});
+Test("A complete v3 WebView pack preserves runtime provenance through preparation and the transaction journal", () =>
+{
+    var staged = Prepare(Zip(Payload("3.0.0"))); var read = UpdateService.ReadPrepared(staged.TransactionPath);
+    Check(read.Package.Ui == "webview2" && read.Package.WebView2Runtime == "154.0.4258.62" && read.Package.WebView2Loader == "bundled-native-x64");
+    Check(UpdateService.RequiredWebViewFiles.All(read.Files.ContainsKey));
+});
+Test("Each mandatory v3 local asset runtime file and license is required even with a matching archive inventory", () =>
+{
+    foreach (var name in UpdateService.RequiredWebViewFiles)
+    {
+        var files = Payload("3.0.0"); files.Remove(name); Seal(files);
+        Reject<InvalidDataException>(() => Prepare(Zip(files)));
+    }
+});
+Test("WebView provenance rejects absent UI loader runtime SDK and CAB hash declarations", () =>
+{
+    foreach (var property in new[] { "ui", "webview2_sdk", "webview2_runtime", "webview2_runtime_sha256", "webview2_loader" })
+    {
+        var files = Payload("3.0.0"); var metadata = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(files["wad/version.json"])!;
+        metadata[property] = JsonSerializer.SerializeToElement("invalid"); files["wad/version.json"] = JsonSerializer.SerializeToUtf8Bytes(metadata); Seal(files);
+        Reject<InvalidDataException>(() => Prepare(Zip(files)));
+    }
+    var plan = Prepare(Zip(Payload("3.0.0"))); plan.Files.Remove("wad/runtime/webview2/msedgewebview2.exe"); UpdateService.WriteJson(plan.TransactionPath, plan);
+    Reject<InvalidDataException>(() => UpdateService.ReadPrepared(plan.TransactionPath));
+});
+Test("WebView full-pack rollback restores legacy metadata without requiring a runtime in a v2-era pack", () =>
+{
+    var plan = Prepare(Zip(Payload("3.0.0"))); var result = UpdateService.ApplyPrepared(plan, _ => false);
+    Check(result.State == "rolled-back"); UpdateService.VerifyInventory(plan.InstallRoot, plan.PreviousFiles);
+    Check(!Directory.Exists(Path.Combine(plan.InstallRoot, "wad", "runtime")));
+});
+Test("Process ownership distinguishes this pack's WebView from sibling installations and unrelated runtimes", () =>
+{
+    var install = Install();
+    Check(UpdateService.IsInstallProcessPath(Path.Combine(install, "wad", "runtime", "webview2", "msedgewebview2.exe"), install));
+    Check(!UpdateService.IsInstallProcessPath(null, install));
+    Check(!UpdateService.IsInstallProcessPath(Path.Combine(install + "-other", "msedgewebview2.exe"), install));
+    Check(!UpdateService.IsInstallProcessPath(Path.Combine(root, "other-runtime", "msedgewebview2.exe"), install));
 });
 Test("Compression bomb ratio and duplicate hash lines fail within configured bounds", () =>
 {
@@ -202,6 +250,15 @@ Test("Explicit network cancellation issues no request and creates no downloaded 
 var passed = 0;
 try
 {
+    if (args.Length > 0)
+    {
+        if (args.Length != 4 || args[0] != "--verify-pack") throw new ArgumentException("Usage: UpdateChecks --verify-pack <ZIP> <expected-SHA256> <expected-source-commit>");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        var verified = UpdateService.PrepareArchive(args[1], args[2], args[3], Install(), NewDirectory("pack-validation"), "0.0.0", false, timeout.Token);
+        Check(UpdateService.ReadPrepared(verified.TransactionPath).Files.Count == verified.Files.Count);
+        Console.WriteLine($"PASS package accepted by the production update verifier: {verified.Package.Edition} {verified.Package.Version}; {verified.Files.Count} hashed files; staged only, no application launched.");
+        return;
+    }
     foreach (var (name, run) in tests) try { run(); passed++; Console.WriteLine("PASS " + name); } catch (Exception error) { Console.Error.WriteLine("FAIL " + name + " : " + error); }
     Console.WriteLine($"{passed}/{tests.Count} update checks passed."); Environment.ExitCode = passed == tests.Count ? 0 : 1;
 }

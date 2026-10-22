@@ -1,6 +1,6 @@
 # Vérifications de l’extraction automatique
 
-Projet console .NET 10, exécuté avec le véritable adaptateur Microsoft.Playwright 1.63.0 et Chromium. Il lie directement les fichiers `Core` de l’application, hormis le thème WPF, et les scripts embarqués `bridge.js` et `native-export.js`.
+Projet console .NET 10, exécuté avec le véritable adaptateur Microsoft.Playwright 1.63.0 et Chromium. Il lie directement les fichiers `Core` de l’application et les scripts embarqués `bridge.js` et `native-export.js`.
 
 Toutes les adresses de test utilisent `http://glpi.test`, avec `http://other-glpi.test` pour simuler une seconde instance, et sont interceptées en mémoire. Les autres hôtes sont bloqués. Aucun portail réel, compte Windows, SSO d’entreprise ou service distant n’est utilisé. Les téléchargements et classeurs temporaires sont effacés à la fin.
 
@@ -26,7 +26,7 @@ Pour reproduire un échec précis, `GLPI_TEST_FILTER` limite temporairement l’
 12. Une autre instance GLPI, déjà ouverte au même chemin, ne peut pas remplacer l’origine demandée pendant sa connexion SSO.
 13. Le portail contient sa recherche dans une iframe visible : l’attente, la sélection du tableau et le téléchargement natif aboutissent aux cinq lignes et au classeur attendu.
 14. Une recherche GLPI dont le compteur officiel vaut zéro et dont le menu d’export est absent retourne zéro ligne. Les vrais en-têtes cachés permettent de produire un CSV et un classeur vides explicites.
-15. Des proxys transparents transmettent les opérations au véritable Playwright et comptent les appels à `BringToFrontAsync` : aucun pendant l’extraction automatique, puis un lors de l’affichage explicite, sans rechargement de la recherche. Les commandes CDP de fenêtre sont aussi observées : aucune demande de réduction, y compris lors du retour au logiciel. Le navigateur reste ouvert derrière GLPI Pilot. Ce contrôle ne mesure pas le comportement du gestionnaire de fenêtres Windows ni le positionnement WPF du logiciel au-dessus du navigateur.
+15. Des proxys transparents transmettent les opérations au véritable Playwright et comptent les appels à `BringToFrontAsync` : aucun pendant l’extraction automatique, puis un lors de l’affichage explicite, sans rechargement de la recherche. Les commandes CDP de fenêtre sont aussi observées : aucune demande de réduction, y compris lors du retour au logiciel. Le navigateur reste ouvert derrière GLPI Pilot. Ce contrôle ne mesure pas le comportement du gestionnaire de fenêtres Windows ni le positionnement du véritable hôte WinForms au-dessus du navigateur.
 16. Une recherche legacy représentative contient six tableaux de présentation et de données, dont le résultat principal à 16 colonnes et 20 lignes. L’export GET adjacent utilise le vrai code CSV `-3`, conserve le filtre et produit les 828 lignes attendues ainsi que leur classeur.
 17. La variante ancienne combine une disquette `input type="image"` et un vrai select masqué par son interface Select2 ; elle suit le même parcours natif complet.
 18. Lorsque le repli par pagination est désactivé, une barre d’outils stable sans export CSV toutes-pages ni option d’affichage suffisante s’arrête en moins de huit secondes. Son diagnostic structurel ne contient ni en-têtes privés, cellules, valeurs des filtres, paramètres d’adresse ni jeton CSRF. Le repli activé est exercé séparément dans `BrowserChecks`.

@@ -1,6 +1,8 @@
 # Dashboards et fiabilité de l’extraction
 
-Ce document décrit les capacités effectivement intégrées au dépôt. Les calculs
+Ce document décrit les capacités intégrées à l’interface WebView locale de
+GLPI Pilot 3. Les pages Dashboard, Atelier de requêtes, Historique et analyses,
+Effectifs datés et Assistant de langage appellent les moteurs C#. Les calculs
 reposent sur les colonnes du relevé accessible à l’utilisateur. Un champ absent,
 ambigu ou illisible reste indisponible ; il n’est pas remplacé par une valeur
 inventée.
@@ -9,15 +11,17 @@ inventée.
 
 Les dispositions globale et personnelle restent indépendantes. Les widgets
 peuvent être déplacés, redimensionnés, dupliqués, masqués et réglés. La nouvelle
-composition ajoute :
+composition propose aussi :
 
+- vingt niveaux d’annulation/rétablissement par disposition, conservés pendant
+  la session, accessibles dans **Autres actions** ;
 - des sections nommées et repliables, dont l’état est mémorisé, déplaçables comme
   un bloc dans le tableau de bord ;
 - la sélection de plusieurs widgets pour modifier leur section, leur style,
   leurs dimensions ou les aligner en lignes ; les widgets verrouillés restent
   protégés de ces modifications ;
 - un catalogue avec favoris mémorisés, trente derniers widgets utilisés et
-  filtre « disponible sur ce relevé » ;
+  filtre « Disponibles seulement » ;
 - des filtres communs au dashboard, combinés par **ET** ;
 - des filtres supplémentaires propres à chaque widget ;
 - des filtres croisés par clic sur une catégorie ou une population d’indicateur ;
@@ -39,7 +43,7 @@ filtres communs. Les recalculs conservent les indices des lignes d’origine et
 l’heure du calcul initial. Pendant un recalcul, les anciens chiffres ne sont
 pas affichés sous les nouveaux filtres.
 
-Le mode « Cliquer pour filtrer les widgets » permet de choisir entre filtrage
+Le mode « Cliquer une catégorie pour filtrer les widgets » permet de choisir entre filtrage
 du dashboard et ouverture des lignes. Les matrices, boîtes statistiques et
 points individuels ouvrent leurs lignes de détail. Une sélection dans le
 dashboard ne change pas le fichier natif reçu.
@@ -96,7 +100,7 @@ couverture visible.
 
 Le bouton de zoom, le recentrage et la liste de toutes les localisations
 permettent de retrouver les points, y compris lorsqu’ils se superposent.
-L’option « Filtrer les autres widgets au clic » réutilise les filtres croisés
+L’option « Cliquer une catégorie pour filtrer les widgets » réutilise les filtres croisés
 du dashboard. Sans cette option, le clic ouvre les lignes correspondantes.
 Les coordonnées d’une ville représentent cette ville, pas une adresse de
 ticket. Aucun fournisseur de cartes ne reçoit les données de cette vue.
@@ -159,8 +163,11 @@ séparateurs au hasard. Ces réglages ne réécrivent pas le fichier reçu.
 
 ## Historique et comparabilité
 
-Les courbes globales utilisent les métadonnées des archives locales. Au plus
-500 archives récentes de la même recherche et du même contexte sont retenues.
+Les courbes globales, personnelles et filtrées relisent les archives locales
+avec les mêmes définitions de périmètre. Au plus 120 archives récentes de la
+même recherche et du même contexte, antérieures ou égales à la date du relevé
+actif, sont retenues. Les index persistants sélectionnent les archives utiles ;
+les fichiers d’archive restent la source de vérité.
 Un point est comparable seulement si :
 
 - le relevé courant et l’archive sont complets ;
@@ -182,11 +189,21 @@ les moyennes des observations disponibles, leurs effectifs et le nombre de
 ruptures. Il ne s’agit ni d’une moyenne pondérée par le temps ni d’un décompte
 d’événements sur toute la période.
 
-Les courbes historiques des vues personnelles ou filtrées ne sont pas
-alimentées avec des chiffres globaux. Leur recalcul historique spécifique
-n’est pas implémenté ; le widget indique l’absence de série exploitable. Les
-histogrammes de dates présents dans un relevé restent distincts des archives
-successives d’une population.
+Dans une vue personnelle, l’identité du technicien est résolue dans chaque
+archive : ses tickets passés peuvent différer de ceux du relevé courant. Les
+numéros de ligne courants ne sont jamais réutilisés pour lire une ancienne
+archive. Les filtres communs et ceux du widget sont réévalués puis intersectés
+dans ce périmètre historique. Un filtre disparu, un changement de règles, une
+archive incomplète ou des identifiants ambigus produisent une rupture. Un
+périmètre observé et réellement vide produit un zéro connu.
+
+La relecture accepte au plus 64 périmètres distincts, deux millions de lignes
+de calcul cumulées et 250 000 valeurs d’indicateur par recalcul. L’atteinte
+d’une borne laisse les points non calculés explicitement inconnus. Un cache
+de huit définitions évite de relire les mêmes périmètres ; le calcul est
+annulable. Les preuves de localisation et effectifs datés de l’archive servent
+aux séries géographiques. Les histogrammes de dates d’un relevé restent
+distincts de ces observations successives d’une population.
 
 ### Analyses longitudinales
 
@@ -265,10 +282,14 @@ pas les autres calculs du dashboard.
 L’export visuel propose **PNG** et **PDF natif**. Les deux contiennent un
 cartouche avec dates d’extraction et de calcul, disposition, périmètre,
 recherche, filtres communs et croisés, filtres des widgets, nombre de lignes,
-total annoncé et complétude. Le PDF pagine le rendu sans imprimante virtuelle
-ni dépendance installée. Ses pages sont des images du dashboard, pas du texte
-sélectionnable. Le PNG est adapté à une dimension maximale de 8 192 pixels ;
-préférez le PDF pour une grande disposition.
+total annoncé et complétude. Le PDF utilise l’impression native du runtime
+WebView2 fourni avec l’application, sans imprimante virtuelle ; le navigateur
+pagine le document et conserve ses textes et graphiques SVG. Le PNG capture
+la **zone visible**, après fermeture du dialogue d’export et affichage du
+cartouche. Il ne prétend pas contenir les widgets situés hors de cette zone ;
+utilisez PDF ou HTML pour une grande disposition. Les fichiers visuels sont
+écrits dans un fichier temporaire puis remplacés après vérification de la
+révision : une annulation ou une erreur ne valide pas un fichier partiel.
 
 La commande de bilan propose aussi un **rapport HTML complet**, autonome et
 imprimable : critères, qualité des données, avertissements, indicateurs,
@@ -280,8 +301,10 @@ destination reste explicite.
 
 L’export de bilan CSV/Excel contient les valeurs, unités, effectifs et méthodes,
 y compris les matrices, quantiles, points, séries historiques et météos
-spécialisées disponibles. Une estimation exacte du nombre de lignes de bilan
-permet de proposer CSV lorsque la capacité d’une feuille Excel serait dépassée.
+spécialisées disponibles. Les limites du format restent vérifiées par le
+moteur d’export. L’atelier propose également l’export CSV/Excel de toutes les
+lignes retenues par la prévisualisation, ou de ses sous-totaux hiérarchiques,
+indépendamment de la pagination affichée.
 
 L’image décrit le contenu affiché, y compris la vue courante de la carte.
 Les lignes détaillées et les explications de calcul restent accessibles dans
@@ -291,8 +314,10 @@ de rendu ne remplace pas un fichier déjà présent par un export incomplet.
 
 ## Assistant facultatif de requêtes et de synthèse
 
-L’assistant s’ouvre depuis **Sources et organisation** sur un relevé déjà
-chargé. Son ouverture ne contacte aucun fournisseur. Le moteur local propose
+L’assistant s’ouvre depuis **Assistant de langage** dans la navigation ou
+l’atelier, et depuis **Assistant sur ce périmètre** dans le dashboard.
+Un relevé doit être chargé pour préparer le contenu. Son ouverture ne contacte
+aucun fournisseur. Le moteur local propose
 une grammaire française documentée, par exemple `tickets actifs par catégorie`,
 `tickets dont le titre contient «VPN»` ou
 `moyenne de «Coût» des tickets actifs`. Une clause non reconnue est refusée,
@@ -310,7 +335,7 @@ Les conditions de traitement et de conservation restent celles du fournisseur.
 
 Le parcours distingue trois étapes visibles :
 
-1. **Préparer le contenu** affiche la destination, le modèle, les instructions
+1. **Préparer et voir le contenu exact** affiche la destination, le modèle, les instructions
    et les données exactes. Pour une requête, seul le schéma disponible, ses
    bases/opérateurs et les métadonnées de périmètre sont fournis, sans cellules
    de tickets. Pour une synthèse, la personne choisit le dashboard capturé à
@@ -319,14 +344,15 @@ Le parcours distingue trois étapes visibles :
    dates et lieux sont exclus par défaut. Les doublons d’identifiants sont
    exclus, les cellules sont bornées à mille caractères et toute réduction
    est indiquée.
-2. **Générer la proposition** reste une action explicite après préparation.
+2. **Générer depuis cette préparation** reste une action explicite après préparation.
    Un envoi externe exige aussi l’activation visible de cette destination.
    Modifier une entrée invalide la préparation. Les propositions sont limitées
    à un DSL de requête validé ou à une synthèse documentée ; aucun code, SQL,
    appel d’outil ou modification de GLPI n’est exécuté.
-3. Pour une requête, **Prévisualiser sur le relevé** exécute le calcul local
-   explicitement. L’ajout au brouillon dans l’atelier exige un aperçu disponible.
-   L’enregistrement de la bibliothèque reste une action distincte. Pour une
+3. Pour une requête, **Prévisualiser les résultats** exécute le calcul local
+   explicitement. **Ouvrir le brouillon dans l’atelier** permet de relire et
+   modifier sa définition, sans l’exécuter ni l’enregistrer. L’enregistrement
+   de la bibliothèque reste une action distincte. Pour une
    synthèse, chaque constat cite des identifiants effectivement fournis, des
    champs sélectionnés et des extraits exacts. Une référence inconnue ou un
    extrait inventé rejette la synthèse. Le clic retrouve la ligne originale
@@ -454,9 +480,10 @@ nécessiter une collecte neuve pour l’analyse métier.
 - Les synthèses externes exigent un fournisseur configuré et une autorisation
   explicite. Leur contenu reste à relire même lorsque les références sont
   techniquement valides.
-- Le rendu WPF et le comportement du gestionnaire de fenêtres sont à valider
-  sous Windows. Les tests navigateur ne mesurent pas le placement réel de la
-  fenêtre GLPI Pilot au-dessus d’Edge ou Chrome.
+- Les tests Chromium valident les modules WebView, la CSP et les parcours
+  utilisant la passerelle C# réelle. Le runtime fixe WebView2 et le placement
+  de la fenêtre WinForms restent à vérifier sous Windows ; ces essais ne sont
+  pas assimilés à une exécution native par une compilation croisée.
 
 ## Vérification reproductible
 
@@ -470,11 +497,20 @@ grammaire locale, périmètre, citations, refus de réponses invalides,
 autorisation explicite, limites de taille, annulation et protection des clés.
 Aucun fournisseur réel n’est sollicité par ces contrôles.
 
-`WindowsStartupChecks` exécute les contrôles WPF réels sous Windows : parcours
-de l’assistant sans action implicite, ajout au brouillon, navigation des
-citations, saisie datée d’effectifs, carte liée aux autres widgets et rendu
-PNG/PDF natif avec cartouche. Une compilation croisée sous Linux ne remplace
-pas cette exécution Windows.
+`AnalyticsBridgeChecks` appelle les handlers analytiques C# réels et vérifie
+les révisions, imports, exports, scopes historiques, budgets et restitutions
+personnelles. Son option `--web` charge les vrais modules et CSS dans Chromium
+sous une CSP stricte : éditeur personnel, annuler/rétablir, exports PDF/PNG
+réels, matrices et leurs lignes contributrices, requêtes, analyses historiques,
+effectifs et assistant local. Les données et paramètres sont isolés dans un
+profil temporaire explicite. Les jeux d’essai sont synthétiques ; le pont ne
+fabrique aucune réponse de calcul. Les commandes et frontières du harnais sont
+décrites dans [AnalyticsBridgeChecks](../tests/AnalyticsBridgeChecks/README.md).
+
+`WebViewChecks` vérifie le shell et la navigation intégrale. Les contrôles
+natifs Windows valident séparément l’hôte, le runtime WebView2, les dialogues
+et le gestionnaire de fenêtres. Une compilation croisée sous Linux ne
+remplace pas cette exécution Windows.
 
 `BrowserChecks` vérifie les gardes du moteur.
 `AutomationChecks` exerce le parcours complet, le CSV reçu, Excel, l’annulation,

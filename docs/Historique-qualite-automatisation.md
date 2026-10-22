@@ -1,4 +1,4 @@
-# Historique, qualité et automatisations — version 2.1
+# Historique, qualité et automatisations — version 3.0
 
 Ces fonctions travaillent à partir des données réellement recueillies. Une ligne absente d’un relevé ne prouve pas sa résolution ; une donnée inconnue n’est jamais transformée en zéro. Les fonctions d’écriture GLPI disposent d’un parcours distinct avec aperçu et confirmation.
 
@@ -40,7 +40,7 @@ L’onglet **Santé des collectes** présente fraîcheur, collectes attendues ma
 
 ## Vues du relevé et reprise du travail
 
-Les vues nommées mémorisent recherche, filtres typés, quatre niveaux de tri et présentation des colonnes. Les en-têtes permettent de filtrer directement ; les familles facilitent affichage/masquage groupés. Les filtres et tris s’appliquent avant la limite de 10 000 lignes de l’aperçu. L’export de la vue comprend toutes les lignes correspondantes.
+Les vues nommées mémorisent recherche, filtres typés, quatre niveaux de tri et présentation des colonnes. Les en-têtes permettent de filtrer directement ; les familles facilitent affichage/masquage groupés. Les filtres et tris s’appliquent à l’ensemble du relevé avant sa pagination par pages de 50 à 500 lignes. L’export de la vue comprend toutes les lignes correspondantes.
 
 Le panier persistant utilise les identités vérifiées des objets et reste indépendant des filtres. Il refuse identifiants ambigus, démonstrations et recherches multi-types sans type fiable. L’ordre/largeur des colonnes est mémorisé par tableau ; sélection et position de lecture sont isolées par source, y compris entre deux imports locaux distincts.
 
@@ -68,4 +68,4 @@ L’import permet de sélectionner les sections et d’arbitrer chaque conflit :
 
 Le partage transmet les définitions de travail choisies. Cookies, sessions SSO, identité personnelle, notes privées, dossiers locaux et clé du fournisseur d’assistance restent sur le poste. Les adresses et critères que contient le fichier partagé doivent être relus avant transmission.
 
-Avant un changement de version, les paramètres reconnus sont sauvegardés avec leur empreinte, notamment tournées, panier, tableaux, effectifs, adaptateurs et politique de mise à jour. L’assistant de mise à jour vérifie provenance et contenu, sauvegarde les binaires et restaure la version précédente si le démarrage échoue. Voir [Guide 2.1](Guide-2.1.md) pour les commandes et la signature facultative.
+Avant un changement de version, les paramètres reconnus sont sauvegardés avec leur empreinte, notamment tournées, panier, tableaux, effectifs, adaptateurs et politique de mise à jour. L’assistant de mise à jour vérifie provenance et contenu, sauvegarde les binaires et restaure la version précédente si le démarrage échoue. Voir [Guide 3.0](Guide-3.0.md) pour les commandes et la signature facultative.

@@ -14,7 +14,7 @@ internal sealed class WindowsUpdateFixture
     private readonly List<Process> _started = new();
     private readonly List<string> _messages = new();
     private readonly List<(string Name, PreparedUpdate Plan)> _plans = new();
-    private readonly CancellationTokenSource _deadline = new(TimeSpan.FromMinutes(4));
+    private readonly CancellationTokenSource _deadline = new(TimeSpan.FromMinutes(15));
     private string _sandbox = "", _output = "", _archive = "", _archiveHash = "", _state = "";
     private string _settingsHash = "";
     private bool _createdState, _createdSandbox;
@@ -27,25 +27,19 @@ internal sealed class WindowsUpdateFixture
         {
             if (arguments.Length != 2) throw new ArgumentException("Usage: WindowsUpdateChecks <PROD-pack.zip> <isolated-log-directory>");
             Require(OperatingSystem.IsWindows(), "NOT RUN: this test requires real Windows process and file-lock behavior.");
-            Require(Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true"
-                && Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") == "github-hosted"
-                && Environment.GetEnvironmentVariable("RUNNER_OS") == "Windows", "Only a disposable GitHub-hosted Windows runner is permitted.");
             using (var current = Process.GetCurrentProcess()) Require(Environment.UserInteractive && current.SessionId != 0, "An interactive Windows desktop is required.");
             foreach (var existing in Process.GetProcessesByName("GLPI-Pilot"))
                 using (existing) Require(existing.HasExited, "An existing GLPI-Pilot process prevents an isolated update test.");
-            var localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            Require(Directory.Exists(localData), "The Windows application-data directory is unavailable.");
-            // Enumeration also detects a dangling junction, which Directory.Exists can miss.
-            Require(!Directory.EnumerateFileSystemEntries(localData).Any(path => Path.GetFileName(path).Equals("GLPI-Pilot", StringComparison.OrdinalIgnoreCase)),
-                "Existing GLPI-Pilot state was detected; it will not be read, moved or modified.");
             _archive = Path.GetFullPath(arguments[0]); Require(File.Exists(_archive), "The already-built PROD pack does not exist.");
             _output = Path.GetFullPath(arguments[1]); UpdateService.EnsureNoLinks(_output); Directory.CreateDirectory(_output);
-            var temporary = Environment.GetEnvironmentVariable("RUNNER_TEMP");
-            Require(!string.IsNullOrWhiteSpace(temporary) && Directory.Exists(temporary), "RUNNER_TEMP is unavailable.");
-            _sandbox = Path.Combine(temporary!, "glpi-update-check-" + _owner); UpdateService.EnsureNoLinks(_sandbox);
+            _sandbox = Path.Combine(Path.GetTempPath(), "GLPI-Pilot-Checks-Update-" + _owner); UpdateService.EnsureNoLinks(_sandbox);
             Require(!Directory.Exists(_sandbox), "The unique fixture directory already exists.");
             Directory.CreateDirectory(_sandbox); _createdSandbox = true; File.WriteAllText(Path.Combine(_sandbox, "fixture-owner.txt"), _owner);
-            _state = AppPaths.DataRoot; UpdateService.EnsureNoLinks(_state); Directory.CreateDirectory(_state); _createdState = true;
+            _state = Path.Combine(_sandbox, "GLPI-Pilot-Checks-State");
+            Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1");
+            Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _state);
+            Require(AppPaths.TestDataRoot == _state && AppPaths.DataRoot == _state, "The guarded isolated profile was not accepted.");
+            UpdateService.EnsureNoLinks(_state); Directory.CreateDirectory(_state); _createdState = true;
             File.WriteAllText(Path.Combine(_state, "fixture-owner.txt"), _owner);
             UpdateService.WriteJson(Path.Combine(_state, "settings.json"), new
             {
@@ -54,12 +48,12 @@ internal sealed class WindowsUpdateFixture
             });
             _settingsHash = UpdateService.HashFile(Path.Combine(_state, "settings.json"));
             _archiveHash = UpdateService.HashFile(_archive);
-            Log("Fixture copies only. Synthetic application state was created after an absence check; no junction, download, extraction session or browser is used.");
+            Log("Fixture copies only. The guarded temporary profile isolates all state. No GLPI session or browser extraction is requested; the real embedded WebView2 renders locally.");
 
-            CheckRunningProcess();
-            CheckLockedExecutable();
-            CheckHealthyReplacement();
-            CheckFailedStartupRollback();
+            CheckRunningProcess(); CleanupCompletedPlans();
+            CheckLockedExecutable(); CleanupCompletedPlans();
+            CheckHealthyReplacement(); CleanupCompletedPlans();
+            CheckFailedStartupRollback(); CleanupCompletedPlans();
             Require(UpdateService.HashFile(Path.Combine(_state, "settings.json")) == _settingsHash, "Synthetic settings changed during the update tests.");
             Require(UpdateService.HashFile(_archive) == _archiveHash, "The original CI release archive changed.");
             success = true;
@@ -114,6 +108,7 @@ internal sealed class WindowsUpdateFixture
             UpdateService.VerifyInventory(plan.InstallRoot, plan.PreviousFiles, _deadline.Token);
             UpdateService.VerifyInventory(plan.BackupRoot, plan.PreviousFiles, _deadline.Token);
         }
+        CleanupCompletedPlans();
         var blockedRollback = Prepare("locked-rollback"); FileStream? heldNew = null;
         try
         {
@@ -135,7 +130,7 @@ internal sealed class WindowsUpdateFixture
         var plan = Prepare("healthy-startup");
         try
         {
-            var helper = LaunchRealHelper(plan); WaitForExit(helper, TimeSpan.FromSeconds(100));
+            var helper = LaunchRealHelper(plan); WaitForExit(helper, TimeSpan.FromSeconds(300));
             Require(helper.ExitCode == 0, "The real maintenance helper did not accept the rendered application window.");
             var applied = UpdateService.ReadPrepared(plan.TransactionPath);
             Require(applied.State == "installed", "The transaction was not marked installed.");
@@ -147,7 +142,7 @@ internal sealed class WindowsUpdateFixture
                 && receipt.RootElement.GetProperty("Version").GetString() == plan.Package.Version, "The real application's startup receipt is invalid.");
             using var app = Process.GetProcessById(receipt.RootElement.GetProperty("ProcessId").GetInt32());
             Require(IsOwned(app) && !app.HasExited, "The healthy application was not left running from its fixture installation.");
-            Pass("The real EXE helper installs the verified pack, receives ContentRendered acknowledgement and retains a verified rollback copy.");
+            Pass("The real EXE helper installs the verified pack, receives the bootstrap-and-first-paint WebView acknowledgement and retains a verified rollback copy.");
         }
         finally { StopOwnedProcesses(); }
     }
@@ -160,7 +155,7 @@ internal sealed class WindowsUpdateFixture
         Directory.CreateDirectory(Path.Combine(plan.WorkRoot, "health.json"));
         try
         {
-            var helper = LaunchRealHelper(plan); WaitForExit(helper, TimeSpan.FromSeconds(100));
+            var helper = LaunchRealHelper(plan); WaitForExit(helper, TimeSpan.FromSeconds(300));
             Require(helper.ExitCode == 1, "The missing receipt was incorrectly accepted.");
             Require(UpdateService.ReadPrepared(plan.TransactionPath).State == "rolled-back", "The helper did not complete rollback.");
             UpdateService.VerifyInventory(plan.InstallRoot, plan.PreviousFiles, _deadline.Token);
@@ -240,7 +235,7 @@ internal sealed class WindowsUpdateFixture
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(executable)! };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         var temporary = Path.Combine(_sandbox, "temporary"); Directory.CreateDirectory(temporary);
-        start.Environment["TEMP"] = temporary; start.Environment["TMP"] = temporary;
+        start.Environment["GLPI_PILOT_TEST_MODE"] = "1"; start.Environment["GLPI_PILOT_TEST_ROOT"] = _state;
         start.Environment["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = Path.Combine(temporary, "bundles");
         var process = Process.Start(start) ?? throw new IOException("A fixture process did not start."); _started.Add(process); return process;
     }
@@ -285,6 +280,7 @@ internal sealed class WindowsUpdateFixture
             return path != null && (_createdSandbox && UpdateService.Within(path, _sandbox) || _createdState && UpdateService.Within(path, Path.Combine(_state, "Updates")));
         }
         catch (InvalidOperationException) { return false; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
     }
     private void StopOwnedProcesses()
     {
@@ -294,7 +290,7 @@ internal sealed class WindowsUpdateFixture
         for (var round = 0; round < 3; round++)
         {
             var stopped = 0;
-            foreach (var name in new[] { "GLPI-Pilot", "node" })
+            foreach (var name in new[] { "GLPI-Pilot", "msedgewebview2", "node", "notification_helper", "platform_experiences_helper" })
                 foreach (var process in Process.GetProcessesByName(name))
                     using (process)
                     {
@@ -308,6 +304,23 @@ internal sealed class WindowsUpdateFixture
             if (stopped == 0) return;
         }
         throw new IOException("Fixture processes remained after three cleanup passes.");
+    }
+
+    private void CleanupCompletedPlans()
+    {
+        StopOwnedProcesses(); CopyDiagnostics();
+        // Each fixed runtime is ~700 MB. Release each completed case before preparing
+        // another; keep only the small diagnostic evidence in the output directory.
+        foreach (var (_, plan) in _plans)
+            foreach (var root in new[] { plan.InstallRoot, plan.WorkRoot })
+            {
+                if (!Directory.Exists(root)) continue;
+                Require(UpdateService.Within(root, _sandbox) && root != _sandbox && root != _state,
+                    "An update fixture plan escaped its owned temporary root.");
+                UpdateService.EnsureNoLinks(root);
+                File.WriteAllText(Path.Combine(root, "fixture-owner.txt"), _owner);
+                DeleteOwnedDirectory(root);
+            }
     }
 
     private void CopyDiagnostics()

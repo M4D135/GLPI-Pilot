@@ -18,7 +18,7 @@ public static class StartupBackupService
     private static readonly string[] Names = { "settings.json", "technician-preferences.json", "workplace.json", "dispatch-scenario.json", "tour-order.json",
         "preview-view.json", "table-views.json", "city-overrides.json", "alerts.json", "scheduled-tours.json",
         "table-layouts.json", "selection-basket.json", "site-populations.json", "collection-health.json",
-        "language-assistant.local.json", "ticket-action-adapters.json", "ticket-enrichment.json", "update-policy.json" };
+        "language-assistant.local.json", "ticket-action-adapters.json", "ticket-enrichment.json", "update-policy.json", "workplace-action-receipts.json" };
 
     public static StartupBackupResult Prepare(string root, string version)
     {

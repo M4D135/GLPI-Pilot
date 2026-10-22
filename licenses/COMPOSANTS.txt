@@ -1,12 +1,21 @@
-GLPI Pilot 1.1.2 — composants redistribués
+GLPI Pilot 3.0.0 — composants redistribués
 
 .NET et Windows Desktop Runtime 10.0.13 : licences Microsoft .NET ci-jointes.
 Microsoft.Playwright 1.63.0 : licence MIT ci-jointe.
 Pilote JavaScript Playwright : licence et notices dans wad/.playwright/package.
 Node.js du pilote Playwright : licence dans wad/.playwright/node/LICENSE.
 
-Edge et Chrome ne sont pas redistribués dans ce pack. Le logiciel utilise le
-navigateur déjà installé sur le poste et n’installe pas de navigateur au lancement.
+Microsoft.Web.WebView2 SDK 1.0.4258.31 : licence Microsoft ci-jointe.
+Microsoft Edge WebView2 Runtime fixe 154.0.4258.62 x64 : runtime embarqué
+dans wad/runtime/webview2 ; conditions Microsoft dans WebView2-FixedRuntime-LICENSE.html.
+Tous les fichiers et avis tiers du runtime sont conservés sans modification.
+La commande show_third_party_software_licenses.bat fournie par Microsoft et
+les sous-dossiers du runtime donnent accès aux notices de ses composants.
+
+L’interface utilise ce runtime fixe local ; aucun installateur WebView2 ne se
+lance et aucune mise à jour du runtime ne se télécharge au démarrage.
+Le navigateur Edge ou Chrome utilisé pour la connexion à GLPI reste celui
+installé sur le poste. Il n’est pas redistribué avec le pilote Playwright.
 
 Le Chromium utilisé pendant les tests sous Linux ne fait pas partie du pack.
 GLPI Pilot est un outil indépendant et n’est pas un produit officiel GLPI.
@@ -30,3 +39,8 @@ Sources complémentaires du correctif 1.1.2 :
   https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/bd0aa042-434a-4ca7-b25f-4e1fd25a954d
 - Priorité de fenêtre WPF (suspendue pour l’accès explicite au navigateur) :
   https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.topmost?view=windowsdesktop-10.0
+
+Sources WebView2 :
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
+https://developer.microsoft.com/microsoft-edge/api/eula/webview2?locale=en-us&fixed=true

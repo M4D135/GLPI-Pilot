@@ -27,6 +27,7 @@ public static partial class UpdateService
             || new[] { "wad/version.json", "wad/SHA256SUMS.txt", "wad/.playwright/node/win32_x64/node.exe", "wad/.playwright/package/cli.js" }.Any(name => !value.Files.ContainsKey(name)))
             throw new InvalidDataException("L’inventaire de transaction est incomplet ou contient des chemins ambigus pour Windows.");
         ValidateMetadata(value.Package, value.Package.SourceCommit, value.Files["GLPI-Pilot.exe"]);
+        ValidateWebViewPackage(value.Package, value.Files.Keys);
     }
 
     /// <summary>Runs only when the application is stopped. Health verification is mandatory; every failure restores the captured pack.</summary>
@@ -90,20 +91,30 @@ public static partial class UpdateService
     private static void EnsureInstallNotRunning(string root)
     {
         if (!OperatingSystem.IsWindows()) return;
-        foreach (var name in new[] { "GLPI-Pilot", "node" })
+        var grace = Stopwatch.StartNew();
+        foreach (var name in new[] { "GLPI-Pilot", "node", "msedgewebview2", "notification_helper", "platform_experiences_helper" })
             foreach (var process in Process.GetProcessesByName(name))
                 using (process)
                 {
                     try
                     {
                         if (process.HasExited) continue; var path = process.MainModule?.FileName;
-                        if (path != null && Within(path, root)) throw new IOException("Un processus utilise encore ce pack ; fermez cette instance et son navigateur piloté avant la mise à jour.");
+                        if (IsInstallProcessPath(path, root))
+                        {
+                            // Closing the native host requests a clean WebView shutdown.
+                            // Give its children a bounded grace period, but never kill
+                            // another running instance merely to force an update.
+                            var remaining = Math.Max(0, 5000 - (int)grace.ElapsedMilliseconds);
+                            if (name != "GLPI-Pilot" && remaining > 0 && process.WaitForExit(remaining)) continue;
+                            throw new IOException("Un processus utilise encore ce pack ; fermez GLPI Pilot et son runtime avant la mise à jour. La sauvegarde reste conservée.");
+                        }
                     }
-                    catch (System.ComponentModel.Win32Exception) when (name == "node") { }
+                    catch (System.ComponentModel.Win32Exception) when (name != "GLPI-Pilot") { /* Other users' unrelated runtimes may deny process inspection. File locks still prevent unsafe replacement. */ }
                     catch (System.ComponentModel.Win32Exception error) { throw new IOException("L’arrêt des instances GLPI Pilot ne peut pas être vérifié.", error); }
                     catch (InvalidOperationException) { /* Process exited during inspection. */ }
                 }
     }
+    internal static bool IsInstallProcessPath(string? executablePath, string installRoot) => executablePath != null && Within(executablePath, installRoot);
     private static string SafeUpdateError(Exception error) => (error.GetBaseException().Message ?? error.GetType().Name).Split('\n')[0][..Math.Min((error.GetBaseException().Message ?? error.GetType().Name).Split('\n')[0].Length, 1000)];
     private static UpdateOutcome RecordOutcome(PreparedUpdate value, string state, string detail)
     {
@@ -221,7 +232,9 @@ public static partial class UpdateService
         using var process = Process.Start(start) ?? throw new IOException("La nouvelle version ne démarre pas."); var deadline = Stopwatch.StartNew(); var success = false;
         try
         {
-            while (deadline.Elapsed < TimeSpan.FromSeconds(45))
+            // The fixed runtime may need up to 60 seconds for each environment,
+            // controller and first-paint handshake, plus process startup overhead.
+            while (deadline.Elapsed < TimeSpan.FromSeconds(210))
             {
                 if (process.HasExited) return false;
                 var health = Path.Combine(value.WorkRoot, "health.json");

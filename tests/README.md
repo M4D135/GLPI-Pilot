@@ -34,14 +34,16 @@ Exécuter les étapes dans l’ordre depuis PowerShell 7.2 ou plus :
 ```powershell
 ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
 ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
-./build-tools/Invoke-WindowsCi.ps1 -Stage WpfChecks
+./build-tools/Invoke-WindowsCi.ps1 -Stage WebViewChecks
 ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
 ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup
 ./build-tools/Invoke-WindowsCi.ps1 -Stage UpdateStartup
 ```
 
-**WpfChecks** exige un bureau Windows interactif. Il charge les vrais contrôles et vérifie thèmes, tailles/zooms, dashboards, lecteurs, champs, calendriers, correspondances, conflits, tableaux, cartes, assistant et exports PDF/PNG. Les captures utilisent exclusivement des données synthétiques.
+**WebViewChecks** exécute les contrôles des opérations C# et les parcours des modules HTML/CSS/JavaScript de production : socle, analyses, travail personnel et terrain. Les suites utilisent des données synthétiques et le pilote officiel .NET de Playwright. Elles ne remplacent pas le démarrage du véritable hôte Windows.
 
-**PackStartup** et **UpdateStartup** sont réservés au runner Windows GitHub hébergé et refusent une installation ou des données GLPI Pilot préexistantes. Ils utilisent une copie isolée du pack PROD. Le premier contrôle teste lancement, instance unique et zoom persistant. Le second teste refus d’un processus actif, EXE verrouillé, remplacement réel avec acquittement du premier rendu, puis retour arrière après échec de démarrage provoqué. La restauration bloquée conserve les sauvegardes et le diagnostic.
+**PackStartup** et **UpdateStartup** exigent Windows et une session de bureau interactive ; ils refusent de démarrer si un processus GLPI Pilot existe déjà. Chaque harnais extrait le pack PROD dans un dossier temporaire marqué et active explicitement un profil synthétique isolé, sans jonction ni remplacement des réglages personnels. Le premier teste le vrai hôte WinForms/WebView2, la navigation, les thèmes, le zoom natif persistant, l’instance unique et la fermeture. Le second teste le refus d’un processus actif, l’EXE verrouillé, le remplacement réel avec acquittement du premier affichage, puis le retour arrière après échec de démarrage provoqué. La restauration bloquée conserve les sauvegardes et le diagnostic.
+
+Les commandes directes, délais et preuves attendues sont décrits dans [WindowsStartupChecks](WindowsStartupChecks/README.md) et [WindowsUpdateChecks](WindowsUpdateChecks/README.md). Le contrôle du runtime fixe est [RuntimePackagingChecks](RuntimePackagingChecks/Program.ps1) ; il vérifie le cache et ses empreintes sans lancer le runtime. Pour construire les packs hors ligne, utiliser les SDK, source NuGet et runtime locaux décrits dans [GitHub et compilation](../docs/GitHub-et-compilation.txt). Les étapes CI connectées préparent explicitement leurs dépendances.
 
 Les packs ne sont promus en Release qu’après réussite des étapes. Chaque ZIP possède `wad/version.json`, son inventaire SHA-256 et le même EXE que l’autre édition. Le certificat Authenticode demeure un prérequis externe facultatif ; absence de certificat signifie pack non signé.

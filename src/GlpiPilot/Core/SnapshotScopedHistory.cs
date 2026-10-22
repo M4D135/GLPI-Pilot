@@ -71,7 +71,7 @@ public sealed class SnapshotScopedHistory
                         : TechnicianDashboardService.CalculateForTechnician(document.Data, document.Dashboard, _technicianKey, entry.CapturedAt, ct);
                     Append(historical, document, ct);
                 }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or ArgumentException)
+                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or InvalidOperationException or ArgumentException)
                 { AddGap("Archive non exploitable pour ce périmètre : " + error.Message); continue; }
                 foreach (var request in pending)
                 {
@@ -87,7 +87,7 @@ public sealed class SnapshotScopedHistory
                             scoped.Metrics.ToDictionary(m => m.Key, m => (m.Value, m.Unit), StringComparer.Ordinal),
                             "Même identité personnelle et mêmes définitions de filtres rejouées sur cette archive ; valeurs calculées à sa date d’observation."));
                     }
-                    catch (Exception error) when (error is IOException or JsonException or InvalidOperationException or ArgumentException)
+                    catch (Exception error) when (error is IOException or InvalidDataException or JsonException or InvalidOperationException or ArgumentException)
                     { observations[signatures[request.Key]].Add(new(entry, 0, null, "Définition de périmètre indisponible dans l’archive : " + error.Message)); }
                 }
                 void AddGap(string note, bool limited = false)

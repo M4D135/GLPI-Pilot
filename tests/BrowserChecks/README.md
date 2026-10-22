@@ -19,4 +19,4 @@ Les contextes de navigateur sont éphémères. Le contrôle de verrou crée un d
 
 Les options Chromium désactivant le sandbox concernent uniquement ce programme de test en environnement isolé. Le logiciel Windows utilise le navigateur réel avec son sandbox activé.
 
-Ces cas ne valident pas le SSO d’entreprise réel ni le rendu WPF sous Windows.
+Ces cas ne valident pas le SSO d’entreprise réel ni le rendu du véritable hôte WinForms/WebView2 sous Windows.

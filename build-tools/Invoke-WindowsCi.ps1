@@ -3,19 +3,17 @@
 .SYNOPSIS
 Builds and runs the Windows CI stages without modifying production app code.
 .DESCRIPTION
-The WPF harness runs real controls and has an external 90-second process deadline.
-BrowserChecks includes the ticket-detail reader against intercepted synthetic pages,
-with the same isolated test browser and an externally bounded process as the other browser suites.
-PackStartup is restricted to an interactive GitHub-hosted Windows runner. It refuses
-any existing GLPI-Pilot state, redirects only that absent app directory to a unique
-temporary sandbox through a junction, and never changes Windows known-folder settings.
-Only synthetic settings are used. No extraction, browser launch or SSO is requested.
-This script does not imply that Windows checks passed until each executable succeeds.
+Portable suites exercise the real C# engines and local ES modules on synthetic data.
+PackStartup then drives the actual packaged WinForms/WebView2 host, with its fixed
+runtime, through a loopback-only test endpoint available only in a guarded temporary
+profile. UpdateStartup exercises replacement and rollback on disposable pack copies.
+Neither native harness reads an existing application profile or signs in to GLPI.
+All child processes have an external deadline and must report a successful summary.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('BclChecks', 'BrowserChecks', 'WpfChecks', 'BuildPack', 'PackStartup', 'UpdateStartup')]
+    [ValidateSet('BclChecks', 'BrowserChecks', 'WebViewChecks', 'BuildPack', 'PackStartup', 'UpdateStartup')]
     [string]$Stage,
     [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/windows-ci')
 )
@@ -107,14 +105,18 @@ function Assert-PackContents {
             'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
             'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
-            'wad/version.json', 'wad/SHA256SUMS.txt'
+            'wad/version.json', 'wad/SHA256SUMS.txt',
+            'wad/web/index.html', 'wad/web/js/app.js', 'wad/web/js/bridge.js', 'wad/web/css/app.css',
+            'wad/runtime/webview2/msedgewebview2.exe', 'wad/runtime/webview2/msedge.dll',
+            'wad/licenses/WebView2-SDK-LICENSE.txt', 'wad/licenses/WebView2-FixedRuntime-LICENSE.html'
         )
         if ($Edition -eq 'DEV') {
             $required += @(
                 'wad/sources/build.ps1', 'wad/sources/README.md',
                 'wad/sources/src/GlpiPilot/GlpiPilot.csproj',
                 'wad/sources/tests/WindowsStartupChecks/Program.cs',
-                'wad/sources/build-tools/Invoke-WindowsCi.ps1',
+                'wad/sources/build-tools/Invoke-WindowsCi.ps1', 'wad/sources/web/index.html',
+                'wad/sources/src/GlpiPilot/Desktop/MainForm.cs', 'wad/sources/build-tools/WebView2Runtime.json',
                 'wad/sources/.github/workflows/windows.yml'
             )
         }
@@ -149,198 +151,26 @@ function Assert-PackContents {
     finally { $archive.Dispose() }
 }
 
-function Test-PackStartup {
-    if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows') {
-        throw 'PackStartup only runs in a disposable GitHub-hosted Windows job; no local user profile is modified.'
-    }
-    if (-not [Environment]::UserInteractive -or [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0) {
-        throw 'NOT RUN: the full pack test requires an interactive Windows desktop, not a service/session-0 process.'
-    }
-    if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { throw 'The runner temporary directory is unavailable.' }
-    if (Get-Process -Name 'GLPI-Pilot' -ErrorAction SilentlyContinue) { throw 'An existing GLPI-Pilot process prevents an isolated startup test.' }
-    $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
-    if (-not [IO.Directory]::Exists($localData)) { throw 'The Windows LocalApplicationData known folder is unavailable.' }
-    $stateLink = Join-Path $localData 'GLPI-Pilot'
-    # Enumerating the parent also catches a pre-existing dangling junction.
-    if (Get-ChildItem -LiteralPath $localData -Force | Where-Object Name -EQ 'GLPI-Pilot') {
-        throw 'Existing GLPI-Pilot application state detected. It will not be moved, read or overwritten.'
-    }
-    $sandbox = Join-Path $env:RUNNER_TEMP ('glpi-pilot-pack-check-' + [guid]::NewGuid().ToString('N'))
-    $state = Join-Path $sandbox 'state'
-    $temporary = Join-Path $sandbox 'temp'
-    $extract = Join-Path $sandbox 'pack'
-    $packLogs = Join-Path $logs 'pack-startup'
-    New-Item -ItemType Directory -Path $state, $temporary, $extract, $packLogs -Force | Out-Null
-    $messages = [Collections.Generic.List[string]]::new()
-    $process = $null; $secondary = $null; $linkCreated = $false; $passed = $false
-    try {
-        $pack = Get-Pack
-        [void](Assert-PackContents $pack -Edition PROD)
-        [IO.Compression.ZipFile]::ExtractToDirectory($pack.FullName, $extract)
-        $executable = Join-Path $extract 'GLPI-Pilot.exe'
-        # Explicit synthetic state; the app must preserve the exact file on startup.
-        $settings = Join-Path $state 'settings.json'
-        @{
-            PortalUrl = 'https://glpi.example.invalid/front/ticket.php'
-            Theme = 'dark'
-            ExportFolder = (Join-Path $sandbox 'exports')
-            Dashboard = @{ PersonalTechnician = 'alex exemple' }
-        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $settings -Encoding utf8
-        $settingsHash = (Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash
-        New-Item -ItemType Junction -Path $stateLink -Target $state | Out-Null
-        $linkCreated = $true
-        $target = [IO.DirectoryInfo]::new($stateLink).ResolveLinkTarget($true)
-        if ($null -eq $target -or $target.FullName -ne [IO.Path]::GetFullPath($state)) { throw 'The temporary application-state junction could not be verified.' }
-        $messages.Add('Synthetic state redirected to a unique runner temporary sandbox; no previous application state existed.')
-
-        Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class GlpiPilotCiWindow {
-    [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindowVisible(IntPtr window);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsIconic(IntPtr window);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ShowWindow(IntPtr window, int command);
+function Set-TestBrowser {
+    $browserCandidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft/Edge/Application/msedge.exe'),
+        (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe')
+    )
+    $browser = $browserCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $browser) { throw 'No supported Chromium browser is available for the isolated synthetic checks.' }
+    $env:GLPI_TEST_CHROMIUM = $browser
 }
-'@
-        $start = [Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = $executable
-        $start.WorkingDirectory = Split-Path -Parent $executable
-        $start.UseShellExecute = $false
-        # Process-only paths also isolate fallback logs and single-file extraction.
-        $start.Environment['TEMP'] = $temporary
-        $start.Environment['TMP'] = $temporary
-        $start.Environment['DOTNET_BUNDLE_EXTRACT_BASE_DIR'] = Join-Path $sandbox 'bundle'
-        $process = [Diagnostics.Process]::new()
-        $process.StartInfo = $start
-        $clock = [Diagnostics.Stopwatch]::StartNew()
-        if (-not $process.Start()) { throw 'The packaged executable did not start.' }
-        $ready = $false
-        $startupLog = Join-Path $state 'Logs/demarrage-dernier.log'
-        while ($clock.Elapsed.TotalSeconds -lt 90) {
-            $process.Refresh()
-            if ($process.HasExited) { throw "The pack exited before its first render (code $($process.ExitCode))." }
-            $text = ''
-            if (Test-Path -LiteralPath $startupLog) {
-                try { $text = [IO.File]::ReadAllText($startupLog) }
-                catch [IO.IOException] { } # The app can be replacing its bounded latest-copy file.
-            }
-            if ($text.Contains('[ÉCHEC]', [StringComparison]::Ordinal)) { throw 'The packaged app reported a startup failure; see the attached startup log.' }
-            $window = $process.MainWindowHandle
-            if ($text.Contains('[PRÊT]', [StringComparison]::Ordinal) -and $window -ne [IntPtr]::Zero -and $process.MainWindowTitle -eq 'GLPI Pilot') {
-                $rectangle = [GlpiPilotCiWindow+Rect]::new()
-                [uint32]$windowProcess = 0
-                [void][GlpiPilotCiWindow]::GetWindowThreadProcessId($window, [ref]$windowProcess)
-                $ready = [GlpiPilotCiWindow]::IsWindowVisible($window) -and
-                    [GlpiPilotCiWindow]::GetWindowRect($window, [ref]$rectangle) -and
-                    $windowProcess -eq $process.Id -and $rectangle.Right -gt $rectangle.Left -and $rectangle.Bottom -gt $rectangle.Top
-                if ($ready) { break }
-            }
-            Start-Sleep -Milliseconds 250
-        }
-        if (-not $ready) { throw 'Pack startup exceeded 90 seconds without both ContentRendered evidence and a visible main window.' }
-        $messages.Add('PASS: the extracted standalone executable reached ContentRendered and owns a visible nonzero main window.')
-        [void][GlpiPilotCiWindow]::ShowWindow($process.MainWindowHandle, 6)
-        if (-not [GlpiPilotCiWindow]::IsIconic($process.MainWindowHandle)) { throw 'The primary window could not be minimized for the second-launch check.' }
-        $secondary = [Diagnostics.Process]::new(); $secondary.StartInfo = $start
-        if (-not $secondary.Start() -or -not $secondary.WaitForExit(10000) -or $secondary.ExitCode -ne 0) {
-            throw 'A second launch did not signal the primary instance and close normally within ten seconds.'
-        }
-        $secondary.Dispose(); $secondary = $null
-        $activationClock = [Diagnostics.Stopwatch]::StartNew()
-        while ([GlpiPilotCiWindow]::IsIconic($process.MainWindowHandle) -and $activationClock.Elapsed.TotalSeconds -lt 5) { Start-Sleep -Milliseconds 100 }
-        $process.Refresh()
-        if ($process.HasExited -or [GlpiPilotCiWindow]::IsIconic($process.MainWindowHandle) -or -not [GlpiPilotCiWindow]::IsWindowVisible($process.MainWindowHandle)) {
-            throw 'The first instance did not restore its visible window after the explicit second launch.'
-        }
-        $messages.Add('PASS: a second launch exits normally and restores the existing minimized window through same-user IPC.')
-        if (-not $process.CloseMainWindow()) { throw 'The visible main window did not accept a normal close request.' }
-        $remaining = [Math]::Min(10000, [Math]::Max(0, [int](90000 - $clock.Elapsed.TotalMilliseconds)))
-        if (-not $process.WaitForExit($remaining)) { throw 'The packaged app did not close within the startup-test deadline.' }
-        if ($process.ExitCode -ne 0) { throw "The packaged app closed with code $($process.ExitCode)." }
-        if ((Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -ne $settingsHash) { throw 'The synthetic settings file changed during startup or shutdown.' }
-        $messages.Add('PASS: normal shutdown, exit code 0, exact synthetic settings preserved. No browser or SSO interaction requested.')
 
-        # User-initiated zoom must persist across two real EXE launches. Keep the
-        # no-interaction startup byte-preservation check above independent.
-        $process.Dispose(); $process = $null
-        $harness = Join-Path $OutputDirectory 'wpf-harness/WindowsStartupChecks.exe'
-        if (-not (Test-Path -LiteralPath $harness -PathType Leaf)) { throw 'The already validated Windows UI harness is unavailable.' }
-        foreach ($mode in @('exercise', 'verify-restore')) {
-            if (Test-Path -LiteralPath $startupLog) { Remove-Item -LiteralPath $startupLog -Force }
-            $process = [Diagnostics.Process]::new()
-            $process.StartInfo = $start
-            $clock.Restart()
-            if (-not $process.Start()) { throw "The packaged executable did not start for zoom $mode." }
-            $ready = $false
-            while ($clock.Elapsed.TotalSeconds -lt 90) {
-                $process.Refresh()
-                if ($process.HasExited) { throw "The pack exited before zoom $mode (code $($process.ExitCode))." }
-                $text = ''
-                if (Test-Path -LiteralPath $startupLog) {
-                    try { $text = [IO.File]::ReadAllText($startupLog) }
-                    catch [IO.IOException] { }
-                }
-                if ($text.Contains('[ÉCHEC]', [StringComparison]::Ordinal)) { throw "The packaged app reported a startup failure for zoom $mode." }
-                if ($text.Contains('[PRÊT]', [StringComparison]::Ordinal) -and $process.MainWindowHandle -ne [IntPtr]::Zero -and
-                    $process.MainWindowTitle -eq 'GLPI Pilot' -and [GlpiPilotCiWindow]::IsWindowVisible($process.MainWindowHandle)) {
-                    $ready = $true; break
-                }
-                Start-Sleep -Milliseconds 250
-            }
-            if (-not $ready) { throw "The pack did not render within 90 seconds for zoom $mode." }
-            $summary = if ($mode -eq 'exercise') { 'PASS: packaged window zoom exercise completed;' }
-                else { 'PASS: packaged window zoom persisted at 110 % after restart and reset to 100 % through the real button.' }
-            Invoke-CheckedProcess -Executable $harness -Arguments @('--inspect-pack-window', $process.Id.ToString(), $mode) `
-                -LogName ("pack-zoom-$mode.log") -TimeoutSeconds 60 -ExpectedSummary $summary
-            if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(10000)) { throw "Normal shutdown after zoom $mode did not finish within 10 seconds." }
-            if ($process.ExitCode -ne 0) { throw "The packaged app closed with code $($process.ExitCode) after zoom $mode." }
-            $saved = [IO.File]::ReadAllText($settings) | ConvertFrom-Json
-            $expectedZoom = if ($mode -eq 'exercise') { 110 } else { 100 }
-            if ($saved.InterfaceZoomPercent -ne $expectedZoom -or $saved.PortalUrl -ne 'https://glpi.example.invalid/front/ticket.php' -or
-                $saved.Theme -ne 'dark' -or $saved.ExportFolder -ne (Join-Path $sandbox 'exports') -or $saved.Dashboard.PersonalTechnician -ne 'alex exemple') {
-                throw "Zoom $mode did not preserve the synthetic source, theme, export folder, personal identity and expected scale."
-            }
-            $messages.Add("PASS: real packaged-window zoom $mode; saved zoom $expectedZoom %, other synthetic preferences preserved, normal shutdown.")
-            $process.Dispose(); $process = $null
-        }
-        $passed = $true
-    }
-    catch {
-        $messages.Add('FAIL: ' + $_.Exception.Message)
-        throw
-    }
-    finally {
-        try {
-            if ($secondary) {
-                try { if (-not $secondary.HasExited) { $secondary.Kill($true); [void]$secondary.WaitForExit(5000) } }
-                finally { $secondary.Dispose() }
-            }
-            if ($process) {
-                try { if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) } }
-                finally { $process.Dispose() }
-            }
-            foreach ($directory in @((Join-Path $state 'Logs'), (Join-Path $temporary 'GLPI-Pilot/Logs'))) {
-                if (Test-Path -LiteralPath $directory) {
-                    Get-ChildItem -LiteralPath $directory -Filter '*.log' -File | Copy-Item -Destination $packLogs -Force
-                }
-            }
-            [IO.File]::WriteAllLines((Join-Path $logs 'pack-startup.log'), $messages, $utf8)
-            foreach ($message in $messages) { Write-Host $message }
-        }
-        finally {
-            if ($linkCreated) {
-                $target = [IO.DirectoryInfo]::new($stateLink).ResolveLinkTarget($true)
-                if ($null -eq $target -or $target.FullName -ne [IO.Path]::GetFullPath($state)) { throw 'Unexpected junction target during cleanup; application state was left untouched.' }
-                # Delete the junction itself, never recursively delete anything in a user profile.
-                [IO.Directory]::Delete($stateLink, $false)
-            }
-            Remove-Item -LiteralPath $sandbox -Recurse -Force
-        }
-    }
-    if (-not $passed) { throw 'Pack startup did not complete.' }
+function Test-PackStartup {
+    $harness = Join-Path $OutputDirectory 'webview-native-harness'
+    Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('publish', 'tests/WindowsStartupChecks/WindowsStartupChecks.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=false', '-p:PlaywrightPlatform=win', '-o', $harness) `
+        -LogName 'windows-startup-build.log' -TimeoutSeconds 420
+    $pack = Get-Pack -Edition PROD
+    [void](Assert-PackContents $pack -Edition PROD)
+    Invoke-CheckedProcess -Executable (Join-Path $harness 'WindowsStartupChecks.exe') `
+        -Arguments @('--pack', $pack.FullName, '--out', (Join-Path $logs 'native-webview')) `
+        -LogName 'windows-startup-checks.log' -TimeoutSeconds 360 -ExpectedPattern '\d+/\d+ native Windows WebView checks passed; isolated profile, no GLPI session accessed\.'
 }
 
 Push-Location $repository
@@ -362,7 +192,7 @@ try {
                 @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '99/99 vérifications réussies.' },
                 @{ Project = 'AnalyticsChecks'; Log = 'analytics-checks.log'; Summary = '32/32 vérifications réussies.' },
                 @{ Project = 'CompletionChecks'; Log = 'completion-checks.log'; Summary = '44/44 Completion checks passed.' },
-                @{ Project = 'UpdateChecks'; Log = 'update-checks.log'; Summary = '24/24 update checks passed.' },
+                @{ Project = 'UpdateChecks'; Log = 'update-checks.log'; Summary = ''; Pattern = '\d+/\d+ update checks passed\.' },
                 @{ Project = 'LanguageAssistantChecks'; Log = 'language-assistant-checks.log'; Summary = ''; Pattern = '\d+/\d+ language assistant checks passed; synthetic handlers only, no provider contacted\.' },
                 @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '38/38' },
                 @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' }
@@ -375,14 +205,7 @@ try {
             }
         }
         'BrowserChecks' {
-            $browserCandidates = @(
-                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe'),
-                (Join-Path $env:ProgramFiles 'Microsoft/Edge/Application/msedge.exe'),
-                (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe')
-            )
-            $browser = $browserCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-            if (-not $browser) { throw 'No supported Chromium browser is available for the isolated synthetic checks.' }
-            $env:GLPI_TEST_CHROMIUM = $browser
+            Set-TestBrowser
             foreach ($suite in @('BrowserChecks', 'AutomationChecks')) {
                 Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', "tests/$suite/$suite.csproj", '-c', 'Release') `
                     -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 180 -ExpectedPattern '\d+/\d+ vérifications.*réussies\.'
@@ -395,18 +218,32 @@ try {
                 -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
                 -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '82 native export DOM checks passed.'
         }
-        'WpfChecks' {
-            $harness = Join-Path $OutputDirectory 'wpf-harness'
-            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('publish', 'tests/WindowsStartupChecks/WindowsStartupChecks.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=false', '-o', $harness) `
-                -LogName 'windows-startup-build.log' -TimeoutSeconds 420
-            Invoke-CheckedProcess -Executable (Join-Path $harness 'WindowsStartupChecks.exe') `
-                -Arguments @('--screenshots', (Join-Path $logs 'ui-previews')) `
-                -LogName 'windows-startup-checks.log' -TimeoutSeconds 90 -ExpectedSummary 'real Windows UI checks completed; no browser or user settings accessed.'
+        'WebViewChecks' {
+            Set-TestBrowser
+            foreach ($suite in @('WebViewChecks', 'RuntimeSessionChecks', 'AnalyticsBridgeChecks', 'WorkplaceBridgeChecks', 'TerrainBridgeChecks')) {
+                $arguments = @('run', '--project', "tests/$suite/$suite.csproj", '-c', 'Release', '-p:PlaywrightPlatform=win')
+                $pattern = '\d+/\d+ '
+                switch ($suite) {
+                    'WebViewChecks' { $arguments += @('--', '--screenshots', (Join-Path $logs 'web-preview')); $pattern += 'WebView integration checks passed\.' }
+                    'RuntimeSessionChecks' { $pattern += 'Runtime session isolation and shutdown checks passed\.' }
+                    'AnalyticsBridgeChecks' { $arguments += @('--', '--web'); $pattern += 'analytics bridge and scoped-history checks passed\.' }
+                    'WorkplaceBridgeChecks' { $pattern += 'Workplace bridge and WebView checks passed\.' }
+                    'TerrainBridgeChecks' { $pattern += 'terrain bridge checks passed\.' }
+                }
+                Invoke-CheckedProcess -Executable 'dotnet' -Arguments $arguments -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 240 -ExpectedPattern $pattern
+            }
+            $driver = Join-Path $repository 'tests/TerrainBridgeChecks/bin/Release/net10.0/.playwright'
+            $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+            Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') -Arguments @('tests/TerrainWebChecks/run.cjs') `
+                -LogName 'terrain-webview-checks.log' -TimeoutSeconds 180 -ExpectedSummary '18/18 terrain WebView page checks passed.'
         }
         'BuildPack' {
             $release = Join-Path $OutputDirectory 'release'
-            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'build.ps1'), '-OutputDirectory', $release, '-ValidationDirectory', $logs) `
-                -LogName 'pack-build.log' -TimeoutSeconds 660
+            $runtimePath = & (Join-Path $PSScriptRoot 'Get-WebView2Runtime.ps1') -CacheDirectory (Join-Path $env:RUNNER_TEMP 'GLPI-WebView2-Cache')
+            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'tests/RuntimePackagingChecks/Program.ps1'), '-RuntimePath', $runtimePath) -LogName 'runtime-packaging-checks.log' -TimeoutSeconds 180 -ExpectedSummary '14/14 runtime packaging checks passed; offline only, no runtime launched.'
+            if (-not $runtimePath -or -not (Test-Path -LiteralPath (Join-Path $runtimePath 'msedgewebview2.exe'))) { throw 'Verified fixed WebView2 runtime unavailable.' }
+            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'build.ps1'), '-OutputDirectory', $release, '-ValidationDirectory', $logs, '-RuntimePath', $runtimePath, '-AllowOnlineRestore') `
+                -LogName 'pack-build.log' -TimeoutSeconds 900
             $exeHashes = @{}; $hashLines = [Collections.Generic.List[string]]::new()
             foreach ($edition in @('PROD', 'DEV')) {
                 $pack = Get-Pack -Edition $edition
@@ -429,7 +266,7 @@ try {
                 -LogName 'windows-update-build.log' -TimeoutSeconds 420
             $pack = Get-Pack -Edition 'PROD'
             Invoke-CheckedProcess -Executable (Join-Path $harness 'WindowsUpdateChecks.exe') -Arguments @($pack.FullName, (Join-Path $logs 'windows-update')) `
-                -LogName 'windows-update-checks.log' -TimeoutSeconds 300 -ExpectedSummary '4/4 Windows update checks passed.'
+                -LogName 'windows-update-checks.log' -TimeoutSeconds 960 -ExpectedSummary '4/4 Windows update checks passed.'
         }
     }
 }

@@ -1,69 +1,226 @@
-GLPI Pilot 2.1.0 — packs PROD et DEV, compilation Windows
+GLPI Pilot 3.0.0 — C# WinForms / WebView2, packs PROD et DEV
 
-DEUX PACKS COMPLETS
-Chaque ZIP contient exactement GLPI-Pilot.exe et le dossier wad à sa racine.
-PROD : exécutable autonome, pilote Windows complet, guide, diagnostics,
-licences et empreintes SHA-256. Aucune installation de .NET n’est nécessaire.
-DEV : le même exécutable et le même pilote, avec les sources, tests et outils
-de compilation dépliés sous wad/sources. Tout reste rangé dans wad.
+ARCHITECTURE ET DISTRIBUTION
+Le produit utilise .NET 10, un hôte C# WinForms minimal et une interface
+HTML/CSS/modules ES locale dans WebView2. Les moteurs, validations,
+traitements, fichiers et accès au navigateur GLPI restent en C#.
+Les sources web se trouvent dans web/. Aucune compilation npm du produit
+n’est nécessaire. Les sources WPF de la version précédente ne constituent
+pas l’interface de la version 3.
+
+Chaque ZIP contient exactement GLPI-Pilot.exe et wad à sa racine :
+  GLPI-Pilot.exe                  application C# autonome et .NET intégré
+  wad/web/                       pages, styles, scripts et ressources locaux
+  wad/runtime/webview2/          runtime Microsoft fixe complet, Windows x64
+  wad/.playwright/               pilote Windows du navigateur GLPI
+  wad/docs/, support/, licenses/ guides, diagnostics et licences
+  wad/version.json               version et provenance de construction
+  wad/SHA256SUMS.txt              empreintes de tous les fichiers du pack
+  wad/sources/                   sources et tests, édition DEV seulement
+PROD et DEV utilisent le même EXE. DEV comprend les sources C#, les pages
+web, les manifestes du runtime et les scripts nécessaires à la reconstruction.
 Aucun profil SSO, réglage personnel ou relevé métier n’est inclus.
-Edge ou Chrome doit être installé et autorisé sur le poste utilisateur.
 
-TELECHARGER
+Le pack n’exige pas d’installation de .NET, Node.js ou WebView2. Edge ou
+Chrome reste nécessaire et doit être autorisé pour accéder au GLPI/SSO de
+l’entreprise ; il est distinct du runtime embarqué de l’interface locale.
+Extraire l’ensemble du ZIP dans un dossier local, conserver wad à côté de
+GLPI-Pilot.exe et ne pas mélanger des fichiers de deux distributions.
+
+DEPOT, PACKS ET RESULTATS
 Dépôt : https://github.com/M4D135/GLPI-Pilot
-Packs : https://github.com/M4D135/GLPI-Pilot/releases
-Choisir le ZIP PROD pour utiliser le logiciel, DEV pour son développement.
-La commande GitHub Code > Download ZIP télécharge uniquement les sources.
-Extraire le pack entier et conserver wad à côté de GLPI-Pilot.exe.
+Packs publiés : https://github.com/M4D135/GLPI-Pilot/releases
+Chaîne Windows : https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+GitHub Code > Download ZIP télécharge les sources, pas le pack exécutable.
+Lire docs/RELEASE-3.0.0.md et docs/Rapport-verification.txt pour le statut de
+la livraison. Un EXE compilé ou un ZIP local ne prouve ni une exécution
+Windows réussie ni la publication d’une version validée.
 
-COMPILER SOUS WINDOWS
-Prérequis de développement : SDK .NET 10 stable, PowerShell 7.2 ou plus,
-accès aux dépendances NuGet. Depuis wad/sources du pack DEV, ou la racine
-des sources du dépôt, lancer dans PowerShell :
-  ./build.ps1
-Cette commande produit les deux ZIP PROD et DEV dans artifacts.
-Le script refuse de remplacer un pack déjà présent. Choisir un autre dossier :
-  ./build.ps1 -OutputDirectory ./artifacts/release-suivante
-Le pack DEV peut ainsi reconstruire les deux distributions.
+DEPENDANCES EPINGLEES
+  Microsoft.Web.WebView2 SDK : 1.0.4258.31
+  WebView2 Fixed Version Runtime : 154.0.4258.62 x64
+  Microsoft.Playwright : 1.63.0
+  SDK : .NET 10 stable ; respecter global.json lorsqu’il est présent
+  Shell de construction : PowerShell 7.2 ou ultérieur
+Le CAB officiel du runtime représente 308 020 625 octets. Il contient
+257 fichiers, soit 701 153 191 octets une fois extraits. Le pack ajoute
+l’EXE, le pilote Playwright, les pages, la documentation et les sources DEV.
+Prévoir plusieurs gigaoctets libres pour publication, archives et contrôles.
 
-WORKFLOW GITHUB ACTIONS
-.github/workflows/windows.yml exécute sous Windows x64 :
-1. Dix-huit suites métier, configuration, historique, assistance et mise à jour.
-2. Collecte, SSO simulé, reprise, formulaires et DOM sur pages synthétiques.
-3. Vrais contrôles WPF sur bureau interactif, plusieurs tailles/thèmes/zooms.
-4. Construction et contrôle des packs PROD/DEV, empreintes et commit source.
-5. Démarrage du pack PROD, instance unique, boutons et persistance du zoom.
-6. Remplacement réel d’une copie du pack, verrouillage et retour arrière après
-   échec de démarrage provoqué, dans un dossier temporaire de test.
-7. Promotion des mêmes ZIP en Release après réussite de tous les contrôles.
-Le job de test utilise contents:read. Le job de publication dispose de
+build-tools/WebView2Runtime.json fixe l’URL Microsoft, la version, la taille
+et le SHA-256 du CAB. WebView2Runtime.files.sha256 contient l’inventaire
+complet des fichiers extraits. Ces empreintes ont été calculées à partir du
+CAB téléchargé à l’URL officielle Microsoft ; elles ne sont pas une signature
+de GLPI Pilot. Le build vérifie chaque fichier, refuse un runtime incomplet,
+altéré ou enrichi de fichiers inattendus, puis contrôle sa copie dans PROD.
+Les licences Microsoft du SDK et du runtime fixe sont conservées dans licenses/.
+
+VM WINDOWS 11 HORS LIGNE
+La référence d’infrastructure transmise est le document public :
+https://github.com/M4D135/domenia-d120/blob/v2/v2/REPRISE.md
+Elle décrit une VM Windows 11 de 4 vCPU et 8 Go, un SDK portable et des caches
+locaux. Garder la session console ouverte ; ne pas la fermer ni redémarrer
+la machine pour une compilation. Les essais interactifs en VM se font à la
+fin du chantier.
+
+L’alias SSH domenia-vm dépend de la configuration du poste qui héberge ce
+laboratoire. Sa présence et son accès ne sont pas supposés depuis un autre
+atelier. Ces instructions n’attestent aucune connexion à la VM ni aucune
+exécution dans sa session de bureau.
+
+Dans PowerShell 7.2+, depuis la racine des sources transférées :
+
+  $env:DOTNET_CLI_HOME = 'C:\DomeniaDev\dotnet-home'
+  $env:NUGET_PACKAGES = 'C:\DomeniaDev\nuget-packages'
+  $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+  $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+
+  .\build.ps1 `
+    -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
+    -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
+    -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
+    -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.0'
+
+RuntimePath accepte le dossier contenant msedgewebview2.exe, ou un dossier
+parent contenant un unique runtime extrait. Le script détecte les chemins
+Domenia déjà présents si les paramètres correspondants sont omis ; les
+paramètres explicites évitent toute ambiguïté. GLPI_WEBVIEW2_RUNTIME permet
+également de désigner un cache local de runtime.
+
+NuGetOfflineSource est un ou plusieurs dossiers de paquets .nupkg. Il doit
+contenir les dépendances et packs de ciblage/runtime correspondant au SDK,
+à Windows x64 et aux versions déclarées par le projet. NUGET_PACKAGES est
+le cache de paquets restaurés ; les deux emplacements ont des rôles distincts.
+La restauration utilise une configuration temporaire qui efface les sources
+HTTP héritées. NuGetAudit est désactivé pour cette construction, puis publish
+s’exécute avec --no-restore. Une dépendance absente provoque une erreur visible,
+sans téléchargement de secours. build.ps1 ne télécharge jamais le runtime.
+
+La sortie contient PROD/, DEV/, les deux ZIP et SHA256SUMS.txt. Le script
+refuse de remplacer une distribution existante : utiliser un nouveau
+OutputDirectory pour chaque construction. Le pack DEV se reconstruit depuis
+wad/sources avec les mêmes SDK, runtime et paquets locaux ; il ne contient
+pas un installateur du SDK ou un cache NuGet universel.
+
+PREPARER LES DEPENDANCES SUR UNE MACHINE CONNECTEE
+La préparation suivante se fait sur un Windows autorisé à télécharger,
+avant transfert du cache vers la VM. Elle n’est jamais déclenchée implicitement
+par le build hors ligne :
+
+  $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
+    -CacheDirectory 'C:\GLPI-BuildCache\webview2'
+
+  $env:NUGET_PACKAGES = 'C:\GLPI-BuildCache\nuget-packages'
+  .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
+    -OutputDirectory '.\artifacts\release-3.0.0'
+
+Le script de préparation utilise seulement l’URL Microsoft épinglée. Il
+refuse les redirections, limite le téléchargement à la taille attendue,
+vérifie le SHA-256 avant extraction par expand.exe, puis les 257 fichiers.
+Un cache existant doit repasser les mêmes contrôles pour être réutilisé.
+Pour un CAB obtenu et transféré séparément :
+
+  .\build-tools\Get-WebView2Runtime.ps1 `
+    -CacheDirectory 'C:\GLPI-BuildCache\webview2' `
+    -CabPath 'C:\Transfert\Microsoft.WebView2.FixedVersionRuntime.154.0.4258.62.x64.cab' `
+    -Offline
+
+Le chemin retourné contient le runtime vérifié à transférer. Ne pas copier
+le CAB lui-même dans le dossier final contenant msedgewebview2.exe.
+Pour préparer un dépôt local des paquets après une restauration connectée :
+
+  New-Item -ItemType Directory 'C:\GLPI-BuildCache\nuget-feed' -Force
+  Get-ChildItem -LiteralPath $env:NUGET_PACKAGES -Filter '*.nupkg' -File -Recurse |
+    Copy-Item -Destination 'C:\GLPI-BuildCache\nuget-feed' -NoClobber
+
+Transférer les fichiers de nuget-feed vers la source locale de la VM et le
+SDK portable correspondant par le canal autorisé du laboratoire. Le cache
+doit être préparé pour les projets réellement à compiler ; ne pas déclarer
+une restauration hors ligne réussie avant son exécution.
+-AllowOnlineRestore autorise explicitement NuGet sur la machine connectée.
+Il est incompatible avec -NuGetOfflineSource. Aucun miroir non officiel
+n’est utilisé pour le runtime WebView2.
+
+VERIFICATIONS ET CI WINDOWS
+.github/workflows/windows.yml décrit les étapes, réalisées par le script
+build-tools/Invoke-WindowsCi.ps1 :
+  BclChecks      moteurs métier, configurations, historique et mise à jour
+  BrowserChecks  collecte, SSO simulé, exports et formulaires synthétiques
+  WebViewChecks  opérations C# et interactions des modules web
+  BuildPack      runtime fixe vérifié, publication et packs PROD/DEV
+  PackStartup    vrai hôte WinForms/WebView2 extrait, thèmes, zoom, navigation
+  UpdateStartup  remplacement/rollback de copies jetables du pack
+Les étapes de bureau nécessitent Windows et une session adaptée. Les gardes
+des harnais ne doivent pas être contournées pour présenter un essai comme
+une exécution du runner GitHub.
+
+Les pages terrain se vérifient avec leur moteur C# réel, sans dépendance npm
+supplémentaire si le pilote .NET de Playwright est fourni :
+
+  dotnet build tests/TerrainBridgeChecks/TerrainBridgeChecks.csproj `
+    -c Release -p:PlaywrightPlatform=win -p:NuGetAudit=false
+  $env:GLPI_TEST_PLAYWRIGHT_MODULE = '<pilote-playwright>\package'
+  $env:GLPI_TEST_CHROMIUM = '<chemin-vers-Edge-ou-Chrome-de-test>'
+  node tests/TerrainWebChecks/run.cjs
+
+Le node.exe du pilote .NET peut remplacer la commande node. Le script lance
+lui-même la fixture C# en mode --serve et la ferme dans finally avec son
+navigateur et son serveur loopback. Il interdit les requêtes fournisseurs,
+les consultations de release et les installations pendant ces contrôles.
+Il s’agit de contrôles Chromium des pages, distincts du vrai WebView2 Windows.
+
+Pour vérifier le cache sans réseau ni lancement du runtime :
+  pwsh -NoProfile -File tests/RuntimePackagingChecks/Program.ps1 `
+    -RuntimePath '<dossier-runtime-extrait>'
+
+Pour vérifier qu’un pack construit est accepté par le moteur de mise à jour,
+avec extraction dans un dossier jetable et sans exécuter son EXE :
+  dotnet run --project tests/UpdateChecks/UpdateChecks.csproj -c Release -- `
+    --verify-pack '<pack.zip>' '<SHA256-attendu>' '<commit-source-attendu>'
+Les valeurs attendues doivent venir du bilan de construction ou d’une
+publication de confiance, pas être remplacées pour faire passer une erreur.
+
+Le job de tests utilise contents:read. Le job de publication peut utiliser
 contents:write uniquement pour promouvoir les artefacts contrôlés de main.
-Une version déjà publiée pour un autre commit n’est pas remplacée.
+Les archives promues sont celles qui ont passé les étapes de ce run, sans
+recompilation pendant la promotion. Une release existante d’un autre commit
+n’est pas remplacée. Les journaux sont joints même en cas d’échec.
+Les captures et profils des harnais sont synthétiques et temporaires ; les
+processus et fichiers de test sont nettoyés, y compris entre cas de mise à jour.
+Aucun portail GLPI réel ni fournisseur routier, météo ou d’assistance n’est
+contacté par les scénarios synthétiques. Le build connecté, lui, télécharge
+explicitement ses dépendances officielles avant ces contrôles.
 
-Les journaux sont joints également en cas d’échec ; ils sont conservés
-14 jours. Les artefacts de packs sont conservés 30 jours. Les captures PNG WPF ne contiennent que des données synthétiques.
-Les contrôles du pack refusent tout état GLPI Pilot préexistant sur le runner.
-Aucun portail GLPI réel, aucune session SSO d’entreprise ni aucun fournisseur
-routier, météo ou d’assistance n’est contacté pendant ces tests.
+SIGNATURE FACULTATIVE ET MISE A JOUR
+build-tools/Sign-Release.ps1 s’exécute après publication de l’EXE et avant
+ses empreintes. GLPI_SIGN_CERT_THUMBPRINT désigne un certificat avec clé
+privée dans CurrentUser/My ; GLPI_SIGN_TIMESTAMP_URL désigne le serveur
+d’horodatage autorisé. Signature, certificat et horodatage sont contrôlés.
+La signature et son horodatage se préparent sur un poste disposant de ces
+prérequis ; le build hors ligne ne les invente pas. Sans certificat configuré,
+le pack est non signé. Aucun certificat de confiance n’a été fourni au chantier.
 
-SIGNATURE FACULTATIVE
-build-tools/Sign-Release.ps1 est exécuté après publication de l’EXE et avant
-calcul des empreintes. GLPI_SIGN_CERT_THUMBPRINT désigne un certificat de
-signature avec clé privée dans CurrentUser/My ; GLPI_SIGN_TIMESTAMP_URL
-est obligatoire lorsqu’une signature est demandée. Signature, certificat
-et horodatage sont contrôlés. Sans certificat configuré, le pack est non signé.
-La mise à jour peut exiger une signature et une empreinte d’éditeur approuvée.
+L’assistant WebView consulte GitHub seulement après une action utilisateur,
+ou accepte un ZIP sélectionné par le dialogue natif. SHA-256, commit,
+inventaire, plateforme, fichiers de l’interface et runtime sont contrôlés
+avant préparation. La politique locale peut exiger une signature et une
+empreinte d’éditeur approuvée. L’installation attend une confirmation séparée.
+Le remplacement conserve l’ancien pack intégral, attend la fermeture de
+GLPI Pilot et de ses processus WebView, puis attend le démarrage confirmé
+après le premier affichage. Si le démarrage échoue, le pack antérieur est
+restauré ; si un verrou bloque aussi cette restauration, le bilan annonce
+recovery-needed et conserve les fichiers de sauvegarde pour récupération.
+Les données personnelles restent dans leur dossier habituel.
 
-PORTEE DES VERIFICATIONS
-La compilation croisée Linux pour Windows ne prouve pas un démarrage WPF.
-La présence d’un workflow ou d’un commit ne prouve pas sa réussite.
-Consulter Rapport-verification.txt, les journaux du run et wad/version.json
-pour identifier le code et les résultats exacts des ZIP publiés.
-SSO privé, extensions GLPI, veille et moniteurs du poste restent à valider
-sur l’installation réelle ; ils ne sont pas remplacés par des fixtures.
+PORTEE DES RESULTATS ET DIAGNOSTIC
+Une compilation croisée, un test C# ou un contrôle Chromium ne remplace pas
+le démarrage natif Windows. La présence d’un workflow ne prouve pas sa réussite.
+Consulter Rapport-verification.txt, les journaux du run livré, version.json
+et les SHA-256 pour relier code, paquet et résultats réels. Le portail privé,
+son SSO, ses extensions, la veille et les écrans physiques restent à valider
+sur le poste concerné, en fin de chantier pour la VM de référence.
 
-EN CAS DE NON-DEMARRAGE
-Dans le pack extrait, lancer wad/support/DIAGNOSTIC_DEMARRAGE.cmd.
-Ce lanceur observe le démarrage et ouvre son rapport dans le Bloc-notes.
-Il conserve les réglages et le profil du navigateur. Le diagnostic permet
-d’identifier l’étape exacte en échec sur le poste concerné.
+Si l’EXE n’ouvre pas sa fenêtre, utiliser wad/support/DIAGNOSTIC_DEMARRAGE.cmd.
+Ce lanceur conserve les réglages et le profil du navigateur, observe les
+étapes du démarrage et présente son rapport. Garder l’ensemble de wad,
+notamment web et runtime/webview2, avec l’EXE lors du diagnostic.

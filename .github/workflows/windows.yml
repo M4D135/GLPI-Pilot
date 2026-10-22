@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'web/**'
+      - 'package.json'
       - 'tests/**'
       - 'docs/**'
       - 'support/**'
@@ -32,7 +34,7 @@ jobs:
   windows:
     name: Windows x64 · contrôles réels et publication
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 75
     outputs:
       prod-artifact-id: ${{ steps.upload_prod.outputs.artifact-id }}
       dev-artifact-id: ${{ steps.upload_dev.outputs.artifact-id }}
@@ -82,13 +84,13 @@ jobs:
         timeout-minutes: 8
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
 
-      - name: Construire et exécuter les contrôles WPF réels
+      - name: Vérifier les moteurs C# et toutes les interfaces WebView
         timeout-minutes: 10
-        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage WpfChecks
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage WebViewChecks
 
       - name: Construire les packs PROD et DEV (exe + wad)
         id: pack
-        timeout-minutes: 12
+        timeout-minutes: 20
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
 
       - name: Vérifier le démarrage, le zoom et sa mémorisation dans le pack PROD
@@ -96,7 +98,7 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup
 
       - name: Vérifier le remplacement réel du pack et le retour arrière
-        timeout-minutes: 8
+        timeout-minutes: 20
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage UpdateStartup
 
       - name: Joindre le pack PROD Windows validé
@@ -128,13 +130,13 @@ jobs:
           @"
           ## Validation Windows terminée
           - Contrôles des diagnostics, configurations, dashboards, dispositions, recherche, techniciens, villes, tournées et requêtes : exécutés avec succès.
-          - WindowsStartupChecks : contrôles WPF de production chargés et rendus sous Windows, délai maximal 90 s.
-          - Pack PROD extrait : fenêtre principale visible, marqueur ContentRendered reçu, configuration synthétique inchangée, fermeture normale.
-          - Zoom de la fenêtre réelle : boutons +/−/100 %, bornes 75–150 %, fenêtre compacte, mémorisation à 110 % et retour à 100 % après redémarrage.
+          - Interfaces locales HTML/CSS/ES modules : parcours et interactions contrôlés avec les vrais handlers C# et la CSP de production.
+          - Pack PROD extrait : vrai hôte WinForms/WebView2 visible, runtime fixe embarqué, handshake après premier rendu, profil synthétique isolé, fermeture normale.
+          - Zoom natif réel à 125 %, remise à 100 %, fenêtre compacte et restauration de 110 % dans un nouveau processus.
           - Mise à jour réelle sur copies du pack : processus en cours et EXE verrouillé refusés, démarrage confirmé puis restauration après échec forcé.
           - Captures des vues Windows en thèmes clair/sombre et à plusieurs tailles jointes aux journaux.
           - [Télécharger PROD]($env:PROD_URL) · [Télécharger DEV]($env:DEV_URL).
-          - Chaque ZIP contient uniquement GLPI-Pilot.exe et wad à sa racine ; DEV inclut les sources dépliées.
+          - Chaque ZIP contient uniquement GLPI-Pilot.exe et wad à sa racine ; .NET et WebView2 sont embarqués, DEV inclut les sources dépliées.
           - Les deux packs utilisent le même exécutable vérifié ; empreintes de chaque fichier contrôlées.
           - Artefacts conservés 30 jours, connexion GitHub requise.
           - Navigation, portée et exports : contrôlés dans un navigateur isolé sur des pages synthétiques.

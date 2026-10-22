@@ -1,6 +1,6 @@
 # Contrôles de la gestion de charge des techniciens
 
-Projet console .NET 10, BCL uniquement, sans portail GLPI, navigateur ni interface WPF. Les noms, tickets et notes des jeux d’essai sont synthétiques. Les fichiers de préférences de test sont créés dans un dossier temporaire propre au processus, supprimé à la fin.
+Projet console .NET 10, BCL uniquement, sans portail GLPI, navigateur ni interface graphique. Les noms, tickets et notes des jeux d’essai sont synthétiques. Les fichiers de préférences de test sont créés dans un dossier temporaire propre au processus, supprimé à la fin.
 
 ```powershell
 dotnet run --project tests/TechnicianWorkloadChecks/TechnicianWorkloadChecks.csproj -c Release

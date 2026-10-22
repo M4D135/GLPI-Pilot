@@ -3,13 +3,14 @@
     <OutputType>WinExe</OutputType>
     <StartupObject>GlpiPilot.Program</StartupObject>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>GLPI-Pilot</AssemblyName>
     <RootNamespace>GlpiPilot</RootNamespace>
-    <Version>2.1.0</Version>
+    <Version>3.0.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -25,10 +26,18 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <Content Include="../../web/**/*" LinkBase="wad/web" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <EmbeddedResource Include="BrowserScripts/bridge.js" />
     <EmbeddedResource Include="BrowserScripts/native-export.js" />
     <EmbeddedResource Include="BrowserScripts/ticket-details.js" />
   </ItemGroup>
+  <!-- The SDK adds both desktop adapters; this application hosts only WinForms. -->
+  <Target Name="RemoveUnusedWebViewWpfAdapter" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
   <Target Name="KeepPlaywrightDriverExternal" BeforeTargets="_ComputeFilesToBundle">
     <ItemGroup>
       <ResolvedFileToPublish Update="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('.playwright'))">

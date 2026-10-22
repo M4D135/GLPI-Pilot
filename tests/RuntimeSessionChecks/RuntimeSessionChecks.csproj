@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><Version>3.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <Compile Include="../../src/GlpiPilot/Core/*.cs" Exclude="../../src/GlpiPilot/Core/ThemeService.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Runtime/*.cs" Link="Runtime/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/bridge.js" Link="BrowserScripts/bridge.js" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/native-export.js" Link="BrowserScripts/native-export.js" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/ticket-details.js" Link="BrowserScripts/ticket-details.js" />
+  </ItemGroup>
+</Project>

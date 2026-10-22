@@ -35,4 +35,4 @@ source incomplet reste incomplet dans chaque vue ; aucun total personnel
 inconnu n’est inventé. Les 54 vérifications restent fondées sur des données
 synthétiques, sans reprendre les personnes ou les tickets des captures.
 
-Ces tests ne chargent pas WPF et n’accèdent à aucun portail réel.
+Ces tests ne lancent aucune interface graphique et n’accèdent à aucun portail réel. Les opérations C# et pages WebView sont vérifiées séparément dans [AnalyticsBridgeChecks](../AnalyticsBridgeChecks), puis le pack natif dans [WindowsStartupChecks](../WindowsStartupChecks/README.md).

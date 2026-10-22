@@ -31,12 +31,13 @@ public static class LanguageAssistantService
         var availableRoles = columns.Where(c => c.Index.HasValue).Select(c => "role:" + c.Role).ToHashSet(StringComparer.Ordinal);
         var fields = QueryService.FieldChoices(source.Headers).Where(f => !f.Key.StartsWith("role:", StringComparison.Ordinal) || availableRoles.Contains(f.Key)).Take(256).ToArray();
         var limitations = new List<string>();
-        if (!source.Complete) limitations.Add("L’extraction est incomplète ou sa complétude n’est pas confirmée.");
+        var complete = source.Complete && (!source.ExpectedTotal.HasValue || source.ExpectedTotal.Value == source.Rows.Count);
+        if (!complete) limitations.Add("L’extraction est incomplète ou sa complétude n’est pas confirmée.");
         if (QueryService.FieldChoices(source.Headers).Count > 256) limitations.Add("Le schéma transmis est limité aux 256 premiers champs disponibles.");
         if (operation == "query") return new()
         {
             ExtractedAt = source.ExtractedAt, Scope = "Schéma du relevé ; aucun contenu de ticket transmis. La prévisualisation portera sur toutes les lignes du relevé.",
-            Complete = source.Complete, ScopeRows = source.Rows.Count, Fields = fields, Limitations = limitations
+            Complete = complete, ScopeRows = source.Rows.Count, Fields = fields, Limitations = limitations
         };
 
         var selected = rows.Distinct().ToArray();
@@ -89,7 +90,7 @@ public static class LanguageAssistantService
         limitations.Add("Les champs sont les valeurs brutes du relevé daté. Ils ne prouvent ni l’état actuel de GLPI, ni les événements entre deux observations.");
         return new()
         {
-            ExtractedAt = source.ExtractedAt, Scope = scope, Complete = source.Complete, ScopeRows = selected.Length,
+            ExtractedAt = source.ExtractedAt, Scope = scope, Complete = complete, ScopeRows = selected.Length,
             Fields = fields, Tickets = tickets.AsReadOnly(), Limitations = limitations.AsReadOnly()
         };
     }

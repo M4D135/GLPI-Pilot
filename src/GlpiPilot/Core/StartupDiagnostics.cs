@@ -139,6 +139,7 @@ public static class StartupDiagnostics
     {
         try
         {
+            if (AppPaths.TestDataRoot is { } test) return Path.Combine(test, temporary ? "FallbackLogs" : "Logs");
             var root = temporary ? Path.GetTempPath() : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             return string.IsNullOrWhiteSpace(root) ? "" : Path.Combine(root, "GLPI-Pilot", "Logs");
         }

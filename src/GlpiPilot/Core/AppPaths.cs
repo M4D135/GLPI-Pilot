@@ -6,9 +6,26 @@ namespace GlpiPilot.Core;
 public static class AppPaths
 {
     public static string ApplicationVersion => typeof(AppPaths).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-    public static string DataRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GLPI-Pilot");
+    public static string DataRoot => TestDataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GLPI-Pilot");
+    /// <summary>Explicit test opt-in, restricted to a disposable folder. Production startup never redirects user data.</summary>
+    public static string? TestDataRoot
+    {
+        get
+        {
+            if (Environment.GetEnvironmentVariable("GLPI_PILOT_TEST_MODE") != "1") return null;
+            var value = Environment.GetEnvironmentVariable("GLPI_PILOT_TEST_ROOT");
+            if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException("Dossier de test isolé absent.");
+            var path = Path.GetFullPath(value);
+            var temporary = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!path.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(path).StartsWith("GLPI-Pilot-Checks-", StringComparison.Ordinal))
+                throw new InvalidOperationException("Le profil de test doit être un dossier GLPI-Pilot-Checks-* temporaire.");
+            for (var parent = new DirectoryInfo(path); parent is not null && parent.FullName.Length >= temporary.Length; parent = parent.Parent)
+                if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Un profil de test lié n’est pas autorisé.");
+            return path;
+        }
+    }
     public static string SettingsFile => Path.Combine(DataRoot, "settings.json");
-    public static string DefaultExports => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GLPI-Pilot", "Exports");
+    public static string DefaultExports => TestDataRoot is { } test ? Path.Combine(test, "Exports") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GLPI-Pilot", "Exports");
     public static string Profile(string channel) => Path.Combine(DataRoot, "Browser", channel == "chrome" ? "Chrome" : "Edge");
     public static string Profile(string channel, string portalUrl) => Path.Combine(Profile(channel), ObjectIdentity.InstallationKey(portalUrl));
     public static string LogFile => Path.Combine(DataRoot, "Logs", DateTime.Today.ToString("yyyy-MM-dd") + ".log");

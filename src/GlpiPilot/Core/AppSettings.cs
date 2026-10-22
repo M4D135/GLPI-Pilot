@@ -274,6 +274,7 @@ public sealed class InterfacePreferences
     public double[] WindowPixelBounds { get; set; } = Array.Empty<double>();
     public List<string> NavigationOrder { get; set; } = new();
     public List<string> HiddenNavigation { get; set; } = new();
+    public List<string> PinnedNavigation { get; set; } = new();
     public bool OnboardingCompleted { get; set; }
     public int FrozenColumns { get; set; } = 2;
     public double WindowWidth { get; set; }
@@ -281,7 +282,7 @@ public sealed class InterfacePreferences
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public bool WindowMaximized { get; set; }
-    public InterfacePreferences Copy() { var copy = (InterfacePreferences)MemberwiseClone(); copy.NavigationOrder = new(NavigationOrder ?? new()); copy.HiddenNavigation = new(HiddenNavigation ?? new()); copy.WindowPixelBounds = (WindowPixelBounds ?? Array.Empty<double>()).ToArray(); return copy; }
+    public InterfacePreferences Copy() { var copy = (InterfacePreferences)MemberwiseClone(); copy.NavigationOrder = new(NavigationOrder ?? new()); copy.HiddenNavigation = new(HiddenNavigation ?? new()); copy.PinnedNavigation = new(PinnedNavigation ?? new()); copy.WindowPixelBounds = (WindowPixelBounds ?? Array.Empty<double>()).ToArray(); return copy; }
     public void Normalize()
     {
         if (Density is not ("compact" or "balanced" or "comfortable")) Density = "balanced";
@@ -291,6 +292,7 @@ public sealed class InterfacePreferences
         if (WindowPixelBounds == null || WindowPixelBounds.Length != 4 || WindowPixelBounds.Any(v => !double.IsFinite(v)) || WindowPixelBounds[2] <= 0 || WindowPixelBounds[3] <= 0) WindowPixelBounds = Array.Empty<double>();
         NavigationOrder = (NavigationOrder ?? new()).Where(value => value != null && value.Length <= 120).Distinct(StringComparer.Ordinal).Take(40).ToList();
         HiddenNavigation = (HiddenNavigation ?? new()).Where(value => value != null && value.Length <= 120).Distinct(StringComparer.Ordinal).Take(40).ToList();
+        PinnedNavigation = (PinnedNavigation ?? new()).Where(value => value != null && value.Length <= 120).Distinct(StringComparer.Ordinal).Take(40).ToList();
         FrozenColumns = Math.Clamp(FrozenColumns, 0, 8);
         if (!double.IsFinite(WindowWidth) || WindowWidth < 0) WindowWidth = 0;
         if (!double.IsFinite(WindowHeight) || WindowHeight < 0) WindowHeight = 0;

@@ -1,29 +1,47 @@
-# GLPI Pilot 2.1.0 — Windows x64
+# GLPI Pilot 3.0.0 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, gestion locale des techniciens, lecture des tickets, requêtes, lieux, tournées, historiques et alertes. Aucun accès API, base de données ou serveur GLPI n’est nécessaire.
 
+La version 3 utilise un **hôte C# WinForms avec WebView2** et une interface locale HTML/CSS/JavaScript. Les calculs, la pagination, les validations, la persistance et les accès au navigateur restent en C#. Le runtime WebView2 fixe est livré dans le ZIP ; les pages de l’application n’ont besoin ni d’un site hébergé ni d’un téléchargement au premier lancement. Le modèle de migration est documenté dans le [contrat WebView](docs/WebView-contract.md), à partir de Domenia 2.
+
 ## Télécharger le pack complet
 
-Les [Releases](https://github.com/M4D135/GLPI-Pilot/releases) contiennent les packs Windows validés. La publication de la version 2.1.0 exige les contrôles de ses moteurs, de son interface et du démarrage de son EXE. Une archive nommée **PREVERSION** indique une compilation locale dont l’exécution Windows reste à vérifier ; son statut figure dans `wad/version.json` et `wad/docs/ETAT-PREVERSION.txt`.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). **La validation Windows de la version 3 dépend du résultat du workflow de son commit**, indiqué dans le [rapport de vérification](docs/Rapport-verification.txt) et les journaux de la livraison. La présence de sources, d’un EXE compilé ou d’un ZIP local ne signifie pas que cette validation a réussi.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
 | **PROD — Windows x64** | Utiliser le logiciel | `GLPI-Pilot.exe` + `wad/` |
 | **DEV — Windows x64** | Utiliser le même logiciel et poursuivre son développement | `GLPI-Pilot.exe` + `wad/`, sources et tests dans `wad/sources/` |
 
-Extraire **tout le ZIP** dans un dossier puis ouvrir **GLPI-Pilot.exe**. Garder `wad` à côté. Aucun Python, Node.js ou .NET à installer pour utiliser le pack. Edge ou Chrome doit être installé et autorisé sur le poste. **Code → Download ZIP** fournit les sources, les packs exécutables sont dans les Releases. Les deux éditions contiennent le même EXE et leurs empreintes SHA-256.
+Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. Garder `wad` à côté. Aucun Python, Node.js, .NET ou installateur WebView2 à ajouter pour utiliser le pack. **Edge ou Chrome reste nécessaire pour la connexion au portail GLPI et son SSO** ; le runtime de l’interface est livré séparément. **Code → Download ZIP** fournit les sources, les packs exécutables sont dans les Releases. Les deux éditions utilisent le même EXE et conservent les empreintes SHA-256 de leurs fichiers.
+
+| Emplacement dans le pack | Rôle |
+| --- | --- |
+| `GLPI-Pilot.exe` | Application C# autonome, bibliothèques .NET et chargeur natif WebView2 intégrés |
+| `wad/web/` | Pages locales, styles, modules JavaScript et ressources visuelles |
+| `wad/runtime/webview2/` | Runtime fixe Microsoft 154.0.4258.62 x64, complet et vérifié |
+| `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
+| `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
+| `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+| `wad/sources/` dans DEV | Sources C#, sources web, tests et scripts de reconstruction |
 
 ## Premier réglage, puis un clic
 
-1. Coller l’adresse **complète de la recherche GLPI**, filtres compris. Choisir Edge ou Chrome et le dossier des exports dans Réglages si nécessaire.
-2. Cliquer **Extraire tout**. Le logiciel mémorise la source, ouvre son navigateur, attend le SSO, retrouve la recherche et récupère toutes les pages par la méthode disponible.
+1. Dans **Collecte GLPI**, renseigner l’adresse **complète de la recherche**, filtres compris, et choisir Edge ou Chrome. Enregistrer la source ; le dossier des exports se règle dans Configuration.
+2. Cliquer **Lancer la collecte**. Le logiciel ouvre son navigateur, attend le SSO, retrouve la recherche et récupère toutes les pages par la méthode disponible.
 3. Examiner le relevé, son état d’exhaustivité et le dashboard. Cliquer une valeur retrouve les tickets correspondants.
-4. Dans Techniciens, choisir son nom et **C’est moi** pour le tableau de bord personnel. Définir ses villes et variantes dans le référentiel si besoin.
-5. Aux sessions suivantes, **Extraire tout** reprend les réglages. Les vues nommées, tableaux de bord et réglages de présentation restent mémorisés.
+4. Dans **Équipe**, choisir son nom et **C’est moi** pour le travail personnel. Définir les villes, sites, bâtiments et variantes dans **Référentiel géographique** si besoin.
+5. Aux sessions suivantes, réutiliser la source enregistrée. Les vues nommées, tableaux de bord et réglages de présentation restent mémorisés.
 
-Le navigateur reste ouvert derrière GLPI Pilot pendant l’extraction. **Voir le navigateur / Revenir à GLPI Pilot** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. La priorité de fenêtre est relâchée à la fin du traitement. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
+**Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Nouveautés de la version 2.1
+## Passage à la version 3
+
+- Interface locale dans WebView2 : navigation, thèmes, densité, zoom, formulaires, tableaux paginés et dialogues utilisent les modules web du dépôt. Les opérations autorisées sont exposées par un pont C# fermé, avec annulation et événements d’état.
+- Paquet autonome avec runtime fixe Microsoft, contrôlé par une empreinte du CAB et les 257 empreintes de ses fichiers. La compilation peut utiliser exclusivement le SDK et les paquets NuGet déjà présents dans la VM hors ligne.
+- Tests séparés pour les moteurs C#, leurs opérations exposées aux pages, les interactions web et le vrai hôte Windows. Après une mise à jour, le démarrage de l’application n’est confirmé qu’après l’initialisation et le premier affichage de l’interface.
+
+Les fonctions métier de la version précédente sont raccordées aux nouvelles pages ; leur couverture et leurs limites sont détaillées dans le suivi des 200 points :
 
 - Profils complets par installation GLPI, campagnes avec bilan autonome par source, délais séparés, contrôle d’espace libre et reprise de pagination après vérification des pages conservées. La reconnexion SSO ou réseau est bornée et refuse un périmètre différent.
 - Assistant de correspondance avec aperçu brut/interprété, conventions de nombres et de dates, fuseau, séparateurs multiples et dictionnaires propres à la source. Changements de colonnes détectés, propositions de renommage soumises à validation, panier persistant et lecture universelle des cellules par F2.
@@ -42,7 +60,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - Thèmes clair/sombre complets, bouton soleil/lune, suivi facultatif du thème Windows, cinq couleurs d’accent, contraste renforcé et réduction des animations.
 - Zoom **75–150 %**, boutons − / 100 % / + et raccourcis ; densité compacte, équilibrée ou confortable, colonnes figées et mémorisation de la fenêtre.
 - Navigation adaptée à la largeur, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre.
-- Recherche, filtres par colonne et tri multiple sur **toutes les lignes chargées**, avant la limite d’affichage de 10 000 lignes. Vues nommées mémorisant filtres, recherche, tri et présentation pour la structure du relevé.
+- Recherche, filtres par colonne et tri multiple calculés en C# sur **toutes les lignes chargées**, avec pages d’affichage bornées. Vues nommées mémorisant filtres, recherche, tri et présentation pour la structure du relevé.
 - Export complet ou export explicite de la vue filtrée ; import local CSV et XLSX. Le fichier natif reçu reste intact.
 
 ### Dashboard global et espace personnel
@@ -65,10 +83,10 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 ### Villes, sites et tournées
 
 - Plusieurs termes pour une ville : `MA ; Mars ; Marseille = Marseille`. Reconnaissance des mots entiers, accents et noms composés ; une ambiguïté reste visible.
-- Régions, départements, secteurs, sites, adresses et coordonnées facultatives ; priorités, conditions et exclusions des règles, simulateur avec preuves.
+- Régions, départements, secteurs, hiérarchie libre, sites et bâtiments ; adresses et coordonnées facultatives, priorités des sources, conditions et exclusions des règles, simulateur avec termes surlignés et preuves.
 - File des lieux à vérifier, corrections locales par installation et identifiant unique ; import CSV du référentiel avec comparatif avant application.
 - Colonnes enrichies, indicateurs de couverture et répartitions par ville/site/territoire.
-- Tournées datées à partir d’un panier explicite, départ/retour, durées, fenêtres horaires, étapes verrouillées, scénarios et répartition par durées.
+- Tournées datées à partir d’un panier explicite, états et historique motivé, départ/retour, durées, calendriers de sites et étapes verrouillées. Répartition sur plusieurs jours et techniciens selon compétences, absences, plages de présence et budgets du matin et de l’après-midi ; les capacités inconnues restent exclues de la proposition.
 - Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs par défaut. Un service OSRM compatible peut fournir distances et durées routières après configuration et consentement ; sa provenance et sa date restent visibles.
 
 ### Atelier de requêtes
@@ -99,13 +117,16 @@ La limite de lignes de l’application peut réduire le volume chargé ; elle ne
 
 Les données de travail résident dans `%LOCALAPPDATA%\GLPI-Pilot`, indépendamment du dossier de l’EXE : profil du navigateur, préférences, archives, cache facultatif, notes et tournées. Les exports vont dans le dossier choisi. La configuration partageable contient les définitions d’équipe et les adresses autorisées, pas la session SSO.
 
-Dans **Confort et maintenance → Vérifier une mise à jour**, examiner la release officielle, vérifier le pack puis confirmer son installation. L’assistant conserve une sauvegarde et exige un démarrage confirmé ; un échec déclenche une restauration. Le remplacement manuel reste possible : fermer l’application et extraire le nouveau ZIP dans un nouveau dossier. Ne pas mélanger ses fichiers avec un ancien `wad`. Une sauvegarde des préférences existantes précède la première ouverture d’une nouvelle version. Un second lancement rappelle la fenêtre déjà ouverte. Si aucune fenêtre n’apparaît, utiliser `wad/support/DIAGNOSTIC_DEMARRAGE.cmd` ; le dernier journal est `Logs/demarrage-dernier.log` dans les données locales.
+Dans **Mise à jour et retour arrière**, examiner la release officielle ou choisir un ZIP local, vérifier le pack puis confirmer son installation. L’assistant contrôle l’archive, son commit et chaque fichier, conserve une sauvegarde complète et exige un démarrage confirmé de l’interface. Après un échec, il restaure l’ancien pack ; si un fichier reste verrouillé, il conserve la sauvegarde et signale la récupération nécessaire. Aucun contrôle de release n’est lancé automatiquement au démarrage.
+
+Le remplacement manuel reste possible : fermer l’application et extraire le nouveau ZIP dans un nouveau dossier. Ne pas mélanger ses fichiers avec un ancien `wad`. Une sauvegarde des préférences existantes précède la première ouverture d’une nouvelle version. Un second lancement rappelle la fenêtre déjà ouverte. Si aucune fenêtre n’apparaît, utiliser `wad/support/DIAGNOSTIC_DEMARRAGE.cmd` ; le dernier journal est `Logs/demarrage-dernier.log` dans les données locales.
 
 ## Documentation
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
-- [Notes de version 2.1.0](docs/RELEASE-2.1.0.md)
-- [Nouveaux parcours, services facultatifs et maintenance](docs/Guide-2.1.md)
+- [Notes de version 3.0.0](docs/RELEASE-3.0.0.md)
+- [Architecture et contrat des opérations WebView](docs/WebView-contract.md)
+- [Compilation, caches hors ligne et chaîne Windows](docs/GitHub-et-compilation.txt)
 - [Dashboards, indicateurs et extraction](docs/Dashboards-et-extraction.md)
 - [Travail personnel, tickets et techniciens](docs/Travail-personnel-et-techniciens.md)
 - [Requêtes, villes, sites et tournées](docs/Requetes-villes-tournees.md)
@@ -115,13 +136,44 @@ Dans **Confort et maintenance → Vérifier une mise à jour**, examiner la rele
 
 ## Développer et vérifier
 
-Projet C# WPF, .NET 10. Avec le SDK .NET 10 et PowerShell 7.2 ou ultérieur sous Windows :
+Projet **C# .NET 10, WinForms et WebView2**. Les sources d’interface se trouvent dans `web/` ; aucune chaîne npm n’est nécessaire pour construire le produit. Le SDK WebView2 est épinglé à `1.0.4258.31`, le runtime fixe à `154.0.4258.62` et Playwright à `1.63.0`.
+
+### VM Windows hors ligne
+
+Avec PowerShell 7.2 ou ultérieur, depuis la racine des sources, utiliser les chemins du laboratoire décrits dans [REPRISE.md de Domenia 2](https://github.com/M4D135/domenia-d120/blob/v2/v2/REPRISE.md) :
 
 ```powershell
-.\build.ps1
+$env:DOTNET_CLI_HOME = 'C:\DomeniaDev\dotnet-home'
+$env:NUGET_PACKAGES = 'C:\DomeniaDev\nuget-packages'
+$env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+
+.\build.ps1 `
+  -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
+  -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
+  -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.0'
 ```
 
-Le script fabrique PROD et DEV avec l’EXE autonome et le pilote Playwright externe dans `wad/.playwright`. Le workflow Windows exécute les tests métier, les parcours navigateur sur pages synthétiques, le rendu réel des vues dans les deux thèmes, le démarrage du pack extrait et des remplacements/restaurations réels sur des copies de ce pack. Il vérifie également un second lancement, le zoom et sa persistance, les empreintes des fichiers et le commit source avant de publier les deux ZIP dans une Release.
+Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
+
+La VM de référence dispose de Windows 11, 4 vCPU et 8 Go. Conserver la session console ouverte et réserver les essais interactifs en VM à la fin du chantier. Cette documentation décrit les commandes à y exécuter ; elle n’atteste aucune connexion à cette VM depuis un autre atelier.
+
+### Préparation connectée et CI
+
+Sur une machine Windows autorisée à télécharger les dépendances :
+
+```powershell
+$runtime = .\build-tools\Get-WebView2Runtime.ps1 `
+  -CacheDirectory 'C:\GLPI-BuildCache\webview2'
+
+.\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
+  -OutputDirectory '.\artifacts\release-3.0.0'
+```
+
+`Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.
+
+Le [workflow Windows](.github/workflows/windows.yml) prévoit les moteurs C#, les pages branchées aux vrais services, les parcours navigateur synthétiques, puis les packs et le vrai hôte WinForms/WebView2. Les contrôles natifs vérifient thèmes, zoom, navigation, fermeture et mise à jour/rollback sur des copies temporaires. La promotion en Release n’utilise que les archives de ce run après réussite de ses étapes. Le détail des commandes, des caches et des prérequis figure dans [GitHub et compilation](docs/GitHub-et-compilation.txt).
 
 Une compilation croisée ne prouve pas le fonctionnement de l’EXE sous Windows. Les résultats définitifs sont les journaux du [workflow associé au commit livré](https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml). Le portail d’entreprise et son SSO réel restent à confirmer dans cet environnement.
 

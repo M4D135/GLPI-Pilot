@@ -27,6 +27,8 @@ __pycache__/
 !/build-tools/*.cmd
 !/build-tools/*.sh
 !/build-tools/*.md
+!/build-tools/WebView2Runtime.json
+!/build-tools/WebView2Runtime.files.sha256
 
 # Local application state, browser profiles and extracted user data
 /settings.json

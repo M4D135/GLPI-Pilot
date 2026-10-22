@@ -1,620 +1,228 @@
 using System.Diagnostics;
-using System.IO;
-using System.Windows;
-using System.Windows.Automation;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Threading;
-using System.Xml.Linq;
-using GlpiPilot.Core;
-using GlpiPilot.UI;
+using System.IO.Compression;
+using System.Net;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Playwright;
 
-namespace GlpiPilot.WindowsStartupChecks;
+// Drives the real self-contained WinForms/WebView2 executable through its guarded,
+// loopback-only test port. No UI mock, GLPI access or existing user state is used.
+return await new WindowsWebViewFixture().RunAsync(args);
 
-/// <summary>
-/// Executes real production WPF controls on Windows. Does not construct MainWindow,
-/// read AppSettings, start BrowserService, or register production startup handlers.
-/// </summary>
-internal static partial class Program
+internal sealed class WindowsWebViewFixture
 {
-    private static readonly List<string> Passed = new();
-    private static int _exitCode = 1;
-    private static bool _failed;
-    private static Window? _host;
-    private static Application? _app;
-    private static string _stage = "initialisation";
-    private static readonly string TemporaryRoot = Path.Combine(Path.GetTempPath(), "GLPI-WindowsStartupChecks-" + Guid.NewGuid().ToString("N"));
-    private static readonly List<IDisposable> DisposableViews = new();
-    private static readonly DashboardSettings Settings = new();
-    private static readonly CitySettings Cities = SampleCities();
-    private static readonly QueryLibrarySettings Queries = QueryLibrarySettings.CreateDefault();
-    private static CityEnrichmentResult? _cities;
-    private static TechnicianWorkspaceView? _technicians;
-    private static CitySettingsView? _cityEditor;
-    private static TourPlanningView? _tours;
-    private static QueryWorkshopView? _queryEditor;
-    private static string? _screenshotsDirectory;
+    private string _sandbox = "", _state = "", _pack = "", _output = "", _executable = "";
+    private readonly string _owner = Guid.NewGuid().ToString("N");
+    private readonly List<Process> _owned = new();
+    private readonly List<string> _log = new();
+    private static readonly string[] RuntimeProcessNames = { "msedgewebview2", "node", "notification_helper", "platform_experiences_helper" };
+    private readonly CancellationTokenSource _deadline = new(TimeSpan.FromMinutes(5));
+    private int _passed;
 
-    [STAThread]
-    private static int Main(string[] args)
+    public async Task<int> RunAsync(string[] args)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Console.Error.WriteLine("NOT RUN: these checks require Windows and an interactive desktop. A cross-build is not a UI test.");
-            return 3;
-        }
-        if (!Environment.UserInteractive)
-        {
-            Console.Error.WriteLine("NOT RUN: an interactive Windows desktop is required; no service/session-0 execution.");
-            return 3;
-        }
-        if (args.Length > 0 && args[0] == "--inspect-pack-window")
-            return PackWindowChecks.Run(args);
-        if (args.Length != 0)
-        {
-            if (args.Length != 2 || args[0] != "--screenshots" || string.IsNullOrWhiteSpace(args[1]))
-            {
-                Console.Error.WriteLine("Usage: WindowsStartupChecks [--screenshots <directory>] or --inspect-pack-window <pid> <exercise|verify-restore>");
-                return 3;
-            }
-            _screenshotsDirectory = Path.GetFullPath(args[1]);
-        }
-        // A ThreadPool timer, not a DispatcherTimer: a hung dispatcher still fails.
-        using var watchdog = new System.Threading.Timer(_ =>
-        {
-            Console.Error.WriteLine("FAIL: overall 90-second deadline exceeded at stage: " + _stage);
-            Environment.Exit(2);
-        }, null, TimeSpan.FromSeconds(90), Timeout.InfiniteTimeSpan);
+        var success = false;
         try
         {
-            Directory.CreateDirectory(TemporaryRoot);
-            if (_screenshotsDirectory != null) Directory.CreateDirectory(_screenshotsDirectory);
-            _stage = "real App resources";
-            _app = new Application();
-            _app.Resources = LoadProductionResources();
-            _app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            _app.DispatcherUnhandledException += (_, args) =>
+            if (args.Length != 4 || args[0] != "--pack" || args[2] != "--out") throw new ArgumentException("WindowsStartupChecks --pack <PROD.zip> --out <evidence-directory>");
+            if (!OperatingSystem.IsWindows() || !Environment.UserInteractive || Process.GetCurrentProcess().SessionId == 0) throw new InvalidOperationException("NOT RUN: an interactive Windows desktop is required.");
+            if (Process.GetProcessesByName("GLPI-Pilot").Any(p => { using (p) return !p.HasExited; })) throw new InvalidOperationException("An existing GLPI Pilot session prevents this isolated test.");
+            _pack = Path.GetFullPath(args[1]); if (!File.Exists(_pack)) throw new FileNotFoundException("The production ZIP is missing.");
+            _output = Path.GetFullPath(args[3]); Directory.CreateDirectory(_output);
+            _sandbox = Path.Combine(Path.GetTempPath(), "GLPI-Pilot-Checks-Native-" + _owner); Directory.CreateDirectory(_sandbox);
+            File.WriteAllText(Path.Combine(_sandbox, "fixture-owner.txt"), _owner);
+            _state = Path.Combine(_sandbox, "GLPI-Pilot-Checks-State"); Directory.CreateDirectory(_state);
+            var folder = Path.Combine(_sandbox, "pack"); ZipFile.ExtractToDirectory(_pack, folder); _executable = Path.Combine(folder, "GLPI-Pilot.exe");
+            if (!File.Exists(Path.Combine(folder, "wad", "runtime", "webview2", "msedgewebview2.exe"))) throw new FileNotFoundException("The fixed WebView2 runtime is not in the pack.");
+            var initial = JsonSerializer.Serialize(new { PortalUrl = "https://glpi.example.invalid/front/ticket.php", Theme = "dark", InterfaceZoomPercent = 100,
+                ExportFolder = Path.Combine(_sandbox, "exports"), Interface = new { OnboardingCompleted = true },
+                Automation = new { ScheduledExtraction = false, ResumeAfterReconnect = false }, History = new { RestoreLastOnStartup = false } });
+            var settingsPath = Path.Combine(_state, "settings.json"); File.WriteAllText(settingsPath, initial, new UTF8Encoding(false));
+            var initialHash = Digest(settingsPath); var archiveHash = Digest(_pack);
+            using var playwright = await Playwright.CreateAsync();
+            // First launch: no interaction, exact preference preservation.
+            var first = Start(Port()); var firstPort = int.Parse(first.StartInfo.ArgumentList[1]);
+            await using (var connected = await ConnectAsync(playwright, first, firstPort))
             {
-                args.Handled = true;
-                Fail(args.Exception);
-                _app.Shutdown(1);
-            };
-            ThemeService.Apply("dark");
-            Pass("Production App.xaml resource definitions loaded in an isolated WPF Application");
-            var tabs = BuildViews();
-            var surface = new Grid();
-            surface.SetResourceReference(Panel.BackgroundProperty, "WindowBrush");
-            surface.Children.Add(tabs);
-            _host = new Window
+                var page = await ReadyPageAsync(connected, first);
+                Check(Visible(first), "The actual packaged EXE owns a visible, nonzero Windows window after the WebView handshake.");
+                Check(await page.Locator(".hero").CountAsync() == 1 && await page.Locator(".nav-item").CountAsync() >= 20, "All local modules load in the embedded fixed WebView2 runtime.");
+                Check(File.ReadAllText(Path.Combine(_state, "Logs", "demarrage-dernier.log")).Contains("[PRÊT]", StringComparison.Ordinal), "Startup readiness is recorded after bootstrap and first web paint.");
+                await StopNormallyAsync(first);
+            }
+            Check(Digest(settingsPath) == initialHash, "An untouched startup and shutdown preserve the exact synthetic settings bytes.");
+            // Second launch: use the real controls and persist an explicit zoom.
+            var second = Start(Port()); var secondPort = int.Parse(second.StartInfo.ArgumentList[1]);
+            await using (var connected = await ConnectAsync(playwright, second, secondPort))
             {
-                Title = "GLPI Pilot — Windows UI checks (synthetic data)",
-                Width = 1280, Height = 850, MinWidth = 700, MinHeight = 500,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                Content = surface
-            };
-            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            _host.Loaded += (_, _) => loaded.TrySetResult();
-            _host.ContentRendered += (_, _) => rendered.TrySetResult();
-            _host.Closed += (_, _) =>
-            {
-                if (_exitCode != 0 && !_failed) Fail(new InvalidOperationException("UI test window was closed before completion."));
-                _app.Shutdown(_exitCode);
-            };
-            _host.Loaded += async (_, _) =>
-            {
-                try { await ExerciseViewsAsync(tabs, loaded.Task, rendered.Task); }
-                catch (Exception ex)
+                var page = await ReadyPageAsync(connected, second); var errors = new List<string>(); page.PageError += (_, message) => errors.Add(message);
+                var width = await page.EvaluateAsync<double>("innerWidth");
+                await page.Locator(".nav-item[data-page=settings]").ClickAsync();
+                await page.GetByLabel("Zoom de l’interface (%)", new() { Exact = true }).FillAsync("125");
+                await page.GetByLabel("Thème", new() { Exact = true }).SelectOptionAsync("light");
+                await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
+                await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light' && document.querySelector('#zoom-label').innerText.includes('125')");
+                Check(await page.EvaluateAsync<double>("innerWidth") < width * .9, "The interface zoom changes native WebView2 scaling rather than just a displayed number.");
+                await page.Keyboard.PressAsync("Control+0"); await WaitForPageAsync(page, "document.querySelector('#zoom-label').innerText.includes('100')");
+                Check(Math.Abs(await page.EvaluateAsync<double>("innerWidth") - width) <= 2, "Ctrl 0 restores the actual web viewport to 100 percent.");
+                await page.Locator(".nav-item[data-page=home]").ClickAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Explorer la démonstration", Exact = true }).ClickAsync();
+                await page.Locator(".page-content[data-page=dashboard]").WaitForAsync();
+                await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
+                Check(await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() == 0, "The native pack computes and renders the real C# dashboard from synthetic records.");
+                await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "dashboard-light.png"), FullPage = true });
+                var routes = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)");
+                foreach (var route in routes)
                 {
-                    try { CaptureView("failure-current-view"); }
-                    catch (Exception captureError) { Console.Error.WriteLine("Could not capture the failing synthetic view: " + captureError.Message); }
-                    Fail(ex);
+                    await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
+                    await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
+                    if (await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() > 0) throw new InvalidOperationException("Screen failure: " + route + " · " + await page.Locator(".page-content").InnerTextAsync());
                 }
-                finally
-                {
-                    await DisposeViewsAsync();
-                    _host.Close();
-                    if (!_app.Dispatcher.HasShutdownStarted) _app.Shutdown(_exitCode);
-                }
-            };
-            _app.Run(_host);
+                Check(true, "Every feature screen opens inside the real Windows WebView2 host.");
+                await page.Locator(".nav-item[data-page=home]").ClickAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Thème", Exact = true }).ClickAsync();
+                await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
+                await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "home-dark.png"), FullPage = true });
+                Native.ShowWindow(second.MainWindowHandle, 6);
+                var secondary = Start(secondPort);
+                await secondary.WaitForExitAsync(_deadline.Token).WaitAsync(TimeSpan.FromSeconds(12));
+                Check(secondary.ExitCode == 0, "A second launch signals the existing instance and exits successfully.");
+                await Until(() => !Native.IsIconic(second.MainWindowHandle));
+                Check(Visible(second), "The first window is restored after the same-user activation signal.");
+                Native.MoveWindow(second.MainWindowHandle, 20, 20, 1000, 740, true);
+                await Task.Delay(250, _deadline.Token);
+                Check(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth + 1"), "The native window remains usable at compact dimensions.");
+                await page.Keyboard.PressAsync("Control+="); await WaitForPageAsync(page, "document.querySelector('#zoom-label').innerText.includes('105')"); await page.Keyboard.PressAsync("Control+=");
+                await WaitForPageAsync(page, "document.querySelector('#zoom-label').innerText.includes('110')");
+                Check(errors.Count == 0, "Native screen navigation and controls produce no unhandled JavaScript errors.");
+                await StopNormallyAsync(second);
+            }
+            using (var saved = JsonDocument.Parse(File.ReadAllText(settingsPath)))
+                Check(saved.RootElement.GetProperty("InterfaceZoomPercent").GetInt32() == 110 && saved.RootElement.GetProperty("PortalUrl").GetString() == "https://glpi.example.invalid/front/ticket.php", "User zoom persists while the configured source is preserved.");
+            // Third launch proves persisted zoom is applied by the real host.
+            var third = Start(Port()); var thirdPort = int.Parse(third.StartInfo.ArgumentList[1]);
+            await using (var connected = await ConnectAsync(playwright, third, thirdPort))
+            {
+                var page = await ReadyPageAsync(connected, third);
+                Check((await page.Locator("#zoom-label").InnerTextAsync()).Contains("110", StringComparison.Ordinal), "The stored 110 percent zoom is restored in a new Windows process.");
+                await StopNormallyAsync(third);
+            }
+            Check(Digest(_pack) == archiveHash, "The original validated production ZIP remains unchanged.");
+            success = true;
         }
-        catch (Exception ex) { Fail(ex); }
+        catch (Exception error) { Log("FAIL: " + error); }
         finally
         {
-            foreach (var view in DisposableViews) view.Dispose();
-            try { if (Directory.Exists(TemporaryRoot)) Directory.Delete(TemporaryRoot, recursive: true); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Fail(ex); }
+            foreach (var process in _owned)
+                try { if (!process.HasExited) { process.Kill(true); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); } } catch (Exception error) { Log("Cleanup: " + error.Message); success = false; }
+            // The WebView browser can outlive an already-exited host briefly. Stop only
+            // children whose executable belongs to this marked fixture installation.
+            foreach (var name in RuntimeProcessNames)
+            foreach (var child in Process.GetProcessesByName(name))
+                using (child)
+                    try
+                    {
+                        if (IsOwnedRuntime(child))
+                        { child.Kill(true); await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+                    }
+                    catch (InvalidOperationException) { }
+                    catch (System.ComponentModel.Win32Exception) { }
+                    catch (Exception error) { Log("Cleanup: " + error.Message); success = false; }
+            foreach (var process in _owned) process.Dispose();
+            if (_state.Length > 0 && Directory.Exists(Path.Combine(_state, "Logs")))
+                foreach (var file in Directory.GetFiles(Path.Combine(_state, "Logs"), "*.log")) File.Copy(file, Path.Combine(_output, Path.GetFileName(file)), true);
+            if (_sandbox.Length > 0 && File.Exists(Path.Combine(_sandbox, "fixture-owner.txt")) && File.ReadAllText(Path.Combine(_sandbox, "fixture-owner.txt")) == _owner)
+            { try { Directory.Delete(_sandbox, true); } catch (IOException error) { Log("Cleanup: " + error.Message); success = false; } }
+            if (_output.Length > 0) File.WriteAllLines(Path.Combine(_output, "native-webview.log"), _log, new UTF8Encoding(false));
+            _deadline.Dispose();
         }
-        Console.WriteLine(_exitCode == 0
-            ? $"PASS: {Passed.Count} real Windows UI checks completed; no browser or user settings accessed."
-            : $"FAIL: Windows UI checks interrupted at '{_stage}' after {Passed.Count} completed checks.");
-        return _exitCode;
+        if (success) Console.WriteLine($"{_passed}/{_passed} native Windows WebView checks passed; isolated profile, no GLPI session accessed.");
+        return success ? 0 : 1;
     }
-
-    private static TabControl BuildViews()
+    private void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); _passed++; Log("PASS: " + message); }
+    private void Log(string message) { _log.Add(message); Console.WriteLine(message); }
+    private Process Start(int port)
     {
-        _stage = "production control constructors";
-        var tabs = new TabControl();
-        var data = Sample();
-        _cities = CityDetectionService.Enrich(data, Cities, Settings);
-        var settings = Settings.Copy(); settings.ColumnMappings["city"] = _cities.CityColumnName;
-        var snapshot = DashboardService.Calculate(_cities.Data, settings, data.ExtractedAt);
-        CityDetectionService.AppendDashboardProbes(snapshot, _cities);
-        QueryService.AppendDashboardQueries(snapshot, _cities.Data, settings, Queries);
-        var empty = new DashboardView();
-        Add(tabs, "Dashboard vide", empty, true);
-        Pass("DashboardView constructor and first empty Render");
-        var dashboard = new DashboardView();
-        dashboard.SetLayout(Layout("overview"));
-        dashboard.Show(snapshot);
-        Add(tabs, "Dashboard renseigné", dashboard, true);
-        Pass("DashboardView populated snapshot with all widget types from a real calculation");
-        var technicians = _technicians = new TechnicianWorkspaceView();
-        var roster = TechnicianDashboardService.Detect(_cities.Data, settings);
-        var identity = roster.Technicians.Single(x => x.Name == "Alex Exemple").Key;
-        technicians.ShowRoster(roster, identity, identity);
-        technicians.Dashboard.SetLayout(Layout("personal"));
-        var personalSnapshot = TechnicianDashboardService.CalculateForTechnician(_cities.Data, settings, identity, data.ExtractedAt);
-        CityDetectionService.AppendDashboardProbes(personalSnapshot, _cities);
-        QueryService.AppendDashboardQueries(personalSnapshot, _cities.Data, settings, Queries);
-        technicians.Dashboard.Show(personalSnapshot);
-        var preferences = new TechnicianPreferences().With(identity, new() { Favorite = true, ActiveTarget = 8, Notes = "Note locale synthétique en mémoire." });
-        technicians.Management.Show(TechnicianWorkloadService.Calculate(_cities.Data, settings, referenceTime: data.ExtractedAt), preferences);
-        Add(tabs, "Techniciens", technicians, false);
-        Pass("TechnicianWorkspaceView constructor, real team workload, local in-memory preferences and scoped DashboardView");
-        AddReader(tabs, "Ticket · champs", new()
-        {
-            Name = "Champs", Kind = "fields", Data = new()
-            {
-                Headers = new() { "Champ", "Valeur" }, Rows = new()
-                {
-                    new[] { "Titre", "Incident de démonstration synthétique" },
-                    new[] { "Description", "Texte long avec plusieurs lignes.\nDeuxième paragraphe.\n" + new string('A', 700) },
-                    new[] { "Impact", "Moyen" }
-                }
-            }
-        });
-        AddReader(tabs, "Ticket · traitement", new()
-        {
-            Name = "Traitement", Kind = "timeline", Data = new()
-            {
-                Headers = new() { "Type", "Date", "Auteur", "Contenu", "Détails" }, Rows = new()
-                {
-                    new[] { "Suivi", "21/10/2026 09:15", "Alex Exemple", "Suivi synthétique.\nAucun appel à GLPI.", "Public" },
-                    new[] { "Tâche", "21/10/2026 10:20", "Sam Exemple", "Une tâche fictive pour vérifier le retour à la ligne.", "15 minutes" },
-                    new[] { "Solution", "21/10/2026 11:30", "Alex Exemple", "Solution fictive utilisée uniquement dans cette fenêtre de test.", "Proposée" }
-                }
-            }
-        });
-        AddReader(tabs, "Ticket · tableau", new()
-        {
-            Name = "Tableau", Kind = "table", Data = new()
-            {
-                Headers = new() { "Nom", "Valeur", "Commentaire" },
-                Rows = new() { new[] { "Ligne synthétique", "42", "Lecture de la représentation générique du tableau." } }
-            }
-        });
-        AddReader(tabs, "Ticket · texte", new()
-        {
-            Name = "Texte", Kind = "text", Data = new()
-            {
-                Headers = new() { "Texte" }, Rows = new() { new[] { "Texte brut synthétique.\nLes caractères < > & restent du texte, sans interprétation HTML." } }
-            }
-        });
-        _cityEditor = new CitySettingsView();
-        _cityEditor.LoadSettings(Cities); _cityEditor.ShowSummary(_cities);
-        Add(tabs, "Villes · réglages", _cityEditor, true);
-        Pass("CitySettingsView constructor, editable dictionary and real detection summary");
-        _tours = new TourPlanningView(Path.Combine(TemporaryRoot, "tour-order.json"));
-        DisposableViews.Add(_tours);
-        _tours.ShowEmpty("Relevé synthétique : calcul lancé après l’ouverture réelle de la fenêtre.");
-        Add(tabs, "Tournées", _tours, false);
-        Pass("TourPlanningView constructor with isolated temporary preference path");
-        var emptyQueries = new QueryWorkshopView(); DisposableViews.Add(emptyQueries);
-        emptyQueries.LoadSettings(new()); emptyQueries.ShowEmpty("Aucun relevé synthétique chargé.");
-        Add(tabs, "Requêtes · vide", emptyQueries, false);
-        _queryEditor = new QueryWorkshopView(); DisposableViews.Add(_queryEditor);
-        _queryEditor.LoadSettings(Queries); _queryEditor.Show(_cities.Data, settings, _cities);
-        Add(tabs, "Requêtes · bibliothèque", _queryEditor, false);
-        Require(Queries.Queries.Any(query => query.BaseProbe == "total" && query.GroupBy == "role:city"),
-            "Expected the built-in total-by-city query used by the real preview check.");
-        Pass($"QueryWorkshopView constructors, empty library and {Queries.Queries.Count} real saved query templates");
-        AddFoundationViews(tabs);
-        Require(tabs.Items.Count == 18, "Expected eighteen synthetic view tabs before workplace interaction checks.");
-        return tabs;
+        var start = new ProcessStartInfo(_executable) { WorkingDirectory = Path.GetDirectoryName(_executable)!, UseShellExecute = false };
+        start.ArgumentList.Add("--test-port"); start.ArgumentList.Add(port.ToString());
+        start.Environment["GLPI_PILOT_TEST_MODE"] = "1"; start.Environment["GLPI_PILOT_TEST_ROOT"] = _state;
+        start.Environment["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = Path.Combine(_sandbox, "bundle");
+        var process = Process.Start(start) ?? throw new IOException("The packed application could not start."); _owned.Add(process); return process;
     }
-
-    private static void AddReader(TabControl tabs, string title, TicketDetailSection section)
+    private async Task<IBrowser> ConnectAsync(IPlaywright playwright, Process process, int port)
     {
-        var reader = new TicketReaderView();
-        reader.Show(section, section.Data.Rows);
-        Add(tabs, title, reader, false);
-        Pass("TicketReaderView constructor and " + section.Kind + " binding");
-    }
-    private static void Add(TabControl tabs, string title, FrameworkElement content, bool scroll)
-    {
-        FrameworkElement body = scroll ? new ScrollViewer
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) }; var endpoint = "http://127.0.0.1:" + port;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_deadline.Token); timeout.CancelAfter(TimeSpan.FromSeconds(90));
+        while (true)
         {
-            Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(18)
-        } : new Border { Child = content, Padding = new Thickness(18) };
-        tabs.Items.Add(new TabItem { Header = title, Content = body, Tag = content });
-    }
-
-    private static async Task ExerciseViewsAsync(TabControl tabs, Task loaded, Task rendered)
-    {
-        _stage = "Loaded and ContentRendered";
-        await loaded.WaitAsync(TimeSpan.FromSeconds(10));
-        await rendered.WaitAsync(TimeSpan.FromSeconds(10));
-        Pass("Host Window.Show completed Loaded and ContentRendered");
-        // Run async controls only once the real WPF DispatcherSynchronizationContext is active.
-        _stage = "tour preparation on the real dispatcher";
-        var effective = Settings.Copy(); effective.ColumnMappings["city"] = _cities!.CityColumnName;
-        _tours!.Show(_cities, Cities, effective);
-        await _tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10));
-        Require(_tours.SelectedPlan is { Stops.Count: 2, SelectedRows.Count: 2 }, "Initial tour did not retain the two active synthetic tickets.");
-        Pass("Tour preparation and initial asynchronous detail completed on the real dispatcher");
-        for (var index = 0; index < tabs.Items.Count; index++)
-        {
-            var tab = (TabItem)tabs.Items[index];
-            _stage = "render " + tab.Header;
-            tabs.SelectedIndex = index;
-            await FlushLayoutAsync();
-            Require(tab.Tag is FrameworkElement { IsLoaded: true } control && control.ActualWidth > 0 && control.ActualHeight > 0,
-                "Selected production control was not loaded with a nonzero rendered size: " + tab.Header);
-            if (tab.Tag is TicketReaderView reader)
-            {
-                var list = (ListBox?)reader.FindName("CardsList");
-                Require(list != null && list.Items.Count > 0, "Reader cards were not bound.");
-                Require(list!.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem,
-                    "The first real reader DataTemplate was not instantiated.");
-                var textBoxes = Descendants<TextBox>(list).Where(box => box.IsReadOnly).ToArray();
-                Require(textBoxes.Any(box => !string.IsNullOrEmpty(box.Text)), "Reader template has no displayed read-only content.");
-            }
-            Pass("Loaded and rendered: " + tab.Header);
+            timeout.Token.ThrowIfCancellationRequested(); process.Refresh(); if (process.HasExited) throw new InvalidOperationException("The app exited before its debugging endpoint became available: " + process.ExitCode);
+            try { using var response = await client.GetAsync(endpoint + "/json/version", timeout.Token); if (response.IsSuccessStatusCode) break; }
+            catch (HttpRequestException) { }
+            catch (TaskCanceledException) when (!timeout.IsCancellationRequested) { }
+            await Task.Delay(200, timeout.Token);
         }
-        await ExerciseResponsiveViewsAsync(tabs);
-        await ExerciseCityEditorAsync(tabs);
-        await ExerciseTourAsync(tabs, effective);
-        await ExerciseCityAndScheduledTourAsync(tabs, effective);
-        await ExerciseQueryEditorAsync(tabs);
-        await ExerciseAdvancedQueryWorkspaceAsync(tabs);
-        await ExerciseWorkplaceAsync(tabs);
-        await ExerciseFoundationViewsAsync(tabs);
-        var dashboardTab = (TabItem)tabs.Items[1];
-        var dashboard = (DashboardView)dashboardTab.Tag;
-        tabs.SelectedIndex = 1;
-        foreach (var preset in new[] { "operations", "analysis", "geography", "empty", "overview" })
-        {
-            _stage = "dashboard preset " + preset;
-            dashboard.SetLayout(Layout(preset));
-            await FlushLayoutAsync();
-            dashboard.GetLayout().Validate();
-            Pass("Rendered dashboard preset: " + preset);
-        }
-        _stage = "dashboard editor";
-        var edit = Descendants<Button>(dashboard).FirstOrDefault(button => button.Content as string == "Personnaliser");
-        Require(edit != null, "The real Personnaliser button is missing.");
-        edit!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await FlushLayoutAsync();
-        Require(Descendants<Button>(dashboard).Any(button => AutomationProperties.GetName(button) == "Terminer" && button.IsVisible),
-            "Dashboard did not switch from consultation to customization.");
-        Require(Descendants<Button>(dashboard).Any(button => AutomationProperties.GetName(button) == "Catalogue" && button.IsVisible),
-            "The widget catalog editor did not open.");
-        Require(Descendants<DashboardBoardPanel>(dashboard).Any(panel => panel.AllowDrop)
-            && Descendants<Thumb>(dashboard).Any(thumb => AutomationProperties.GetName(thumb) == "Redimensionner le widget" && thumb.IsEnabled),
-            "Customization did not enable widget dragging and resizing.");
-        Require(Descendants<ComboBox>(dashboard).Any(), "Editor view did not contain its real selectors.");
-        Pass("Real dashboard edit command creates editor, drag handles and resize controls");
-        foreach (var width in new[] { 850d, 1440d })
-        {
-            _stage = "responsive dashboard width " + width;
-            _host!.Width = width;
-            await FlushLayoutAsync();
-            Require(dashboard.ActualWidth > 0 && double.IsFinite(dashboard.ActualHeight), "Responsive dashboard produced invalid dimensions.");
-            foreach (var panel in Descendants<DashboardBoardPanel>(dashboard))
-                Require(panel.ActualWidth > 0 && double.IsFinite(panel.ActualHeight), "Board panel produced invalid dimensions.");
-            Require(!Descendants<ScrollViewer>(dashboard).Any(scroll => scroll.IsVisible
-                && scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible && scroll.ScrollableHeight > 1),
-                "Dashboard customization introduced another vertical scrollbar inside its page.");
-            Pass("Responsive layout at host width " + width);
-        }
-        _stage = "independent global and personal query widgets";
-        var personal = _technicians!.Dashboard;
-        var sharedLayout = Layout("empty"); dashboard.SetLayout(sharedLayout); personal.SetLayout(sharedLayout);
-        var query = Queries.Queries.First(item => item.GroupBy == "role:city");
-        Require(dashboard.AddQueryWidget(QueryService.DistributionKey(query.Id), query.Name, distribution: true), "Global query widget was not added.");
-        Require(personal.GetLayout().Boards.Single().Widgets.Count == 0, "Global widget mutation leaked into the personal layout.");
-        Require(personal.AddQueryWidget(QueryService.MetricKey(query.Id), query.Name, distribution: false), "Personal query widget was not added.");
-        Require(dashboard.GetLayout().Boards.Single().Widgets.Count == 1 && personal.GetLayout().Boards.Single().Widgets.Count == 1,
-            "Global and personal layouts are not independent.");
-        Require(sharedLayout.Boards.Single().Widgets.Count == 0, "Widget additions mutated the caller's original layout.");
-        dashboard.GetLayout().Validate(); personal.GetLayout().Validate();
-        await FlushLayoutAsync();
-        Pass("Real AddQueryWidget creates independent global distribution and personal metric widgets");
-        // Keep the geographic preset, donut and gauge visible for both theme passes as well.
-        dashboard.SetLayout(Layout("geography"));
-        personal.SetLayout(Layout("personal"));
-        Require(dashboard.AddQueryWidget(QueryService.DistributionKey(query.Id), query.Name, distribution: true)
-            && personal.AddQueryWidget(QueryService.MetricKey(query.Id), query.Name, distribution: false),
-            "Query widgets could not be added to the full themed layouts.");
-        foreach (var theme in new[] { "light", "dark" })
-        {
-            _stage = "theme " + theme;
-            ThemeService.Apply(theme);
-            foreach (var tab in tabs.Items.Cast<TabItem>())
-            {
-                tabs.SelectedItem = tab;
-                await FlushLayoutAsync();
-                if (tab.Tag is TechnicianWorkspaceView technicians)
-                {
-                    await RenderSectionsAsync(technicians, "TechnicianWorkspaceTabs");
-                    await SelectSectionAsync(technicians, "Équipe");
-                    var grid = Descendants<DataGrid>(technicians.Management).Single();
-                    Require(grid.Items.Count == 2 && grid.IsReadOnly && grid.EnableRowVirtualization,
-                        "Real technician management data was not bound or virtualized.");
-                }
-                if (tab.Tag is TourPlanningView tour) await RenderSectionsAsync(tour, "TourWorkspaceTabs");
-                if (tab.Tag is QueryWorkshopView queries) await RenderSectionsAsync(queries, "QueryWorkspaceTabs");
-            }
-            Require(ThemeService.CurrentTheme == theme, "Theme switch did not apply.");
-            Require(Application.Current.Resources["PanelBrush"] is SolidColorBrush, "Theme brush is missing.");
-            Pass("All synthetic views, technician workspaces and tour/query sections rendered in theme: " + theme);
-        }
-        if (_failed) return;
-        _exitCode = 0;
+        return await playwright.Chromium.ConnectOverCDPAsync(endpoint, new() { Timeout = 15000 });
     }
-
-    private static async Task ExerciseCityEditorAsync(TabControl tabs)
+    private async Task<IPage> ReadyPageAsync(IBrowser browser, Process process)
     {
-        _stage = "city bulk editor";
-        SelectView(tabs, _cityEditor!); await FlushLayoutAsync();
-        var expander = Descendants<Expander>(_cityEditor!).Single(item => item.Header as string == "Ajouter plusieurs correspondances");
-        expander.IsExpanded = true; await FlushLayoutAsync();
-        var bulk = Descendants<TextBox>(_cityEditor!).Single(box => AutomationProperties.GetName(box) == "Liste de correspondances à ajouter, une ville par ligne");
-        Require(!bulk.IsReadOnly && bulk.IsEnabled, "Bulk city input is not editable.");
-        bulk.Text = "Marseille | MRS ; Mars\nNice | NCE";
-        Click(_cityEditor!, "Ajouter ces correspondances"); await FlushLayoutAsync();
-        var edited = _cityEditor!.ReadSettings(); edited.Validate();
-        Require(edited.Cities.Count == 4 && edited.Cities.Any(city => city.Name == "Nice" && city.Aliases.Contains("NCE")), "Real bulk city command did not add the new dictionary entry.");
-        Require(edited.Cities.Single(city => city.Name == "Marseille").Aliases.Contains("Mars"), "Real bulk city command did not merge aliases with the existing entry.");
-        Require(Cities.Cities.Count == 3 && !Cities.Cities.Single(city => city.Name == "Marseille").Aliases.Contains("Mars"), "City editing mutated the caller's configuration.");
-        var grid = Descendants<DataGrid>(_cityEditor).Single(candidate => AutomationProperties.GetName(candidate) == "Dictionnaire éditable des villes de référence et de leurs alias");
-        Require(grid.Items.Count == 4 && !grid.IsReadOnly && grid.EnableRowVirtualization, "City dictionary is not an editable, virtualized real grid.");
-        Pass("Real city bulk editor preserves draft isolation and merges aliases without losing existing cities");
+        IPage? page = null;
+        await Until(() => { page = browser.Contexts.SelectMany(context => context.Pages).FirstOrDefault(p => p.Url.StartsWith("https://glpi-pilot.local/", StringComparison.Ordinal)); return page is not null; });
+        page!.SetDefaultTimeout(20000); await page.Locator("body[data-ready=true]").WaitForAsync(new() { Timeout = 60000 }); process.Refresh(); return page;
     }
-
-    private static async Task ExerciseTourAsync(TabControl tabs, DashboardSettings settings)
+    private async Task StopNormallyAsync(Process process)
     {
-        _stage = "tour displayed order, local preferences and explicit actions";
-        var tours = _tours!; SelectView(tabs, tours); await FlushLayoutAsync();
-        var mapCalls = 0; string? mapCity = null; string? mapPostal = null; int[]? selectedRows = null; ExtractionResult? exported = null;
-        tours.MapRequested += (city, postal) => { mapCalls++; mapCity = city; mapPostal = postal; };
-        tours.RowsRequested += (rows, _) => selectedRows = rows;
-        tours.ExportRequested += data => exported = data;
-        await SelectSectionAsync(tours, "Plan de tournée");
-        var steps = Descendants<DataGrid>(tours).Single(grid => AutomationProperties.GetName(grid) == "Étapes de la tournée dans l’ordre de visite");
-        await SelectSectionAsync(tours, "Étape sélectionnée");
-        var tickets = Descendants<DataGrid>(tours).Single(grid => AutomationProperties.GetName(grid) == "Tickets de l’étape sélectionnée");
-        Require(steps.Items.Count == 2 && tickets.Items.Count == 1 && steps.EnableRowVirtualization && tickets.EnableRowVirtualization,
-            "Tour tables did not bind and virtualize their real results.");
-        Require(mapCalls == 0 && !File.Exists(Path.Combine(TemporaryRoot, "tour-order.json")), "Initial tour unexpectedly performed an external action or saved an order.");
-        await SelectSectionAsync(tours, "Plan de tournée");
-        Click(tours, "↓ Descendre"); await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10)); await FlushLayoutAsync();
-        Require(tours.SelectedPlan!.Stops.Select(stop => stop.CityName).SequenceEqual(new[] { "Paris", "Lyon" }), "Displayed manual tour order was not applied.");
-        Require(File.Exists(Path.Combine(TemporaryRoot, "tour-order.json")), "Manual visit order was not saved to the isolated temporary directory.");
-        Click(tours, "Exporter le plan…"); await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10));
-        Require(exported is { Rows.Count: 2 } && exported.Rows.Select(row => row[1]).SequenceEqual(new[] { "Paris", "Lyon" }), "Export event did not preserve the displayed visit order.");
-        Click(tours, "Tous les tickets du plan");
-        Require(selectedRows != null && selectedRows.SequenceEqual(new[] { 0, 1 }), "Tour drilldown did not retain original source indexes.");
-        await SelectSectionAsync(tours, "Étape sélectionnée");
-        Click(tours, "Carte de la ville ↗");
-        Require(mapCalls == 1 && mapCity == "Lyon" && mapPostal == "69000", "Explicit map event did not contain only the selected city and postal code.");
-        Pass("Real tour controls reorder, save only to TEMP, export the displayed order and emit explicit drilldown/map actions");
-
-        _stage = "tour busy-to-ready details and stale result isolation";
-        tours.SetBusy(true); tours.Show(_cities!, Cities, settings);
-        await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10)); tours.SetBusy(false);
-        await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10)); await FlushLayoutAsync();
-        Require(tickets.Items.Count == 1 && tickets.IsEnabled, "Tour details did not resume after the parent operation stopped being busy.");
-        tours.Show(_cities!, Cities, settings); tours.ShowEmpty("Relevé synthétique retiré pendant le calcul.");
-        await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10));
-        Require(tours.SelectedPlan == null, "Cancelled tour published an old plan after ShowEmpty.");
-        var map = FindButton(tours, "Carte de la ville ↗"); Require(!map.IsEnabled, "Empty tour retained an enabled map action.");
-        map.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Require(mapCalls == 1, "Invalidated tour emitted a stale map event.");
-        tours.Show(_cities!, Cities, settings); await tours.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10));
-        Pass("Tour async generation guards discard removed reports and restore detail after the busy state");
+        process.Refresh(); if (!process.CloseMainWindow()) throw new InvalidOperationException("The window refused a standard close request.");
+        await process.WaitForExitAsync(_deadline.Token).WaitAsync(TimeSpan.FromSeconds(25));
+        // A disposed WebView control can return before its browser finishes
+        // releasing the profile. The next launch must get its own CDP port.
+        await WaitForRuntimeExitAsync();
+        Check(process.ExitCode == 0, "The native close handshake flushes the page and exits with code zero.");
     }
-
-    private static async Task ExerciseQueryEditorAsync(TabControl tabs)
-    {
-        _stage = "query preview from real saved library";
-        var editor = _queryEditor!; SelectView(tabs, editor); await FlushLayoutAsync();
-        await SelectSectionAsync(editor, "Bibliothèque");
-        var library = Descendants<ListBox>(editor).Single(list => AutomationProperties.GetName(list).StartsWith("Bibliothèque de requêtes", StringComparison.Ordinal));
-        Require(library.Items.Count == Queries.Queries.Count && library.SelectedItem != null && VirtualizingPanel.GetIsVirtualizing(library), "The complete saved-query library was not bound to the virtualized list.");
-        int[]? selectedRows = null; editor.RowsRequested += (rows, _) => selectedRows = rows;
-        Click(editor, "Prévisualiser"); await editor.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10)); await FlushLayoutAsync();
-        var rowsButton = Descendants<Button>(editor).Single(button => button.Content is string text && text.StartsWith("Voir les ", StringComparison.Ordinal) && text.EndsWith("lignes retenues", StringComparison.Ordinal));
-        Require(rowsButton.IsEnabled, "The real query preview did not publish an actionable result.");
-        rowsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Require(selectedRows != null && selectedRows.SequenceEqual(new[] { 0, 1, 2 }), "Saved total-by-city query lost original source rows.");
-        await SelectSectionAsync(editor, "Répartition");
-        var buckets = Descendants<DataGrid>(editor).Single(grid => AutomationProperties.GetName(grid).StartsWith("Répartition complète", StringComparison.Ordinal));
-        Require(buckets.Items.Count == 3 && buckets.EnableRowVirtualization, "Query grouped preview did not display three synthetic cities.");
-        Pass("Real saved-query preview publishes exact source rows and a virtualized grouped result");
-
-        _stage = "query draft and stale preview guards";
-        await SelectSectionAsync(editor, "Définition");
-        var name = Descendants<TextBox>(editor).Single(box => AutomationProperties.GetName(box) == "Nom de la requête");
-        name.Text = "Brouillon synthétique conservé";
-        Require(!rowsButton.IsEnabled, "Editing a query retained actions on the old result.");
-        Click(editor, "Prévisualiser"); editor.ShowEmpty("Source retirée pendant un calcul synthétique.");
-        await editor.WhenIdle.WaitAsync(TimeSpan.FromSeconds(10));
-        Require(name.Text == "Brouillon synthétique conservé" && !rowsButton.IsEnabled, "Query source removal erased the draft or revived an old preview.");
-        selectedRows = null; rowsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Require(selectedRows == null, "Invalidated query emitted stale source indexes.");
-        editor.LoadSettings(Queries);
-        var effective = Settings.Copy(); effective.ColumnMappings["city"] = _cities!.CityColumnName;
-        editor.Show(_cities.Data, effective, _cities);
-        Pass("Query editing and source replacement invalidate old results while preserving draft text");
-    }
-
-    private static void SelectView(TabControl tabs, FrameworkElement view)
-        => tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(tab => ReferenceEquals(tab.Tag, view));
-
-    private static Button FindButton(DependencyObject root, string title)
-        => Descendants<Button>(root).Single(button => button.Content as string == title || AutomationProperties.GetName(button) == title);
-
-    private static TabControl FindSectionTabs(DependencyObject root, string automationId)
-        => Descendants<TabControl>(root).Single(control => AutomationProperties.GetAutomationId(control) == automationId);
-
-    private static async Task RenderSectionsAsync(DependencyObject root, string automationId)
-    {
-        var sections = FindSectionTabs(root, automationId);
-        var previous = sections.SelectedItem;
-        foreach (var section in sections.Items.Cast<TabItem>())
-        {
-            sections.SelectedItem = section; await FlushLayoutAsync();
-            Require(section.Content is FrameworkElement { IsLoaded: true, ActualWidth: > 0, ActualHeight: > 0 },
-                "The production section did not render in the current theme: " + section.Header);
-        }
-        sections.SelectedItem = previous; await FlushLayoutAsync();
-    }
-
-    private static void Click(DependencyObject root, string title)
-    {
-        var button = FindButton(root, title); Require(button.IsEnabled, "Command is not enabled: " + title);
-        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-    }
-
-    private static async Task DisposeViewsAsync()
+    private bool IsOwnedRuntime(Process process)
     {
         try
         {
-            foreach (var view in DisposableViews) view.Dispose();
-            var tasks = DisposableViews.Select(view => view switch
-            {
-                TourPlanningView tour => tour.WhenIdle,
-                QueryWorkshopView queries => queries.WhenIdle,
-                _ => Task.CompletedTask
-            }).ToArray();
-            await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
+            if (_sandbox.Length == 0 || process.HasExited) return false;
+            var path = process.MainModule?.FileName;
+            return path is not null && path.StartsWith(_sandbox + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
-        catch (Exception error) { Fail(error); }
+        catch (InvalidOperationException) { return false; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
     }
-
-    private static async Task FlushLayoutAsync()
+    private async Task WaitForRuntimeExitAsync()
     {
-        await Dispatcher.Yield(DispatcherPriority.Loaded);
-        _host!.UpdateLayout();
-        await Dispatcher.Yield(DispatcherPriority.ContextIdle);
-        if (_failed) throw new InvalidOperationException("An unhandled dispatcher exception was already reported.");
-    }
-
-    private static void CaptureView(string filename)
-    {
-        if (_screenshotsDirectory == null) return;
-        var surface = (FrameworkElement)_host!.Content;
-        var dpi = VisualTreeHelper.GetDpi(surface);
-        var width = checked((int)Math.Ceiling(surface.ActualWidth * dpi.DpiScaleX));
-        var height = checked((int)Math.Ceiling(surface.ActualHeight * dpi.DpiScaleY));
-        Require(width > 0 && height > 0, "Cannot capture an unrendered synthetic WPF view.");
-        var bitmap = new RenderTargetBitmap(width, height, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-        bitmap.Render(surface);
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        var path = Path.Combine(_screenshotsDirectory, filename + ".png");
-        using var stream = File.Create(path);
-        encoder.Save(stream);
-        Console.WriteLine($"CAPTURE: {filename}.png ({width}x{height}, real WPF rendering, synthetic data only)");
-    }
-    private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_deadline.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        while (true)
         {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T match) yield return match;
-            foreach (var nested in Descendants<T>(child)) yield return nested;
+            var active = false;
+            foreach (var name in RuntimeProcessNames)
+                foreach (var process in Process.GetProcessesByName(name))
+                    using (process) active |= IsOwnedRuntime(process);
+            if (!active) return;
+            await Task.Delay(100, timeout.Token);
         }
     }
-    private static DashboardLayoutSettings Layout(string preset)
+    // Poll from the test process: WaitForFunction injects eval, forbidden by the real app CSP.
+    private static async Task WaitForPageAsync(IPage page, string expression, object? argument = null)
     {
-        var board = DashboardLayoutSettings.CreateBoard("Test " + preset, preset);
-        if (preset != "empty") board.Widgets.Add(new()
-        {
-            Kind = "note", SourceKey = "", Title = "Note synthétique", Span = 4, Height = 220,
-            Note = "Note de test.\nAucune donnée utilisateur et aucun contenu exécutable."
-        });
-        // Exercise the real custom styles without any data from a user profile.
-        for (var i = 0; i < board.Widgets.Count; i++)
-        {
-            board.Widgets[i].Style = DashboardWidgetSettings.Styles[i % DashboardWidgetSettings.Styles.Length];
-            board.Widgets[i].Accent = DashboardWidgetSettings.Accents[i % DashboardWidgetSettings.Accents.Length];
-            board.Widgets[i].Presentation = DashboardWidgetSettings.Presentations[i % DashboardWidgetSettings.Presentations.Length];
-        }
-        if (preset != "empty")
-        {
-            board.Widgets.Add(new() { Kind = "distribution", SourceKey = "status", Title = "Anneau synthétique", Presentation = "donut", Span = 6, Height = 330 });
-            board.Widgets.Add(new() { Kind = "metric", SourceKey = "active", Title = "Jauge synthétique", Presentation = "gauge", Span = 6, Height = 280,
-                TargetValue = 10, WarningValue = 7, CriticalValue = 9, LowerIsBetter = true });
-        }
-        return new() { Boards = new() { board }, ActiveBoardId = board.Id };
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        while (!await page.EvaluateAsync<bool>(expression, argument)) await Task.Delay(50, timeout.Token);
     }
-    private static CitySettings SampleCities() => new()
+    private async Task Until(Func<bool> predicate) { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_deadline.Token); timeout.CancelAfter(TimeSpan.FromSeconds(12)); while (!predicate()) await Task.Delay(100, timeout.Token); }
+    private static int Port() { var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start(); var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop(); return port; }
+    private static string Digest(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
+    private static bool Visible(Process process) { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero && Native.IsWindowVisible(process.MainWindowHandle) && Native.GetWindowRect(process.MainWindowHandle, out var rectangle) && rectangle.Right > rectangle.Left && rectangle.Bottom > rectangle.Top; }
+    private static class Native
     {
-        TitleColumn = "Titre", Cities = new()
-        {
-            new() { Id = "11111111111111111111111111111111", Name = "Paris", PostalCode = "75000", Aliases = new() { "PAR" } },
-            new() { Id = "22222222222222222222222222222222", Name = "Lyon", PostalCode = "69000", Aliases = new() { "LYO" } },
-            new() { Id = "33333333333333333333333333333333", Name = "Marseille", PostalCode = "13000", Aliases = new() { "MRS" } }
-        }
-    };
-    private static ExtractionResult Sample() => new()
-    {
-        Headers = new() { "ID", "Titre", "Statut", "Priorité", "Urgence", "Impact", "Type", "Date d'ouverture", "Dernière modification", "Date de résolution", "Date de clôture", "Temps de résolution", "Attribué à - Technicien", "Attribué à - Groupe de techniciens", "Catégorie", "Entité", "Demandeur", "Lieu" },
-        Rows = new()
-        {
-            new[] { "1", "Paris · Incident synthétique", "En cours (attribué)", "Haute", "Haute", "Haut", "Incident", "01/10/2026 09:00", "20/10/2026 10:00", "", "", "20/10/2026 17:00", "Alex Exemple", "Support Exemple", "Matériel", "Entité Exemple", "Demandeur Exemple", "Site Exemple" },
-            new[] { "2", "Lyon · Demande synthétique", "En attente", "Moyenne", "Moyenne", "Moyen", "Demande", "18/10/2026 09:00", "19/10/2026 11:00", "", "", "23/10/2026 17:00", "Sam Exemple", "Support Exemple", "Accès", "Entité Exemple", "Demandeur Exemple", "Site Exemple" },
-            new[] { "3", "Marseille · Ticket synthétique résolu", "Résolu", "Basse", "Basse", "Bas", "Incident", "15/10/2026 08:00", "20/10/2026 16:00", "20/10/2026 15:00", "", "21/10/2026 17:00", "Alex Exemple", "Support Exemple", "Logiciel", "Entité Exemple", "Demandeur Exemple", "Site Exemple" }
-        },
-        ExpectedTotal = 3, Complete = true, Scope = "Jeu synthétique de test UI",
-        SourceUrl = "https://glpi.example.invalid/front/ticket.php",
-        ExtractedAt = new DateTimeOffset(2026, 10, 21, 12, 0, 0, TimeSpan.Zero)
-    };
-    private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-    private static void Pass(string message) { Passed.Add(message); Console.WriteLine("PASS " + message); }
-    private static void Fail(Exception exception)
-    {
-        _failed = true; _exitCode = 1;
-        Console.Error.WriteLine("FAIL stage: " + _stage);
-        Console.Error.WriteLine(exception);
-    }
-
-    private static ResourceDictionary LoadProductionResources()
-    {
-        // Link the actual production XAML into this test assembly: no copied styles
-        // can drift from the app. An App subclass in another assembly cannot load
-        // App's BAML, and a real App schedules production OnStartup in its constructor.
-        // The separate PackStartup stage verifies the real compiled App and main window.
-        using var stream = typeof(Program).Assembly.GetManifestResourceStream("GlpiPilot.WindowsStartupChecks.ProductionApp.xaml")
-            ?? throw new InvalidDataException("The linked production App.xaml resource is missing.");
-        var root = XDocument.Load(stream).Root
-            ?? throw new InvalidDataException("The linked production App.xaml is empty.");
-        XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-        Require(root.Name == presentation + "Application", "Expected the production Application XAML root.");
-        var resources = root.Element(presentation + "Application.Resources")
-            ?? throw new InvalidDataException("Production Application.Resources is missing.");
-        var dictionary = new XElement(presentation + "ResourceDictionary",
-            root.Attributes().Where(attribute => attribute.IsNamespaceDeclaration), resources.Nodes());
-        using var reader = dictionary.CreateReader();
-        var result = (ResourceDictionary)System.Windows.Markup.XamlReader.Load(reader);
-        Require(result.Contains("AppWindowStyle") && result.Contains("WindowBrush") && result.Contains(typeof(TabControl)),
-            "Production resources did not contain the expected window, theme and tab styles.");
-        return result;
+        [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsIconic(IntPtr window);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ShowWindow(IntPtr window, int command);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool MoveWindow(IntPtr window, int x, int y, int width, int height, [MarshalAs(UnmanagedType.Bool)] bool repaint);
     }
 }

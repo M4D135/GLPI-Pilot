@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors><PlaywrightPlatform Condition="'$(OS)' != 'Windows_NT'">linux</PlaywrightPlatform>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <Compile Include="../../src/GlpiPilot/Core/*.cs" Exclude="../../src/GlpiPilot/Core/ThemeService.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Runtime/PilotApplication.cs" Link="Runtime/PilotApplication.cs" />
+    <Compile Include="../../src/GlpiPilot/Runtime/WebBridge.cs" Link="Runtime/WebBridge.cs" />
+    <Compile Include="../../src/GlpiPilot/Runtime/PilotApplication.Analytics*.cs" Link="Runtime/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/bridge.js" Link="BrowserScripts/bridge.js" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/native-export.js" Link="BrowserScripts/native-export.js" />
+    <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/ticket-details.js" Link="BrowserScripts/ticket-details.js" />
+  </ItemGroup>
+</Project>

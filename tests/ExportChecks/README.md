@@ -16,4 +16,4 @@ Référence primaire : [Microsoft MS-OE376, 2.1.1127 — ST_Xstring](https://lea
 
 Le CSV est séparé par des points-virgules et encodé en UTF-8 avec BOM. Les cellules qui pourraient être interprétées comme des formules reçoivent une apostrophe initiale. Le XLSX conserve ces mêmes valeurs en cellules texte, sans apostrophe supplémentaire.
 
-Ces vérifications ne remplacent pas un essai de l’interface WPF sous Windows et du SSO sur le portail de l’utilisateur.
+Ces vérifications ne remplacent pas un essai du véritable hôte WinForms/WebView2 sous Windows et du SSO sur le portail de l’utilisateur.
