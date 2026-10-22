@@ -4,6 +4,8 @@
 Builds and runs the Windows CI stages without modifying production app code.
 .DESCRIPTION
 The WPF harness runs real controls and has an external 90-second process deadline.
+BrowserChecks includes the ticket-detail reader against intercepted synthetic pages,
+with the same isolated test browser and an externally bounded process as the other browser suites.
 PackStartup is restricted to an interactive GitHub-hosted Windows runner. It refuses
 any existing GLPI-Pilot state, redirects only that absent app directory to a unique
 temporary sandbox through a junction, and never changes Windows known-folder settings.
@@ -381,6 +383,8 @@ try {
                 Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', "tests/$suite/$suite.csproj", '-c', 'Release') `
                     -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 180 -ExpectedPattern '\d+/\d+ vérifications.*réussies\.'
             }
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/TicketDetailChecks/TicketDetailChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win') `
+                -LogName 'ticketdetailchecks.log' -TimeoutSeconds 180 -ExpectedSummary '27/27 contrôles de lecture de fiche réussis.'
             $driver = Join-Path $repository 'tests/AutomationChecks/bin/Release/net10.0/.playwright'
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `

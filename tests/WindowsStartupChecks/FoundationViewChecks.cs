@@ -113,10 +113,36 @@ internal static partial class Program
                 next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FlushLayoutAsync();
                 Require(calendar.DisplayDate.Month != previousMonth.Month, "Calendar next-month command lost its production handler.");
                 var header = (Button)item.Template.FindName("PART_HeaderButton", item); header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FlushLayoutAsync();
-                Require(calendar.DisplayMode == CalendarMode.Year && Descendants<CalendarButton>(calendar).Any(button => button.IsVisible), "Calendar header did not open the real month selection.");
-                calendar.DisplayMode = CalendarMode.Month; picker.IsDropDownOpen = false; await FlushLayoutAsync();
+                var monthView = (Grid)item.Template.FindName("PART_MonthView", item);
+                var yearView = (Grid)item.Template.FindName("PART_YearView", item);
+                Require(calendar.DisplayMode == CalendarMode.Year && yearView.IsVisible && !monthView.IsVisible
+                    && Descendants<CalendarButton>(calendar).Count(button => button.IsVisible) == 12,
+                    "Calendar header did not open the real month selection; mode=" + calendar.DisplayMode + ", month=" + monthView.Visibility + ", year=" + yearView.Visibility + ".");
+                var selectedYear = calendar.DisplayDate.Year;
+                header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FlushLayoutAsync();
+                Require(calendar.DisplayMode == CalendarMode.Decade && yearView.IsVisible && !monthView.IsVisible
+                    && Descendants<CalendarButton>(calendar).Count(button => button.IsVisible) == 12,
+                    "Calendar header did not display the real decade selection.");
+                var yearButton = Descendants<CalendarButton>(calendar).Single(button => button.IsVisible
+                    && button.DataContext is DateTime date && date.Year == selectedYear);
+                yearButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FlushLayoutAsync();
+                Require(calendar.DisplayMode == CalendarMode.Year && yearView.IsVisible && !monthView.IsVisible,
+                    "Choosing a year did not return to the visible month selection.");
+                var selectedMonth = calendar.DisplayDate.Month;
+                var monthButton = Descendants<CalendarButton>(calendar).Single(button => button.IsVisible
+                    && button.DataContext is DateTime date && date.Year == selectedYear && date.Month == selectedMonth);
+                monthButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FlushLayoutAsync();
+                Require(calendar.DisplayMode == CalendarMode.Month && monthView.IsVisible && !yearView.IsVisible
+                    && Descendants<CalendarDayButton>(calendar).Count(button => button.IsVisible) == 42,
+                    "Choosing a month did not restore the visible day grid.");
+                var selectedDate = new DateTime(selectedYear, selectedMonth, 15);
+                var dayButton = Descendants<CalendarDayButton>(calendar).Single(button => button.IsVisible
+                    && button.DataContext is DateTime date && date.Date == selectedDate);
+                dayButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FlushLayoutAsync();
+                Require(picker.SelectedDate?.Date == selectedDate, "Choosing a day did not update the DatePicker value.");
+                picker.IsDropDownOpen = false; await FlushLayoutAsync();
             }
-            Pass("Date fields and calendar popup follow both themes; native month navigation and year selection remain functional");
+            Pass("Date fields and calendar popup follow both themes; native month, year and decade navigation returns to selectable days");
         }
         finally { picker.IsDropDownOpen = false; tabs.Items.Remove(page); ThemeService.Apply("dark"); }
     }
