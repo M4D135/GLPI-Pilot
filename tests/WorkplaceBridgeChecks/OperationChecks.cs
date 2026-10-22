@@ -100,7 +100,18 @@ public static class WorkOperationChecks
         });
         Test("Draft composes only explicitly selected context and copies persisted text", async f =>
         {
-            f.App.ReadFixture(WorkFixture.Detail()); var key = await f.Key(); var result = await f.Call("workplace.draft.compose", new { ticketKey = key, template = "Diagnostic et prochaine action", findings = "Constat vérifié", action = "Analyse locale", nextStep = "Rappeler", contextRows = new[] { 0 } }); Check(S(result, "text").Contains("Constat vérifié") && !S(result, "text").Contains("Réponse visible")); await f.Call("workplace.draft.copy", new { ticketKey = key }); Check(f.Host.Clipboard == S(result, "text")); await Refuse(() => f.Call("workplace.draft.compose", new { ticketKey = key, contextRows = new[] { 10000 } }), "contexte");
+            f.App.ReadFixture(WorkFixture.Detail()); var key = await f.Key();
+            var result = await f.Call("workplace.draft.compose", new
+            {
+                ticketKey = key, template = "Diagnostic et prochaine action", findings = "Constat vérifié\r\nDeuxième ligne Windows",
+                action = "Analyse locale", nextStep = "Rappeler", contextRows = new[] { 0 }
+            });
+            var text = S(result, "text");
+            Check(text.Contains("Constat vérifié\nDeuxième ligne Windows") && !text.Contains("Réponse visible"), "The selected draft must retain its multiline findings and exclude unselected observations.");
+            Check(text == WorkplaceStore.Load(Path.Combine(f.Folder, "workplace.json")).Tickets.Single(t => t.Key == key).FollowupDraft, "The composition response must contain the exact persisted draft.");
+            await f.Call("workplace.draft.copy", new { ticketKey = key });
+            Check(f.Host.Clipboard == text, "The clipboard must contain exactly the draft returned to the editor.");
+            await Refuse(() => f.Call("workplace.draft.compose", new { ticketKey = key, contextRows = new[] { 10000 } }), "contexte");
         });
         Test("Handover includes personal notes without invented GLPI observations", async f =>
         {

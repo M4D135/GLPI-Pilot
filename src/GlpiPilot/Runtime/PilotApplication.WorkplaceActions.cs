@@ -78,7 +78,10 @@ public sealed partial class PilotApplication
         if (selected.Any(i => i < 0 || i >= summary.Count)) throw new InvalidDataException("Le contexte sélectionné a changé ; relisez la synthèse.");
         foreach (var index in selected.Distinct()) text += "\n\n" + summary[index][0] + "\n" + summary[index][1];
         if (text.Length > 20000) throw new InvalidDataException("Le brouillon dépasse 20 000 caractères. Réduisez le contexte inclus.");
-        var doc = WorkDocument().Copy(); doc.Tickets.Single(t => t.Key == p.Key).FollowupDraft = text; WorkSave(doc); return new { text, saved = true };
+        var doc = WorkDocument().Copy(); doc.Tickets.Single(t => t.Key == p.Key).FollowupDraft = text; WorkSave(doc);
+        // Validation normalizes line endings. Return the persisted text so the
+        // editor, subsequent copy and reopening all use exactly the same draft.
+        return new { text = WorkPersonal(a).FollowupDraft, saved = true };
     }
     private List<WorkActionReceipt> WorkReceipts()
     {
