@@ -20,9 +20,21 @@ Les calculs sont bornés et les dépendances cycliques sont refusées. Une divis
 
 Trois niveaux de regroupement peuvent être combinés. Chaque niveau peut utiliser une période de date explicitement choisie : jour, semaine ISO, mois, trimestre ou année. Les valeurs manquantes et dates illisibles restent visibles.
 
+Le résultat propose deux vues : **Catégories finales** et **Hiérarchie et sous-totaux**. L’arbre déroule les niveaux choisis et affiche le résultat, le nombre de lignes et la taille de l’échantillon numérique de chaque branche. Cliquer sur un sous-total ouvre ses lignes contributrices. Les sous-totaux sont recalculés sur les lignes uniques de chaque préfixe : une moyenne, une médiane ou un nombre distinct n’est jamais obtenu en additionnant les résultats enfants. Le dénominateur d’un pourcentage est la population de ce préfixe avant les conditions. Un ticket affecté à plusieurs techniciens peut appartenir à plusieurs branches ; la somme des branches n’est donc pas nécessairement égale au total général.
+
 Les agrégats sont le nombre, le pourcentage, les valeurs distinctes, la somme, la moyenne, le minimum, le maximum, la médiane et un percentile configurable entre 0 et 100. Médiane et percentile utilisent l’interpolation linéaire sur les valeurs numériques finies. Chaque groupe conserve son résultat, le nombre de lignes retenues, son échantillon numérique et ses contributeurs. Le pourcentage d’un groupe utilise sa propre population avant les conditions. Les affectations multiples peuvent faire participer un ticket à plusieurs groupes : ces résultats ne sont pas toujours additionnables.
 
 Une condition illisible reste indéterminée, y compris sous NON. Une branche OU vraie peut décider d’une ligne malgré une autre valeur illisible. Une colonne nécessaire absente ou ambiguë rend toutefois la requête entière indisponible.
+
+### Packs métiers JSON
+
+**Packs métiers fournis…** regroupe les modèles par catégorie. **Exporter le métier…** enregistre toutes les requêtes de la catégorie sélectionnée dans un fichier JSON réutilisable. Le format 1 contient le nom et la description du pack, sa date d’export et ses définitions de requêtes ; il ne contient aucun résultat ni ligne de ticket. Les valeurs par défaut des paramètres font partie des définitions exportées : relisez-les avant de partager un pack.
+
+**Importer un pack…** valide le document, puis présente les ajouts, les requêtes identiques ignorées et les conflits. Une définition différente portant un identifiant déjà présent reçoit un nouvel identifiant et un nom suffixé par « import ». L’aperçu conserve les définitions existantes. Après confirmation, les ajouts rejoignent le brouillon de bibliothèque ; prévisualisez-les sur votre relevé, puis enregistrez la bibliothèque pour les conserver.
+
+La limite est de **2 Mio par fichier** et **128 requêtes dans la bibliothèque résultante**. Un dépassement refuse la fusion entière. Le pack utilise les mêmes règles de validation des champs, opérateurs, paramètres et expressions que l’atelier. Un modèle nécessitant une colonne absente reste indisponible avec une explication.
+
+Sources : [service des packs](../src/GlpiPilot/Core/QueryPackService.cs), [aperçu d’import](../src/GlpiPilot/UI/QueryWorkshopView.Packs.cs) et [arbre de sous-totaux](../src/GlpiPilot/UI/QueryWorkshopView.Hierarchy.cs).
 
 ## Villes, règles et sites
 
@@ -34,30 +46,46 @@ Une règle précise :
 - Les termes tous requis dans le contexte et les termes tous interdits.
 - Une colonne de contexte exacte facultative ; sinon, le contexte est le titre.
 - Une priorité explicite comprise entre 0 et 100.
+- Une position : n’importe où, au début, à la fin ou à un numéro de mot donné à partir de 1.
+- Un format de titre facultatif sous forme d’expression régulière. Il est limité à 500 caractères, à 20 000 caractères de titre analysé et à 30 ms par évaluation ; un dépassement ne confirme pas la règle.
 
 Une exclusion suffit à refuser la règle. Une colonne de contexte absente, vide ou ambiguë ne confirme jamais la ville. Un alias conditionnel remplace l’alias simple portant sur le même terme. Les termes admissibles les plus longs supplantent les termes plus courts qui se chevauchent. Les priorités explicites départagent ensuite les villes ; une égalité reste ambiguë.
 
-Les exclusions au niveau d’une ville refusent cette ville lorsque l’un de leurs termes est présent dans le titre. La région, le département et le secteur peuvent être renseignés et deviennent des colonnes du relevé enrichi.
+Les exclusions au niveau d’une ville refusent cette ville lorsque l’un de leurs termes est présent dans le titre. La région, le département et le secteur peuvent être renseignés et deviennent des colonnes du relevé enrichi. Le champ **Territoire** permet en plus un chemin hiérarchique libre, par exemple `France / Île-de-France / Agences Est`, jusqu’à douze niveaux. La ville s’inscrit dans ce chemin, puis les sites et leurs bâtiments précisent le lieu.
 
 Le référentiel accepte 2 000 sites, rattachés chacun à une ville. Un site possède un nom, des alias, une adresse de référence et des coordonnées facultatives. Latitude et longitude vont ensemble. Aucun géocodage n’est effectué. Un site unique peut identifier sa ville même lorsque le titre ne cite pas le nom de celle-ci. Des références à des villes différentes restent ambiguës. Plusieurs sites d’une même ville conservent la ville reconnue, avec un site précis indéterminé.
 
+Il accepte également **5 000 bâtiments**, chacun rattaché à un site, avec un nom, des alias et un étage ou une zone. La reconnaissance d’un bâtiment retrouve son site et sa ville ; un bâtiment orphelin ou ambigu ne crée pas de localisation certaine. Les sites peuvent aussi fournir un contact, le matériel ou les conditions d’accès, des horaires hebdomadaires et des dates de fermeture.
+
+### Choisir les sources de localisation
+
+La rubrique des sources permet d’ajouter, retirer et ordonner : **correction locale**, **champ GLPI de localisation**, **bâtiment**, **site**, **ville dans le titre**, et **titre complet** combinant les références. Le champ GLPI utilise le nom exact de la colonne configurée. Le premier résultat reconnu ou ambigu arrête la recherche ; une source vide ou sans correspondance laisse décider la suivante. Une ambiguïté prioritaire reste visible au lieu d’être masquée par une autre source.
+
+L’ordre initial conserve les corrections locales, puis la reconnaissance combinée du titre. Si vous placez le champ de localisation avant le titre, il devient prioritaire. Si vous retirez les corrections locales de cet ordre, elles restent mémorisées mais ne décident plus de la localisation. L’ordre et la colonne choisie font partie du référentiel enregistré.
+
 ### Vérifier les règles et corriger une ligne
 
-**Simuler et expliquer** applique le même moteur que l’extraction à un titre saisi, avec des contextes facultatifs au format **En-tête exact=valeur**. La preuve indique les termes rencontrés, les règles et les décisions de contexte. La vérification du dictionnaire signale les termes partagés et les alias très courts.
+**Simuler et expliquer** applique le même moteur que l’extraction à un titre saisi, avec des contextes facultatifs au format **En-tête exact=valeur**. La preuve indique les termes rencontrés, les règles et les décisions de contexte ; le titre conserve sa graphie d’origine et les passages reconnus sont surlignés. La vérification du dictionnaire signale les termes partagés et les alias très courts.
 
-**Lieux à vérifier** présente les lignes non reconnues, ambiguës, sans titre, avec des sites ambigus, ainsi que les corrections locales. Choisissez une ville et éventuellement un site pour corriger la ligne. L’action **Revenir à la détection** retire la correction.
+**Lieux à vérifier** présente les lignes non reconnues, ambiguës, sans titre, avec des sites ambigus, ainsi que les corrections locales. Choisissez une ville et éventuellement un site, puis renseignez le **motif de la correction locale**. L’action **Revenir à la détection** retire la correction.
 
-Les corrections sont mémorisées uniquement sur le poste, par installation GLPI et ID unique. Un ID dupliqué ne reçoit aucune correction arbitraire. Si la ville ou le site d’une correction est retiré du dictionnaire, la ligne redevient à vérifier. Les cellules source sont conservées. Les corrections ne sont pas incluses dans la configuration partagée.
+Les corrections sont mémorisées uniquement sur le poste, par installation GLPI et ID unique, avec leur date et leur motif. Un ID dupliqué ne reçoit aucune correction arbitraire. Si la ville ou le site d’une correction est retiré du dictionnaire, la ligne redevient à vérifier. Les cellules source sont conservées. Les corrections ne sont pas incluses dans la configuration partagée.
+
+Pour généraliser une correction, renseignez un terme, éventuellement un contexte requis et sa colonne, puis cliquez sur **Proposer cette règle**. La règle est ajoutée au brouillon. Cette action n’apprend pas automatiquement à partir de tous les tickets et ne modifie pas directement le référentiel appliqué.
+
+Lors de **Enregistrer et appliquer au relevé**, le programme recalcule l’ensemble du relevé chargé et présente une comparaison avant/après : nombre exact de lignes affectées, anciennes et nouvelles localisations, états et explications. Le détail affiché est limité aux 1 000 premières modifications, mais le total porte sur toutes les lignes. Le bouton d’application dans cet aperçu confirme le changement. Si aucun relevé n’est chargé, le référentiel peut être enregistré sans prétendre avoir mesuré son impact sur des tickets.
 
 ### Importer un référentiel
 
 **Référentiel CSV** exporte le modèle de colonnes et permet de comparer un CSV avant de l’appliquer au brouillon. Le comparatif distingue les ajouts, modifications et lignes identiques. Les villes absentes du CSV sont conservées. Une colonne absente conserve sa valeur existante ; une colonne présente mais vide peut l’effacer.
 
-Colonnes reconnues : **Type, Id, VilleId, Nom, Alias, CodePostal, Region, Departement, Secteur, Adresse, Latitude, Longitude, Exclusions, Regles**. Type vaut Ville ou Site. Nom est obligatoire. Les alias et exclusions se séparent par **|** ou **;** à l’intérieur de leur cellule CSV. Les règles sont représentées dans une cellule JSON. Le site référence une ville unique par son identifiant ou son nom. Les identifiants exportés permettent de conserver les relations malgré un changement de nom.
+Colonnes reconnues : **Type, Id, VilleId, Nom, Alias, CodePostal, Region, Departement, Secteur, Adresse, Latitude, Longitude, Exclusions, Regles, Territoire, SiteId, Etage, Ouvertures, Fermetures, Contact, Materiel**. Type vaut **Ville**, **Site** ou **Bâtiment**. Nom est obligatoire. Les alias, exclusions et dates de fermeture se séparent par **|** ou **;** à l’intérieur de leur cellule CSV. Les règles et ouvertures sont des listes JSON. Le site référence une ville unique par son identifiant ou son nom ; le bâtiment référence de même un site unique par **SiteId**. Les identifiants exportés permettent de conserver les relations malgré un changement de nom.
 
 L’export CSV commun protège les valeurs susceptibles d’être interprétées comme des formules par un tableur. Le lecteur du référentiel reconnaît cette protection pour les coordonnées négatives. Pour transmettre exactement toute la configuration, notamment des libellés atypiques commençant par un signe de formule, utilisez l’import/export de configuration JSON.
 
-Les villes et sites invalides, relations absentes et doublons sont refusés avant de modifier le dictionnaire. Un comparatif devient périmé lorsque le brouillon change ; rechargez alors le CSV. Cliquez ensuite sur **Enregistrer et appliquer au relevé** pour recalculer les villes et tableaux de bord.
+Les villes, sites et bâtiments invalides, relations absentes, horaires incohérents et doublons sont refusés avant de modifier le dictionnaire. Un comparatif devient périmé lorsque le brouillon change ; rechargez alors le CSV. Cliquez ensuite sur **Enregistrer et appliquer au relevé** et vérifiez l’impact global avant l’application.
+
+Sources : [modèle du référentiel](../src/GlpiPilot/Core/CitySettings.cs), [détection, corrections et comparaisons](../src/GlpiPilot/Core/CityDetectionService.cs), [échanges CSV](../src/GlpiPilot/Core/CityReferenceService.cs) et [éditeur des sources et bâtiments](../src/GlpiPilot/UI/CitySettingsView.Terrain.cs).
 
 ### Indicateurs de lieux
 
@@ -70,20 +98,52 @@ L’onglet **Villes et tournées → Tournées datées** complète le plan par v
 1. Dans **Panier**, cochez les tickets réellement retenus pour une intervention. Le périmètre provient du plan d’équipe ou du technicien sélectionné.
 2. Cliquez sur **Préparer les tickets cochés**. Les tickets sont regroupés par site précis lorsqu’il est connu, puis par ville. Les tickets sans lieu restent identifiés dans le panier.
 3. Renseignez le nom, la date, le début et la fin de journée. Ajoutez éventuellement des points de départ et de retour à partir du référentiel ou de coordonnées saisies.
-4. Pour chaque étape, indiquez le technicien, la durée d’intervention, le temps de trajet avant l’étape, une heure minimale de début et une heure limite de fin. Ajoutez les consignes utiles.
+4. Pour chaque étape, indiquez le technicien, éventuellement une date propre, la durée d’intervention, le temps de trajet avant l’étape, une heure minimale de début et une heure limite de fin. Vérifiez les compétences requises, contacts, matériel et consignes.
 5. Calculez le planning, examinez les attentes, fenêtres dépassées et retours après la fin de journée, puis enregistrez.
 
-Les durées de trajet sont saisies par l’utilisateur. Les distances sont à vol d’oiseau lorsque les coordonnées sont disponibles. La proximité propose un ordre glouton indicatif ; elle ne fournit ni itinéraire routier, trafic, géocodage ou garantie d’optimalité. Aucun fournisseur de routage externe n’est configuré dans cette version.
+Sans service routier configuré, les durées de trajet sont saisies par l’utilisateur et les distances disponibles sont à vol d’oiseau. La proximité propose un ordre glouton indicatif, sans trafic, géocodage ou garantie d’optimalité. Le calcul routier facultatif décrit ci-dessous utilise un fournisseur choisi explicitement ; il ne transforme pas une distance à vol d’oiseau en durée routière supposée.
 
 Une étape verrouillée garde sa position et son affectation dans les propositions automatiques. La reconstruction refuse une modification qui déplacerait, viderait ou changerait le panier d’une étape verrouillée ; déverrouillez-la après vérification. Les réglages d’une étape peuvent être ajustés explicitement dans son éditeur.
 
+### Préparer, valider et clôturer
+
+Une tournée commence à l’état **Brouillon**. **Valider : prête** exige des tickets rapprochés et localisés, un technicien sur chaque étape et un planning compatible avec les fenêtres horaires, les ouvertures connues et la journée déclarée. **Déclarer effectuée** exige l’état Prête et refuse une étape encore future. Le retour au brouillon reste explicite ; une modification du planning remet également la tournée en brouillon pour éviter de conserver une validation périmée.
+
+Chaque changement conserve l’état précédent, le nouvel état, sa date et son motif, avec les cent transitions les plus récentes. Le statut « effectuée » est une déclaration locale de préparation et de réalisation ; il ne clôture aucun ticket GLPI.
+
+### Ouvertures des sites
+
+Dans le référentiel, saisissez par exemple **lundi 08:00-12:00 ; lundi 13:00-17:00**. Plusieurs plages d’un même jour sont possibles. Les fermetures exceptionnelles utilisent des dates **AAAA-MM-JJ**. L’intervention entière doit tenir dans une plage : si elle ne tient pas avant une fermeture de midi, le calcul attend la plage suivante. Un jour sans ouverture dans un calendrier renseigné, une fermeture explicite ou une durée impossible produit un signal d’incompatibilité.
+
+Si aucun horaire n’est déclaré pour un site, aucune contrainte d’ouverture n’est inventée. Vérifiez cette information avec le contact du site avant de valider la tournée. Le planning distingue trajet, intervention et attente, pour chaque couple date/technicien.
+
 ### Répartir et comparer
 
-**Répartition et scénarios** propose une répartition entre un à trente-deux techniciens sélectionnés, en équilibrant les minutes d’intervention et de trajet saisies. Les étapes verrouillées sont conservées. Cette proposition n’intègre pas automatiquement les compétences, absences ou capacités définies ailleurs, et ne change pas les affectations GLPI.
+**Répartition et scénarios** conserve une action simple d’équilibrage des minutes d’intervention et de trajet entre les techniciens choisis. L’action **Répartir selon disponibilités et compétences** ajoute une proposition sur **un à quatorze jours**, pour **un à trente-deux techniciens**, à partir de la date de la tournée.
 
-**Créer un scénario** copie la tournée avec une nouvelle identité. Le comparatif présente les tickets, étapes, minutes et fenêtres dépassées des deux scénarios. Des paniers différents doivent être interprétés comme des charges différentes.
+Ce second calcul utilise les compétences déclarées, les absences, les plages de présence et les capacités journalières, du matin et de l’après-midi des fiches techniciens. Il tient compte des fenêtres d’intervention, des ouvertures et fermetures de sites, de l’attente, des trajets et du retour. Une capacité non déclarée est exclue de l’allocation automatique ; une compétence requise ne devient pas acquise par défaut. Les étapes verrouillées gardent leur date et leur technicien ; si leurs contraintes sont déjà incompatibles, le calcul refuse de les déplacer silencieusement.
 
-Le registre local accepte cent tournées, deux mille tickets et cinq cents étapes par tournée. **Retirer du registre** retire la copie mémorisée en laissant le brouillon affiché pour pouvoir l’enregistrer de nouveau. L’enregistrement est atomique. Le registre contient les ID sélectionnés, références de lieux, empreintes de contrôle, horaires et consignes ; il n’enregistre pas automatiquement les titres de tickets et ne fait pas partie de la configuration d’équipe.
+Le trajet vers une étape et son intervention doivent tenir dans une même plage de présence. Une présence déclarée uniquement l’après-midi reporte le départ ; une pause entre deux plages n’est pas comptée comme attente sur site. Le retour doit lui aussi respecter une plage et son budget. Une exception de capacité augmente ou réduit le budget de sa demi-journée, mais n’invente pas une présence sur un jour sans plage dans un calendrier renseigné. Sans calendrier récurrent, les horaires de la tournée bornent le calcul ; les horaires de présence restent inconnus. Les disponibilités utilisées sont conservées avec le scénario et les fiches techniciens sont relues lors du recalcul et de la validation dans l’interface.
+
+Les échéances connues donnent l’ordre de priorité des étapes. L’algorithme recherche ensuite un créneau compatible, en privilégiant les journées et en équilibrant la capacité utilisée ; les territoires déclarés servent de préférence. Il conserve l’ordre final des étapes pour vérifier les horaires. **C’est une heuristique, sans garantie de solution globale optimale** : une étape peut rester sans affectation alors qu’un réarrangement manuel permettrait de la placer. Les étapes sans créneau portent une explication et demandent une décision humaine. Les affectations GLPI restent indépendantes de cette proposition locale.
+
+**Créer un scénario** copie la tournée avec une nouvelle identité. Le comparatif présente tickets, étapes, intervention, trajets, attente, fenêtres dépassées, sites fermés, échéances dépassées et échéances inconnues. Les kilomètres routiers ne sont comparables que si tous les segments des parcours ont été calculés avec des coordonnées toujours valables. Une valeur manquante reste inconnue. Des paniers différents doivent être interprétés comme des charges différentes.
+
+Le registre local accepte cent tournées, deux mille tickets et cinq cents étapes par tournée. **Retirer du registre** retire la copie mémorisée en laissant le brouillon affiché pour pouvoir l’enregistrer de nouveau. L’enregistrement est atomique. Le fichier `scheduled-tours.json` contient les ID sélectionnés, références de lieux, empreintes de contrôle, horaires, états, contacts, matériel et consignes, ainsi que les résultats routiers ou météo enregistrés. Il n’enregistre pas automatiquement les titres de tickets et ne fait pas partie de la configuration d’équipe. Les contacts et consignes peuvent contenir des informations de terrain : partagez le briefing uniquement avec les personnes prévues.
+
+Les tournées enregistrées du jour sont aussi accessibles à **Ma journée**, avec leurs ID de tickets, leur état et leur technicien. Ce raccord utilise les dates propres aux étapes, et non seulement la date de début de la tournée.
+
+### Routes et météo facultatives
+
+Dans **Routes et météo · services facultatifs**, renseignez une adresse de service autorisé. Les deux adresses sont **vides par défaut**. Le bouton **Enregistrer les adresses** les conserve localement dans `terrain-services.json`. La case d’autorisation d’envoi des coordonnées et des dates vaut pour la session et n’est pas mémorisée. Chaque demande nécessite ensuite un clic sur le calcul souhaité ; aucune transmission automatique n’est déclenchée par l’ouverture d’une tournée.
+
+Pour le routage, renseignez l’adresse de base d’un serveur compatible **OSRM v5**, par exemple une instance interne, et le profil qu’il accepte, initialement `driving`. Le client demande le parcours dans l’ordre des étapes et utilise les distances et durées de chaque segment reçues du serveur. Il transmet les coordonnées utiles, pas les titres, ID de tickets, noms de techniciens ou identifiants GLPI. Les segments restent liés au jour, au technicien, à l’ordre et aux coordonnées : une modification invalide les résultats concernés. Les durées saisies redeviennent alors applicables et le planning signale le calcul périmé. La source et la date du calcul sont conservées.
+
+Pour la météo, renseignez l’adresse complète d’un point d’accès de prévisions quotidiennes compatible **Open-Meteo**. Les demandes portent sur les coordonnées et la date de l’étape. Le résultat présente le code météo du fournisseur, les températures minimale et maximale, la probabilité maximale de précipitations quand elle existe, la source et la date de consultation. Une absence de prévision, une date hors couverture ou une réponse inexploitable ne devient pas une météo inventée. Les valeurs manquantes restent inconnues ; la fiche terrain n’utilise plus une prévision après changement de la date ou des coordonnées de l’étape.
+
+Les adaptateurs acceptent HTTP ou HTTPS selon le service explicitement choisi, sans identifiant dans l’URL, paramètre secret ou clé intégrée au programme. Utilisez un point d’accès interne ou un fournisseur dont les conditions autorisent cet usage ; l’interface ne gère pas les services imposant une clé dans la requête. Les redirections sont refusées. Les réponses sont bornées à 2 Mio, les requêtes à 30 secondes et une opération complète à deux minutes, avec annulation. Un échec conserve le brouillon précédent ; il n’applique pas une réponse partielle.
+
+Sources : [service de planning et exports](../src/GlpiPilot/Core/ScheduledTourService.cs), [états, contraintes et comparaison](../src/GlpiPilot/Core/ScheduledTourPlanning.cs), [adaptateurs HTTP](../src/GlpiPilot/Core/TourExternalServices.cs) et [interface terrain](../src/GlpiPilot/UI/ScheduledTourView.Terrain.cs). Protocoles des fournisseurs : [OSRM](https://project-osrm.org/docs/v5.24.0/api/) et [Open-Meteo](https://open-meteo.com/en/docs).
 
 ### Rapprocher un nouveau relevé
 
@@ -99,10 +159,14 @@ L’export ICS crée un événement par étape, avec une identité stable, des d
 
 Un lieu modifié, une référence absente, un ticket sans localisation ou un ID non rapproché empêchent l’export calendrier. L’import du fichier dans un agenda reste une action de l’utilisateur ; aucune invitation n’est envoyée.
 
-Le briefing HTML contient le planning, les tickets retrouvés dans le relevé actuel, les consignes et les écarts de rapprochement. Les textes source sont encodés pour ne pas exécuter de contenu HTML. Son bouton d’impression permet l’impression ou l’enregistrement PDF via le navigateur. Il ne s’agit pas d’un générateur PDF natif. Aucun navigateur n’est ouvert automatiquement par cet export.
+Le briefing HTML contient le planning, les tickets retrouvés dans le relevé actuel, les contacts, le matériel ou les accès à prévoir, les consignes et les écarts de rapprochement. À la création, les champs de contact et matériel sont recueillis depuis les colonnes reconnues du relevé et le référentiel du site ; ils restent modifiables dans la fiche d’étape et une valeur absente reste « Non renseigné ». Une prévision météo correspondant encore à la date et aux coordonnées peut compléter cette fiche, avec sa source et sa date de consultation.
+
+Les textes source sont encodés pour ne pas exécuter de contenu HTML. Son bouton d’impression permet l’impression ou l’enregistrement PDF via le navigateur. Cet export de tournée est un document HTML imprimable ; aucun navigateur n’est ouvert automatiquement par l’export.
 
 ## Vérifications
 
-Les suites BCL passent avec **91/91 contrôles de requêtes**, **75/75 contrôles de lieux** et **59/59 contrôles de tournées**. Elles utilisent des données synthétiques et aucun portail privé.
+Les suites BCL validées comprennent **91/91 contrôles de lieux** et **87/87 contrôles de tournées**. Elles utilisent des données synthétiques et aucun portail privé. Les contrôles de routage et météo injectent des réponses HTTP de test : absence de consentement, hôtes configurés, annulation, bornes, erreurs, données manquantes et invalidation des résultats périmés. Ils ne constituent pas une validation d’un fournisseur externe dans votre environnement.
 
-Les nouveaux scénarios WPF de WindowsStartupChecks passent par les contrôles réels de l’atelier de requêtes, la simulation des villes, les événements de correction, le panier daté, l’édition de durée avant et après sauvegarde et les scénarios. Leur exécution Windows constitue une vérification distincte des tests du moteur et de la compilation croisée.
+Les scénarios WPF de WindowsStartupChecks passent par les contrôles réels de l’atelier de requêtes, la simulation des villes, les événements de correction avec motif, le panier daté, l’édition de durée avant et après sauvegarde et les scénarios. Leur exécution Windows constitue une vérification distincte des tests du moteur et de la compilation croisée. Consultez les résultats du workflow Windows du commit concerné avant de conclure sur cette exécution.
+
+Suites : [requêtes](../tests/QueryChecks), [détection géographique](../tests/CityDetectionChecks), [tournées et fournisseurs simulés](../tests/TourPlanningChecks), [contrôles Windows](../tests/WindowsStartupChecks).

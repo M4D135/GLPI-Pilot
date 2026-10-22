@@ -10,6 +10,7 @@
     <Compile Include="../../src/GlpiPilot/Core/DashboardLayout*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/TechnicianDashboardService.cs" Link="Core/TechnicianDashboardService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TechnicianWorkloadService.cs" Link="Core/TechnicianWorkloadService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TechnicianCalendar.cs" Link="Core/TechnicianCalendar.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TechnicianPreferences.cs" Link="Core/TechnicianPreferences.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
   </ItemGroup>

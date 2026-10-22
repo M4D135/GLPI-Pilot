@@ -12,6 +12,7 @@
     <Compile Include="../../src/GlpiPilot/Core/AppPaths.cs" Link="Core/AppPaths.cs" />
     <Compile Include="../../src/GlpiPilot/Core/AppSettings.cs" Link="Core/AppSettings.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="Core/CitySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="Core/CityDetectionService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/Query*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/BrowserModels.cs" Link="Core/BrowserModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
@@ -26,9 +27,11 @@
     <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="Core/DashboardModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportService.cs" Link="Core/ExportService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/SnapshotStore.cs" Link="Core/SnapshotStore.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/AnalyticsPopulationStore.cs" Link="Core/AnalyticsPopulationStore.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardGeography.cs" Link="Core/DashboardGeography.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DataQualityService.cs" Link="Core/DataQualityService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/XlsxImportService.cs" Link="Core/XlsxImportService.cs" />
-    <Compile Include="../../src/GlpiPilot/Core/ConfigurationReview.cs" Link="Core/ConfigurationReview.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ConfigurationReview*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/OperationJournal.cs" Link="Core/OperationJournal.cs" />
     <Compile Include="../../src/GlpiPilot/Core/PreviewQueryService.cs" Link="Core/PreviewQueryService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/PreviewViewPreferences.cs" Link="Core/PreviewViewPreferences.cs" />

@@ -20,7 +20,8 @@ public sealed class TechnicianPlanningView : UserControl
     private readonly DataGrid _recommendations = GridWithColumns(("Technicien", "Name", 220), ("Admissible", "AvailableForScenario", 100), ("Score du scénario", "Score", 125), ("Estimation · min", "EstimatedLoadMinutes", 140), ("Capacité · min", "CapacityMinutes", 120));
     private readonly DataGrid _proposals = GridWithColumns(("Ticket", "Id", 90), ("Technicien proposé", "Technician", 200), ("Minutes prévues", "Minutes", 140), ("Titre / couverture", "Title", 350));
     private readonly DataGrid _coverage = GridWithColumns(("Secteur", "Territory", 160), ("Principal", "Primary", 250), ("Remplacement", "Backup", 250), ("Sans indisponibilité déclarée", "AvailableDeclared", 250), ("Limites", "Gaps", 300));
-    private readonly DataGrid _loads = GridWithColumns(("Technicien", "Technician", 220), ("Avant · min", "BeforeMinutes", 130), ("Après · min", "AfterMinutes", 130), ("Capacité · min", "CapacityMinutes", 130), ("Tickets proposés", "ProposedTickets", 140), ("Méthode / couverture", "Coverage", 400));
+    private readonly DataGrid _coverageMatrix = GridWithColumns(("Secteur", "Territory", 160), ("Spécialité", "Skill", 180), ("Date", "Date", 145), ("Période", "Period", 105), ("Techniciens déclarés", "Technicians", 300), ("Capacité · min", "CapacityMinutes", 120), ("Précision", "Evidence", 400));
+    private readonly DataGrid _loads = GridWithColumns(("Technicien", "Technician", 220), ("Avant · min", "BeforeMinutes", 130), ("Borne basse avant", "BeforeMinimumMinutes", 130), ("Borne haute avant", "BeforeMaximumMinutes", 130), ("Après · min", "AfterMinutes", 130), ("Borne basse après", "AfterMinimumMinutes", 130), ("Borne haute après", "AfterMaximumMinutes", 130), ("Capacité · min", "CapacityMinutes", 130), ("Tickets proposés", "ProposedTickets", 140), ("Méthode / couverture", "Coverage", 400));
     private readonly TextBlock _message = WorkplaceControls.Label("Simulation locale : aucune affectation GLPI n’est modifiée.");
     private readonly TextBlock _evidence = WorkplaceControls.Label("Sélectionnez un ticket puis un technicien proposé pour lire les critères.");
     private readonly TextBox _handover = WorkplaceControls.Editor(double.NaN, 1000000, true);
@@ -44,6 +45,7 @@ public sealed class TechnicianPlanningView : UserControl
         var search = new WrapPanel(); search.Children.Add(WorkplaceControls.Label("Ticket / lieu")); search.Children.Add(_search); search.Children.Add(WorkplaceControls.Label("Compétences requises ;")); search.Children.Add(_requiredSkills); prepare.Children.Add(search);
         Grid.SetRow(_tickets, 1); prepare.Children.Add(_tickets);
         var actions = new WrapPanel { Margin = new Thickness(0, 6, 0, 6) }; actions.Children.Add(WorkplaceControls.Label("Minutes prévues")); actions.Children.Add(_minutes);
+        actions.Children.Add(WorkplaceControls.Command("Durée du modèle de catégorie", () => { if (_tickets.SelectedItem is DispatchTicket ticket && _recommendations.SelectedItem is DispatchRecommendation technician) { var estimate = TechnicianPlanningService.Estimate(_preferences.Get(technician.TechnicianKey), ticket.Category); if (estimate.Minutes.HasValue) _minutes.Text = estimate.Minutes.Value.ToString(); _evidence.Text = estimate.Evidence + $" · {estimate.Minutes} min ; plage {estimate.MinimumMinutes?.ToString() ?? "?"}–{estimate.MaximumMinutes?.ToString() ?? "?"} min. La proposition conserve une durée centrale ; sa fourchette reste à vérifier."; } }));
         actions.Children.Add(WorkplaceControls.Command("Proposer le technicien sélectionné", Assign));
         actions.Children.Add(WorkplaceControls.Command("Voir le ticket du relevé", () => { if (_tickets.SelectedItem is DispatchTicket ticket) RowsRequested?.Invoke(new[] { ticket.SourceIndex }, "Ticket du scénario local"); }));
         Grid.SetRow(actions, 2); prepare.Children.Add(actions); Grid.SetRow(_recommendations, 3); prepare.Children.Add(_recommendations);
@@ -54,6 +56,7 @@ public sealed class TechnicianPlanningView : UserControl
         var proposals = new DockPanel(); var remove = WorkplaceControls.Command("Retirer la proposition sélectionnée", () => { if (_proposals.SelectedItem is ProposalRow row) { _scenario.Assignments.RemoveAll(item => item.TicketKey == row.Key); Refresh(); } }); DockPanel.SetDock(remove, Dock.Top); proposals.Children.Add(remove); proposals.Children.Add(_proposals);
         tabs.Items.Add(new TabItem { Header = "Propositions", Content = proposals }); tabs.Items.Add(new TabItem { Header = "Couverture", Content = _coverage });
         tabs.Items.Add(new TabItem { Header = "Charge simulée", Content = _loads });
+        tabs.Items.Add(new TabItem { Header = "Couverture sur 7 jours", Content = _coverageMatrix });
         var absence = new DockPanel(); var absenceActions = new WrapPanel(); absenceActions.Children.Add(WorkplaceControls.Label("Préparer le relais de")); absenceActions.Children.Add(_departing);
         absenceActions.Children.Add(WorkplaceControls.Command("Proposer les relais", ProposeHandover));
         absenceActions.Children.Add(WorkplaceControls.Command("Copier le plan", () => { try { Clipboard.SetText(_handover.Text); } catch (Exception error) { _message.Text = error.Message; } }));
@@ -88,6 +91,10 @@ public sealed class TechnicianPlanningView : UserControl
         if (_snapshot != null)
             _coverage.ItemsSource = TechnicianPlanningService.Coverage(_snapshot, _preferences,
                 _data.Select(ticket => ticket.Territory).Concat(_preferences.Technicians.Values.SelectMany(value => value.PrimaryTerritories.Concat(value.BackupTerritories))), _date.SelectedDate ?? DateTime.Today);
+        if (_snapshot != null)
+            _coverageMatrix.ItemsSource = TechnicianPlanningService.CoverageMatrix(_snapshot, _preferences,
+                _data.Select(t => t.Territory).Concat(_preferences.Technicians.Values.SelectMany(p => p.PrimaryTerritories.Concat(p.BackupTerritories))),
+                _preferences.Technicians.Values.SelectMany(p => p.Skills), _date.SelectedDate ?? DateTime.Today);
         RefreshRecommendations();
     }
     private void RefreshTickets()

@@ -94,6 +94,8 @@ public partial class MainWindow : Window
         InitializePreviewWorkspace();
         InitializeWorkspace();
         InitializeControlCenter();
+        InitializeAnalyticsWorkspace();
+        InitializeCompletionWorkspace();
         _monitor = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _monitor.Tick += Monitor_Tick;
         _monitor.Start();
@@ -251,7 +253,11 @@ public partial class MainWindow : Window
                 SetStatus(p.Message);
                 if (p.Rows > 0 || p.Pages > 0) StatsText.Text = $"{p.Rows:N0} lignes" + (p.Pages > 0 ? $" · {p.Pages} page(s)" : "");
             });
-            var run = await _automatic.RunAsync(settings, progress, ct);
+            AutomaticRunResult run;
+            try { run = await _automatic.RunAsync(settings, progress, ct); RecordCollectionHealth(settings, run.Data.Complete, run.Data.Status); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception error) { RecordCollectionHealth(settings, false, AppPaths.SafeError(error)); throw; }
+            CaptureActiveSource(settings);
             PublishCityResult(run.Cities ?? await EnrichCitiesAsync(run.Data, settings, ct), settings);
             await ArchiveResultAsync(settings, ct);
             BuildPreview();

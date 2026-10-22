@@ -35,6 +35,9 @@ public sealed class TechnicianManagementView : UserControl
         AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 76, MaxLength = TechnicianPreferences.MaximumNotesLength,
         VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(0, 6, 0, 10)
     };
+    private readonly TextBox _workPeriods = new() { AcceptsReturn = true, MinHeight = 80, MaxHeight = 180, MaxLength = 8000, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    private readonly TextBox _capacityDays = new() { AcceptsReturn = true, MinHeight = 80, MaxHeight = 180, MaxLength = 40000, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    private readonly TextBox _categoryEstimates = new() { AcceptsReturn = true, MinHeight = 80, MaxHeight = 180, MaxLength = 60000, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly TextBox _skills = new() { MaxLength = 8050, TextWrapping = TextWrapping.Wrap };
     private readonly TextBox _primaryTerritories = new() { MaxLength = 8050, TextWrapping = TextWrapping.Wrap };
     private readonly TextBox _backupTerritories = new() { MaxLength = 8050, TextWrapping = TextWrapping.Wrap };
@@ -173,6 +176,11 @@ public sealed class TechnicianManagementView : UserControl
         absence.Children.Add(Label("au", 12, "MutedBrush", margin: new Thickness(8, 0, 8, 0))); absence.Children.Add(_unavailableUntil);
         absence.Children.Add(Command("Effacer l’indisponibilité", () => _unavailableFrom.SelectedDate = _unavailableUntil.SelectedDate = null)); selected.Children.Add(absence);
         selected.Children.Add(Label("Précisions de disponibilité / horaires", 12, "MutedBrush")); selected.Children.Add(_availabilityNote);
+        var calendar = new StackPanel();
+        calendar.Children.Add(Label("Présence récurrente : une plage par ligne. Jour 1=lundi…7=dimanche ; début ; fin ; capacité en minutes. Exemple : 1;08:30;12:00;180", 12, "MutedBrush")); calendar.Children.Add(_workPeriods);
+        calendar.Children.Add(Label("Exceptions datées : AAAA-MM-JJ ; minutes matin ; minutes après-midi. 0 signifie indisponible, vide conserve la plage habituelle. Exemple : 2026-11-02;0;180", 12, "MutedBrush")); calendar.Children.Add(_capacityDays);
+        calendar.Children.Add(Label("Durée par catégorie : nom exact ; minimum ; estimation centrale ; maximum, en minutes. Exemple : Poste de travail;15;30;60", 12, "MutedBrush")); calendar.Children.Add(_categoryEstimates);
+        selected.Children.Add(new Expander { Header = "Calendrier et modèles de durée", Content = calendar, Margin = new Thickness(0, 10, 0, 10) });
         selected.Children.Add(Label("Ces déclarations servent uniquement à la simulation. Une absence non renseignée ne confirme pas la présence ; la charge en minutes est une estimation choisie.", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 12)));
         _save = Command("Enregistrer les repères", SaveSelectedPreference);
         selected.Children.Add(_save);
@@ -329,6 +337,9 @@ public sealed class TechnicianManagementView : UserControl
             _target.Text = row.ActiveTarget?.ToString(CultureInfo.InvariantCulture) ?? "";
             _notes.Text = row.Preference.Notes;
             _skills.Text = string.Join(" ; ", row.Preference.Skills);
+            _workPeriods.Text = TechnicianCalendar.FormatPeriods(row.Preference.WorkPeriods);
+            _capacityDays.Text = TechnicianCalendar.FormatDays(row.Preference.CapacityDays);
+            _categoryEstimates.Text = TechnicianCalendar.FormatEstimates(row.Preference.CategoryEstimates);
             _primaryTerritories.Text = string.Join(" ; ", row.Preference.PrimaryTerritories);
             _backupTerritories.Text = string.Join(" ; ", row.Preference.BackupTerritories);
             _capacityMinutes.Text = row.Preference.DailyCapacityMinutes?.ToString(CultureInfo.InvariantCulture) ?? "";
@@ -367,7 +378,8 @@ public sealed class TechnicianManagementView : UserControl
                 PrimaryTerritories = _primaryTerritories.Text.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
                 BackupTerritories = _backupTerritories.Text.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
                 DailyCapacityMinutes = Minutes(_capacityMinutes, 1440, true), EstimatedTicketMinutes = Minutes(_estimatedMinutes, 10080, false),
-                UnavailableFrom = _unavailableFrom.SelectedDate, UnavailableUntil = _unavailableUntil.SelectedDate, AvailabilityNote = _availabilityNote.Text
+                UnavailableFrom = _unavailableFrom.SelectedDate, UnavailableUntil = _unavailableUntil.SelectedDate, AvailabilityNote = _availabilityNote.Text,
+                WorkPeriods = TechnicianCalendar.ParsePeriods(_workPeriods.Text), CapacityDays = TechnicianCalendar.ParseDays(_capacityDays.Text), CategoryEstimates = TechnicianCalendar.ParseEstimates(_categoryEstimates.Text)
             };
             _ = _preferences.With(row.Key, preference);
             PreferenceSaveRequested?.Invoke(row.Key, preference);
@@ -395,7 +407,7 @@ public sealed class TechnicianManagementView : UserControl
         _refresh.IsEnabled = !_busy;
         var selected = available && _grid.SelectedItem is ComparisonRow;
         _dashboard.IsEnabled = _save.IsEnabled = _favorite.IsEnabled = _target.IsEnabled = _notes.IsEnabled = selected;
-        _skills.IsEnabled = _primaryTerritories.IsEnabled = _backupTerritories.IsEnabled = _capacityMinutes.IsEnabled = _estimatedMinutes.IsEnabled
+        _workPeriods.IsEnabled = _capacityDays.IsEnabled = _categoryEstimates.IsEnabled = _skills.IsEnabled = _primaryTerritories.IsEnabled = _backupTerritories.IsEnabled = _capacityMinutes.IsEnabled = _estimatedMinutes.IsEnabled
             = _unavailableFrom.IsEnabled = _unavailableUntil.IsEnabled = _availabilityNote.IsEnabled = selected;
         _unassigned.IsEnabled = available && _snapshot!.UnassignedRows.Length > 0;
         _multiple.IsEnabled = available && _snapshot!.MultipleAssignmentRows.Length > 0;

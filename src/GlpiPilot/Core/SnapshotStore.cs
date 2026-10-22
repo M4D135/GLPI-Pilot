@@ -44,6 +44,68 @@ public sealed class SnapshotDocument
     public ExtractionResult Data { get; set; } = new();
     public DashboardSettings Dashboard { get; set; } = new();
     public CitySettings Cities { get; set; } = new();
+    public QueryLibrarySettings Queries { get; set; } = new();
+    public SnapshotLocationEvidence? LocationEvidence { get; set; }
+    public List<SitePopulationEntry>? Populations { get; set; }
+}
+
+public sealed record SnapshotLocationMatch(int Row, string? CityId, string? SiteId, CityMatchState State,
+    bool IsOverride, string Confidence, string SiteState);
+
+/// <summary>Observed local location decisions, without duplicating the source cells or consulting today's overrides.</summary>
+public sealed class SnapshotLocationEvidence
+{
+    public int Version { get; set; } = 1;
+    public bool Applied { get; set; }
+    public string CityColumn { get; set; } = "";
+    public string SiteColumn { get; set; } = "";
+    public string RegionColumn { get; set; } = "";
+    public string DepartmentColumn { get; set; } = "";
+    public string SectorColumn { get; set; } = "";
+    public List<SnapshotLocationMatch> Matches { get; set; } = new();
+    public static SnapshotLocationEvidence? Capture(ExtractionResult data, CityEnrichmentResult? report)
+    {
+        if (report is null) return null;
+        if (!ReferenceEquals(data, report.Data)) throw new InvalidDataException("Les décisions de localisation ne concernent pas ce relevé.");
+        var result = new SnapshotLocationEvidence
+        {
+            Applied = report.Applied, CityColumn = report.CityColumnName, SiteColumn = report.SiteColumnName,
+            RegionColumn = report.RegionColumnName, DepartmentColumn = report.DepartmentColumnName, SectorColumn = report.SectorColumnName,
+            Matches = report.Matches.Select(m => new SnapshotLocationMatch(m.RowIndex, m.CityId, m.SiteId, m.State, m.IsOverride, m.Confidence, m.SiteState)).ToList()
+        };
+        result.Validate(data); return result;
+    }
+    public void Validate(ExtractionResult data)
+    {
+        if (Version != 1 || Matches is null || Matches.Count > data.Rows.Count || Applied && Matches.Count != data.Rows.Count
+            || new[] { CityColumn, SiteColumn, RegionColumn, DepartmentColumn, SectorColumn }.Any(h => h is null || h.Length > 512)
+            || Matches.Any(m => m is null || m.Row < 0 || m.Row >= data.Rows.Count || !Enum.IsDefined(m.State)
+                || m.CityId is not null && !Guid.TryParse(m.CityId, out _) || m.SiteId is not null && !Guid.TryParse(m.SiteId, out _)
+                || m.Confidence is null || m.Confidence.Length > 100 || m.SiteState is null || m.SiteState.Length > 100)
+            || Matches.Select(m => m.Row).Distinct().Count() != Matches.Count)
+            throw new InvalidDataException("Les décisions de localisation archivées sont invalides ou ne couvrent pas les lignes du relevé.");
+    }
+    public CityEnrichmentResult ToReport(ExtractionResult data)
+    {
+        Validate(data);
+        return new()
+        {
+            Source = data, Data = data, Applied = Applied, CityColumnName = CityColumn, SiteColumnName = SiteColumn,
+            RegionColumnName = RegionColumn, DepartmentColumnName = DepartmentColumn, SectorColumnName = SectorColumn,
+            Matches = Matches.Select(m => new CityMatch(m.Row, m.CityId, null, m.State, Array.Empty<string>())
+            { SiteId = m.SiteId, IsOverride = m.IsOverride, Confidence = m.Confidence, SiteState = m.SiteState }).ToArray(),
+            Message = "Décisions de localisation conservées avec le relevé, sans nouvelle inférence ni correction actuelle."
+        };
+    }
+    public static void Append(DashboardSnapshot snapshot, SnapshotDocument document, CancellationToken ct = default)
+    {
+        if (document.LocationEvidence is null) return;
+        var locations = document.LocationEvidence.ToReport(document.Data);
+        CityDetectionService.AppendDashboardProbes(snapshot, locations, ct);
+        DashboardGeography.Append(snapshot, locations, document.Cities);
+        if (document.Populations is not null)
+            AnalyticsPopulationStore.Append(snapshot, locations, document.Cities, document.Metadata.SourceKey, document.Populations);
+    }
 }
 
 public sealed record SnapshotChange(string Kind, string TicketId, string Field, string Before,
@@ -82,24 +144,116 @@ public sealed class SnapshotStore
     public IReadOnlyList<SnapshotMetadata> List(int limit = 5000)
     {
         if (!Directory.Exists(_root)) return Array.Empty<SnapshotMetadata>();
-        var entries = new List<SnapshotMetadata>();
-        foreach (var path in Directory.EnumerateFiles(_root, "*.meta.json").Take(10000))
+        lock (Gate)
         {
+            var files = Directory.EnumerateFiles(_root, "*.meta.json").Take(10000).Select(path => new FileInfo(path)).OrderBy(x => x.Name, StringComparer.Ordinal).ToArray();
+            var stamp = Hash(string.Join("\n", files.Select(f => f.Name + "|" + f.Length + "|" + f.LastWriteTimeUtc.Ticks)));
+            var indexPath = Path.Combine(_root, "catalogue-index.json");
             try
             {
-                if (new FileInfo(path).Length > 512 * 1024) continue;
-                var metadata = JsonSerializer.Deserialize<SnapshotMetadata>(File.ReadAllText(path), Json);
-                if (metadata is not { Version: 1 } || !ValidId(metadata.Id) || !ValidMetadata(metadata)
-                    || !string.Equals(Path.GetFileName(path), metadata.Id + ".meta.json", StringComparison.OrdinalIgnoreCase)
-                    || !File.Exists(PayloadPath(metadata.Id))) continue;
-                entries.Add(metadata);
+                if (File.Exists(indexPath) && new FileInfo(indexPath).Length <= 32 * 1024 * 1024)
+                {
+                    var cached = JsonSerializer.Deserialize<CatalogueIndex>(File.ReadAllText(indexPath), Json);
+                    if (cached is { Version: 1 } && cached.Stamp == stamp && cached.Entries is { Count: <= 10000 }
+                        && cached.Checksum == Hash(JsonSerializer.Serialize(cached.Entries, Json))
+                        && cached.Entries.All(e => e != null && ValidId(e.Id) && ValidMetadata(e) && File.Exists(PayloadPath(e.Id))))
+                        return cached.Entries.OrderByDescending(e => e.CapturedAt).Take(Math.Clamp(limit, 1, 5000)).ToArray();
+                }
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
+            var entries = new List<SnapshotMetadata>();
+            foreach (var file in files)
+            {
+                try
+                {
+                    if (file.Length > 512 * 1024) continue;
+                    var metadata = ReadMetadata(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(file.Name)));
+                    if (metadata != null) entries.Add(metadata);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
+            }
+            var index = new CatalogueIndex { Stamp = stamp, Entries = entries, Checksum = Hash(JsonSerializer.Serialize(entries, Json)) };
+            try { AtomicIndex(indexPath, JsonSerializer.SerializeToUtf8Bytes(index, Json)); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            return entries.OrderByDescending(e => e.CapturedAt).Take(Math.Clamp(limit, 1, 5000)).ToArray();
         }
-        return entries.OrderByDescending(item => item.CapturedAt).Take(Math.Clamp(limit, 1, 5000)).ToArray();
     }
 
-    public SnapshotMetadata Save(ExtractionResult data, AppSettings settings, CancellationToken ct = default)
+    private SnapshotMetadata? ReadMetadata(string id)
+    {
+        if (!ValidId(id)) return null;
+        var path = MetadataPath(id);
+        if (!File.Exists(path) || new FileInfo(path).Length > 512 * 1024) return null;
+        var metadata = JsonSerializer.Deserialize<SnapshotMetadata>(File.ReadAllText(path), Json);
+        return metadata is { Version: 1 } && metadata.Id == id && ValidMetadata(metadata) && File.Exists(PayloadPath(id)) ? metadata : null;
+    }
+
+    private sealed class CatalogueIndex
+    {
+        public int Version { get; set; } = 1;
+        public string Stamp { get; set; } = "";
+        public string Checksum { get; set; } = "";
+        public List<SnapshotMetadata> Entries { get; set; } = new();
+    }
+
+    public sealed record TicketObservation(string SnapshotId, DateTimeOffset CapturedAt, string TicketId, string Status, string Assignee, bool Comparable);
+    private sealed class TicketIndex
+    {
+        public int Version { get; set; } = 2;
+        public long PayloadBytes { get; set; }
+        public long PayloadModifiedTicks { get; set; }
+        public string PayloadSha256 { get; set; } = "";
+        public string Checksum { get; set; } = "";
+        public Dictionary<string, string[]> Tickets { get; set; } = new(StringComparer.Ordinal);
+    }
+    private static void AtomicIndex(string path, byte[] bytes)
+    {
+        if (bytes.Length > 64 * 1024 * 1024) return;
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllBytes(temporary, bytes); File.Move(temporary, path, true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+    private TicketIndex BuildTicketIndex(SnapshotDocument document)
+    {
+        var payload = new FileInfo(PayloadPath(document.Metadata.Id));
+        var index = new TicketIndex { PayloadSha256 = document.Metadata.PayloadSha256, PayloadBytes = payload.Length, PayloadModifiedTicks = payload.LastWriteTimeUtc.Ticks };
+        if (TryIdentityIndex(document.Data, document.Metadata.IdColumn, out var rows))
+            foreach (var pair in rows)
+                index.Tickets[pair.Key] = new[] { Cell(document.Data, pair.Value, document.Metadata.StatusColumn), Cell(document.Data, pair.Value, document.Metadata.AssigneeColumn) };
+        index.Checksum = Hash(JsonSerializer.Serialize(index.Tickets, Json));
+        AtomicIndex(Path.Combine(_root, document.Metadata.Id + ".tickets.json"), JsonSerializer.SerializeToUtf8Bytes(index, Json));
+        return index;
+    }
+    public IReadOnlyList<TicketObservation> FindTicketHistory(string sourceKey, string ticketId, int limit = 500, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceKey)) throw new InvalidOperationException("Choisissez une source GLPI dont le contexte a été confirmé.");
+        ticketId = TicketReferenceResolver.NormalizeId(ticketId);
+        var result = new List<TicketObservation>();
+        foreach (var metadata in List().Where(m => m.SourceKey == sourceKey).Take(Math.Clamp(limit, 1, 500)))
+        {
+            ct.ThrowIfCancellationRequested(); TicketIndex? index = null;
+            var path = Path.Combine(_root, metadata.Id + ".tickets.json");
+            try
+            {
+                if (File.Exists(path) && new FileInfo(path).Length <= 64 * 1024 * 1024)
+                {
+                    index = JsonSerializer.Deserialize<TicketIndex>(File.ReadAllText(path), Json);
+                    var payload = new FileInfo(PayloadPath(metadata.Id));
+                    if (index is not { Version: 2 } || !payload.Exists || index.PayloadBytes != payload.Length || index.PayloadModifiedTicks != payload.LastWriteTimeUtc.Ticks || index.PayloadSha256 != metadata.PayloadSha256
+                        || index.Tickets == null || index.Tickets.Count > 1000000 || index.Tickets.Any(p => p.Value is not { Length: 2 } || p.Value.Any(v => v == null || v.Length > 16000))
+                        || index.Checksum != Hash(JsonSerializer.Serialize(index.Tickets, Json))) index = null;
+                }
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
+            index ??= BuildTicketIndex(Load(metadata.Id, ct));
+            if (index.Tickets.TryGetValue(ticketId, out var fields) && fields.Length == 2)
+                result.Add(new(metadata.Id, metadata.CapturedAt, ticketId, fields[0], fields[1], metadata.State == "Comparable"));
+        }
+        return result.OrderBy(o => o.CapturedAt).ToArray();
+    }
+
+    public SnapshotMetadata Save(ExtractionResult data, AppSettings settings, CancellationToken ct = default,
+        CityEnrichmentResult? locations = null, IReadOnlyList<SitePopulationEntry>? populations = null)
     {
         ArgumentNullException.ThrowIfNull(data); ArgumentNullException.ThrowIfNull(settings);
         ct.ThrowIfCancellationRequested();
@@ -111,7 +265,15 @@ public sealed class SnapshotStore
             var existing = List().FirstOrDefault(item => item.RunId.Length > 0 && item.RunId == provenance.RunId);
             if (existing != null) return existing;
             Directory.CreateDirectory(_root);
+            var locationEvidence = SnapshotLocationEvidence.Capture(data, locations);
+            if (populations is not null) AnalyticsPopulationStore.Validate(populations);
+            var datedPopulations = populations?.Where(e => e.SourceKey == SourceKey(data)).Select(e => e.Copy()).ToList();
+            var document = new SnapshotDocument { Data = data, Dashboard = settings.Dashboard.Copy(), Cities = settings.Cities.Copy(), Queries = settings.Queries.Copy(),
+                LocationEvidence = locationEvidence, Populations = datedPopulations };
+            document.Metadata.SourceKey = SourceKey(data);
             var dashboard = DashboardService.Calculate(data, settings.Dashboard, data.ExtractedAt, ct);
+            SnapshotLocationEvidence.Append(dashboard, document, ct);
+            QueryService.AppendDashboardQueries(dashboard, data, settings.Dashboard, settings.Queries, ct);
             int Column(string role) => dashboard.Columns.FirstOrDefault(column => column.Role == role)?.Index ?? -1;
             var metadata = new SnapshotMetadata
             {
@@ -127,7 +289,7 @@ public sealed class SnapshotStore
             };
             if (metadata.SourceLabel.Length == 0) metadata.SourceLabel = "Import local · provenance non confirmée";
             metadata.IdentityReliable = TryIdentityIndex(data, metadata.IdColumn, out _);
-            var document = new SnapshotDocument { Metadata = metadata, Data = data, Dashboard = settings.Dashboard.Copy(), Cities = settings.Cities.Copy() };
+            document.Metadata = metadata;
             var temporary = Path.Combine(_root, "." + metadata.Id + ".tmp");
             try
             {
@@ -140,6 +302,8 @@ public sealed class SnapshotStore
                 metadata.CompressedBytes = new FileInfo(temporary).Length;
                 File.Move(temporary, PayloadPath(metadata.Id));
                 WriteMetadata(metadata);
+                try { BuildTicketIndex(document); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
             Prune(settings.History);
@@ -150,7 +314,7 @@ public sealed class SnapshotStore
     public SnapshotDocument Load(string id, CancellationToken ct = default)
     {
         RequireId(id); ct.ThrowIfCancellationRequested();
-        var metadata = List().FirstOrDefault(item => item.Id == id) ?? throw new FileNotFoundException("Le relevé historique n’est plus disponible.");
+        var metadata = ReadMetadata(id) ?? throw new FileNotFoundException("Le relevé historique n’est plus disponible.");
         var path = PayloadPath(id);
         using var file = File.OpenRead(path);
         if (file.Length > MaximumUncompressedBytes) throw new InvalidDataException("Le relevé historique dépasse la taille autorisée.");
@@ -171,6 +335,8 @@ public sealed class SnapshotStore
             || SchemaFingerprint(document.Data.Headers) != metadata.SchemaFingerprint)
             throw new InvalidDataException("Le contenu du relevé historique ne correspond pas à son catalogue.");
         document.Metadata = metadata;
+        document.LocationEvidence?.Validate(document.Data);
+        if (document.Populations is not null) AnalyticsPopulationStore.Validate(document.Populations);
         return document;
     }
 
@@ -201,7 +367,7 @@ public sealed class SnapshotStore
                     || (entry.CapturedAt >= DateTimeOffset.Now.AddDays(-settings.RetentionDays)
                         && retained < settings.MaximumSnapshots && bytes + entry.CompressedBytes <= settings.StorageBudgetMb * 1024L * 1024L);
                 if (keep) { bytes += entry.CompressedBytes; retained++; continue; }
-                try { File.Delete(MetadataPath(entry.Id)); File.Delete(PayloadPath(entry.Id)); }
+                try { File.Delete(MetadataPath(entry.Id)); File.Delete(PayloadPath(entry.Id)); File.Delete(Path.Combine(_root, entry.Id + ".tickets.json")); }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
             }
         }
@@ -251,8 +417,8 @@ public sealed class SnapshotStore
             if (changed) result.Changed++; else result.Unchanged++;
             if (before.Metadata.StatusColumn >= 0 && after.Metadata.StatusColumn >= 0)
             {
-                var oldStatus = DashboardService.Status(Cell(before.Data, previous, before.Metadata.StatusColumn));
-                var newStatus = DashboardService.Status(Cell(after.Data, current, after.Metadata.StatusColumn));
+                var oldStatus = DashboardService.Status(DashboardService.NormalizeValue(Cell(before.Data, previous, before.Metadata.StatusColumn), "status", before.Data.Headers[before.Metadata.StatusColumn], before.Dashboard));
+                var newStatus = DashboardService.Status(DashboardService.NormalizeValue(Cell(after.Data, current, after.Metadata.StatusColumn), "status", after.Data.Headers[after.Metadata.StatusColumn], after.Dashboard));
                 if (oldStatus is >= 1 and <= 4 && newStatus is 5 or 6) result.ResolutionsObserved++;
                 if (oldStatus is 5 or 6 && newStatus is >= 1 and <= 4) result.ReopeningsObserved++;
             }
@@ -288,7 +454,9 @@ public sealed class SnapshotStore
 
     public static string RulesFingerprint(AppSettings settings) => Hash(JsonSerializer.Serialize(new
     {
-        Version = 2, settings.Dashboard.DateCulture, settings.Dashboard.StaleDays, settings.Dashboard.OldDays, settings.Dashboard.DueSoonHours,
+        Version = 3, settings.Dashboard.NumberCulture, settings.Dashboard.SourceTimeZone, settings.Dashboard.MultiValueSeparators,
+        Dictionaries = settings.Dashboard.ValueDictionaries.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, Values = p.Value.OrderBy(v => v.Key, StringComparer.Ordinal).ToArray() }).ToArray(),
+        settings.Dashboard.DueHorizonHours, settings.Dashboard.SatisfactionScale, Queries = settings.Queries, settings.Dashboard.DateCulture, settings.Dashboard.StaleDays, settings.Dashboard.OldDays, settings.Dashboard.DueSoonHours,
         settings.Dashboard.Weather, settings.Dashboard.AssignmentCountingMode,
         PriorityRules = settings.Dashboard.PriorityRules.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray(),
         Mappings = settings.Dashboard.ColumnMappings.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray(),

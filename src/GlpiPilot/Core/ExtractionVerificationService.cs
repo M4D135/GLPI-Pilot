@@ -26,6 +26,13 @@ public static class ExtractionVerificationService
         try
         {
             Directory.CreateDirectory(settings.ExportFolder);
+            var driveRoot = Path.GetPathRoot(Path.GetFullPath(settings.ExportFolder));
+            if (!string.IsNullOrEmpty(driveRoot))
+            {
+                var drive = new DriveInfo(driveRoot);
+                if (drive.IsReady && drive.AvailableFreeSpace < settings.MinimumFreeSpaceMb * 1024L * 1024L)
+                    throw new IOException($"Espace libre insuffisant : {settings.MinimumFreeSpaceMb} Mio sont requis pour les fichiers temporaires et les exports.");
+            }
             var probe = Path.Combine(settings.ExportFolder, ".glpi-write-check-" + Guid.NewGuid().ToString("N"));
             using var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
             stream.WriteByte(0); stream.Flush();
@@ -53,19 +60,37 @@ public static class ExtractionVerificationService
         }
         if (sample.Count == 0) return new(false, false, 0, 0, "La liste affichée ne fournit aucun identifiant à rapprocher.");
         var found = new HashSet<string>(StringComparer.Ordinal);
+        var shownRows = visible.Rows.Where(row => left < row.Length && sample.Contains(NormalizeId(row[left]))).GroupBy(row => NormalizeId(row[left])).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var comparable = visible.Headers.Select((header, index) => (Left: index, Right: downloaded.Headers.FindIndex(other => DashboardService.Normalize(other) == DashboardService.Normalize(header))))
+            .Where(pair => pair.Left != left && pair.Right >= 0).ToArray();
+        int comparedCells = 0, changedCells = 0;
         foreach (var row in downloaded.Rows)
         {
             ct.ThrowIfCancellationRequested();
             if (right < row.Length)
             {
                 var id = NormalizeId(row[right]);
-                if (sample.Contains(id)) found.Add(id);
+                if (sample.Contains(id) && found.Add(id))
+                {
+                    foreach (var pair in comparable)
+                    {
+                        if (pair.Left >= shownRows[id].Length || pair.Right >= row.Length) continue;
+                        var shown = shownRows[id][pair.Left].Trim(); var received = row[pair.Right].Trim();
+                        if (shown.Contains('…') || shown.EndsWith("...", StringComparison.Ordinal)) continue;
+                        comparedCells++;
+                        var same = System.Text.RegularExpressions.Regex.Replace(shown, @"\s+", " ") == System.Text.RegularExpressions.Regex.Replace(received, @"\s+", " ");
+                        if (!same && DashboardService.TryDate(shown, settings.DateCulture, TimeSpan.Zero, out var a) && DashboardService.TryDate(received, settings.DateCulture, TimeSpan.Zero, out var b)) same = a == b;
+                        if (!same) changedCells++;
+                    }
+                }
             }
             if (found.Count == sample.Count) break;
         }
         var missing = sample.Count - found.Count;
-        return new(true, missing == 0, sample.Count, missing, missing == 0
-            ? $"Les {sample.Count} identifiants de l’échantillon visible sont présents dans l’export. Ce contrôle complète le comptage ; il ne prouve pas à lui seul l’identité de toute la recherche."
+        return new(true, missing == 0 && changedCells == 0, sample.Count, missing, changedCells > 0
+            ? $"Les identifiants de l’échantillon ont été rapprochés, mais {changedCells}/{comparedCells} valeurs comparables diffèrent entre la liste et l’export. La recherche a pu évoluer ; aucune valeur n’est inscrite au diagnostic."
+            : missing == 0
+            ? $"Les {sample.Count} identifiants et {comparedCells} valeurs comparables de l’échantillon correspondent à l’export. Les cellules visiblement abrégées sont exclues. Ce contrôle complète le comptage sans prouver à lui seul toute la recherche."
             : $"{missing} identifiant(s) de la liste affichée manquent dans l’export sur un échantillon de {sample.Count}. Le fichier reçu peut correspondre à un autre périmètre ou à une recherche ayant évolué.");
     }
 

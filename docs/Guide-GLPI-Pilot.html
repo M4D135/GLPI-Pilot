@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 2.0.0</div>
+    <div class="eyebrow">Guide de prise en main · Version 2.1.0</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -120,7 +120,7 @@
       <h2>10. Conserver et actualiser ses tournées</h2>
       <p>Créer une tournée nommée et datée depuis un panier explicite de tickets. Organiser les arrêts, choisir départ/retour, durées prévues, fenêtres horaires et étapes verrouillées. Comparer les scénarios et répartir les interventions selon les durées déclarées.</p>
       <p>Après une nouvelle extraction, rapprocher la tournée du relevé : tickets absents, réaffectés ou résolus demandent un examen. La reconstruction des étapes reste une action explicite. Retirer une tournée du registre la conserve comme brouillon affiché jusqu’au changement de tournée ; elle ne se réenregistre que sur demande explicite.</p>
-      <p>Exporter une fiche HTML imprimable ou un calendrier ICS. Les temps de trajet sont saisis ou indicatifs ; aucun calcul routier en temps réel n’est fourni. Le calendrier produit est un fichier à importer, pas une invitation envoyée à un collègue.</p>
+      <p>Exporter une fiche HTML imprimable ou un calendrier ICS. Les trajets sont saisis ou indicatifs par défaut ; un service OSRM compatible peut fournir des distances et durées routières après configuration et consentement. Un service Open-Meteo peut fournir les prévisions des sites, avec source et date. Le calendrier produit est un fichier à importer, pas une invitation envoyée à un collègue.</p>
     </section>
     <section id="historique">
       <h2>11. Comparer les relevés et examiner la qualité</h2>
@@ -131,8 +131,8 @@
     </section>
     <section id="automatisation">
       <h2>12. Sources, campagnes et alertes</h2>
-      <p>Mémoriser plusieurs recherches avec leur nom, URL, navigateur et méthode. Une campagne extrait les sources cochées successivement et conserve leur provenance. La programmation est facultative et ne fonctionne que <strong>pendant que l’application reste ouverte</strong>.</p>
-      <p>Un traitement en cours, un éditeur intégré ouvert, une plage silencieuse ou le verrouillage de la session retardent le lancement. Le journal des opérations conserve les résultats et signale les travaux interrompus. La pagination n’est pas reprise automatiquement au milieu après un arrêt du logiciel.</p>
+      <p>Mémoriser plusieurs recherches avec nom, URL, navigateur, méthode, repères, délais, dossier et formats propres à la source. Une campagne extrait les sources cochées successivement et conserve leur provenance. La programmation est facultative et ne fonctionne que <strong>pendant que l’application reste ouverte</strong>.</p>
+      <p>Un traitement en cours, un éditeur intégré ouvert, une plage silencieuse ou le verrouillage de la session retardent le lancement. Le journal des opérations conserve les résultats et signale les travaux interrompus. La pagination peut reprendre un point conservé après contrôle de la première et dernière page, du total, des colonnes et du périmètre ; un point incompatible impose un nouveau départ.</p>
       <p>Les alertes locales utilisent des indicateurs ou requêtes : seuil, échantillon minimal et exigence de complétude. Elles peuvent être prises en compte ou reportées. Une valeur inconnue, un relevé partiel ou un total incohérent ne résout pas une alerte exigeant un relevé complet. Les démonstrations, archives consultées et dashboards personnels ne déclenchent pas ces règles.</p>
     </section>
     <section id="partage">
@@ -153,15 +153,22 @@
         <tr><td>Documentation et sources</td><td><code>wad\docs</code> pour les guides ; <code>wad\sources</code> dans DEV pour le projet complet.</td></tr>
       </tbody></table>
     </section>
+    <section id="nouveautes-21">
+      <h2>15. Les nouveaux parcours de la version 2.1</h2>
+      <p><strong>Données → Correspondances</strong> présente les rôles, formats, fuseau et dictionnaires puis un aperçu brut/interprété. <kbd>F2</kbd> ouvre une cellule complète. Les en-têtes filtrent tout le relevé ; le panier conserve des identités distinctes par installation et type d’objet.</p>
+      <p>Historique propose mouvements, cohortes, transferts, incertitudes, projections et taux fondés sur des effectifs datés. Le dashboard exporte PNG/PDF avec cartouche et un rapport HTML complet autonome.</p>
+      <p><strong>Sources et organisation → Confort et maintenance</strong> regroupe les palettes adaptées, le choix du moniteur, la navigation personnelle, le diagnostic relisible, l’assistant de langage naturel et la mise à jour. <kbd>F11</kbd> active la concentration ; <kbd>Ctrl K</kbd> garde la navigation accessible.</p>
+      <p>Le parcours détaillé, les options réseau et le retour arrière sont expliqués dans <a href="Guide-2.1.md">Guide-2.1.md</a>. Préparer, générer, prévisualiser et appliquer restent des actions distinctes.</p>
+    </section>
     <section class="rule" id="validation">
       <h2>Validation et périmètre</h2>
       <p>La publication exige les contrôles des moteurs, les parcours navigateur sur données synthétiques, le rendu WPF sous Windows, le lancement du pack extrait, le second lancement et la persistance du zoom. Les journaux et captures du workflow correspondent au commit inscrit dans <code>wad\version.json</code>. Les empreintes des fichiers sont incluses.</p>
-      <p>Le portail privé, son SSO et ses personnalisations ne sont pas accessibles à ces tests. Les notes, corrections, tournées et scénarios restent locaux. L’écriture de tickets GLPI, les services de routage et météo, la synchronisation d’équipe, la signature de l’EXE et la mise à jour automatique ne sont pas inclus dans cette version.</p>
+      <p>Le portail privé, son SSO et ses personnalisations ne sont pas accessibles à ces tests. Les notes, corrections, tournées et scénarios restent locaux. Les écritures GLPI assistées exigent préparation, confirmation explicite et contrôle du résultat. Routage, météo et génération externe restent facultatifs et demandent configuration et consentement. La mise à jour vérifiée conserve une sauvegarde et contrôle le démarrage. La signature d’éditeur nécessite un certificat de confiance non fourni pour cette livraison.</p>
       <p>Les guides spécialisés précisent les méthodes et limites : <code>Dashboards-et-extraction.md</code>, <code>Travail-personnel-et-techniciens.md</code>, <code>Requetes-villes-tournees.md</code> et <code>Historique-qualite-automatisation.md</code>. Le suivi des 200 propositions reste dans <code>Suivi-200-ameliorations.md</code>.</p>
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 2.0.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 2.1.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

@@ -116,7 +116,7 @@ public partial class MainWindow
             if (_wideNavigation != wide)
             {
                 _wideNavigation = wide;
-                MainTabs.Style = (Style)FindResource(wide ? "WorkspaceTabs" : "CompactWorkspaceTabs");
+                MainTabs.Style = (Style)FindResource(_settings.Interface.FocusMode ? "FocusWorkspaceTabs" : wide ? "WorkspaceTabs" : "CompactWorkspaceTabs");
             }
 
             var previewWidth = PreviewHeader.ActualWidth > 0 ? PreviewHeader.ActualWidth : width - (wide ? 234 : 32);

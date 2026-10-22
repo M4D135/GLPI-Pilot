@@ -11,12 +11,14 @@ public sealed record StartupBackupResult(bool VersionChanged, string PreviousVer
 /// <summary>Copies a bounded allowlist of local preferences before the next version reads them. Never copies browser sessions.</summary>
 public static class StartupBackupService
 {
-    public const int MaximumFileBytes = 16 * 1024 * 1024;
+    public const int MaximumFileBytes = 32 * 1024 * 1024;
     public const long MaximumBackupBudgetBytes = 256L * 1024 * 1024;
     public const int MaximumBackups = 12;
     private const string MarkerName = "last-ready-version.txt";
     private static readonly string[] Names = { "settings.json", "technician-preferences.json", "workplace.json", "dispatch-scenario.json", "tour-order.json",
-        "preview-view.json", "table-views.json", "city-overrides.json", "alerts.json" };
+        "preview-view.json", "table-views.json", "city-overrides.json", "alerts.json", "scheduled-tours.json",
+        "table-layouts.json", "selection-basket.json", "site-populations.json", "collection-health.json",
+        "language-assistant.local.json", "ticket-action-adapters.json", "ticket-enrichment.json", "update-policy.json" };
 
     public static StartupBackupResult Prepare(string root, string version)
     {
@@ -32,7 +34,7 @@ public static class StartupBackupService
             if (!File.Exists(path)) continue;
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Une préférence liée à un autre emplacement ne peut pas être sauvegardée automatiquement : " + name);
             using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (file.Length > MaximumFileBytes) throw new InvalidDataException("La préférence " + name + " dépasse 16 Mio ; la sauvegarde automatique n’a pas remplacé le fichier source.");
+            if (file.Length > MaximumFileBytes) throw new InvalidDataException("La préférence " + name + " dépasse 32 Mio ; la sauvegarde automatique n’a pas remplacé le fichier source.");
             var bytes = new byte[checked((int)file.Length)]; file.ReadExactly(bytes);
             inputs.Add((name, bytes, Convert.ToHexString(SHA256.HashData(bytes))));
         }

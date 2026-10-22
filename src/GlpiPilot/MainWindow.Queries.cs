@@ -87,10 +87,17 @@ public partial class MainWindow
     }
 
     private static void AppendLocalDashboardProbes(DashboardSnapshot snapshot, ExtractionResult source,
-        DashboardSettings settings, CityEnrichmentResult? cities, QueryLibrarySettings queries, CancellationToken ct)
+        DashboardSettings settings, CityEnrichmentResult? cities, QueryLibrarySettings queries, CancellationToken ct, CitySettings? geography = null, IReadOnlyList<SitePopulationEntry>? populations = null)
     {
         if (cities != null && ReferenceEquals(cities.Data, source))
+        {
             CityDetectionService.AppendDashboardProbes(snapshot, cities, ct);
+            if (geography is not null)
+            {
+                DashboardGeography.Append(snapshot, cities, geography);
+                if (populations is not null) AnalyticsPopulationStore.Append(snapshot, cities, geography, SnapshotStore.SourceKey(source), populations);
+            }
+        }
         QueryService.AppendDashboardQueries(snapshot, source, settings, queries, ct);
     }
 

@@ -14,13 +14,14 @@ public partial class MainWindow
     private DashboardView? _dashboardView;
     private DashboardSnapshot? _dashboard;
     private CancellationTokenSource? _dashboardCancellation;
+    private bool _dashboardNeedsRetry;
     private readonly Dictionary<string, ComboBox> _dashboardColumns = new();
     private TextBox? _dashboardStaleBox, _dashboardOldBox, _dashboardDueBox;
     private ComboBox? _dashboardDateCulture;
     private StackPanel? _dashboardSettingsPanel;
     private readonly Dictionary<string, TextBox> _weatherFields = new();
     private ComboBox? _assignmentMode;
-    private TextBox? _priorityRulesBox;
+    private TextBox? _priorityRulesBox, _dueHorizonBox, _satisfactionScaleBox, _historyCadenceBox;
     private int[]? _dashboardPreviewRows;
     private string _dashboardPreviewLabel = "";
 
@@ -50,6 +51,9 @@ public partial class MainWindow
         _dashboardStaleBox = DashboardNumberField(thresholds, "Sans modification depuis (jours)");
         _dashboardOldBox = DashboardNumberField(thresholds, "Ticket ancien à partir de (jours)");
         _dashboardDueBox = DashboardNumberField(thresholds, "Échéance proche sous (heures)");
+        _dueHorizonBox = DashboardNumberField(thresholds, "Tranches exclusives d’échéance (h, séparées par ;)");
+        _satisfactionScaleBox = DashboardNumberField(thresholds, "Note maximale de satisfaction");
+        _historyCadenceBox = DashboardNumberField(thresholds, "Cadence historique attendue (heures)");
         var dates = new StackPanel { Width = 250, Margin = new Thickness(0, 0, 18, 8) };
         dates.Children.Add(DashboardLabel("Format des dates du relevé"));
         _dashboardDateCulture = new ComboBox();
@@ -95,6 +99,9 @@ public partial class MainWindow
         _dashboardStaleBox!.Text = dashboard.StaleDays.ToString(CultureInfo.InvariantCulture);
         _dashboardOldBox!.Text = dashboard.OldDays.ToString(CultureInfo.InvariantCulture);
         _dashboardDueBox!.Text = dashboard.DueSoonHours.ToString(CultureInfo.InvariantCulture);
+        _dueHorizonBox!.Text = string.Join(";", dashboard.DueHorizonHours.Select(v => v.ToString(CultureInfo.InvariantCulture)));
+        _satisfactionScaleBox!.Text = dashboard.SatisfactionScale.ToString(CultureInfo.InvariantCulture);
+        _historyCadenceBox!.Text = dashboard.HistoryCadenceHours.ToString(CultureInfo.InvariantCulture);
         _dashboardDateCulture!.SelectedItem = _dashboardDateCulture.Items.Cast<ComboBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == dashboard.DateCulture) ?? _dashboardDateCulture.Items[0];
         foreach (var pair in _weatherFields) pair.Value.Text = Convert.ToString(typeof(DashboardWeatherSettings).GetProperty(pair.Key)!.GetValue(dashboard.Weather), CultureInfo.InvariantCulture) ?? "0";
         _assignmentMode!.SelectedIndex = dashboard.AssignmentCountingMode switch { "fractional" => 1, "cell" => 2, _ => 0 };
@@ -106,8 +113,14 @@ public partial class MainWindow
 
     private void ApplyDashboardSettingsFields(AppSettings settings)
     {
+        var previousSettings = settings.Dashboard.Copy();
         settings.Dashboard = new DashboardSettings
         {
+            NumberCulture = previousSettings.NumberCulture, SourceTimeZone = previousSettings.SourceTimeZone,
+            MultiValueSeparators = previousSettings.MultiValueSeparators, ValueDictionaries = previousSettings.ValueDictionaries,
+            DueHorizonHours = _dueHorizonBox!.Text.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(x => double.Parse(x.Trim().Replace(',', '.'), CultureInfo.InvariantCulture)).ToList(),
+            SatisfactionScale = double.Parse(_satisfactionScaleBox!.Text.Replace(',', '.'), CultureInfo.InvariantCulture),
+            HistoryCadenceHours = Number(_historyCadenceBox!, "Cadence historique", 1, 720),
             ColumnMappings = _dashboardColumns.Where(p => !string.IsNullOrWhiteSpace(p.Value.Text)).ToDictionary(p => p.Key, p => p.Value.Text.Trim(), StringComparer.OrdinalIgnoreCase),
             StaleDays = Number(_dashboardStaleBox!, "Inactivité", 1, 3650),
             OldDays = Number(_dashboardOldBox!, "Ticket ancien", 1, 3650),
@@ -153,6 +166,7 @@ public partial class MainWindow
     private void ResetDashboard()
     {
         _dashboardCancellation?.Cancel();
+        _dashboardNeedsRetry = false;
         _dashboard = null; _dashboardPreviewRows = null; _dashboardPreviewLabel = "";
         ClearDashboardFilterButton.Visibility = Visibility.Collapsed;
         _dashboardView?.ShowEmpty();
@@ -176,6 +190,7 @@ public partial class MainWindow
     {
         _dashboardCancellation?.Cancel();
         var operation = new CancellationTokenSource(); _dashboardCancellation = operation;
+        _dashboardNeedsRetry = false;
         var source = _result;
         _dashboard = null;
         if (source == null) { _dashboardView?.ShowEmpty(); operation.Dispose(); if (_dashboardCancellation == operation) _dashboardCancellation = null; return; }
@@ -186,36 +201,41 @@ public partial class MainWindow
             var allSettings = _settings.Copy(); ApplyDashboardSettingsFields(allSettings);
             var settings = EffectiveDashboardSettings(allSettings.Dashboard);
             allSettings.Dashboard = settings.Copy();
-            if (IsHistoricalResult) allSettings.Cities = _historicalDocument!.Cities.Copy();
+            if (IsHistoricalResult) { allSettings.Cities = _historicalDocument!.Cities.Copy(); allSettings.Queries = _historicalDocument.Queries.Copy(); }
             var calculationTime = IsHistoricalResult ? source.ExtractedAt : DateTimeOffset.Now;
             var cities = CitySourceIsCurrent() ? _cityEnrichment : null;
             var queries = allSettings.Queries.Copy();
             RefreshTechnicianWorkspace();
             RefreshCityWorkspace(settings);
             RefreshQueryWorkspace(settings);
-            var snapshot = await Task.Run(() =>
+            var snapshot = await _backgroundJobs.RunAsync("dashboard", MainTabs.SelectedItem == DashboardTab, calculationToken =>
             {
-                var calculated = DashboardService.Calculate(source, settings, calculationTime, operation.Token);
-                AppendLocalDashboardProbes(calculated, source, settings, cities, queries, operation.Token);
-                AttachDashboardScope(calculated, source, settings, cities, queries);
-                AttachDashboardHistory(calculated, source, allSettings, operation.Token);
+                var populations = new AnalyticsPopulationStore().LoadOrEmpty(out var populationWarning);
+                var calculated = DashboardService.Calculate(source, settings, calculationTime, calculationToken);
+                if (populationWarning.Length > 0) calculated.Warnings.Add(populationWarning);
+                AppendLocalDashboardProbes(calculated, source, settings, cities, queries, calculationToken, allSettings.Cities, populations);
+                AttachDashboardScope(calculated, source, settings, cities, queries, allSettings.Cities, populations);
+                AttachDashboardHistory(calculated, source, allSettings, calculationToken);
                 return calculated;
             }, operation.Token);
             if (operation.IsCancellationRequested || _closing || !ReferenceEquals(source, _result)) return;
-            _dashboard = snapshot; RefreshAlerts(source, snapshot); _dashboardView?.Show(snapshot); _dashboardView?.SetBusy(_busy);
+            _dashboard = snapshot; RefreshAlerts(source, snapshot); _dashboardView?.Show(snapshot); _dashboardView?.SetBusy(_busy); RefreshAnalyticsWorkspace();
             AddLog($"DASHBOARD · {snapshot.RowCount:N0} lignes ; {snapshot.Columns.Count(c => c.Index.HasValue)}/{snapshot.Columns.Count} colonnes reconnues ; {snapshot.Warnings.Count} avertissement(s) ; météo={snapshot.Weather.State}.");
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (!_closing && ReferenceEquals(_dashboardCancellation, operation) && !operation.IsCancellationRequested && ReferenceEquals(source, _result)) _dashboardNeedsRetry = true;
+        }
         catch (Exception ex)
         {
             if (!_closing && !operation.IsCancellationRequested)
             { _dashboardView?.ShowEmpty("Calcul indisponible. Vérifiez les correspondances de colonnes dans Réglages."); AddLog("DASHBOARD · " + AppPaths.SafeError(ex)); }
         }
-        finally { if (_dashboardCancellation == operation) _dashboardCancellation = null; operation.Dispose(); }
+        finally { if (_dashboardCancellation == operation) _dashboardCancellation = null; operation.Dispose(); ResumeVisibleCalculation(); }
     }
 
     private static void AttachDashboardScope(DashboardSnapshot snapshot, ExtractionResult source, DashboardSettings settings,
-        CityEnrichmentResult? cities, QueryLibrarySettings queries)
+        CityEnrichmentResult? cities, QueryLibrarySettings queries, CitySettings? geography = null, IReadOnlyList<SitePopulationEntry>? populations = null)
     {
         DashboardService.RefreshWeatherProfiles(snapshot, settings);
         var rootRows = snapshot.ScopeRows.ToHashSet();
@@ -223,7 +243,7 @@ public partial class MainWindow
         {
             var bounded = rows.Where(rootRows.Contains).Distinct().Order().ToArray();
             var calculated = DashboardService.CalculateSubset(source, settings, bounded, label, snapshot.CalculatedAt, cancellation);
-            AppendLocalDashboardProbes(calculated, source, settings, cities, queries, cancellation);
+            AppendLocalDashboardProbes(calculated, source, settings, cities, queries, cancellation, geography, populations);
             DashboardService.RefreshWeatherProfiles(calculated, settings);
             return calculated;
         };
@@ -255,8 +275,9 @@ public partial class MainWindow
                 }
                 catch (InvalidOperationException) { currentVerified = false; break; }
             }
-            foreach (var (key, title) in new[] { ("total", "Stock observé"), ("active", "Actifs observés"), ("overdue", "Échéances dépassées observées"), ("high", "Priorités hautes actives observées") })
+            foreach (var metric in snapshot.Metrics)
             {
+                var key = metric.Key; var title = metric.Label + " · observations";
                 var points = entries.Select(entry =>
                 {
                     var limits = new List<string>();
@@ -271,7 +292,7 @@ public partial class MainWindow
                     return new DashboardHistoryPoint(entry.CapturedAt, value, entry.Rows, entry.Complete, limits.Count == 0, entry.Id,
                         limits.Count == 0 ? "Même recherche, mêmes colonnes, mêmes règles ; relevé complet et contexte confirmé." : string.Join(" · ", limits));
                 }).ToArray();
-                snapshot.History.Add(new(key, title, "tickets", points,
+                snapshot.History.Add(new(key, title, metric.Unit, SnapshotAnalytics.WithGaps(points, TimeSpan.FromHours(settings.Dashboard.HistoryCadenceHours)),
                     "Archives locales de cette recherche et de son contexte GLPI confirmé. Les colonnes, les règles et les identifiants doivent rester compatibles. Les relevés incomplets ou incompatibles interrompent la courbe. Une disparition du relevé ne signifie jamais une résolution. Les 500 archives les plus récentes de ce contexte sont retenues."));
             }
         }
@@ -312,22 +333,26 @@ public partial class MainWindow
 
     private async Task ExportDashboardAsync()
     {
-        if (_dashboard == null || _busy) return;
-        var snapshot = _dashboard;
-        await RunAsync("Préparation du bilan du tableau de bord…", async _ =>
+        if (_dashboard == null || _result == null || _busy) return;
+        var snapshot = _dashboard; var source = _result; var criteria = _dashboardView?.ExportCriteria() ?? snapshot.ScopeLabel;
+        await RunAsync("Préparation du bilan et du rapport du relevé…", async _ =>
         {
             var settings = ReadSettings(); Directory.CreateDirectory(settings.ExportFolder);
             var csv = DashboardService.EstimatedExportRows(snapshot) > 1_048_575;
-            if (csv) SetStatus("Le bilan dépasse la capacité d’une feuille Excel. Enregistrement complet proposé en CSV.");
-            var dialog = new SaveFileDialog { Title = csv ? "Bilan volumineux : exporter toutes les lignes en CSV" : "Exporter le bilan du relevé",
-                Filter = csv ? "Bilan complet CSV (*.csv)|*.csv" : "Classeur Excel (*.xlsx)|*.xlsx", DefaultExt = csv ? ".csv" : ".xlsx", AddExtension = true,
-                InitialDirectory = settings.ExportFolder, FileName = $"GLPI-Bilan-{DateTime.Now:yyyyMMdd-HHmmss}" + (csv ? ".csv" : ".xlsx") };
+            var dialog = new SaveFileDialog { Title = "Exporter un rapport complet ou le bilan chiffré",
+                Filter = "Rapport complet autonome (*.html)|*.html|" + (csv ? "Bilan CSV (*.csv)|*.csv" : "Bilan Excel (*.xlsx)|*.xlsx|Bilan CSV (*.csv)|*.csv"),
+                DefaultExt = ".html", AddExtension = true, InitialDirectory = settings.ExportFolder, FileName = $"GLPI-Rapport-{DateTime.Now:yyyyMMdd-HHmmss}" };
             if (dialog.ShowDialog(this) != true) { SetStatus("Enregistrement annulé."); return; }
             CancelButton.IsEnabled = false;
-            var exported = await Task.Run(() => { var data = DashboardService.ToExport(snapshot); return csv ? ExportService.WriteCsv(data, dialog.FileName) : ExportService.WriteXlsx(data, dialog.FileName); });
+            var html = dialog.FilterIndex == 1; var useCsv = !html && (csv || dialog.FilterIndex == 3);
+            var exported = await Task.Run(() =>
+            {
+                if (html) return ReportService.WriteHtml(snapshot, source, criteria, dialog.FileName);
+                var data = DashboardService.ToExport(snapshot); return useCsv ? ExportService.WriteCsv(data, dialog.FileName) : ExportService.WriteXlsx(data, dialog.FileName);
+            });
             RememberExport(exported.Path);
-            SetStatus("Bilan " + (csv ? "CSV complet" : "Excel") + " enregistré : " + exported.Path);
-            AddLog($"DASHBOARD · bilan {(csv ? "CSV complet" : "Excel")} enregistré ; {exported.Rows:N0} lignes de synthèse.");
+            SetStatus((html ? "Rapport complet (graphiques, critères, qualité et tickets)" : useCsv ? "Bilan CSV" : "Bilan Excel") + " enregistré : " + exported.Path);
+            AddLog($"DASHBOARD · {(html ? "rapport HTML complet" : "bilan chiffré")} enregistré ; {exported.Rows:N0} lignes.");
         });
     }
 

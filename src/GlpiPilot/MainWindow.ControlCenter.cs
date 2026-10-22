@@ -27,6 +27,7 @@ public partial class MainWindow
     private volatile bool _windowsSessionLocked;
     private long _qualityGeneration;
     private CancellationTokenSource? _qualityCancellation;
+    private bool _qualityNeedsRetry;
     private OperationEntry? _currentOperationEntry;
     private Border? _inlineOverlay;
     private IInputElement? _overlayPreviousFocus;
@@ -44,7 +45,11 @@ public partial class MainWindow
         _controlCenter.Load(_settings); _controlCenter.ShowOperations(_operationJournal.Entries);
         _controlCenter.SaveRequested += SaveControlCenter;
         _controlCenter.SourceRequested += ApplySourceProfile;
-        _controlCenter.CurrentSourceRequested += () => _controlCenter.AddSource(new SourceProfile { Name = "Recherche " + (_settings.Sources.Count + 1), Url = PortalUrlBox.Text.Trim(), Browser = _settings.BrowserChannel, Mode = _settings.AutoMode });
+        _controlCenter.CurrentSourceRequested += () =>
+        {
+            try { var source = new SourceProfile { Name = "Recherche " + (_settings.Sources.Count + 1) }; source.Capture(ReadSettings()); _controlCenter.AddSource(source); }
+            catch (Exception error) { ShowError(error); }
+        };
         _controlCenter.CampaignRequested += async () => await RunCampaignAsync();
         _controlCenter.DemoRequested += LoadDemo;
         _controlCenter.RefreshBackupsRequested += RefreshSettingsBackups;
@@ -76,13 +81,16 @@ public partial class MainWindow
             if (change.CurrentRow is int row && _comparedAfterId != null)
             { await OpenHistoricalResultAsync(_comparedAfterId); if (!_busy && _result != null) ShowDashboardRows(new[] { row }, "Évolution du ticket " + change.TicketId); }
         };
-        _qualityView.MappingRequested += () => { MainTabs.SelectedItem = SettingsTab; SettingsDashboardHost.BringIntoView(); };
+        _qualityView.MappingRequested += OpenMappingAssistant;
         _qualityView.RowRequested += row => { if (!_busy && !_closing) ShowDashboardRows(new[] { row }, "Qualité du relevé"); };
         MainTabs.SelectionChanged += (_, e) =>
         {
             if (e.Source != MainTabs) return;
             Dispatcher.BeginInvoke(ApplyInterfaceDensity, DispatcherPriority.Loaded);
             if (MainTabs.SelectedItem == _historyTab) _ = RefreshHistoryAsync();
+            if (MainTabs.SelectedItem == _qualityTab && _qualityCancellation == null) RefreshQualityWorkspace();
+            ResumeVisibleCalculation();
+            RememberGridFocus();
         };
         _automationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         Microsoft.Win32.SystemEvents.SessionSwitch += SessionSwitchChanged;
@@ -104,7 +112,7 @@ public partial class MainWindow
 
     private TabItem AddWorkspaceTab(string title, string icon, UIElement content)
     {
-        var tab = new TabItem { Header = title, Tag = icon, Content = content };
+        var tab = new TabItem { Header = title, Uid = title, Tag = icon, Content = content };
         MainTabs.Items.Add(tab); return tab;
     }
 
@@ -115,7 +123,10 @@ public partial class MainWindow
         {
             var data = _result;
             var archiveSettings = settings.Copy(); archiveSettings.Dashboard = EffectiveDashboardSettings(settings.Dashboard);
-            var metadata = await Task.Run(() => _snapshotStore.Save(data, archiveSettings, ct), ct);
+            var locations = CitySourceIsCurrent() ? _cityEnrichment : null;
+            var populations = new AnalyticsPopulationStore().LoadOrEmpty(out var warning);
+            if (warning.Length > 0) AddLog("HISTORIQUE · " + warning);
+            var metadata = await Task.Run(() => _snapshotStore.Save(data, archiveSettings, ct, locations, populations), ct);
             AddLog($"HISTORIQUE · relevé {metadata.Id[..8]} conservé ; {metadata.Rows:N0} lignes ; {metadata.State.ToLowerInvariant()}.");
             await RefreshHistoryAsync();
         }
@@ -164,17 +175,27 @@ public partial class MainWindow
     private async void RefreshQualityWorkspace()
     {
         if (_qualityView == null || _closing) return;
-        var generation = ++_qualityGeneration; _qualityCancellation?.Cancel(); _qualityCancellation?.Dispose(); _qualityCancellation = new();
-        var source = _result; if (source == null) { _qualityView.ShowStatus("Chargez un relevé pour examiner sa qualité."); return; }
-        var settings = EffectiveDashboardSettings(_settings.Dashboard); var ct = _qualityCancellation.Token;
-        _qualityView.ShowStatus("Analyse de la couverture des champs et de la cohérence des valeurs…");
+        var generation = ++_qualityGeneration; _qualityCancellation?.Cancel();
+        var operation = new CancellationTokenSource(); _qualityCancellation = operation; _qualityNeedsRetry = false;
+        var source = _result;
         try
         {
-            var report = await Task.Run(() => DataQualityService.Analyze(source, settings, ct), ct);
+            if (source == null) { _qualityView.ShowStatus("Chargez un relevé pour examiner sa qualité."); return; }
+            var settings = EffectiveDashboardSettings(_settings.Dashboard);
+            _qualityView.ShowStatus("Analyse de la couverture des champs et de la cohérence des valeurs…");
+            var report = await _backgroundJobs.RunAsync("quality", MainTabs.SelectedItem == _qualityTab, token => DataQualityService.Analyze(source, settings, token), operation.Token);
             if (!_closing && generation == _qualityGeneration && ReferenceEquals(source, _result)) _qualityView.Show(report);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (!_closing && generation == _qualityGeneration && !operation.IsCancellationRequested && ReferenceEquals(source, _result)) _qualityNeedsRetry = true;
+        }
         catch (Exception error) { if (!_closing && generation == _qualityGeneration) _qualityView.ShowStatus("Analyse indisponible : " + AppPaths.SafeError(error)); }
+        finally
+        {
+            if (ReferenceEquals(_qualityCancellation, operation)) _qualityCancellation = null;
+            operation.Dispose(); ResumeVisibleCalculation();
+        }
     }
 
     private void SaveControlCenter()
@@ -195,15 +216,7 @@ public partial class MainWindow
         try
         {
             _ = TargetUrlPolicy.Validate(profile.Url);
-            var settings = ReadSettings(); settings.PortalUrl = TargetUrlPolicy.PersistedTarget(profile.Url);
-            settings.BrowserChannel = profile.Browser; settings.AutoMode = profile.Mode; settings.ActiveSourceId = profile.Id;
-            if (!TargetUrlPolicy.SamePage(settings.TableTargetUrl, profile.Url))
-            {
-                settings.TableSelector = ""; settings.TableHeaderFingerprint = ""; settings.TableFrameName = ""; settings.TableFrameOrigin = ""; settings.TableTargetUrl = "";
-                settings.ReadySelector = ""; settings.NextSelector = ""; settings.SelectorOrigin = "";
-                settings.NativeSelectorOrigin = ""; settings.NativeMenuSelector = ""; settings.NativeFormatSelector = ""; settings.NativeFormatValue = "";
-                settings.NativeScopeSelector = ""; settings.NativeScopeValue = ""; settings.NativeSubmitSelector = "";
-            }
+            var settings = ReadSettings(); profile.ApplyTo(settings);
             settings.Save(); _settings = settings; LoadSettingsFields(); MainTabs.SelectedItem = ExtractionTab;
             SetStatus("Source sélectionnée : " + profile.Name + " · Extraire tout pour actualiser."); UpdateControls();
         }
@@ -222,22 +235,44 @@ public partial class MainWindow
             if (sources.Length == 0) { SetStatus("Cochez au moins une source dans la campagne."); return; }
             await RunAsync("Extraction de la campagne…", async ct =>
             {
-                BeginAutomaticPresentation(); int completed = 0;
-                foreach (var source in sources)
+                BeginAutomaticPresentation(); var started = DateTimeOffset.Now;
+                var results = sources.Select(source => new CampaignSourceResult { Id = source.Id, Name = source.Name }).ToList();
+                try
                 {
-                    ct.ThrowIfCancellationRequested();
-                    var settings = draft.Copy(); settings.PortalUrl = source.Url; settings.BrowserChannel = source.Browser; settings.AutoMode = source.Mode;
-                    settings.ActiveSourceId = source.Id;
-                    if (!TargetUrlPolicy.SamePage(settings.TableTargetUrl, source.Url))
-                    { settings.TableSelector = ""; settings.TableHeaderFingerprint = ""; settings.TableFrameOrigin = ""; settings.TableFrameName = ""; settings.TableTargetUrl = ""; settings.ReadySelector = ""; settings.NextSelector = ""; settings.SelectorOrigin = ""; settings.NativeSelectorOrigin = ""; settings.NativeMenuSelector = ""; settings.NativeFormatSelector = ""; settings.NativeFormatValue = ""; settings.NativeScopeSelector = ""; settings.NativeScopeValue = ""; settings.NativeSubmitSelector = ""; }
-                    AddLog($"CAMPAGNE · source {completed + 1}/{sources.Length} : {source.Name}");
-                    var run = await _automatic.RunAsync(settings, new Progress<ExtractionProgress>(progress => SetStatus(progress.Message)), ct);
-                    _settings = settings; PublishCityResult(run.Cities ?? await EnrichCitiesAsync(run.Data, settings, ct), settings);
-                    await ArchiveResultAsync(settings, ct); BuildPreview(); RememberExport(run.PrimaryPath);
-                    await RefreshPagesAsync(run.Table.Page); TableBox.ItemsSource = new[] { run.Table }; TableBox.SelectedItem = run.Table;
-                    settings.Save(); LoadSettingsFields(); completed++;
+                    for (int index = 0; index < sources.Length; index++)
+                    {
+                        ct.ThrowIfCancellationRequested(); var source = sources[index]; var item = results[index]; item.StartedAt = DateTimeOffset.Now; item.State = "En cours";
+                        _controlCenter.ShowCampaign(results.ToArray());
+                        try
+                        {
+                            var settings = draft.Copy(); source.ApplyTo(settings);
+                            AddLog($"CAMPAGNE · source {index + 1}/{sources.Length} : {source.Name}");
+                            var run = await _automatic.RunAsync(settings, new Progress<ExtractionProgress>(progress => SetStatus(source.Name + " · " + progress.Message)), ct);
+                            source.Capture(settings); var saved = draft.Sources.FindIndex(entry => entry.Id == source.Id); if (saved >= 0) draft.Sources[saved] = source.Copy();
+                            settings.Sources = draft.Sources.Select(entry => entry.Copy()).ToList();
+                            _settings = settings; PublishCityResult(run.Cities ?? await EnrichCitiesAsync(run.Data, settings, ct), settings);
+                            await ArchiveResultAsync(settings, ct); BuildPreview(); RememberExport(run.PrimaryPath);
+                            await RefreshPagesAsync(run.Table.Page); TableBox.ItemsSource = new[] { run.Table }; TableBox.SelectedItem = run.Table;
+                            item.Rows = run.Data.Rows.Count; item.State = run.Data.Complete ? "Complet" : "Partiel"; item.Detail = run.Data.Status; item.Path = run.PrimaryPath;
+                            RecordCollectionHealth(settings, run.Data.Complete, run.Data.Status); settings.Save(); LoadSettingsFields();
+                        }
+                        catch (OperationCanceledException) when (ct.IsCancellationRequested) { item.State = "Annulé"; item.Detail = "Annulation demandée"; throw; }
+                        catch (Exception error)
+                        {
+                            item.State = "Échec"; item.Detail = AppPaths.SafeError(error); var failed = draft.Copy(); source.ApplyTo(failed); RecordCollectionHealth(failed, false, item.Detail);
+                            AddLog("CAMPAGNE · " + source.Name + " · " + item.Detail + " ; passage à la source suivante.");
+                        }
+                        finally { item.FinishedAt = DateTimeOffset.Now; _controlCenter.ShowCampaign(results.ToArray()); }
+                    }
                 }
-                SetStatus($"Campagne terminée : {completed}/{sources.Length} sources extraites ; chaque relevé est disponible dans l’historique.");
+                finally
+                {
+                    foreach (var item in results.Where(item => item.State == "En attente")) { item.State = "Non lancée"; item.Detail = "Campagne interrompue"; }
+                    _settings.Sources = draft.Sources.Select(entry => entry.Copy()).ToList(); _settings.Save(); _controlCenter.Load(_settings); _controlCenter.ShowCampaign(results.ToArray());
+                    try { var report = await Task.Run(() => CampaignReport.Save(draft.ExportFolder, results, started)); AddLog("CAMPAGNE · bilan JSON et CSV : " + report); }
+                    catch (Exception error) { AddLog("CAMPAGNE · bilan conservé à l’écran ; écriture impossible : " + AppPaths.SafeError(error)); }
+                }
+                SetStatus($"Campagne terminée : {results.Count(item => item.State == "Complet")} complètes, {results.Count(item => item.State == "Partiel")} partielles, {results.Count(item => item.State == "Échec")} en échec. Bilan par source dans Sources et organisation.");
             });
         }
         catch (Exception error) { ShowError(error); }
@@ -245,7 +280,7 @@ public partial class MainWindow
 
     private void ResetAutomaticSchedule()
     {
-        _nextAutomaticRun = DateTimeOffset.Now.AddMinutes(_settings.Automation.IntervalMinutes);
+        _nextAutomaticRun = AutomationPolicy.Next(_settings.Automation, DateTimeOffset.Now);
         _controlCenter?.ShowSchedule(_settings.Automation.ScheduledExtraction ? $"Prochain lancement au plus tôt à {_nextAutomaticRun.LocalDateTime:HH:mm}." : "Programmation désactivée.");
     }
 
@@ -255,15 +290,15 @@ public partial class MainWindow
         if (_settings.Interface.FollowWindowsTheme && ApplySystemThemeIfChanged()) ApplyInterfacePreferences();
         if (_result != null && DateTimeOffset.Now - _result.ExtractedAt > TimeSpan.FromHours(_settings.Automation.FreshnessHours))
             WorkspaceContextText.ToolTip = $"Relevé ancien : {_result.ExtractedAt.ToLocalTime():dd/MM/yyyy HH:mm}. Actualisez avant de décider d’une intervention.";
-        UpdateAlertBadge();
+        UpdateAlertBadge(); RefreshCollectionHealth();
         if (!_settings.Automation.ScheduledExtraction || _windowsSessionLocked || _inlineOverlay != null || _busy || _scheduledJobStarting || DateTimeOffset.Now < _nextAutomaticRun) return;
-        var hour = DateTime.Now.Hour; var config = _settings.Automation;
-        var quiet = config.QuietStartHour < config.QuietEndHour ? hour >= config.QuietStartHour && hour < config.QuietEndHour : hour >= config.QuietStartHour || hour < config.QuietEndHour;
-        if (config.QuietHours && quiet) return;
+        var config = _settings.Automation;
+        if (AutomationPolicy.IsQuiet(config, DateTimeOffset.Now)) return;
         _scheduledJobStarting = true; ResetAutomaticSchedule();
         try
         {
             if (config.RunCampaign) await RunCampaignAsync(scheduled: true);
+            else if (config.UseRecipe) await RunRecipeAsync(true);
             else if (RunAutoButton.IsEnabled) await RunAutomaticAsync(_settings.Copy());
         }
         finally { _scheduledJobStarting = false; }
@@ -272,7 +307,9 @@ public partial class MainWindow
     private void ApplyInterfacePreferences()
     {
         if (_settings.Interface.FollowWindowsTheme) ApplySystemThemeIfChanged();
-        else ThemeService.Apply(_settings.Theme);
+        // Always restore the complete base palette before applying optional overrides.
+        // Otherwise turning a mode off leaves its old colors when the OS theme is unchanged.
+        ThemeService.Apply(_settings.Theme);
         UpdateThemeButton();
         var accent = _settings.Interface.Accent switch { "violet" => "#7557C7", "green" => "#16785F", "orange" => "#A95118", "rose" => "#B34475", _ => "#2768D6" };
         Brush Brush(string color) { var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)); brush.Freeze(); return brush; }
@@ -283,11 +320,12 @@ public partial class MainWindow
             Application.Current.Resources["MutedBrush"] = Brush(ThemeService.IsDark ? "#DDDDDF" : "#3C3C40");
             Application.Current.Resources["LineBrush"] = Brush(ThemeService.IsDark ? "#8B8B95" : "#72727C");
         }
-        Application.Current.Resources["AnimationsEnabled"] = !_settings.Interface.ReduceMotion;
-        Application.Current.Resources["PopupMotion"] = _settings.Interface.ReduceMotion ? System.Windows.Controls.Primitives.PopupAnimation.None : System.Windows.Controls.Primitives.PopupAnimation.Fade;
+        var reduceMotion = _settings.Interface.ReduceMotion || _settings.Interface.FollowWindowsMotion && !SystemParameters.ClientAreaAnimation;
+        Application.Current.Resources["AnimationsEnabled"] = !reduceMotion;
+        Application.Current.Resources["PopupMotion"] = reduceMotion ? System.Windows.Controls.Primitives.PopupAnimation.None : System.Windows.Controls.Primitives.PopupAnimation.Fade;
         LogExpander.Visibility = _settings.Interface.FocusMode ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceContextText.Visibility = _settings.Interface.FocusMode ? Visibility.Collapsed : Visibility.Visible;
-        ApplyInterfaceDensity();
+        ApplyAccessiblePalette(); ApplyNavigationPreferences(); ApplyInterfaceDensity();
     }
     private bool ApplySystemThemeIfChanged()
     {
@@ -333,6 +371,7 @@ public partial class MainWindow
         _settings.Interface.WindowWidth = bounds.Width; _settings.Interface.WindowHeight = bounds.Height;
         _settings.Interface.WindowLeft = bounds.Left; _settings.Interface.WindowTop = bounds.Top;
         _settings.Interface.WindowMaximized = WindowState == WindowState.Maximized;
+        MonitorPlacement.Remember(this, _settings.Interface);
         try { _settings.Save(); } catch (Exception error) { AppPaths.AppendLog("FENÊTRE · mémorisation indisponible : " + AppPaths.SafeError(error)); }
     }
 
@@ -390,5 +429,5 @@ public partial class MainWindow
     }
 
     private void DisposeControlCenter()
-    { Microsoft.Win32.SystemEvents.SessionSwitch -= SessionSwitchChanged; _automationTimer?.Stop(); _qualityCancellation?.Cancel(); RememberWindowPlacement(); PreviewKeyDown -= InlineOverlay_KeyDown; CloseInlinePanel(); }
+    { Microsoft.Win32.SystemEvents.SessionSwitch -= SessionSwitchChanged; DisposeCompletionWorkspace(); _automationTimer?.Stop(); _qualityCancellation?.Cancel(); RememberWindowPlacement(); PreviewKeyDown -= InlineOverlay_KeyDown; CloseInlinePanel(); }
 }

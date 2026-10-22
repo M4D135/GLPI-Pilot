@@ -23,7 +23,7 @@ string fixture10 = (await Fixture("native-glpi10.html"))
     .Replace("item[Ticket][42]", "item[Ticket][3]", StringComparison.Ordinal);
 string fixture11 = (await Fixture("native-glpi11.html"))
     .Replace("<td>7</td>", "<td>0003</td>", StringComparison.Ordinal);
-string fixtureLegacy = await Fixture("native-legacy.html");
+string fixtureLegacy = (await Fixture("native-legacy.html")).Replace("PC ancien", "Paris A", StringComparison.Ordinal);
 string fixtureLegacyRealistic = await Fixture("native-legacy-realistic.html");
 string basic = await Fixture("basic-glpi.html");
 const string target = "http://glpi.test/glpi/front/computer.php?criteria%5B0%5D%5Bvalue%5D=0005%20Paris&sort=1&order=ASC&start=2";
@@ -103,6 +103,9 @@ AppSettings Settings(string url = target) => new()
     PortalUrl = url,
     SelectorOrigin = "http://glpi.test",
     TimeoutSeconds = 12,
+    ListTimeoutSeconds = 5,
+    DetailTimeoutSeconds = 5,
+    ResumePagination = false,
     DownloadTimeoutSeconds = 10,
     MaxPages = 10,
     MaxRows = 100,
@@ -810,7 +813,8 @@ async Task CheckNativeTextControls()
     }
     byte[] expectedBytes = Encoding.UTF8.GetBytes(csv.ToString());
     True(expectedBytes.Length > 1_000_000, "Le cas doit couvrir un téléchargement de plus d’un Mo, au-delà des préfixes d’analyse.");
-    string html = WithScript(fixtureLegacyRealistic, "renderLegacyRows(20, 831);");
+    string html = WithScript(fixtureLegacyRealistic, "renderLegacyRows(20, 831); const descriptions = " + JsonSerializer.Serialize(expectedRows.Take(20).Select(row => row[1]).ToArray())
+        + "; document.querySelectorAll('#legacy-rows tr').forEach((row,index) => row.cells[1].textContent=descriptions[index]);");
     int downloads = 0, displayRequests = 0;
     await using var h = await Create(route =>
     {

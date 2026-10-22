@@ -35,8 +35,9 @@ public partial class MainWindow
         _ticketWorkplaceView.TicketRequested += OpenPersonalTicket;
         _ticketWorkplaceView.TicketClosed += ClosePersonalTicket;
         _ticketWorkplaceView.Intelligence.TicketRequested += ticket => QueuePersonalTicketReference(ticket, false);
+        _ticketWorkplaceView.Intelligence.RecurrencesRequested += ReadTicketRecurrences;
         _ticketWorkplaceView.Editor.SaveRequested += SavePersonalTicket;
-        _ticketWorkplaceView.FiltersChanged += () => { if (_ticketDetail != null) BuildTicketSectionPreview(); };
+        _ticketWorkplaceView.FiltersChanged += () => { if (_ticketDetail != null) { BuildTicketSectionPreview(); QueueReadingPositionSave(); } };
         _ticketWorkplaceView.GroupByDayChanged += value =>
         {
             var copy = _workplace.Copy(); copy.GroupTimelineByDay = value; SavePersonalWorkspace(copy);
@@ -61,6 +62,10 @@ public partial class MainWindow
             var copy = _workplace.Copy(); copy.DefaultSection = entry.Key;
             if (SavePersonalWorkspace(copy)) SetStatus("Rubrique d’ouverture mémorisée : " + entry.Label);
         };
+        InitializeReadingPersistence();
+        InitializeTicketLinks();
+        InitializeTicketActions();
+        InitializeTicketEnrichment();
         _personalReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _personalReminderTimer.Tick += (_, _) => AnnouncePersonalReminders(); _personalReminderTimer.Start();
         RefreshPersonalTicketPresentation();
@@ -109,6 +114,7 @@ public partial class MainWindow
         var record = _workplace.Tickets.FirstOrDefault(item => item.Key == key);
         _ticketWorkplaceView.Show(_workplace, record, _ticketDetail, _personalReadChanges.GetValueOrDefault(key));
         RefreshTicketIntelligence();
+        RefreshTicketActionAdapters();
     }
 
     private void SavePersonalTicket(PersonalTicket edited)
@@ -128,7 +134,14 @@ public partial class MainWindow
                 WorkplaceStore.Remember(document, new(edited.Id, edited.Url), edited.Title, open: false);
                 index = document.Tickets.FindIndex(item => item.Key == edited.Key);
             }
-            var before = document.Tickets[index]; document.Tickets[index] = edited.Copy();
+            var before = document.Tickets[index];
+            // Note/queue editors do not own newer reading markers, drafts or action receipts.
+            edited.LastReadAt = before.LastReadAt; edited.LastOpenedAt = before.LastOpenedAt; edited.PreferredSection = before.PreferredSection;
+            edited.ReadingPosition = before.ReadingPosition.Copy(); edited.RowFingerprints = before.RowFingerprints.ToDictionary(pair => pair.Key, pair => pair.Value.ToList(), StringComparer.Ordinal);
+            edited.RowsFullyCompared = before.RowsFullyCompared; edited.SectionFingerprints = new(before.SectionFingerprints, StringComparer.Ordinal);
+            edited.FollowupDraft = before.FollowupDraft; edited.LastActionReceipt = before.LastActionReceipt;
+            if (edited.ReminderAt == before.ReminderAt) edited.ReminderAcknowledgedAt = before.ReminderAcknowledgedAt;
+            document.Tickets[index] = edited.Copy();
             _ = WorkplaceStore.Validate(document);
             if (edited.Offline && _ticketDetail != null && WorkplaceStore.TicketKey(_ticketDetail.Ticket) == edited.Key)
                 WorkplaceStore.SaveOffline(TicketOfflineDirectory, _ticketDetail);
@@ -199,9 +212,10 @@ public partial class MainWindow
     private void AnnouncePersonalReminders()
     {
         if (_closing) return;
+        if (!NotificationPolicy.CanNotify()) { RefreshPersonalDay(); return; }
         var due = _workplace.Tickets.Where(ticket => ticket.ReminderAt <= DateTimeOffset.Now
             && (!ticket.ReminderAcknowledgedAt.HasValue || ticket.ReminderAcknowledgedAt < ticket.ReminderAt)).ToArray();
-        var newlyDue = due.Where(ticket => _remindersAnnounced.Add(ticket.Key + "|" + ticket.ReminderAt?.ToUnixTimeSeconds())).ToArray();
+        var newlyDue = due.Where(ticket => !_remindersAnnounced.Contains(ticket.Key + "|" + ticket.ReminderAt?.ToUnixTimeSeconds())).ToArray();
         if (newlyDue.Length > 0)
         {
             if (!_busy) SetStatus($"{due.Length:N0} rappel(s) personnel(s) à consulter dans Techniciens → Ma journée.");
@@ -221,6 +235,8 @@ public partial class MainWindow
                 catch (Exception error) { AddLog("RAPPELS · notification Windows non affichée : " + AppPaths.SafeError(error)); }
             }
         }
+        if (NotificationPolicy.CanNotify())
+            foreach (var ticket in newlyDue) _remindersAnnounced.Add(ticket.Key + "|" + ticket.ReminderAt?.ToUnixTimeSeconds());
         RefreshPersonalDay();
     }
 }

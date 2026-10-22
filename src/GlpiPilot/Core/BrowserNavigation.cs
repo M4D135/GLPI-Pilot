@@ -8,6 +8,7 @@ namespace GlpiPilot.Core;
 public sealed partial class BrowserService
 {
     public event Action<string>? ConnectionProgress;
+    public Dictionary<string, double> ConnectionStageSeconds { get; private set; } = new(StringComparer.Ordinal);
 
     private sealed class SessionProbe
     {
@@ -167,6 +168,15 @@ public sealed partial class BrowserService
     {
         var target = TargetUrlPolicy.Validate(settings.PortalUrl).AbsoluteUri;
         var timer = Stopwatch.StartNew();
+        ConnectionStageSeconds = new(StringComparer.Ordinal);
+        var timedStage = "navigation"; var timedSince = TimeSpan.Zero;
+        void RecordStage(string next)
+        {
+            if (next == timedStage) return;
+            var elapsed = (timer.Elapsed - timedSince).TotalSeconds;
+            ConnectionStageSeconds[timedStage] = ConnectionStageSeconds.GetValueOrDefault(timedStage) + elapsed;
+            Log?.Invoke($"SSO · étape {timedStage} : {elapsed:F1} s."); timedStage = next; timedSince = timer.Elapsed;
+        }
         var targetRetries = 0;
         var loginRefreshes = 0;
         var lastRetryAt = TimeSpan.FromSeconds(-30);
@@ -186,6 +196,7 @@ public sealed partial class BrowserService
             if (page == null) { await Task.Delay(350, ct); continue; }
             var probe = await ProbeAsync(page, settings, ct);
             if (probe == null) { await Task.Delay(350, ct); continue; }
+            RecordStage(probe.Challenge ? "validation humaine" : probe.Login ? "authentification" : Origin(page.Url) != Origin(target) ? "redirection" : probe.Readable ? "recherche" : "chargement");
             if (probe.Login || probe.Challenge) _authenticationNavigationObserved = true;
             if (!ReferenceEquals(stablePage, page) || stableUrl != page.Url)
             { stablePage = page; stableUrl = page.Url; stableSince = timer.Elapsed; }
@@ -208,6 +219,7 @@ public sealed partial class BrowserService
                 if (BackgroundMode) await SetPageWindowAsync(page, false, ct);
                 Log?.Invoke($"SSO · page cible disponible après {timer.Elapsed.TotalSeconds:F1} s ; authentification observée={_authenticationNavigationObserved}, reprises={targetRetries}, actualisations={loginRefreshes}.");
                 ConnectionProgress?.Invoke("Connexion établie. La recherche demandée est prête.");
+                RecordStage("terminé");
                 return page;
             }
 
@@ -329,7 +341,7 @@ public sealed partial class BrowserService
                 }
                 // A stable, unsupported toolbar is not a loading screen. Give
                 // late scripts a short grace period without flooding the log.
-                if (timer.Elapsed - unsupportedSince >= TimeSpan.FromSeconds(5))
+                if (timer.Elapsed - unsupportedSince >= TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, settings.ListTimeoutSeconds - 1))))
                 {
                     if (settings.Automation.AutomaticPaginationFallback && native.Unavailable)
                     {
@@ -343,7 +355,7 @@ public sealed partial class BrowserService
             catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException)
             { reason = AppPaths.SafeError(ex); exportState = ""; }
             await Task.Delay(500, ct);
-        } while (timer.Elapsed < TimeSpan.FromSeconds(Math.Clamp(settings.TimeoutSeconds, 2, 30)));
+        } while (timer.Elapsed < TimeSpan.FromSeconds(settings.ListTimeoutSeconds));
         if (lastInspection != null) LogNativeInspection(lastInspection);
         throw new InvalidOperationException(reason + " Le diagnostic contient les contrôles d’export et d’affichage détectés. Copie-le pour adapter les repères.");
     }

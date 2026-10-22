@@ -370,6 +370,7 @@ public sealed class QueryResult
     public DashboardMetric Metric { get; init; } = new("", "", null, "", "", Array.Empty<int>());
     public DashboardDistribution? Distribution { get; init; }
     public IReadOnlyList<QueryGroupResult> Groups { get; init; } = Array.Empty<QueryGroupResult>();
+    public IReadOnlyList<QueryGroupResult> Hierarchy { get; init; } = Array.Empty<QueryGroupResult>();
     public int UnknownRows { get; init; }
 }
 

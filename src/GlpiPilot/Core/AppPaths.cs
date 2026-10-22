@@ -10,6 +10,7 @@ public static class AppPaths
     public static string SettingsFile => Path.Combine(DataRoot, "settings.json");
     public static string DefaultExports => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GLPI-Pilot", "Exports");
     public static string Profile(string channel) => Path.Combine(DataRoot, "Browser", channel == "chrome" ? "Chrome" : "Edge");
+    public static string Profile(string channel, string portalUrl) => Path.Combine(Profile(channel), ObjectIdentity.InstallationKey(portalUrl));
     public static string LogFile => Path.Combine(DataRoot, "Logs", DateTime.Today.ToString("yyyy-MM-dd") + ".log");
 
     public static string SafeUrl(string value)
@@ -47,5 +48,25 @@ public static class AppPaths
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+}
+
+public static class ObjectIdentity
+{
+    public static string Installation(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http") || uri.UserInfo.Length > 0) throw new InvalidDataException("Adresse d’installation GLPI invalide.");
+        var path = uri.AbsolutePath;
+        var segments = new[] { "/front/", "/ajax/", "/apirest.php", "/api.php" };
+        var boundary = segments.Select(segment => path.IndexOf(segment, StringComparison.OrdinalIgnoreCase)).Where(index => index >= 0).DefaultIfEmpty(path.LastIndexOf('/')).Min();
+        return uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant() + path[..Math.Max(0, boundary)];
+    }
+    public static string InstallationKey(string url) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Installation(url)))).ToLowerInvariant()[..24];
+    public static string Key(string url, string objectType, string id)
+    {
+        if (!Regex.IsMatch(objectType ?? "", @"^[A-Za-z][A-Za-z0-9_\\]{0,119}$", RegexOptions.CultureInvariant)) throw new InvalidDataException("Type d’objet GLPI invalide.");
+        if (!Regex.IsMatch(id?.Trim() ?? "", @"^[0-9]{1,20}$", RegexOptions.CultureInvariant)) throw new InvalidDataException("Identifiant d’objet GLPI invalide.");
+        var normalized = id!.Trim().TrimStart('0'); if (normalized.Length == 0) throw new InvalidDataException("L’identifiant d’objet GLPI doit être supérieur à zéro.");
+        return InstallationKey(url) + ":" + objectType!.ToLowerInvariant() + ":" + normalized;
     }
 }

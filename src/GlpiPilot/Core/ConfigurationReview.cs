@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 
 namespace GlpiPilot.Core;
 
@@ -6,7 +7,7 @@ namespace GlpiPilot.Core;
 public enum ConfigurationParts { None = 0, Source = 1, Extraction = 2, Ticket = 4, Indicators = 8, Dashboards = 16, Queries = 32, Cities = 64, Theme = 128, All = 255 }
 public sealed record ConfigurationDifference(ConfigurationParts Part, string Section, string Current, string Incoming);
 
-public static class ConfigurationReview
+public static partial class ConfigurationReview
 {
     public static IReadOnlyList<ConfigurationDifference> Describe(AppSettings current, AppSettings incoming) => new[]
     {
@@ -32,6 +33,7 @@ public static class ConfigurationReview
             result.AutoMode = incoming.AutoMode; result.AutoSaveXlsx = incoming.AutoSaveXlsx;
             result.ReadySelector = incoming.ReadySelector; result.NextSelector = incoming.NextSelector; result.SelectorOrigin = incoming.SelectorOrigin;
             result.TimeoutSeconds = incoming.TimeoutSeconds; result.DownloadTimeoutSeconds = incoming.DownloadTimeoutSeconds;
+            result.ListTimeoutSeconds = incoming.ListTimeoutSeconds; result.DetailTimeoutSeconds = incoming.DetailTimeoutSeconds; result.ReconnectAttempts = incoming.ReconnectAttempts; result.ResumePagination = incoming.ResumePagination; result.CheckpointMaximumAgeMinutes = incoming.CheckpointMaximumAgeMinutes; result.MinimumFreeSpaceMb = incoming.MinimumFreeSpaceMb;
             result.MaxPages = incoming.MaxPages; result.MaxRows = incoming.MaxRows; result.ExpectedTotal = incoming.ExpectedTotal;
             result.TableSelector = incoming.TableSelector; result.TableHeaderFingerprint = incoming.TableHeaderFingerprint;
             result.TableFrameOrigin = incoming.TableFrameOrigin; result.TableFrameName = incoming.TableFrameName; result.TableTargetUrl = incoming.TableTargetUrl;
@@ -43,6 +45,7 @@ public static class ConfigurationReview
         {
             result.PortalUrl = incoming.PortalUrl; result.BrowserChannel = incoming.BrowserChannel;
             result.Sources = mergeCollections ? Merge(current.Sources, incoming.Sources, x => x.Id, x => x.Copy(), 100, "sources") : incoming.Sources.Select(x => x.Copy()).ToList();
+            foreach (var source in result.Sources) { source.ExportFolder = current.Sources.FirstOrDefault(old => old.Id == source.Id)?.ExportFolder ?? ""; if (source.Interpretation != null) { source.Interpretation.PersonalTechnician = current.Dashboard.PersonalTechnician; source.Interpretation.OpenPersonalAfterExtraction = current.Dashboard.OpenPersonalAfterExtraction; } }
             result.ActiveSourceId = "";
         }
         if (parts.HasFlag(ConfigurationParts.Ticket)) result.TicketDetails = incoming.TicketDetails.Copy();
@@ -66,6 +69,7 @@ public static class ConfigurationReview
             {
                 result.Cities.Cities = Merge(result.Cities.Cities, incoming.Cities.Cities, x => x.Id, x => x.Copy(), 1000, "villes");
                 result.Cities.Sites = Merge(result.Cities.Sites, incoming.Cities.Sites, x => x.Id, x => x.Copy(), 2000, "sites");
+                result.Cities.Buildings = Merge(result.Cities.Buildings, incoming.Cities.Buildings, x => x.Id, x => x.Copy(), 5000, "bâtiments");
             }
         }
         if (parts.HasFlag(ConfigurationParts.Theme)) result.Theme = incoming.Theme;

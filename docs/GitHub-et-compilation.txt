@@ -1,4 +1,4 @@
-GLPI Pilot 1.5.0 — packs PROD et DEV, compilation Windows
+GLPI Pilot 2.1.0 — packs PROD et DEV, compilation Windows
 
 DEUX PACKS COMPLETS
 Chaque ZIP contient exactement GLPI-Pilot.exe et le dossier wad à sa racine.
@@ -27,33 +27,40 @@ Le script refuse de remplacer un pack déjà présent. Choisir un autre dossier 
 Le pack DEV peut ainsi reconstruire les deux distributions.
 
 WORKFLOW GITHUB ACTIONS
-.github/workflows/windows.yml prépare une exécution Windows x64 :
-1. Contrôles du démarrage, configuration et moteurs locaux.
-2. Compilation et exécution de vrais contrôles WPF sur données synthétiques.
-3. Construction et contrôle du contenu des packs PROD et DEV.
-4. Extraction puis premier rendu de l’EXE PROD dans un état temporaire,
-   fermeture normale et conservation exacte de l’état sans interaction.
-   Deux nouveaux lancements contrôlent les vrais boutons de zoom, leurs
-   bornes et la mémorisation à 110 %, puis le retour à 100 %.
-5. Publication des deux ZIP en artefacts si ces étapes réussissent.
-Les journaux sont joints également en cas d’échec. Les artefacts de travail
-sont conservés 30 jours ; les packs publiés dans Releases restent disponibles.
-Le workflow utilise contents:read et ne publie pas lui-même de Release.
+.github/workflows/windows.yml exécute sous Windows x64 :
+1. Dix-huit suites métier, configuration, historique, assistance et mise à jour.
+2. Collecte, SSO simulé, reprise, formulaires et DOM sur pages synthétiques.
+3. Vrais contrôles WPF sur bureau interactif, plusieurs tailles/thèmes/zooms.
+4. Construction et contrôle des packs PROD/DEV, empreintes et commit source.
+5. Démarrage du pack PROD, instance unique, boutons et persistance du zoom.
+6. Remplacement réel d’une copie du pack, verrouillage et retour arrière après
+   échec de démarrage provoqué, dans un dossier temporaire de test.
+7. Promotion des mêmes ZIP en Release après réussite de tous les contrôles.
+Le job de test utilise contents:read. Le job de publication dispose de
+contents:write uniquement pour promouvoir les artefacts contrôlés de main.
+Une version déjà publiée pour un autre commit n’est pas remplacée.
 
-Le contrôle du pack refuse tout état GLPI Pilot déjà présent sur le runner.
-Il vérifie le premier rendu, une vraie fenêtre visible et la fermeture
-normale, avec un délai global. Aucun portail GLPI ni SSO métier n’est lancé.
-Les contrôles WPF joignent des captures PNG synthétiques des deux thèmes,
-de plusieurs tailles et des zooms 100, 125 et 150 %. Les captures restent
-dans l’artefact de journaux ; elles ne contiennent aucune donnée utilisateur.
+Les journaux sont joints également en cas d’échec ; ils sont conservés
+14 jours. Les artefacts de packs sont conservés 30 jours. Les captures PNG WPF ne contiennent que des données synthétiques.
+Les contrôles du pack refusent tout état GLPI Pilot préexistant sur le runner.
+Aucun portail GLPI réel, aucune session SSO d’entreprise ni aucun fournisseur
+routier, météo ou d’assistance n’est contacté pendant ces tests.
+
+SIGNATURE FACULTATIVE
+build-tools/Sign-Release.ps1 est exécuté après publication de l’EXE et avant
+calcul des empreintes. GLPI_SIGN_CERT_THUMBPRINT désigne un certificat de
+signature avec clé privée dans CurrentUser/My ; GLPI_SIGN_TIMESTAMP_URL
+est obligatoire lorsqu’une signature est demandée. Signature, certificat
+et horodatage sont contrôlés. Sans certificat configuré, le pack est non signé.
+La mise à jour peut exiger une signature et une empreinte d’éditeur approuvée.
 
 PORTEE DES VERIFICATIONS
 La compilation croisée Linux pour Windows ne prouve pas un démarrage WPF.
-La présence d’un workflow ou d’un commit ne prouve pas une exécution réussie.
-Le rapport de vérification conserve les contrôles locaux du 21 octobre 2026.
-L’onglet Actions fournit les résultats Windows pour le commit contrôlé ;
-les notes de Release indiquent les validations propres aux packs publiés.
-Le SSO d’entreprise et les personnalisations GLPI restent propres au poste.
+La présence d’un workflow ou d’un commit ne prouve pas sa réussite.
+Consulter Rapport-verification.txt, les journaux du run et wad/version.json
+pour identifier le code et les résultats exacts des ZIP publiés.
+SSO privé, extensions GLPI, veille et moniteurs du poste restent à valider
+sur l’installation réelle ; ils ne sont pas remplacés par des fixtures.
 
 EN CAS DE NON-DEMARRAGE
 Dans le pack extrait, lancer wad/support/DIAGNOSTIC_DEMARRAGE.cmd.

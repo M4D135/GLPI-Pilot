@@ -40,9 +40,9 @@ public sealed partial class DashboardView
         }
         if (pareto)
         {
-            var line = new Line { X1 = 35, X2 = 580, Y1 = 53, Y2 = 53, Stroke = Accent("slate"), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 3, 3 }, IsHitTestVisible = false }; canvas.Children.Add(line);
-            var threshold = Text("80 %", 10, "MutedBrush"); Canvas.SetLeft(threshold, 0); Canvas.SetTop(threshold, 43); canvas.Children.Add(threshold);
-            panel.Children.Add(Text("Courbe orange : cumul des occurrences sur toutes les catégories. Le repère à 80 % sert à lire la concentration.", 10, "MutedBrush", margin: new Thickness(0, 0, 0, 5)));
+            var line = new Line { X1 = 35, X2 = 580, Y1 = 185 - 1.65 * widget.ParetoThresholdPercent, Y2 = 185 - 1.65 * widget.ParetoThresholdPercent, Stroke = Accent("slate"), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 3, 3 }, IsHitTestVisible = false }; canvas.Children.Add(line);
+            var threshold = Text(widget.ParetoThresholdPercent.ToString("0.#") + " %", 10, "MutedBrush"); Canvas.SetLeft(threshold, 0); Canvas.SetTop(threshold, 175 - 1.65 * widget.ParetoThresholdPercent); canvas.Children.Add(threshold);
+            panel.Children.Add(Text($"Courbe orange : cumul des occurrences sur toutes les catégories. Le repère à {widget.ParetoThresholdPercent:0.#} % est configurable dans les options.", 10, "MutedBrush", margin: new Thickness(0, 0, 0, 5)));
         }
         panel.Children.Add(new Viewbox { Child = canvas, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxHeight = 250 });
         var legend = new StackPanel();
@@ -87,6 +87,7 @@ public sealed partial class DashboardView
         {
             var palette = new[] { "blue", "teal", "purple", "orange", "green", "red", "slate" };
             var allColumns = matrix.Cells.Select(x => x.ColumnLabel).Distinct().Order(StringComparer.CurrentCultureIgnoreCase).ToArray();
+            var maximumTotal = matrix.Cells.GroupBy(x => x.RowLabel).Max(x => x.Sum(c => c.Value));
             foreach (var row in rowNames)
             {
                 var cells = matrix.Cells.Where(x => x.RowLabel == row).ToArray(); var total = cells.Sum(x => x.Value);
@@ -101,11 +102,13 @@ public sealed partial class DashboardView
                     Help(button, row + " · " + cell.ColumnLabel, $"{cell.Value:0.##} {matrix.Unit} · {100 * cell.Value / total:0.#} % de cette ligne");
                     Grid.SetColumn(button, col); strip.Children.Add(button);
                 }
+                if (widget.StackedMode == "volume" && maximumTotal > total)
+                    strip.ColumnDefinitions.Add(new() { Width = new GridLength(maximumTotal - total, GridUnitType.Star) });
                 panel.Children.Add(strip);
             }
             var legend = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
             for (var i = 0; i < Math.Min(20, allColumns.Length); i++) { var label = Text("● " + allColumns[i], 10, margin: new Thickness(0, 0, 12, 5)); label.Foreground = Accent(palette[i % palette.Length]); legend.Children.Add(label); }
-            panel.Children.Add(legend); panel.Children.Add(Text("Chaque barre représente 100 % des occurrences de sa ligne. " + (allColumns.Length > 20 ? "Légende limitée à 20 catégories ; chaque segment garde son intitulé en infobulle et dans la liste complète." : ""), 10, "MutedBrush"));
+            panel.Children.Add(legend); panel.Children.Add(Text((widget.StackedMode == "volume" ? "La longueur représente le volume, sur une échelle commune à toutes les lignes. " : "Chaque barre représente 100 % des occurrences de sa ligne. ") + (allColumns.Length > 20 ? "Légende limitée à 20 catégories ; chaque segment garde son intitulé en infobulle et dans la liste complète." : ""), 10, "MutedBrush"));
         }
         else
         {

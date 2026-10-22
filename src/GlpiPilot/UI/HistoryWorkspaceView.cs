@@ -5,7 +5,7 @@ using GlpiPilot.Core;
 
 namespace GlpiPilot.UI;
 
-public sealed class HistoryWorkspaceView : UserControl
+public sealed partial class HistoryWorkspaceView : UserControl
 {
     private readonly DataGrid _catalogue = PilotControls.Table();
     private readonly DataGrid _changes = PilotControls.Table();
@@ -15,6 +15,8 @@ public sealed class HistoryWorkspaceView : UserControl
     private readonly TextBox _search = PilotControls.Input("", 230);
     private readonly TabControl _tabs = new();
     private IReadOnlyList<SnapshotChange> _allChanges = Array.Empty<SnapshotChange>();
+    private string _comparisonBeforeId = "";
+    public event Action<string, int[]>? VerifyAbsentRequested;
     public event Action? RefreshRequested;
     public event Action<string>? OpenRequested;
     public event Action<string>? ExportRequested;
@@ -42,7 +44,13 @@ public sealed class HistoryWorkspaceView : UserControl
         var compareActions = new WrapPanel(); compareActions.Children.Add(_before); compareActions.Children.Add(_after);
         compareActions.Children.Add(PilotControls.Button("Comparer", () =>
         {
-            if (_before.SelectedItem is SnapshotMetadata before && _after.SelectedItem is SnapshotMetadata after) CompareRequested?.Invoke(before.Id, after.Id);
+            if (_before.SelectedItem is SnapshotMetadata before && _after.SelectedItem is SnapshotMetadata after) { _comparisonBeforeId = before.Id; CompareRequested?.Invoke(before.Id, after.Id); }
+        }));
+        compareActions.Children.Add(PilotControls.Button("Vérifier les absents dans GLPI", () =>
+        {
+            var rows = _allChanges.Where(c => c.Kind == "Absent du relevé" && c.PreviousRow.HasValue).Select(c => c.PreviousRow!.Value).Distinct().ToArray();
+            if (_comparisonBeforeId.Length > 0 && rows.Length > 0) VerifyAbsentRequested?.Invoke(_comparisonBeforeId, rows);
+            else _summary.Text = "Comparez deux relevés et vérifiez qu’ils contiennent des absents. Les absences gardent leur statut historique inconnu.";
         }));
         _search.ToolTip = "Filtrer toutes les différences par identifiant, champ ou valeur.";
         _search.TextChanged += (_, _) => Filter(); compareActions.Children.Add(_search);
@@ -52,11 +60,17 @@ public sealed class HistoryWorkspaceView : UserControl
         var comparePanel = new DockPanel(); DockPanel.SetDock(compareActions, Dock.Top); DockPanel.SetDock(_summary, Dock.Top);
         comparePanel.Children.Add(compareActions); comparePanel.Children.Add(_summary); comparePanel.Children.Add(_changes);
         _tabs.Items.Add(new TabItem { Header = "Comparer", Content = comparePanel });
+        _tabs.Items.Add(new TabItem { Header = "Analyses historiques", Content = BuildAnalyticsWorkspace() });
+        _tabs.Items.Add(new TabItem { Header = "Historique d’un ticket", Content = BuildIndexedTicketHistory() });
+        _tabs.Items.Add(new TabItem { Header = "Effectifs des sites", Content = BuildPopulations() });
         Content = PilotControls.Page("Historique des relevés", "Retrouvez les données telles qu’elles ont été collectées. Une absence du relevé ne signifie pas une clôture du ticket.", _tabs);
     }
     public void Show(IReadOnlyList<SnapshotMetadata> entries)
     {
         var beforeId = (_before.SelectedItem as SnapshotMetadata)?.Id; var afterId = (_after.SelectedItem as SnapshotMetadata)?.Id;
+        var analysisId = (_analysisSource.SelectedItem as SnapshotMetadata)?.Id;
+        _analysisSource.ItemsSource = entries;
+        _analysisSource.SelectedItem = entries.FirstOrDefault(e => e.Id == analysisId) ?? entries.FirstOrDefault();
         _catalogue.ItemsSource = entries; _before.ItemsSource = entries; _after.ItemsSource = entries;
         _before.SelectedItem = entries.FirstOrDefault(item => item.Id == beforeId) ?? entries.Skip(1).FirstOrDefault();
         _after.SelectedItem = entries.FirstOrDefault(item => item.Id == afterId) ?? entries.FirstOrDefault();

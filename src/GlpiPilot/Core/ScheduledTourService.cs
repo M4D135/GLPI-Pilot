@@ -37,11 +37,16 @@ public sealed class ScheduledTourStop
     public string Latest { get; set; } = "";
     public bool Locked { get; set; }
     public string Notes { get; set; } = "";
+    public string Date { get; set; } = "";
+    public List<string> RequiredSkills { get; set; } = new();
+    public string Contact { get; set; } = "";
+    public string Equipment { get; set; } = "";
+    [JsonIgnore] public string SkillsText { get => string.Join(" ; ", RequiredSkills); set => RequiredSkills = (value ?? "").Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(); }
     [JsonIgnore] public string PlaceKey => SiteId.Length > 0 ? "site:" + SiteId : "city:" + CityId;
     public ScheduledTourStop Copy() => new() { Id = Id, CityId = CityId, SiteId = SiteId, TicketIds = TicketIds.ToList(), TechnicianKey = TechnicianKey, DurationMinutes = DurationMinutes,
-        TravelMinutes = TravelMinutes, Earliest = Earliest, Latest = Latest, Locked = Locked, Notes = Notes };
+        TravelMinutes = TravelMinutes, Earliest = Earliest, Latest = Latest, Locked = Locked, Notes = Notes, Date = Date, RequiredSkills = RequiredSkills.ToList(), Contact = Contact, Equipment = Equipment };
 }
-public sealed class ScheduledTour
+public sealed partial class ScheduledTour
 {
     public const int MaximumTickets = 2000, MaximumStops = 500;
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -64,10 +69,11 @@ public sealed class ScheduledTour
     {
         Id = Id, Name = Name, SourceKey = SourceKey, Date = Date, StartTime = StartTime, EndTime = EndTime, TimeZoneId = TimeZoneId, TechnicianKey = TechnicianKey,
         Start = Start.Copy(), End = End.Copy(), ReturnMinutes = ReturnMinutes, Tickets = Tickets.Select(ticket => ticket.Copy()).ToList(), Stops = Stops.Select(stop => stop.Copy()).ToList(),
-        SourceExtractedAt = SourceExtractedAt, UpdatedUtc = UpdatedUtc, Notes = Notes
+        SourceExtractedAt = SourceExtractedAt, UpdatedUtc = UpdatedUtc, Notes = Notes, State = State, StateHistory = StateHistory.Select(value => value with { }).ToList(), RoadLegs = RoadLegs.Select(value => value with { }).ToList(), Weather = Weather.Select(value => value with { }).ToList(), Availability = Availability.Select(value => value.Copy()).ToList()
     };
     public void Validate()
     {
+        ValidateExtended();
         if (!Guid.TryParse(Id, out var id) || id == Guid.Empty || !CityText.ValidText(Name, false) || SourceKey is null || SourceKey.Length is 0 or > 1000 || CityOverrideStore.SourceKey(SourceKey) != SourceKey
             || !DateOnly.TryParseExact(Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) || date.Year is < 2000 or > 2100
             || !Time(StartTime, false, out var start) || !Time(EndTime, false, out var end) || end <= start
@@ -88,7 +94,10 @@ public sealed class ScheduledTour
                 || stop.TicketIds == null || stop.TicketIds.Count == 0 || stop.TicketIds.Count > MaximumTickets || stop.TicketIds.Any(ticket => !ids.Contains(ticket) || !assigned.Add(ticket))
                 || !Text(stop.TechnicianKey, 400) || stop.DurationMinutes is < 1 or > 1440 || stop.TravelMinutes is < 0 or > 1440
                 || !Time(stop.Earliest, true, out var earliest) || !Time(stop.Latest, true, out var latest) || stop.Earliest.Length > 0 && stop.Latest.Length > 0 && earliest > latest
-                || !Text(stop.Notes, 2000, true) || !places.Add(stop.PlaceKey)) throw new InvalidDataException("Une étape contient un lieu ou des tickets dupliqués, des durées ou une fenêtre horaire invalides.");
+                || !Text(stop.Notes, 2000, true) || !Text(stop.Contact, 2000, true) || !Text(stop.Equipment, 2000, true)
+                || stop.RequiredSkills == null || stop.RequiredSkills.Count > 30 || stop.RequiredSkills.Any(value => !CityText.ValidText(value, false))
+                || stop.Date == null || stop.Date.Length > 0 && (!DateOnly.TryParseExact(stop.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var stopDate) || stopDate.Year is < 2000 or > 2100)
+                || !places.Add(stop.PlaceKey)) throw new InvalidDataException("Une étape contient un lieu ou des tickets dupliqués, des durées ou une fenêtre horaire invalides.");
             if (stop.TicketIds.Any(ticket => ticketPlaces[ticket] != stop.PlaceKey))
                 throw new InvalidDataException("Le lieu d’une étape ne correspond pas à la référence de ses tickets. Actualisez les étapes depuis le relevé.");
         }
@@ -100,8 +109,9 @@ public sealed class ScheduledTour
 }
 public sealed record TourReconciliationRow(string TicketId, int? SourceIndex, string State, string Detail, string CurrentPlaceKey, bool Completed, bool Changed);
 public sealed record TourScheduledVisit(int Number, ScheduledTourStop Stop, string Place, string Address, string Technician, DateTime Arrival,
-    DateTime Start, DateTime Finish, int WaitMinutes, bool Late, double? StraightLineKm, string Warning);
-public sealed record TourTechnicianSchedule(string Technician, int Stops, int Tickets, int InterventionMinutes, int TravelMinutes, int WaitMinutes, DateTime Finish, bool OutsideDay, double? StraightLineKm = null);
+    DateTime Start, DateTime Finish, int WaitMinutes, bool Late, double? StraightLineKm, string Warning)
+{ public int TravelMinutesUsed { get; init; } public double? RoadKm { get; init; } public bool SiteClosed { get; init; } public bool TechnicianUnavailable { get; init; } public bool DueExceeded { get; init; } }
+public sealed record TourTechnicianSchedule(string Technician, int Stops, int Tickets, int InterventionMinutes, int TravelMinutes, int WaitMinutes, DateTime Finish, bool OutsideDay, double? StraightLineKm = null, string Date = "", double? RoadKm = null);
 public sealed class TourSchedule
 {
     public required ScheduledTour Tour { get; init; }
@@ -110,11 +120,11 @@ public sealed class TourSchedule
     public required IReadOnlyList<TourReconciliationRow> Reconciliation { get; init; }
     public required IReadOnlyList<string> Warnings { get; init; }
     public bool CanExportCalendar => Visits.Count > 0 && Reconciliation.All(row => row.SourceIndex.HasValue && row.CurrentPlaceKey.Length > 0 && row.State is not ("Source différente" or "Lieu modifié"))
-        && Warnings.All(warning => !warning.StartsWith("Référence absente", StringComparison.Ordinal));
+        && Visits.All(visit => !visit.TechnicianUnavailable) && Warnings.All(warning => !warning.StartsWith("Référence absente", StringComparison.Ordinal));
 }
 
 /// <summary>Explicit local appointments. Travel minutes are user estimates, never a claimed road route.</summary>
-public static class ScheduledTourService
+public static partial class ScheduledTourService
 {
     public static ScheduledTour Create(TourPlanningContext context, IEnumerable<int> selectedRows, string name, DateOnly date, string? technicianKey = null, CancellationToken ct = default)
     {
@@ -134,6 +144,12 @@ public static class ScheduledTourService
             if (!groups.TryGetValue(place, out var stop))
             { stop = new() { CityId = source.CityId!, SiteId = source.SiteId ?? "", TechnicianKey = tour.TechnicianKey }; groups.Add(place, stop); tour.Stops.Add(stop); }
             stop.TicketIds.Add(id);
+        }
+        foreach (var stop in tour.Stops)
+        {
+            var site = context.Sites.GetValueOrDefault(stop.SiteId);
+            stop.Contact = GatherFields(context, stop.TicketIds, new[] { "contact", "telephone", "telephonedemandeur", "contactsurplace" }, site?.Contact ?? "");
+            stop.Equipment = GatherFields(context, stop.TicketIds, new[] { "materiel", "equipement", "ordinateur", "elementassocie", "elementsassocies" }, site?.Equipment ?? "");
         }
         tour.Validate(); return tour;
     }
@@ -159,39 +175,71 @@ public static class ScheduledTourService
     public static TourSchedule Calculate(ScheduledTour tour, TourPlanningContext context, CancellationToken ct = default)
     {
         tour.Validate(); ct.ThrowIfCancellationRequested(); var copy = tour.Copy(); var changes = Reconcile(copy, context, ct);
-        var date = DateOnly.ParseExact(copy.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture); var start = date.ToDateTime(TimeOnly.ParseExact(copy.StartTime, "HH:mm", CultureInfo.InvariantCulture));
-        var dayEnd = date.ToDateTime(TimeOnly.ParseExact(copy.EndTime, "HH:mm", CultureInfo.InvariantCulture)); var visits = new List<TourScheduledVisit>(); var technicians = new List<TourTechnicianSchedule>(); var warnings = new List<string>();
+        var visits = new List<TourScheduledVisit>(); var technicians = new List<TourTechnicianSchedule>(); var warnings = new List<string>();
         if (!context.Source.Complete) warnings.Add("Le relevé actuel est partiel ou son périmètre complet n’est pas confirmé.");
         var unplaced = copy.Tickets.Count - copy.Stops.Sum(stop => stop.TicketIds.Count); if (unplaced > 0) warnings.Add($"{unplaced} ticket(s) du panier n’ont pas d’étape localisée.");
         if (changes.Any(change => change.State != "Inchangé")) warnings.Add("Le rapprochement avec le relevé courant comporte des changements ou absences ; consultez-le avant le départ.");
-        foreach (var group in copy.Stops.Select((stop, index) => (Stop: stop, Index: index)).GroupBy(item => item.Stop.TechnicianKey.Length == 0 ? copy.TechnicianKey : item.Stop.TechnicianKey, StringComparer.Ordinal))
+        var idMap = IdMap(context); var usedRoads = 0; var staleRoads = false;
+        foreach (var group in copy.Stops.Select((stop, index) => (Stop: stop, Index: index)).GroupBy(item => (Technician: item.Stop.TechnicianKey.Length == 0 ? copy.TechnicianKey : item.Stop.TechnicianKey, Day: item.Stop.Date.Length == 0 ? copy.Date : item.Stop.Date)))
         {
-            ct.ThrowIfCancellationRequested(); var cursor = start; var point = copy.Start; var intervention = 0; var travel = 0; var waiting = 0; double distanceTotal = 0; var distanceKnown = true;
+            ct.ThrowIfCancellationRequested(); var date = DateOnly.ParseExact(group.Key.Day, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var cursor = date.ToDateTime(TimeOnly.ParseExact(copy.StartTime, "HH:mm", CultureInfo.InvariantCulture)); var dayEnd = date.ToDateTime(TimeOnly.ParseExact(copy.EndTime, "HH:mm", CultureInfo.InvariantCulture));
+            var availability = copy.Availability.SingleOrDefault(item => item.TechnicianKey == group.Key.Technician && item.Day == group.Key.Day);
+            var planner = availability == null ? null : new TourAvailabilityPlanner(availability, date, TimeOnly.FromDateTime(cursor), TimeOnly.FromDateTime(dayEnd)); var incompatible = false;
+            var point = copy.Start; var previous = "start"; var intervention = 0; var travel = 0; var waiting = 0; double distanceTotal = 0, roadTotal = 0; var distanceKnown = true; var roadsKnown = true;
             foreach (var (stop, index) in group)
             {
                 ct.ThrowIfCancellationRequested(); var (place, address, nextPoint, missing) = Location(context, stop); if (missing) warnings.Add("Référence absente : " + place);
-                var arrival = cursor.AddMinutes(stop.TravelMinutes); var actual = arrival;
+                var road = FindRoad(copy, group.Key.Day, group.Key.Technician, previous, stop.Id, point, nextPoint);
+                var minutes = road == null ? stop.TravelMinutes : (int)Math.Ceiling(road.DurationMinutes);
+                if (road != null) { roadTotal += road.DistanceKm; usedRoads++; } else { roadsKnown = false; staleRoads |= copy.RoadLegs.Count > 0; }
+                var arrival = cursor.AddMinutes(minutes); var actual = arrival;
                 if (stop.Earliest.Length > 0) actual = actual > date.ToDateTime(TimeOnly.ParseExact(stop.Earliest, "HH:mm", CultureInfo.InvariantCulture)) ? actual : date.ToDateTime(TimeOnly.ParseExact(stop.Earliest, "HH:mm", CultureInfo.InvariantCulture));
-                var finish = actual.AddMinutes(stop.DurationMinutes); var late = stop.Latest.Length > 0 && finish > date.ToDateTime(TimeOnly.ParseExact(stop.Latest, "HH:mm", CultureInfo.InvariantCulture));
-                var wait = (int)Math.Round((actual - arrival).TotalMinutes); var distance = Distance(point, nextPoint);
+                var opening = FitSiteOpening(context.Sites.GetValueOrDefault(stop.SiteId), date, actual, stop.DurationMinutes);
+                if (opening.Start.HasValue) actual = opening.Start.Value;
+                var finish = actual.AddMinutes(stop.DurationMinutes); var technicianUnavailable = false; var wait = (int)Math.Round((actual - arrival).TotalMinutes);
+                if (planner != null)
+                {
+                    if (planner.TryFit(cursor, minutes, stop.DurationMinutes, stop.Earliest, context.Sites.GetValueOrDefault(stop.SiteId), stop.RequiredSkills, out var fitArrival, out var fitStart, out var fitFinish, out var fitWaiting))
+                    { arrival = fitArrival; actual = fitStart; finish = fitFinish; wait = fitWaiting; opening = (actual, false); }
+                    else { technicianUnavailable = true; incompatible = true; }
+                }
+                var late = stop.Latest.Length > 0 && finish > date.ToDateTime(TimeOnly.ParseExact(stop.Latest, "HH:mm", CultureInfo.InvariantCulture));
+                var due = stop.TicketIds.Where(id => idMap.TryGetValue(id, out var positions) && positions.Length == 1).Select(id => context.Rows[idMap[id][0]].Due).Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+                var overdue = due.Length > 0 && finish > due.Min(); var distance = Distance(point, nextPoint);
                 if (distance.HasValue) distanceTotal += distance.Value; else distanceKnown = false;
-                visits.Add(new(index + 1, stop.Copy(), place, address, TechnicianName(context, group.Key), arrival, actual, finish, wait, late, distance,
-                    missing ? "Lieu retiré du référentiel" : late ? "Fin après la fenêtre prévue" : distance == null ? "Distance indisponible : coordonnées absentes" : "Distance à vol d’oiseau ; trajet saisi manuellement"));
-                cursor = finish; point = nextPoint; intervention += stop.DurationMinutes; travel += stop.TravelMinutes; waiting += wait;
+                var signal = missing ? "Lieu retiré du référentiel" : opening.Closed ? "Aucune plage d’ouverture ne permet cette visite" : technicianUnavailable ? "Présence, capacité ou compétence déclarée incompatible" : late ? "Fin après la fenêtre prévue" : overdue ? "Intervention après une échéance de ticket" : road != null ? "Trajet routier calculé · " + road.Provider : "Trajet saisi · distance à vol d’oiseau";
+                visits.Add(new(index + 1, stop.Copy(), place, address, TechnicianName(context, group.Key.Technician), arrival, actual, finish, wait, late, distance, signal) { TravelMinutesUsed = minutes, RoadKm = road?.DistanceKm, SiteClosed = opening.Closed, TechnicianUnavailable = technicianUnavailable, DueExceeded = overdue });
+                cursor = finish; point = nextPoint; previous = stop.Id; intervention += stop.DurationMinutes; travel += minutes; waiting += wait;
             }
-            cursor = cursor.AddMinutes(copy.ReturnMinutes); travel += copy.ReturnMinutes;
-            if (copy.End.Latitude.HasValue) { var back = Distance(point, copy.End); if (back.HasValue) distanceTotal += back.Value; else distanceKnown = false; }
-            else if (copy.End.Label.Length > 0 || copy.ReturnMinutes > 0) distanceKnown = false;
-            technicians.Add(new(TechnicianName(context, group.Key), group.Count(), group.Sum(item => item.Stop.TicketIds.Count), intervention, travel, waiting, cursor, cursor > dayEnd, distanceKnown ? distanceTotal : null));
+            var returnRoad = FindRoad(copy, group.Key.Day, group.Key.Technician, previous, "end", point, copy.End); var returnMinutes = returnRoad == null ? copy.ReturnMinutes : (int)Math.Ceiling(returnRoad.DurationMinutes);
+            if (planner != null && returnMinutes > 0)
+            {
+                if (planner.TryFit(cursor, returnMinutes, 0, "", null, null, out _, out _, out var returnFinish, out _)) cursor = returnFinish;
+                else { cursor = cursor.AddMinutes(returnMinutes); incompatible = true; warnings.Add("Retour incompatible avec la présence ou la capacité déclarée de " + TechnicianName(context, group.Key.Technician) + " le " + group.Key.Day + "."); }
+            }
+            else cursor = cursor.AddMinutes(returnMinutes);
+            travel += returnMinutes;
+            if (copy.End.Latitude.HasValue)
+            {
+                var back = Distance(point, copy.End); if (back.HasValue) distanceTotal += back.Value; else distanceKnown = false;
+                if (returnRoad != null) { roadTotal += returnRoad.DistanceKm; usedRoads++; } else { roadsKnown = false; staleRoads |= copy.RoadLegs.Count > 0; }
+            }
+            else if (copy.End.Label.Length > 0 || copy.ReturnMinutes > 0) { distanceKnown = false; roadsKnown = false; }
+            technicians.Add(new(TechnicianName(context, group.Key.Technician), group.Count(), group.Sum(item => item.Stop.TicketIds.Count), intervention, travel, waiting, cursor, cursor > dayEnd || incompatible, distanceKnown ? distanceTotal : null, group.Key.Day, roadsKnown ? roadTotal : null));
         }
         if (visits.Any(visit => visit.Late)) warnings.Add("Une ou plusieurs fenêtres horaires sont dépassées.");
+        if (visits.Any(visit => visit.SiteClosed)) warnings.Add("Des visites ne respectent pas les ouvertures ou fermetures déclarées des sites.");
+        if (visits.Any(visit => visit.TechnicianUnavailable)) warnings.Add("Des visites ne respectent pas la présence, la capacité ou les compétences déclarées du technicien. Recalculez la répartition ou adaptez explicitement les contraintes.");
+        if (visits.Any(visit => visit.DueExceeded)) warnings.Add("Des interventions finissent après une échéance de ticket connue ; arbitrez le scénario avant de le valider.");
         if (technicians.Any(technician => technician.OutsideDay)) warnings.Add("Une ou plusieurs tournées dépassent la fin de journée configurée.");
-        warnings.Add("Trajets : durées saisies par l’utilisateur ; kilomètres indicatifs à vol d’oiseau. Aucun calcul routier ni temps réel.");
-        return new() { Tour = copy, Visits = visits.OrderBy(visit => visit.Number).ToArray(), Technicians = technicians, Reconciliation = changes, Warnings = warnings };
+        if (staleRoads) warnings.Add("Des trajets routiers ne correspondent plus au parcours courant : durées saisies utilisées, recalcul routier nécessaire.");
+        warnings.Add(usedRoads == 0 ? "Trajets : durées saisies par l’utilisateur ; kilomètres indicatifs à vol d’oiseau. Aucun trafic temps réel." : $"{usedRoads} trajet(s) routiers issus du fournisseur choisi ; les autres durées restent saisies. Aucun trafic temps réel garanti.");
+        return new() { Tour = copy, Visits = visits.OrderBy(visit => visit.Start).ThenBy(visit => visit.Number).ToArray(), Technicians = technicians, Reconciliation = changes, Warnings = warnings };
     }
     public static ScheduledTour Duplicate(ScheduledTour source, string name)
     {
-        source.Validate(); var copy = source.Copy(); copy.Id = Guid.NewGuid().ToString("N"); copy.Name = name; copy.UpdatedUtc = DateTimeOffset.UtcNow;
+        source.Validate(); var copy = source.Copy(); copy.Id = Guid.NewGuid().ToString("N"); copy.Name = name; copy.State = "draft"; copy.StateHistory.Clear(); copy.RoadLegs.Clear(); copy.Weather.Clear(); copy.UpdatedUtc = DateTimeOffset.UtcNow;
         foreach (var stop in copy.Stops) stop.Id = Guid.NewGuid().ToString("N"); copy.Validate(); return copy;
     }
     public static ScheduledTour Move(ScheduledTour source, string stopId, int delta)
@@ -200,7 +248,7 @@ public static class ScheduledTourService
         if (index < 0) throw new InvalidDataException("L’étape n’appartient pas à cette tournée."); var next = index + delta;
         if (next < 0 || next >= copy.Stops.Count) return copy;
         if (copy.Stops[index].Locked || copy.Stops[next].Locked) throw new InvalidDataException("Déverrouillez les étapes concernées pour modifier leur position.");
-        (copy.Stops[index], copy.Stops[next]) = (copy.Stops[next], copy.Stops[index]); return copy;
+        (copy.Stops[index], copy.Stops[next]) = (copy.Stops[next], copy.Stops[index]); return PrepareEdit(copy, "Ordre des étapes modifié");
     }
     public static ScheduledTour Distribute(ScheduledTour source, IEnumerable<string> technicianKeys)
     {
@@ -211,7 +259,7 @@ public static class ScheduledTourService
         { var key = stop.TechnicianKey.Length > 0 ? stop.TechnicianKey : copy.TechnicianKey; if (!load.ContainsKey(key)) throw new InvalidDataException("Un technicien d’étape verrouillée ne fait pas partie de la sélection."); load[key] += stop.DurationMinutes + stop.TravelMinutes; }
         foreach (var stop in copy.Stops.Where(stop => !stop.Locked).OrderByDescending(stop => stop.DurationMinutes + stop.TravelMinutes))
         { var key = keys.OrderBy(key => load[key]).ThenBy(key => key, StringComparer.Ordinal).First(); stop.TechnicianKey = key; load[key] += stop.DurationMinutes + stop.TravelMinutes; }
-        return copy;
+        return PrepareEdit(copy, "Répartition entre techniciens modifiée");
     }
     public static ScheduledTour RebuildUnlocked(ScheduledTour source, TourPlanningContext context, bool removeCompleted, CancellationToken ct = default)
     {
@@ -236,13 +284,13 @@ public static class ScheduledTourService
         for (var index = 0; index < source.Stops.Count; index++)
             if (source.Stops[index].Locked && (index >= replacement.Count || replacement[index].Id != source.Stops[index].Id))
                 throw new InvalidDataException("L’actualisation déplacerait une étape verrouillée. Déverrouillez-la après vérification.");
-        copy.Stops = replacement; copy.Validate(); return copy;
+        copy.Stops = replacement; copy.Validate(); return PrepareEdit(copy, "Panier actualisé depuis le relevé");
     }
     public static ScheduledTour OrderByProximity(ScheduledTour source, TourPlanningContext context, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested(); source.Validate(); var copy = source.Copy();
         if (copy.Stops.Any(stop => !Location(context, stop).Point.Latitude.HasValue)) throw new InvalidDataException("Chaque étape doit avoir ses coordonnées pour proposer un ordre indicatif.");
-        foreach (var group in copy.Stops.Select((stop, index) => (Stop: stop, Index: index)).GroupBy(item => item.Stop.TechnicianKey.Length == 0 ? copy.TechnicianKey : item.Stop.TechnicianKey))
+        foreach (var group in copy.Stops.Select((stop, index) => (Stop: stop, Index: index)).GroupBy(item => (item.Stop.TechnicianKey.Length == 0 ? copy.TechnicianKey : item.Stop.TechnicianKey, item.Stop.Date.Length == 0 ? copy.Date : item.Stop.Date)))
         {
             var positions = group.Select(item => item.Index).ToArray(); var point = copy.Start; var cursor = 0;
             while (cursor < positions.Length)
@@ -258,7 +306,7 @@ public static class ScheduledTourService
                 cursor = end;
             }
         }
-        return copy;
+        return PrepareEdit(copy, "Ordre indicatif recalculé");
     }
     public static string ToCalendar(TourSchedule schedule, DateTimeOffset? createdAt = null)
     {
@@ -291,13 +339,19 @@ public static class ScheduledTourService
         foreach (var visit in schedule.Visits)
         {
             html.Append("<article><h2>").Append(visit.Number).Append(" · ").Append(H(visit.Place)).Append("</h2><p>").Append(H(visit.Technician)).Append(" · ").Append(visit.Start.ToString("dd/MM HH:mm")).Append("–").Append(visit.Finish.ToString("HH:mm"))
-                .Append(" · intervention ").Append(visit.Stop.DurationMinutes).Append(" min · trajet prévu ").Append(visit.Stop.TravelMinutes).Append(" min</p><p>").Append(H(visit.Address)).Append("</p><table><tr><th>Ticket</th><th>Titre actuel</th><th>Statut</th><th>Échéance</th></tr>");
+                .Append(" · intervention ").Append(visit.Stop.DurationMinutes).Append(" min · trajet prévu ").Append(visit.TravelMinutesUsed).Append(" min</p><p>").Append(H(visit.Address)).Append("</p><table><tr><th>Ticket</th><th>Titre actuel</th><th>Statut</th><th>Échéance</th></tr>");
             foreach (var id in visit.Stop.TicketIds)
             {
                 var row = currentRows.GetValueOrDefault(id);
                 html.Append("<tr><td>").Append(H(id)).Append("</td><td>").Append(H(row is int r ? Cell(context, r, "title") : "Indisponible dans le relevé actuel")).Append("</td><td>").Append(H(row is int s ? Cell(context, s, "status") : "—")).Append("</td><td>").Append(H(row is int d ? Cell(context, d, "due") : "—")).Append("</td></tr>");
             }
-            html.Append("</table><p>").Append(H(visit.Stop.Notes).Replace("\n", "<br>")).Append("</p><p>Intervention réalisée : ☐ &nbsp; Observations : __________________________________________</p></article>");
+            html.Append("</table><p><strong>Contact :</strong> ").Append(H(visit.Stop.Contact.Length == 0 ? "Non renseigné" : visit.Stop.Contact)).Append("</p><p><strong>Matériel / accès :</strong> ").Append(H(visit.Stop.Equipment.Length == 0 ? "Non renseigné" : visit.Stop.Equipment)).Append("</p>");
+            var weather = WeatherForStop(schedule.Tour, context, visit.Stop);
+            if (weather != null)
+                html.Append("<p><strong>Prévision météo du ").Append(H(weather.Day)).Append(" :</strong> code WMO ").Append(weather.WeatherCode?.ToString(CultureInfo.InvariantCulture) ?? "non disponible")
+                    .Append(" · minimum ").Append(weather.MinimumCelsius?.ToString("N1", CultureInfo.CurrentCulture) ?? "—").Append(" °C · maximum ").Append(weather.MaximumCelsius?.ToString("N1", CultureInfo.CurrentCulture) ?? "—")
+                    .Append(" °C · risque de précipitation ").Append(weather.RainProbabilityPercent?.ToString("N0", CultureInfo.CurrentCulture) ?? "—").Append(" %. Source : ").Append(H(weather.Provider)).Append(" ; reçu le ").Append(H(weather.RetrievedAt.ToString("g"))).Append(".</p>");
+            html.Append("<p>").Append(H(visit.Stop.Notes).Replace("\n", "<br>")).Append("</p><p>Intervention réalisée : ☐ &nbsp; Observations : __________________________________________</p></article>");
         }
         html.Append("<h2>Rapprochement du relevé</h2><table><tr><th>Ticket</th><th>État</th><th>Détail</th></tr>");
         foreach (var row in schedule.Reconciliation.Where(row => row.State != "Inchangé")) html.Append("<tr><td>").Append(H(row.TicketId)).Append("</td><td>").Append(H(row.State)).Append("</td><td>").Append(H(row.Detail)).Append("</td></tr>");
@@ -343,7 +397,7 @@ public static class ScheduledTourService
 }
 
 /// <summary>Local saved tours contain explicit ticket IDs and snapshots of their references; never portable team settings.</summary>
-public sealed class ScheduledTourStore
+public sealed partial class ScheduledTourStore
 {
     public const int MaximumTours = 100;
     private const int MaximumBytes = 16 * 1024 * 1024;

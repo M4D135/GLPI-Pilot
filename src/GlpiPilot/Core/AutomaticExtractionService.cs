@@ -15,10 +15,17 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var clock = Stopwatch.StartNew();
         var startedAt = DateTimeOffset.Now;
         var runId = Guid.NewGuid().ToString("N")[..8];
+        var phaseSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
+        string activePhase = ""; var phaseStarted = TimeSpan.Zero;
         void Stage(string message, AutomaticRunPhase? phase = null)
         {
             ct.ThrowIfCancellationRequested();
-            if (phase.HasValue) PhaseChanged?.Invoke(phase.Value);
+            if (phase.HasValue)
+            {
+                var key = phase.Value.ToString();
+                if (key != activePhase) { if (activePhase.Length > 0) phaseSeconds[activePhase] = phaseSeconds.GetValueOrDefault(activePhase) + (clock.Elapsed - phaseStarted).TotalSeconds; activePhase = key; phaseStarted = clock.Elapsed; }
+                PhaseChanged?.Invoke(phase.Value);
+            }
             Log?.Invoke($"AUTO {runId} +{clock.Elapsed.TotalSeconds:F1}s · {message}");
             progress?.Report(new(0, 0, null, message));
             ct.ThrowIfCancellationRequested();
@@ -43,6 +50,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         Stage("Recherche du tableau mémorisé…", AutomaticRunPhase.Search);
         var table = await browser.WaitForAutoTableAsync(page, settings, ct);
         var scopeEvidence = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
+        var observedSort = await browser.ReadObservedSortAsync(table, ct);
         Log?.Invoke($"PÉRIMÈTRE · critères observables={scopeEvidence.Known} ; empreinte conservée, valeurs absentes du journal.");
         settings.RememberTable(table);
         ExtractionResult data;
@@ -182,7 +190,9 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             StartedAt = startedAt, FinishedAt = DateTimeOffset.Now, SearchVerified = searchVerified,
             SourceKind = "browser", Method = method,
             ScopeVerified = stableScope && scopeEvidence.Known && afterScope.Known, ScopeFingerprint = scopeEvidence.Fingerprint,
-            OriginalFileName = nativePath == null ? "" : Path.GetFileName(nativePath)
+            OriginalFileName = nativePath == null ? "" : Path.GetFileName(nativePath),
+            ObservedSort = observedSort, Resumed = data.Provenance.Resumed, ResumeStartedAt = data.Provenance.ResumeStartedAt,
+            StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
         };
         if (nativePath != null) primaryPath = nativePath;
         else if (data.Headers.Count > 0)
@@ -223,6 +233,9 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         }
         ct.ThrowIfCancellationRequested();
         Log?.Invoke($"AUTO {runId} +{clock.Elapsed.TotalSeconds:F1}s · terminé, {data.Rows.Count:N0} lignes, fichiers enregistrés.");
+        if (activePhase.Length > 0) phaseSeconds[activePhase] = phaseSeconds.GetValueOrDefault(activePhase) + (clock.Elapsed - phaseStarted).TotalSeconds;
+        data.Provenance.StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        data.Provenance.FinishedAt = DateTimeOffset.Now;
         PhaseChanged?.Invoke(AutomaticRunPhase.Ready);
         return new(data, table, primaryPath, nativePath, excelPath, cities);
     }

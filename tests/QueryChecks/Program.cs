@@ -683,6 +683,57 @@ Test("Snapshot scope and cancellation also apply to per-ticket explanations", ()
     using var cts = new CancellationTokenSource(); cts.Cancel(); Throws<OperationCanceledException>(() => QueryService.Explain(source, new(), snapshot, query, 1, cts.Token));
 });
 
+Test("Hierarchy recomputes nonadditive medians from unique contributing rows", () =>
+{
+    var data = Table(new[] { "A", "B", "N" }, new[] { "Europe", "France", "1" }, new[] { "Europe", "France", "3" }, new[] { "Europe", "UK", "100" });
+    var q = Query(aggregate: "median", aggregateField: "column:N", groupBy: "column:A"); q.GroupBySecondary = "column:B";
+    var result = Run(data, q); Assert(result.Available); var parent = result.Hierarchy.Single(g => g.Path.Length == 1);
+    Assert(parent.Value == 3 && parent.Count == 3 && parent.Rows.SequenceEqual(new[] { 0, 1, 2 })); Assert(result.Groups.Count == 2 && result.Hierarchy.Count == 3);
+});
+Test("Hierarchy percentages retain the own prefix denominator before filtering", () =>
+{
+    var data = Table(new[] { "A", "B", "N" }, new[] { "Europe", "France", "1" }, new[] { "Europe", "France", "0" }, new[] { "Europe", "UK", "0" });
+    var q = Query("column:N", "number-gt", "0", aggregate: "percent", groupBy: "column:A"); q.GroupBySecondary = "column:B";
+    var result = Run(data, q); Assert(result.Available); var parent = result.Hierarchy.Single(g => g.Path.Length == 1);
+    Assert(Math.Abs(parent.Value!.Value - 100d / 3) < 1e-9 && parent.Denominator == 3 && parent.Count == 1);
+});
+Test("Query source formats and value dictionaries share dashboard interpretation without rewriting raw cells", () =>
+{
+    var data = Table(new[] { "N", "Statut" }, new[] { "1,234.5", "READY" }); var settings = new DashboardSettings { NumberCulture = "en-US", ValueDictionaries = new() { ["status"] = new() { ["ready"] = "Nouveau" } } };
+    var result = Run(data, Query("role:status", "equals", "Nouveau", aggregate: "sum", aggregateField: "column:N"), settings);
+    Assert(result.Available && result.Metric.Value == 1234.5 && data.Rows[0][1] == "READY");
+});
+Test("Query technician conditions and grouping use the configured multivalue separators", () =>
+{
+    var data = Table(new[] { "ID", "Statut", "Attribué à - Technicien" }, new[] { "1", "Nouveau", "Alex & Sam" }, new[] { "2", "Nouveau", "Alex;Camille" });
+    var settings = new DashboardSettings { MultiValueSeparators = "&" };
+    var result = Run(data, Query("role:assignee", "equals", "Sam", groupBy: "role:assignee"), settings);
+    Assert(result.Available && result.Rows.SequenceEqual(new[] { 0 }) && result.Groups.Select(g => g.Label).Order().SequenceEqual(new[] { "Alex", "Sam" }));
+    var literal = Run(data, Query("role:assignee", "equals", "Alex;Camille"), settings);
+    Assert(literal.Rows.SequenceEqual(new[] { 1 }) && data.Rows[0][2] == "Alex & Sam");
+});
+Test("Built-in job packs preserve every stable template exactly once", () =>
+{
+    var packs = QueryPackService.BuiltInPacks(); foreach (var pack in packs) QueryPackService.Validate(pack);
+    Assert(packs.Count > 1 && packs.Sum(p => p.Queries.Count) == 80 && packs.SelectMany(p => p.Queries).Select(q => q.Id).Distinct().Count() == 80);
+});
+Test("Pack merge previews identical, conflicting and new queries without modifying either input", () =>
+{
+    var one = Query(); var same = one.Copy(); var conflict = Query(); conflict.Name = "Local";
+    var current = new QueryLibrarySettings { Queries = new() { one, conflict } }; var changed = conflict.Copy(); changed.Name = "Import";
+    var fresh = Query(); var pack = new QueryPack { Name = "Métier", Queries = new() { same, changed, fresh } };
+    var before = JsonSerializer.Serialize(current); var result = QueryPackService.PreviewMerge(current, pack);
+    Assert(result.Added == 2 && result.Identical == 1 && result.Conflicts == 1 && result.Library.Queries.Count == 4);
+    Assert(result.Library.Queries[2].Id != conflict.Id && JsonSerializer.Serialize(current) == before && changed.Id == conflict.Id);
+});
+Test("Invalid packs and capacity overflow fail atomically without weakening conditions", () =>
+{
+    var q = Query(); q.Conditions.Add(new() { Field = "role:missing", Value = "x" }); var pack = new QueryPack { Name = "Bad", Queries = new() { q } };
+    Throws<InvalidDataException>(() => QueryPackService.PreviewMerge(new(), pack));
+    var current = new QueryLibrarySettings { Queries = Enumerable.Range(0, 128).Select(_ => Query()).ToList() };
+    Throws<InvalidDataException>(() => QueryPackService.PreviewMerge(current, new() { Name = "Extra", Queries = new() { Query() } })); Assert(current.Queries.Count == 128);
+});
+
 var passed = 0;
 foreach (var (name, run) in tests)
     try { run(); passed++; Console.WriteLine("PASS  " + name); }

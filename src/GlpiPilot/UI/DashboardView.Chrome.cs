@@ -147,6 +147,6 @@ public sealed partial class DashboardView
     {
         "metric" => "Indicateur", "distribution" => "Répartition", "weather" => "Météo",
         "timeline" => "Activité", "attention" => "Priorités", "quality" => "Qualité", "note" => "Note",
-        "matrix" => "Matrice", "histogram" => "Histogramme", "boxplot" => "Dispersion", "scatter" => "Nuage de points", "history" => "Historique", _ => "Widget"
+        "map" => "Carte hors ligne", "matrix" => "Matrice", "histogram" => "Histogramme", "boxplot" => "Dispersion", "scatter" => "Nuage de points", "history" => "Historique", _ => "Widget"
     };
 }

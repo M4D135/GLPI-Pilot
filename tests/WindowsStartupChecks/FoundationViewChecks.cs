@@ -90,6 +90,7 @@ internal static partial class Program
         Require(_namedViewsStore!.List().Single().Id == selectedView!.Id, "Named-view action did not persist through the injected temporary store.");
         Pass("Named table views render both editors, preserve search/filter/sort state and save only into the isolated temporary store");
         await ExerciseDatePickerAsync(tabs);
+        await ExerciseCompletionViewsAsync(tabs);
     }
 
     private static async Task ExerciseDatePickerAsync(TabControl tabs)

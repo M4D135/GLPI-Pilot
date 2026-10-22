@@ -31,7 +31,7 @@ foreach ($name in @(
     'support/DEBLOQUER_TOUT.cmd', 'support/DIAGNOSTIC_DEMARRAGE.cmd', 'support/Diagnostic-Demarrage.ps1', 'support/LIRE-LE-DIAGNOSTIC.txt',
     'licenses/COMPOSANTS.txt', 'licenses/DotNet-ThirdPartyNotices.txt', 'licenses/Playwright-DotNet-MIT.txt',
     'licenses/microsoft.netcore.app.runtime.win-x64-LICENSE.TXT', 'licenses/microsoft.windowsdesktop.app.runtime.win-x64-LICENSE',
-    '.github/workflows/windows.yml', 'build-tools/Invoke-WindowsCi.ps1'
+    '.github/workflows/windows.yml', 'build-tools/Invoke-WindowsCi.ps1', 'build-tools/Sign-Release.ps1'
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name) -PathType Leaf)) { throw ('Fichier requis absent : ' + $name) }
 }
@@ -40,6 +40,7 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $publish = Join-Path $OutputDirectory ('publish-' + [guid]::NewGuid().ToString('N'))
 & dotnet publish $project -c Release -r win-x64 --self-contained true -p:PlaywrightPlatform=win -o $publish
 if ($LASTEXITCODE -ne 0) { throw 'La publication a echoue.' }
+& (Join-Path $PSScriptRoot 'build-tools/Sign-Release.ps1') -ExecutablePath (Join-Path $publish 'GLPI-Pilot.exe')
 $prod = $roots['PROD']; $prodWad = Join-Path $prod 'wad'
 New-Item -ItemType Directory -Path $prodWad -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $publish 'GLPI-Pilot.exe') -Destination $prod

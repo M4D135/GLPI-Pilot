@@ -31,6 +31,10 @@ public sealed class ExtractionProvenance
     public bool ScopeVerified { get; set; }
     public string ScopeFingerprint { get; set; } = "";
     public string OriginalFileName { get; set; } = "";
+    public string ObservedSort { get; set; } = "";
+    public bool Resumed { get; set; }
+    public DateTimeOffset? ResumeStartedAt { get; set; }
+    public Dictionary<string, double> StageSeconds { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed record ExportResult(string Path, int Rows, int Columns, int TruncatedCells);

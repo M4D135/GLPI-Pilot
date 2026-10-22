@@ -26,7 +26,7 @@ public sealed partial class CitySettingsView
     private CityEnrichmentResult? _advancedReport;
     private CityReferencePreview? _csvPreview;
     private bool _loadingAdvanced;
-    public event Action<int, string, string>? LocalCorrectionRequested;
+    public event Action<int, string, string, string>? LocalCorrectionRequested;
 
     private FrameworkElement BuildAdvancedReference()
     {
@@ -35,7 +35,8 @@ public sealed partial class CitySettingsView
         var header = new StackPanel(); header.Children.Add(_selectedCityLabel);
         var hierarchy = new WrapPanel();
         foreach (var (name, label) in new[] { (nameof(CityDefinition.Region), "Région"), (nameof(CityDefinition.Department), "Département"), (nameof(CityDefinition.Sector), "Secteur") }) hierarchy.Children.Add(ReferenceField(label, name, 190));
-        _cityMetadata.Children.Add(hierarchy); _cityMetadata.Children.Add(ReferenceField("Exclusions de la ville · termes séparés par ;", "Excluded", 580));
+        _cityMetadata.Children.Add(hierarchy);
+        _cityMetadata.Children.Add(ReferenceField("Hiérarchie libre · niveaux séparés par /", "TerritoryPath", 630)); _cityMetadata.Children.Add(ReferenceField("Exclusions de la ville · termes séparés par ;", "Excluded", 580));
         header.Children.Add(_cityMetadata);
         header.Children.Add(Label("Un terme présent dans les règles remplace son alias simple. Tous les contextes requis doivent être présents ; une exclusion suffit à refuser. La priorité la plus élevée départage les villes ; à égalité, le lieu reste ambigu.", 12, "MutedBrush"));
         var commands = new WrapPanel { Margin = new Thickness(0, 7, 0, 4) };
@@ -53,6 +54,11 @@ public sealed partial class CitySettingsView
         Grid.SetRow(_rulesGrid, 1); rules.Children.Add(_rulesGrid);
         _ruleDetails.Children.Add(ReferenceField("Tous ces termes requis dans le contexte · séparés par ;", nameof(RuleRow.Required), 620));
         _ruleDetails.Children.Add(ReferenceField("Aucun de ces termes dans le contexte · séparés par ;", nameof(RuleRow.Excluded), 620));
+        var positions = new ComboBox { Width = 140, ItemsSource = new[] { "Partout", "Début", "Fin", "Mot n°" }, Margin = new Thickness(0, 4, 10, 4) };
+        positions.SetBinding(ComboBox.SelectedItemProperty, new Binding(nameof(RuleRow.PositionLabel)) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
+        positions.SelectionChanged += (_, _) => { if (!_loadingAdvanced) MarkDirty(); }; _ruleDetails.Children.Add(positions);
+        _ruleDetails.Children.Add(ReferenceField("Numéro du premier mot · seulement pour Mot n°", nameof(RuleRow.TokenPosition), 260));
+        _ruleDetails.Children.Add(ReferenceField("Format du titre · expression régulière facultative, délai limité", nameof(RuleRow.TitlePattern), 620));
         Grid.SetRow(_ruleDetails, 2); rules.Children.Add(_ruleDetails); _rulesGrid.SelectionChanged += (_, _) => _ruleDetails.DataContext = _rulesGrid.SelectedItem;
         tabs.Items.Add(new TabItem { Header = "Règles et hiérarchie", Content = rules });
 
@@ -66,6 +72,10 @@ public sealed partial class CitySettingsView
         _sitesGrid.ItemsSource = _siteRows; Grid.SetRow(_sitesGrid, 1); sites.Children.Add(_sitesGrid);
         _siteDetails.Children.Add(ReferenceField("Adresse de référence", nameof(SiteRow.Address), 630));
         var coordinates = new WrapPanel(); coordinates.Children.Add(ReferenceField("Latitude", nameof(SiteRow.Latitude), 210)); coordinates.Children.Add(ReferenceField("Longitude", nameof(SiteRow.Longitude), 210)); _siteDetails.Children.Add(coordinates);
+        _siteDetails.Children.Add(ReferenceField("Contact de référence", nameof(SiteRow.Contact), 630));
+        _siteDetails.Children.Add(ReferenceField("Matériel / accès à prévoir", nameof(SiteRow.Equipment), 630));
+        _siteDetails.Children.Add(ReferenceField("Ouvertures · une plage par ligne : lundi 08:00-12:00", nameof(SiteRow.Openings), 630));
+        _siteDetails.Children.Add(ReferenceField("Fermetures exceptionnelles · dates AAAA-MM-JJ séparées par ;", nameof(SiteRow.ClosedDates), 630));
         Grid.SetRow(_siteDetails, 2); sites.Children.Add(_siteDetails); _sitesGrid.SelectionChanged += (_, _) => _siteDetails.DataContext = _sitesGrid.SelectedItem;
         tabs.Items.Add(new TabItem { Header = "Sites", Content = sites });
 
@@ -74,7 +84,7 @@ public sealed partial class CitySettingsView
         testHeader.Children.Add(Label("Contextes facultatifs · une ligne En-tête exact=valeur", 12, "MutedBrush", margin: new Thickness(0, 6, 0, 3))); testHeader.Children.Add(_testContexts);
         var testActions = new WrapPanel { Margin = new Thickness(0, 6, 0, 4) }; testActions.Children.Add(AdvancedCommand("Tester le titre", TestReference));
         testActions.Children.Add(AdvancedCommand("Vérifier les conflits du dictionnaire", () => { var warnings = CityDetectionService.InspectDictionary(ReadSettings()); _testResult.Text = warnings.Count == 0 ? "Aucun terme partagé ni alias de deux caractères détecté." : string.Join("\n", warnings.Take(30)); }));
-        testHeader.Children.Add(testActions); testHeader.Children.Add(_testResult); test.Children.Add(testHeader);
+        testHeader.Children.Add(testActions); testHeader.Children.Add(_testResult); testHeader.Children.Add(_highlightTitle); test.Children.Add(testHeader);
         RefColumn(_proofGrid, "Ville", "CityName", 150); RefColumn(_proofGrid, "Terme", "Term", 120); RefColumn(_proofGrid, "Décision", "Decision", 120); RefColumn(_proofGrid, "Preuve", "Explanation", 360);
         Grid.SetRow(_proofGrid, 1); test.Children.Add(_proofGrid); tabs.Items.Add(new TabItem { Header = "Simuler et expliquer", Content = test });
 
@@ -84,9 +94,11 @@ public sealed partial class CitySettingsView
         Grid.SetRow(_unlocatedGrid, 1); review.Children.Add(_unlocatedGrid);
         var correction = new StackPanel(); var choices = new WrapPanel(); _correctionCity.ItemsSource = _rows; choices.Children.Add(_correctionCity); choices.Children.Add(_correctionSite);
         _correctionCity.SelectionChanged += (_, _) => { _correctionSite.ItemsSource = _siteRows.Where(site => site.CityId == (string?)_correctionCity.SelectedValue).ToArray(); _correctionSite.SelectedIndex = -1; };
-        choices.Children.Add(AdvancedCommand("Corriger localement", () => { if (_unlocatedGrid.SelectedItem is not ReviewRow row || _correctionCity.SelectedItem is not CityRow city) throw new InvalidDataException("Sélectionnez une ligne et une ville."); LocalCorrectionRequested?.Invoke(row.Index, city.Id, (_correctionSite.SelectedItem as SiteRow)?.Id ?? ""); }));
-        choices.Children.Add(AdvancedCommand("Revenir à la détection", () => { if (_unlocatedGrid.SelectedItem is ReviewRow row) LocalCorrectionRequested?.Invoke(row.Index, "", ""); }));
+        choices.Children.Add(AdvancedCommand("Corriger localement", () => { if (_unlocatedGrid.SelectedItem is not ReviewRow row || _correctionCity.SelectedItem is not CityRow city) throw new InvalidDataException("Sélectionnez une ligne et une ville."); if (string.IsNullOrWhiteSpace(_correctionReason.Text)) throw new InvalidDataException("Indiquez le motif de la correction locale."); LocalCorrectionRequested?.Invoke(row.Index, city.Id, (_correctionSite.SelectedItem as SiteRow)?.Id ?? "", _correctionReason.Text.Trim()); }));
+        choices.Children.Add(AdvancedCommand("Revenir à la détection", () => { if (_unlocatedGrid.SelectedItem is ReviewRow row) LocalCorrectionRequested?.Invoke(row.Index, "", "", ""); }));
         choices.Children.Add(AdvancedCommand("Copier vers la simulation", CopyReviewToTest)); correction.Children.Add(choices);
+        correction.Children.Add(Label("Motif de la correction locale", 12, "MutedBrush")); correction.Children.Add(_correctionReason);
+        correction.Children.Add(BuildPromotion());
         Grid.SetRow(correction, 2); review.Children.Add(correction); tabs.Items.Add(new TabItem { Header = "Lieux à vérifier", Content = review });
 
         var import = new Grid(); import.RowDefinitions.Add(new() { Height = GridLength.Auto }); import.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
@@ -96,13 +108,15 @@ public sealed partial class CitySettingsView
         importActions.Children.Add(_applyImport); importHeader.Children.Add(importActions); import.Children.Add(importHeader);
         RefColumn(_importGrid, "Action", "Kind", 120); RefColumn(_importGrid, "Type", "Type", 90); RefColumn(_importGrid, "Nom", "Name", 200); RefColumn(_importGrid, "Changements", "Detail", 380);
         Grid.SetRow(_importGrid, 1); import.Children.Add(_importGrid); tabs.Items.Add(new TabItem { Header = "Référentiel CSV", Content = import });
+        tabs.Items.Add(new TabItem { Header = "Bâtiments et priorités", Content = BuildTerritorySources() });
         foreach (var grid in new[] { _rulesGrid, _sitesGrid }) grid.CellEditEnding += (_, _) => MarkDirty();
         return tabs;
     }
 
     private void LoadAdvancedReference(CitySettings settings)
     {
-        _siteRows.Clear(); foreach (var site in settings.Sites) _siteRows.Add(new SiteRow { Id = site.Id, CityId = site.CityId, Name = site.Name, Aliases = string.Join(" ; ", site.Aliases), Address = site.Address, Latitude = FormatCoordinate(site.Latitude), Longitude = FormatCoordinate(site.Longitude) });
+        _siteRows.Clear(); foreach (var site in settings.Sites) _siteRows.Add(new SiteRow { Id = site.Id, CityId = site.CityId, Name = site.Name, Aliases = string.Join(" ; ", site.Aliases), Address = site.Address, Latitude = FormatCoordinate(site.Latitude), Longitude = FormatCoordinate(site.Longitude), Contact = site.Contact, Equipment = site.Equipment, Openings = FormatOpenings(site.Openings), ClosedDates = string.Join(" ; ", site.ClosedDates) });
+        LoadTerrainSettings(settings);
         _sitesGrid.SelectedItem = _siteRows.FirstOrDefault(); _csvPreview = null; _importGrid.ItemsSource = null; _proofGrid.ItemsSource = null;
         _testResult.Text = "Le test utilise le brouillon actuel sans enregistrer votre titre."; UpdateAdvancedReferenceEnabled();
     }
@@ -119,13 +133,14 @@ public sealed partial class CitySettingsView
     }
     private void CommitAdvanced()
     {
-        foreach (var grid in new[] { _rulesGrid, _sitesGrid })
+        foreach (var grid in new[] { _rulesGrid, _sitesGrid, _buildingGrid })
             if (!grid.CommitEdit(DataGridEditingUnit.Cell, true) || !grid.CommitEdit(DataGridEditingUnit.Row, true)) throw new InvalidDataException("Terminez la cellule des règles ou sites avant de poursuivre.");
     }
     private List<SiteDefinition> ReadSites() => _siteRows.Select((site, index) => new SiteDefinition
     {
         Id = site.Id, CityId = site.CityId, Name = site.Name.Trim(), Aliases = ParseAliases(site.Aliases), Address = site.Address.Trim(),
-        Latitude = ReadCoordinate(site.Latitude.Trim(), 90, "latitude", site.Name, index + 1), Longitude = ReadCoordinate(site.Longitude.Trim(), 180, "longitude", site.Name, index + 1)
+        Latitude = ReadCoordinate(site.Latitude.Trim(), 90, "latitude", site.Name, index + 1), Longitude = ReadCoordinate(site.Longitude.Trim(), 180, "longitude", site.Name, index + 1),
+        Contact = site.Contact.Trim(), Equipment = site.Equipment.Trim(), Openings = ParseOpenings(site.Openings), ClosedDates = ParseAliases(site.ClosedDates)
     }).ToList();
     private void TestReference()
     {
@@ -135,7 +150,7 @@ public sealed partial class CitySettingsView
             var parts = line.TrimEnd('\r').Split('=', 2); if (parts.Length != 2 || !contexts.TryAdd(parts[0], parts[1])) throw new InvalidDataException("Chaque contexte doit être une colonne unique suivie de = puis de sa valeur.");
         }
         var match = CityDetectionService.ExplainTitle(_testTitle.Text, ReadSettings(), contexts);
-        _testResult.Text = match.Explanation + (match.IsOverride ? " · correction locale" : ""); _proofGrid.ItemsSource = match.Evidence;
+        _testResult.Text = match.Explanation + (match.IsOverride ? " · correction locale" : ""); _proofGrid.ItemsSource = match.Evidence; ShowHighlight(_testTitle.Text, match.Evidence);
     }
     private void RefreshUnlocatedQueue()
     {
@@ -160,7 +175,7 @@ public sealed partial class CitySettingsView
         var dialog = new OpenFileDialog { Title = "Comparer un référentiel de villes et sites", Filter = "CSV (*.csv)|*.csv" };
         if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
         if (new FileInfo(dialog.FileName).Length > 8 * 1024 * 1024) throw new InvalidDataException("Le référentiel CSV dépasse 8 Mio.");
-        var csv = NativeCsvImportService.Read(dialog.FileName, "", maxRows: CitySettings.MaximumCities + CitySettings.MaximumSites + 1);
+        var csv = NativeCsvImportService.Read(dialog.FileName, "", maxRows: CitySettings.MaximumCities + CitySettings.MaximumSites + 5001);
         _csvPreview = CityReferenceService.Preview(csv, ReadSettings()); _importGrid.ItemsSource = _csvPreview.Changes;
         _importNote.Text = $"Comparatif : {_csvPreview.Changes.Count(change => change.Kind == "Ajout")} ajouts, {_csvPreview.Changes.Count(change => change.Kind == "Modification")} modifications, {_csvPreview.Changes.Count(change => change.Kind == "Identique")} identiques. Aucun enregistrement effectué.";
         UpdateAdvancedReferenceEnabled();
@@ -176,6 +191,7 @@ public sealed partial class CitySettingsView
         foreach (var button in _advancedButtons) button.IsEnabled = !_busy;
         if (_applyImport != null) _applyImport.IsEnabled = !_busy && _csvPreview != null;
         _rulesGrid.IsReadOnly = _sitesGrid.IsReadOnly = _busy; _cityMetadata.IsEnabled = _ruleDetails.IsEnabled = _siteDetails.IsEnabled = !_busy;
+        _buildingGrid.IsReadOnly = _busy; _priorityList.IsEnabled = !_busy; _locationField.IsReadOnly = _busy;
     }
     private Button AdvancedCommand(string label, Action action)
     {
@@ -210,12 +226,16 @@ public sealed partial class CitySettingsView
         public string Term { get => Definition.Term; set => Definition.Term = value ?? ""; }
         public int Priority { get => Definition.Priority; set => Definition.Priority = value; }
         public string ContextColumn { get => Definition.ContextColumn; set => Definition.ContextColumn = value ?? ""; }
+        public string PositionLabel { get => Definition.Position switch { "start" => "Début", "end" => "Fin", "token" => "Mot n°", _ => "Partout" }; set => Definition.Position = value switch { "Début" => "start", "Fin" => "end", "Mot n°" => "token", _ => "any" }; }
+        public int TokenPosition { get => Definition.TokenPosition; set => Definition.TokenPosition = value; }
+        public string TitlePattern { get => Definition.TitlePattern; set => Definition.TitlePattern = value ?? ""; }
         public string Required { get => string.Join(" ; ", Definition.RequiredTerms); set => Definition.RequiredTerms = ParseAliases(value ?? ""); }
         public string Excluded { get => string.Join(" ; ", Definition.ExcludedTerms); set => Definition.ExcludedTerms = ParseAliases(value ?? ""); }
     }
     private sealed class CityMetadataRow
     {
         private readonly CityDefinition _city; public CityMetadataRow(CityDefinition city) => _city = city;
+        public string TerritoryPath { get => _city.TerritoryPath; set => _city.TerritoryPath = value ?? ""; }
         public string Region { get => _city.Region; set => _city.Region = value ?? ""; }
         public string Department { get => _city.Department; set => _city.Department = value ?? ""; }
         public string Sector { get => _city.Sector; set => _city.Sector = value ?? ""; }
@@ -226,6 +246,7 @@ public sealed partial class CitySettingsView
         public string Id { get; set; } = Guid.NewGuid().ToString("N"); public string CityId { get; set; } = "";
         public string Name { get; set; } = ""; public string Aliases { get; set; } = ""; public string Address { get; set; } = "";
         public string Latitude { get; set; } = ""; public string Longitude { get; set; } = "";
+        public string Contact { get; set; } = ""; public string Equipment { get; set; } = ""; public string Openings { get; set; } = ""; public string ClosedDates { get; set; } = "";
     }
     private sealed record ReviewRow(int Index, string Id, string Title, string State, string Explanation);
 }

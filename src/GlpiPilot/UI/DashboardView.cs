@@ -35,7 +35,7 @@ public sealed partial class DashboardView : UserControl
     private string _libraryQuery = "", _libraryCategory = "all";
     private int _libraryPage;
     private readonly HashSet<string> _libraryFavorites = new(StringComparer.Ordinal);
-    private bool _libraryAvailableOnly, _libraryFavoritesOnly;
+    private bool _libraryAvailableOnly, _libraryFavoritesOnly, _libraryRecentOnly;
     private bool _busy, _editing, _scopeCalculating, _saveSuccess = true;
     private string _saveMessage = "Disposition enregistrée sur ce poste";
     private DashboardBoardSettings Board => _layout.Boards.First(x => x.Id == _layout.ActiveBoardId);
@@ -286,7 +286,13 @@ public sealed partial class DashboardView : UserControl
     private static Brush Accent(string name)
     {
         // Medium chroma decorative accents remain legible in both palettes; body text uses theme resources.
-        var color = name switch { "teal" => "#248F97", "green" => "#4A9569", "orange" => "#BA7A2E", "red" => "#C65B5B", "purple" => "#8B71C6", "slate" => "#7A8797", _ => "#4887DB" };
+        var mode = Application.Current?.Resources["ColorVisionMode"] as string ?? "standard";
+        var color = mode switch
+        {
+            "deuteranopia" or "protanopia" => name switch { "teal" => "#56B4E9", "green" => "#009E73", "orange" => "#E69F00", "red" => "#D55E00", "purple" => "#CC79A7", "slate" => "#6A6A6A", _ => "#0072B2" },
+            "tritanopia" => name switch { "teal" => "#117733", "green" => "#44AA99", "orange" => "#CC6677", "red" => "#AA4499", "purple" => "#882255", "slate" => "#777777", _ => "#332288" },
+            _ => name switch { "teal" => "#248F97", "green" => "#4A9569", "orange" => "#BA7A2E", "red" => "#C65B5B", "purple" => "#8B71C6", "slate" => "#7A8797", _ => "#4887DB" }
+        };
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)); brush.Freeze(); return brush;
     }
 }

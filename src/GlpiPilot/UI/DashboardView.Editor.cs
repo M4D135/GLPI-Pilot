@@ -48,8 +48,10 @@ public sealed partial class DashboardView
         yield return new("attention", "", "Tickets à regarder en priorité", "Synthèse", "Les lignes à examiner selon leur échéance, priorité et ancienneté.");
         yield return new("timeline", "", "Activité datée sur 30 jours", "Synthèse", "Créations, résolutions et clôtures observées dans le relevé.");
         yield return new("quality", "", "Qualité, avertissements et colonnes", "Synthèse", "Périmètre, champs reconnus, doublons et données manquantes.");
+        yield return new("map", "all", "Carte des localisations", "Localisation", "Carte hors ligne des coordonnées fournies, liée aux filtres et aux lignes.");
+        yield return new("map", "active", "Carte des actifs", "Localisation", "Actifs localisés dans le référentiel, sans transmission extérieure.");
         yield return new("note", "", "Note et consigne personnelle", "Texte", "Une consigne, un contexte ou un repère de lecture écrit par vous.");
-        foreach (var (key, title) in new[] { ("deadlines", "Météo des échéances"), ("quality", "Météo de qualité"), ("geography", "Météo des lieux") })
+        foreach (var (key, title) in new[] { ("deadlines", "Météo des échéances"), ("quality", "Météo de qualité"), ("geography", "Météo des lieux"), ("workload", "Météo de la charge observée") })
             yield return new("weather", key, title, "Synthèse", "Indice descriptif spécialisé, avec couverture et méthode visibles.");
         foreach (var (key, title) in new[] { ("technician-city", "Techniciens × villes"), ("city-status", "Villes × statuts"), ("category-status", "Catégories × statuts"), ("urgency-impact", "Urgence × impact") })
             yield return new("matrix", key, title, "Analyses croisées", "Matrice chiffrée et sélection de ses lignes ; peut aussi être affichée en barres empilées.");
@@ -133,6 +135,7 @@ public sealed partial class DashboardView
         "distribution" => _data.Distributions.FirstOrDefault(distribution => distribution.Key == item.Key)?.Available == true,
         "timeline" => _data.Columns.Any(column => column.Index.HasValue && column.Role is "created" or "resolved" or "closed"),
         "weather" => (item.Key.Length == 0 || item.Key == "overall" ? _data.Weather : _data.WeatherProfiles.GetValueOrDefault(item.Key))?.State is { } state && state != "unknown",
+        "map" => _data.Geography.Count > 0,
         "matrix" => _data.Matrices.Any(x => x.Key == item.Key && x.Available),
         "histogram" => _data.NumericSeries.Any(x => x.Key == item.Key && x.Values.Count > 0),
         "boxplot" => _data.BoxSeries.Any(x => x.Key == item.Key && x.Available && x.Boxes.Count > 0),
@@ -153,6 +156,7 @@ public sealed partial class DashboardView
         var available = Check(body, "Disponibles seulement", _libraryAvailableOnly);
         Help(available, "Disponibles seulement", "Afficher les sources calculables avec le relevé chargé et les notes. Une valeur zéro calculée reste disponible ; une colonne absente ne l’est pas.");
         var favorites = Check(body, "Mes favoris mémorisés", _libraryFavoritesOnly);
+        var recent = Check(body, "Derniers widgets utilisés", _libraryRecentOnly);
         Help(favorites, "Filtrer mes widgets favoris", "Retrouver les widgets marqués d’une étoile entre les sessions. Les favoris font partie de cette configuration de dashboards.");
         var count = Text("", 11, "MutedBrush", margin: new Thickness(0, 12, 0, 2)); body.Children.Add(count);
         var list = new StackPanel(); body.Children.Add(list);
@@ -165,11 +169,13 @@ public sealed partial class DashboardView
             if (resetPage) _libraryPage = 0;
             _commands.RemoveAll(pair => libraryButtons.Contains(pair.Button)); libraryButtons.Clear(); list.Children.Clear();
             _libraryQuery = search.Text; _libraryCategory = Selected(category);
-            _libraryAvailableOnly = available.IsChecked == true; _libraryFavoritesOnly = favorites.IsChecked == true;
+            _libraryAvailableOnly = available.IsChecked == true; _libraryFavoritesOnly = favorites.IsChecked == true; _libraryRecentOnly = recent.IsChecked == true;
             var results = all.Where(item => (_libraryCategory == "all" || item.Category == _libraryCategory)
                 && (!_libraryAvailableOnly || CatalogAvailable(item))
                 && (!_libraryFavoritesOnly || _libraryFavorites.Contains(FavoriteKey(item)))
-                && (Matches(item.Label) || Matches(item.Description))).ToArray();
+                && (!_libraryRecentOnly || _layout.CatalogRecent.Contains(FavoriteKey(item)))
+                && (Matches(item.Label) || Matches(item.Description)))
+                .OrderBy(item => _libraryRecentOnly ? _layout.CatalogRecent.IndexOf(FavoriteKey(item)) : 0).ToArray();
             const int pageSize = 6;
             var pageCount = Math.Max(1, (results.Length + pageSize - 1) / pageSize);
             _libraryPage = Math.Clamp(_libraryPage, 0, pageCount - 1);
@@ -228,6 +234,7 @@ public sealed partial class DashboardView
         Fill(); search.TextChanged += (_, _) => Fill(true); category.SelectionChanged += (_, _) => Fill(true);
         available.Checked += (_, _) => Fill(true); available.Unchecked += (_, _) => Fill(true);
         favorites.Checked += (_, _) => Fill(true); favorites.Unchecked += (_, _) => Fill(true);
+        recent.Checked += (_, _) => Fill(true); recent.Unchecked += (_, _) => Fill(true);
         if (Board.Widgets.Count >= 60) body.Children.Add(Text("Cette disposition contient déjà 60 widgets. Retirez-en un ou créez une autre disposition.", 12, "WarningBrush", margin: new Thickness(0, 10, 0, 0)));
         var hidden = Board.Widgets.Where(widget => widget.Hidden).ToArray();
         if (hidden.Length > 0)
@@ -242,7 +249,7 @@ public sealed partial class DashboardView
     {
         if (Board.Widgets.Count >= 60) return;
         var widget = new DashboardWidgetSettings { Kind = item.Kind, SourceKey = item.Key, Title = item.Label, Span = item.Kind is "weather" or "timeline" or "attention" or "quality" ? 12 : item.Kind == "metric" ? 3 : 4, Height = item.Kind == "metric" ? 200 : item.Kind == "attention" ? 420 : 340 };
-        Change(() => { Board.Widgets.Add(widget); _selectedWidget = widget.Id; _editorMode = "widget"; });
+        Change(() => { _layout.CatalogRecent.Remove(FavoriteKey(item)); _layout.CatalogRecent.Insert(0, FavoriteKey(item)); _layout.CatalogRecent = _layout.CatalogRecent.Take(30).ToList(); Board.Widgets.Add(widget); _selectedWidget = widget.Id; _editorMode = "widget"; });
     }
 
     private void BuildWidgetEditor(Panel body, Panel actions, DashboardWidgetSettings widget)
@@ -312,6 +319,10 @@ public sealed partial class DashboardView
         var top = Input(topPanel, "Valeurs visibles · de 3 à 30", widget.TopCount.ToString(), 2);
         Help(top, "Nombre de valeurs visibles", "Choisir combien de barres ou valeurs afficher d’abord. La liste complète du widget reste accessible avec recherche et pagination.");
         var descriptions = Check(appearance, "Afficher les explications", widget.ShowDescription);
+        var stackedMode = Select(appearance, "Barres empilées", new[] { new Choice("percent", "100 % par ligne"), new Choice("volume", "Volumes comparables") }, widget.StackedMode);
+        var paretoThreshold = Input(appearance, "Repère cumulatif Pareto · ]0 ; 100] %", widget.ParetoThresholdPercent.ToString("G", CultureInfo.CurrentCulture), 12);
+        var miniHistory = Check(appearance, "Mini-historique de l’indicateur", widget.ShowMiniHistory);
+        var historyPeriod = Input(appearance, "Deux périodes comparées · jours par période", widget.HistoryPeriodDays.ToString(), 4);
 
         var gaugePanel = new StackPanel { Margin = new Thickness(0, 13, 0, 0) }; appearance.Children.Add(gaugePanel);
         gaugePanel.Children.Add(Text("Objectif et seuils de la jauge", 13, weight: FontWeights.SemiBold));
@@ -327,6 +338,7 @@ public sealed partial class DashboardView
 
         var sizing = Section(body, "Taille et position", "La largeur s’adapte à la fenêtre ; vos dimensions préférées restent mémorisées.", false);
         var span = Select(sizing, "Largeur de la carte", Enumerable.Range(3, 10).Select(value => new Choice(value.ToString(), $"{100d * value / 12:0.#} % · {value}/12")), widget.Span.ToString());
+        var newRow = Check(sizing, "Commencer une nouvelle ligne", widget.StartNewRow);
         var autoHeight = Check(sizing, "Adapter la hauteur au contenu", widget.AutoHeight);
         Help(autoHeight, "Hauteur automatique du widget", "Réduire les espaces vides. Les détails dépliés agrandissent la carte et restent accessibles dans le défilement principal.");
         var height = Input(sizing, "Hauteur minimale manuelle · 160 à 960", widget.Height.ToString(), 3);
@@ -403,6 +415,8 @@ public sealed partial class DashboardView
             var lowerIsBetter = Selected(direction) == "lower";
             if (warningValue.HasValue && criticalValue.HasValue && (lowerIsBetter ? criticalValue < warningValue : criticalValue > warningValue))
             { error.Text = lowerIsBetter ? "Le seuil critique doit être supérieur ou égal au seuil de vigilance." : "Le seuil critique doit être inférieur ou égal au seuil de vigilance."; return; }
+            if (!TryWidgetNumber(paretoThreshold.Text, true, out var paretoValue) || paretoValue is null or > 100 || !int.TryParse(historyPeriod.Text, out var periodDays) || periodDays is < 1 or > 3650)
+            { error.Text = "Le repère Pareto doit être dans ]0 ; 100] et la période entre 1 et 3 650 jours."; return; }
             List<DashboardScopeFilter> filters; List<double> boundaries;
             try
             {
@@ -419,6 +433,8 @@ public sealed partial class DashboardView
                 widget.ShowDescription = descriptions.IsChecked == true; widget.Locked = locked.IsChecked == true; widget.Hidden = hidden.IsChecked == true;
                 widget.TargetValue = targetValue; widget.WarningValue = warningValue; widget.CriticalValue = criticalValue; widget.LowerIsBetter = lowerIsBetter;
                 widget.Section = sectionName.Text.Trim(); widget.Filters = filters; widget.HistogramBreaks = boundaries;
+                widget.StartNewRow = newRow.IsChecked == true; widget.StackedMode = Selected(stackedMode); widget.ParetoThresholdPercent = paretoValue.Value;
+                widget.ShowMiniHistory = miniHistory.IsChecked == true; widget.HistoryPeriodDays = periodDays;
             });
         });
         apply.SetResourceReference(Button.StyleProperty, "PrimaryButton"); apply.HorizontalContentAlignment = HorizontalAlignment.Center; apply.Margin = new Thickness(0); actions.Children.Add(apply);

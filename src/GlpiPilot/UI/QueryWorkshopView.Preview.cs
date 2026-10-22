@@ -65,7 +65,7 @@ public sealed partial class QueryWorkshopView
         _bucketPanel.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _bucketTitle.TextWrapping = TextWrapping.NoWrap; _bucketTitle.TextTrimming = TextTrimming.CharacterEllipsis;
         var heading = new StackPanel(); heading.Children.Add(_bucketTitle); heading.Children.Add(_bucketSummary);
-        _bucketPanel.Children.Add(heading); Grid.SetRow(_buckets, 1); _bucketPanel.Children.Add(_buckets);
+        _bucketPanel.Children.Add(heading); var views = DistributionViews(); Grid.SetRow(views, 1); _bucketPanel.Children.Add(views);
         Grid.SetRow(_bucketRows, 2); _bucketPanel.Children.Add(_bucketRows); panel.Children.Add(_bucketPanel);
         _buckets.Columns.Add(new DataGridTextColumn { Header = "Catégorie", Width = new DataGridLength(1, DataGridLengthUnitType.Star), MinWidth = 200,
             Binding = new Binding(nameof(DashboardBucket.Label)) { Mode = BindingMode.OneWay } });
@@ -135,7 +135,7 @@ public sealed partial class QueryWorkshopView
         _previewMessage.Text = message; _previewMessage.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); _previewExplanation.Text = "";
         _bucketNote.Text = ""; _bucketSummary.Text = "";
         _explainGrid.ItemsSource = null; _explainMessage.Text = "La définition ou le relevé a changé. Demandez de nouveau l’explication du ticket.";
-        _buckets.ItemsSource = null; _bucketPanel.Visibility = Visibility.Collapsed; _distributionEmpty.Visibility = Visibility.Visible; UpdateEnabled();
+        _groupTree.Items.Clear(); _buckets.ItemsSource = null; _bucketPanel.Visibility = Visibility.Collapsed; _distributionEmpty.Visibility = Visibility.Visible; UpdateEnabled();
     }
 
     private void StartPreview()
@@ -200,7 +200,7 @@ public sealed partial class QueryWorkshopView
                 _bucketNote.Text = distribution.Available
                     ? distribution.Note + $" · {distribution.Buckets.Count:N0} catégories · base : {distribution.Denominator:N0} lignes"
                     : "Répartition indisponible. " + distribution.Note;
-                _buckets.ItemsSource = distribution.Available ? distribution.Buckets : null;
+                _buckets.ItemsSource = distribution.Available ? distribution.Buckets : null; ShowHierarchy(result);
                 _buckets.Visibility = distribution.Available ? Visibility.Visible : Visibility.Collapsed;
             }
         }

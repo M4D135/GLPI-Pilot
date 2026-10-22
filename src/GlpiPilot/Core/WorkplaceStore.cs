@@ -12,6 +12,23 @@ public sealed class PersonalChecklistItem
     public PersonalChecklistItem Copy() => new() { Text = Text, Done = Done };
 }
 
+public sealed class TicketReadingPosition
+{
+    public string SectionKey { get; set; } = "";
+    public string Search { get; set; } = "";
+    public string WholeTicketSearch { get; set; } = "";
+    public string IntelligenceSearch { get; set; } = "";
+    public int ViewMode { get; set; }
+    public string Type { get; set; } = "";
+    public string Author { get; set; } = "";
+    public DateTime? From { get; set; }
+    public DateTime? To { get; set; }
+    public double ScrollOffset { get; set; }
+    public int RowIndex { get; set; } = -1;
+    public int PageIndex { get; set; }
+    public TicketReadingPosition Copy() => (TicketReadingPosition)MemberwiseClone();
+}
+
 public sealed class PersonalTicket
 {
     public string Key { get; set; } = "";
@@ -22,6 +39,8 @@ public sealed class PersonalTicket
     public bool Offline { get; set; }
     public int? QueueOrder { get; set; }
     public string Notes { get; set; } = "";
+    public string FollowupDraft { get; set; } = "";
+    public string LastActionReceipt { get; set; } = "";
     public List<PersonalChecklistItem> Checklist { get; set; } = new();
     public DateTimeOffset? ReminderAt { get; set; }
     public DateTimeOffset? ReminderAcknowledgedAt { get; set; }
@@ -30,15 +49,19 @@ public sealed class PersonalTicket
     public DateTimeOffset? LastOpenedAt { get; set; }
     public DateTimeOffset? LastReadAt { get; set; }
     public string PreferredSection { get; set; } = "";
+    public TicketReadingPosition ReadingPosition { get; set; } = new();
+    public Dictionary<string, List<string>> RowFingerprints { get; set; } = new(StringComparer.Ordinal);
+    public bool RowsFullyCompared { get; set; } = true;
     public Dictionary<string, string> SectionFingerprints { get; set; } = new(StringComparer.Ordinal);
     public PersonalTicket Copy() => new()
     {
         Key = Key, Id = Id, Url = Url, Title = Title, Pinned = Pinned, Offline = Offline,
-        QueueOrder = QueueOrder, Notes = Notes, ReminderAt = ReminderAt,
+        QueueOrder = QueueOrder, Notes = Notes, FollowupDraft = FollowupDraft, LastActionReceipt = LastActionReceipt, ReminderAt = ReminderAt,
         ReminderAcknowledgedAt = ReminderAcknowledgedAt, SnoozedUntil = SnoozedUntil, SnoozeReason = SnoozeReason,
         LastOpenedAt = LastOpenedAt, LastReadAt = LastReadAt, PreferredSection = PreferredSection,
         Checklist = Checklist.Select(item => item.Copy()).ToList(),
-        SectionFingerprints = new(SectionFingerprints, StringComparer.Ordinal)
+        SectionFingerprints = new(SectionFingerprints, StringComparer.Ordinal),
+        ReadingPosition = ReadingPosition.Copy(), RowFingerprints = RowFingerprints.ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal), RowsFullyCompared = RowsFullyCompared
     };
 }
 
@@ -51,6 +74,14 @@ public sealed class WorkplaceDocument
     public string ActiveTicketKey { get; set; } = "";
     public List<string> FavoriteSections { get; set; } = new() { "treatment", "overview" };
     public string DefaultSection { get; set; } = "treatment";
+    public List<string> SectionOrder { get; set; } = new();
+    public string DaySearch { get; set; } = "";
+    public int DayScope { get; set; }
+    public string DaySelectedKey { get; set; } = "";
+    public DateTimeOffset? LastSessionStartedAt { get; set; }
+    public string DayBaselineScope { get; set; } = "";
+    public DateTimeOffset? DayBaselineAt { get; set; }
+    public List<PersonalDayObservation> DayBaseline { get; set; } = new();
     public bool GroupTimelineByDay { get; set; } = true;
     public bool DesktopReminders { get; set; } = true;
     public string ActiveWorkspace { get; set; } = "team";
@@ -64,7 +95,9 @@ public sealed class WorkplaceDocument
     {
         Version = Version, Tickets = Tickets.Select(ticket => ticket.Copy()).ToList(),
         OpenTicketKeys = OpenTicketKeys.ToList(), ActiveTicketKey = ActiveTicketKey,
-        FavoriteSections = FavoriteSections.ToList(), DefaultSection = DefaultSection,
+        FavoriteSections = FavoriteSections.ToList(), DefaultSection = DefaultSection, SectionOrder = SectionOrder.ToList(),
+        DaySearch = DaySearch, DayScope = DayScope, DaySelectedKey = DaySelectedKey, LastSessionStartedAt = LastSessionStartedAt,
+        DayBaselineScope = DayBaselineScope, DayBaselineAt = DayBaselineAt, DayBaseline = DayBaseline.ToList(),
         GroupTimelineByDay = GroupTimelineByDay, DesktopReminders = DesktopReminders, ActiveWorkspace = ActiveWorkspace, LastDayViewedAt = LastDayViewedAt,
         ChecklistTemplates = ChecklistTemplates.ToDictionary(pair => pair.Key, pair => pair.Value.ToList(), StringComparer.Ordinal)
     };
@@ -73,6 +106,8 @@ public sealed class WorkplaceDocument
 public sealed record TicketReadChanges(DateTimeOffset? PreviousReadAt, IReadOnlyList<string> AddedSections,
     IReadOnlyList<string> ChangedSections, IReadOnlyList<string> MissingSections)
 {
+    public Dictionary<string, IReadOnlySet<string>> NewOrChangedRows { get; init; } = new(StringComparer.Ordinal);
+    public bool RowComparisonComplete { get; init; } = true;
     public bool HasPrevious => PreviousReadAt.HasValue;
     public string Summary => !HasPrevious ? "Première lecture mémorisée."
         : $"Depuis le {PreviousReadAt!.Value.LocalDateTime:dd/MM à HH:mm} : {AddedSections.Count} rubrique(s) nouvelle(s), {ChangedSections.Count} modifiée(s), {MissingSections.Count} non relue(s).";
@@ -125,9 +160,14 @@ public static class WorkplaceStore
             ActiveTicketKey = document.ActiveTicketKey ?? "", DefaultSection = Clean(document.DefaultSection, 300),
             GroupTimelineByDay = document.GroupTimelineByDay, DesktopReminders = document.DesktopReminders, ActiveWorkspace = Clean(document.ActiveWorkspace, 40),
             LastDayViewedAt = document.LastDayViewedAt, ChecklistTemplates = new(StringComparer.Ordinal),
-            FavoriteSections = (document.FavoriteSections ?? new()).Select(item => Clean(item, 300)).Distinct(StringComparer.Ordinal).ToList()
+            FavoriteSections = (document.FavoriteSections ?? new()).Select(item => Clean(item, 300)).Distinct(StringComparer.Ordinal).ToList(),
+            SectionOrder = (document.SectionOrder ?? new()).Select(item => Clean(item, 1000)).Distinct(StringComparer.Ordinal).ToList(),
+            DaySearch = Clean(document.DaySearch, 300), DayScope = Math.Clamp(document.DayScope, 0, 6), DaySelectedKey = Clean(document.DaySelectedKey, 64), LastSessionStartedAt = document.LastSessionStartedAt,
+            DayBaselineScope = Clean(document.DayBaselineScope, 64), DayBaselineAt = document.DayBaselineAt, DayBaseline = document.DayBaseline?.ToList() ?? new()
         };
-        if (result.FavoriteSections.Count > 60 || document.ChecklistTemplates == null || document.ChecklistTemplates.Count > 30)
+        if (result.DayBaseline.Count > 5000 || result.DayBaseline.Any(item => item == null || item.Key?.Length != 64 || !item.Key.All(Uri.IsHexDigit) || item.Id == null || item.Id.Length > 160 || item.Title == null || item.Title.Length > 2000 || item.Status == null || item.Status.Length > 500 || item.Due == null || item.Due.Length > 100))
+            throw new InvalidDataException("Le repère de briefing est invalide ou dépasse 5 000 dossiers.");
+        if (result.SectionOrder.Count > 200 || result.FavoriteSections.Count > 60 || document.ChecklistTemplates == null || document.ChecklistTemplates.Count > 30)
             throw new InvalidDataException("Trop de rubriques favorites ou de modèles personnels.");
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var ticket in document.Tickets)
@@ -137,9 +177,22 @@ public static class WorkplaceStore
             if (ticket.QueueOrder is < 0 or > MaximumTickets || ticket.Checklist == null || ticket.Checklist.Count > MaximumChecklistItems || ticket.Checklist.Any(item => item == null)
                 || ticket.SectionFingerprints == null || ticket.SectionFingerprints.Count > 100)
                 throw new InvalidDataException("Les limites d’un ticket personnel sont dépassées.");
+            if (ticket.RowFingerprints == null || ticket.RowFingerprints.Count > 100 || ticket.RowFingerprints.Sum(p => p.Value?.Count ?? 10001) > 10000
+                || ticket.RowFingerprints.Any(p => p.Key.Length > 1000 || p.Value.Any(v => v == null || v.Length != 64 || !v.All(Uri.IsHexDigit))) || ticket.ReadingPosition == null)
+                throw new InvalidDataException("Les empreintes détaillées ou la position de lecture sont invalides.");
             var copy = ticket.Copy();
+            copy.ReadingPosition.SectionKey = Clean(copy.ReadingPosition.SectionKey, 1000);
+            copy.ReadingPosition.Search = Clean(copy.ReadingPosition.Search, 500);
+            copy.ReadingPosition.WholeTicketSearch = Clean(copy.ReadingPosition.WholeTicketSearch, 500);
+            copy.ReadingPosition.IntelligenceSearch = Clean(copy.ReadingPosition.IntelligenceSearch, 300);
+            copy.ReadingPosition.Type = Clean(copy.ReadingPosition.Type, 100);
+            copy.ReadingPosition.Author = Clean(copy.ReadingPosition.Author, 200);
+            if (!double.IsFinite(copy.ReadingPosition.ScrollOffset) || copy.ReadingPosition.ScrollOffset < 0 || copy.ReadingPosition.RowIndex is < -1 or > 100000 || copy.ReadingPosition.PageIndex is < 0 or > 20 || copy.ReadingPosition.ViewMode is < 0 or > 1)
+                throw new InvalidDataException("La position de lecture est invalide.");
             copy.Url = Clean(ticket.Url, 8192); copy.Title = Clean(ticket.Title, 2000);
             copy.Notes = Clean(ticket.Notes, MaximumNotes, multiline: true);
+            copy.FollowupDraft = Clean(ticket.FollowupDraft, 20000, multiline: true);
+            copy.LastActionReceipt = Clean(ticket.LastActionReceipt, 40000, multiline: true);
             copy.SnoozeReason = Clean(ticket.SnoozeReason, 1200, multiline: true);
             copy.PreferredSection = Clean(ticket.PreferredSection, 300);
             copy.Checklist = ticket.Checklist.Select(item => item == null ? throw new InvalidDataException("Une tâche personnelle est invalide.")
@@ -167,7 +220,7 @@ public static class WorkplaceStore
             if (document.Tickets.Count >= MaximumTickets)
             {
                 var disposable = document.Tickets.Where(item => !item.Pinned && !item.Offline && !item.QueueOrder.HasValue && item.Notes.Length == 0
-                    && item.Checklist.Count == 0 && !item.ReminderAt.HasValue && !document.OpenTicketKeys.Contains(item.Key))
+                    && item.Checklist.Count == 0 && item.FollowupDraft.Length == 0 && item.LastActionReceipt.Length == 0 && !item.ReminderAt.HasValue && !document.OpenTicketKeys.Contains(item.Key))
                     .OrderBy(item => item.LastOpenedAt).FirstOrDefault();
                 if (disposable == null) throw new InvalidDataException($"L’espace personnel contient déjà {MaximumTickets} tickets conservés. Retirez un dossier avant d’en ajouter un.");
                 document.Tickets.Remove(disposable);
@@ -204,6 +257,23 @@ public static class WorkplaceStore
             current.Keys.Where(key => !previous.ContainsKey(key)).ToArray(),
             current.Keys.Where(key => previous.TryGetValue(key, out var digest) && current[key] != digest).ToArray(),
             previous.Keys.Where(key => !current.ContainsKey(key)).ToArray());
+        var rowDigests = new Dictionary<string, List<string>>(StringComparer.Ordinal); var count = 0;
+        foreach (var section in result.Sections)
+        {
+            var key = TicketReadingService.SectionKey(section);
+            if (!rowDigests.TryGetValue(key, out var list)) rowDigests[key] = list = new();
+            foreach (var row in section.Data.Rows)
+            { if (count++ >= 10000) break; list.Add(TicketReadingService.RowFingerprint(row)); }
+        }
+        var addedRows = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+        if (record.LastReadAt.HasValue && record.RowsFullyCompared)
+            foreach (var pair in rowDigests)
+            {
+                var previousRows = record.RowFingerprints.GetValueOrDefault(pair.Key)?.ToHashSet(StringComparer.Ordinal) ?? new();
+                addedRows[pair.Key] = pair.Value.Where(digest => !previousRows.Contains(digest)).ToHashSet(StringComparer.Ordinal);
+            }
+        changes = changes with { NewOrChangedRows = addedRows, RowComparisonComplete = count <= 10000 && record.RowsFullyCompared };
+        record.RowFingerprints = rowDigests; record.RowsFullyCompared = count <= 10000;
         record.SectionFingerprints = current; record.LastReadAt = result.ReadAt;
         return changes;
     }
@@ -243,7 +313,8 @@ public static class WorkplaceStore
     {
         _ = TicketKey(detail.Ticket);
         if (detail.Title == null || detail.Title.Length > 10000 || detail.Sections == null || detail.Sections.Count > 100
-            || detail.Tabs == null || detail.Tabs.Count > 100 || detail.Warnings == null || detail.Warnings.Count > 200)
+            || detail.Tabs == null || detail.Tabs.Count > 100 || detail.Warnings == null || detail.Warnings.Count > 200
+            || detail.ObservedItems == null || detail.ObservedItems.Count > 6000 || detail.ObservedItems.Any(i => i == null || i.Title == null || i.Title.Length > 500000 || i.Url == null || i.Url.Length > 8192 || new[] { i.Kind, i.Identity, i.SourceSection, i.SourceTabKey, i.SourceTabSelector, i.SourceSelector, i.Date, i.Author, i.AuthorRole, i.Owner, i.Status, i.Due, i.PlannedStart, i.PlannedEnd, i.CompletedAt, i.RequestedAt, i.WaitingStart, i.WaitingEnd, i.WaitingReason, i.RelatedType }.Any(value => value == null || value.Length > 20000)))
             throw new InvalidDataException("La structure de la fiche hors connexion est invalide.");
         long cells = 0;
         foreach (var section in detail.Sections)

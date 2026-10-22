@@ -14,6 +14,7 @@ public sealed class PreviewColumnsDialog : UserControl
 {
     private readonly string[] _headers;
     private readonly ObservableCollection<ColumnChoice> _choices = new();
+    private readonly ComboBox _family = new() { MinWidth = 190, Margin = new Thickness(8, 0, 8, 0) };
     private readonly TextBox _search = new() { MinWidth = 200 };
     private readonly TextBlock _count = Label("", 12, "MutedBrush");
     private readonly ListBox _list = new() { MinHeight = 120, SelectionMode = SelectionMode.Single };
@@ -52,6 +53,10 @@ public sealed class PreviewColumnsDialog : UserControl
         tools.Children.Add(Command("Tout afficher", ShowAll, "Rendre toutes les colonnes visibles, même celles masquées par la recherche."));
         tools.Children.Add(Command("Tout ajuster", AutoSizeAll, "Ajuster toutes les largeurs au contenu visible, dans la limite de 1 200 pixels."));
         tools.Children.Add(Command("Réinitialiser", Reset, "Rétablir toutes les colonnes, leur ordre d’origine et une largeur de 165 pixels."));
+        _family.ItemsSource = new[] { "Toutes les familles" }.Concat(_headers.Select(DataObjectIdentity.Family).Distinct().Order()).ToArray(); _family.SelectedIndex = 0;
+        _family.SelectionChanged += (_, _) => { _view?.Refresh(); UpdateState(); }; tools.Children.Add(_family);
+        tools.Children.Add(Command("Replier la famille", () => ToggleFamily(false), "Masquer les colonnes de la famille choisie, en conservant au moins une colonne visible."));
+        tools.Children.Add(Command("Déplier la famille", () => ToggleFamily(true), "Afficher les colonnes de la famille choisie."));
         _count.Margin = new Thickness(6, 0, 0, 0); tools.Children.Add(_count); top.Children.Add(tools);
         Grid.SetRow(top, 1); root.Children.Add(top);
 
@@ -127,7 +132,7 @@ public sealed class PreviewColumnsDialog : UserControl
                 _choices.Add(item);
             }
             _view = CollectionViewSource.GetDefaultView(_choices);
-            _view.Filter = item => item is ColumnChoice choice && choice.Label.Contains(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase);
+            _view.Filter = item => item is ColumnChoice choice && choice.Label.Contains(_search.Text.Trim(), StringComparison.OrdinalIgnoreCase) && (_family.SelectedIndex <= 0 || DataObjectIdentity.Family(_headers[choice.Preference.SourceIndex]) == _family.SelectedItem?.ToString());
             _list.ItemsSource = _view;
         }
         finally { _updating = false; }
@@ -154,6 +159,14 @@ public sealed class PreviewColumnsDialog : UserControl
         _apply.IsEnabled = visible > 0;
         _selectionHint.Text = selected == null ? "Sélectionnez une colonne pour la déplacer ou ajuster sa largeur."
             : $"Position {position + 1:N0}/{_choices.Count:N0} · {selected.WidthLabel}. Vous pouvez aussi redimensionner les colonnes directement dans le tableau.";
+    }
+
+    private void ToggleFamily(bool visible)
+    {
+        if (_family.SelectedIndex <= 0) { _selectionHint.Text = "Choisissez une famille pour la replier ou la déplier."; return; }
+        foreach (var item in _choices.Where(c => DataObjectIdentity.Family(_headers[c.Preference.SourceIndex]) == _family.SelectedItem?.ToString()))
+            if (visible || _choices.Count(c => c.Visible) > 1) item.Visible = visible;
+        UpdateState();
     }
 
     private void ShowAll()

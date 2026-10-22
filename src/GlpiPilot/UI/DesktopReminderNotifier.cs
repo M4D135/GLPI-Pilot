@@ -19,7 +19,7 @@ public sealed class DesktopReminderNotifier : IDisposable
 
     public bool Show(int count)
     {
-        if (_disposed || count <= 0 || !OperatingSystem.IsWindows()) return false;
+        if (_disposed || count <= 0 || !OperatingSystem.IsWindows() || !GlpiPilot.Core.NotificationPolicy.CanNotify()) return false;
         if (_handle == IntPtr.Zero)
         {
             _handle = new WindowInteropHelper(_window).Handle;

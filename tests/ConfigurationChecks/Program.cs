@@ -34,7 +34,7 @@ var checks = new List<(string Name, Action Run)>
     ("Dispositions importées : types, styles et champs inconnus refusés", CheckLayoutTypes),
     ("Traitement du ticket : lecture auto et sections chronologiques partageables", CheckTreatmentConfiguration),
     ("Diagnostic : intitulés et correspondances sans cellules ni identité personnelle", CheckDiagnosticPrivacy),
-    ("Fichier limité : JSON malformé, trop profond, vide et plus de 1 Mio", CheckFileLimits),
+    ("Fichier limité : JSON malformé, trop profond, vide et plus de 16 Mio", CheckFileLimits),
     ("Export atomique : échec sans remplacer un fichier existant", CheckAtomic),
     ("Identifiant : zéros initiaux et groupements français normalisés", CheckId),
     ("Colonne configurée : nom exact et unique requis", CheckConfiguredColumn),

@@ -13,11 +13,17 @@ public partial class MainWindow
     private long _personalDayGeneration;
     private CancellationTokenSource? _personalDayCancellation;
     private bool _personalDayInitialized;
+    private WorkplaceDocument _previousSessionWorkplace = new();
+    private string _briefingSavedStamp = "";
+    private System.Windows.Threading.DispatcherTimer? _dayStateTimer;
+    private (string Search, int Scope, string Selected)? _pendingDayState;
 
     private void InitializePersonalDayWorkspace()
     {
         if (_techniciansView == null || _personalDayInitialized) return;
         _personalDayInitialized = true;
+        _previousSessionWorkplace = _workplace.Copy();
+        _workplace.LastSessionStartedAt = DateTimeOffset.Now;
         var addToDay = WorkplaceControls.Command("Dans ma journée", AddPreviewSelectionToPersonalDay);
         addToDay.MinHeight = 32; addToDay.FontSize = 12; addToDay.Padding = new Thickness(10, 5, 10, 5); addToDay.Margin = new Thickness(0, 0, 8, 0);
         addToDay.ToolTip = "Ajouter les tickets sélectionnés à ma file personnelle. Ctrl ou Maj permet de choisir plusieurs lignes.";
@@ -27,6 +33,15 @@ public partial class MainWindow
         try { _techniciansView.Planning.SetScenario(TechnicianPlanningService.Load(System.IO.Path.Combine(AppPaths.DataRoot, "dispatch-scenario.json"))); }
         catch (Exception error) { AddLog("ORGANISATION · scénario local non chargé. " + AppPaths.SafeError(error)); }
         _techniciansView.Day.TicketRequested += OpenPersonalTicket;
+        _techniciansView.Day.ToursRequested += () => MainTabs.SelectedItem = ToursTab;
+        _dayStateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        _dayStateTimer.Tick += (_, _) => FlushPersonalDayState();
+        _techniciansView.Day.ViewStateChanged += (search, scope, selected) =>
+        {
+            if (_workplace.DaySearch == search && _workplace.DayScope == scope && _workplace.DaySelectedKey == selected) return;
+            _pendingDayState = (search, scope, selected); _dayStateTimer.Stop(); _dayStateTimer.Start();
+        };
+        Closing += (_, _) => FlushPersonalDayState();
         _techniciansView.Day.SaveRequested += SavePersonalTicket;
         _techniciansView.Day.DesktopRemindersChanged += value =>
         {
@@ -67,7 +82,14 @@ public partial class MainWindow
             if (key == "day") copy.LastDayViewedAt = DateTimeOffset.Now;
             SavePersonalWorkspace(copy);
         };
+        SavePersonalWorkspace(_workplace.Copy());
         RefreshPersonalDay();
+    }
+
+    private void FlushPersonalDayState()
+    {
+        _dayStateTimer?.Stop(); if (_pendingDayState is not { } state) return; _pendingDayState = null;
+        var copy = _workplace.Copy(); copy.DaySearch = state.Search; copy.DayScope = state.Scope; copy.DaySelectedKey = state.Selected; SavePersonalWorkspace(copy);
     }
 
     private void AddPreviewSelectionToPersonalDay()
@@ -112,11 +134,14 @@ public partial class MainWindow
         _personalDayCancellation?.Cancel();
         var generation = ++_personalDayGeneration;
         var document = _workplace.Copy(); var source = _result; var workload = _personalWorkload;
-        var settings = _settings.Copy(); var cities = CitySourceIsCurrent() ? _cityEnrichment : null;
+        var settings = _settings.Copy(); settings.Dashboard = EffectiveDashboardSettings(settings.Dashboard);
+        var cities = CitySourceIsCurrent() ? _cityEnrichment : null;
         var personalKey = settings.Dashboard.PersonalTechnician;
+        RefreshPersonalTours(personalKey);
         if (source == null || workload == null || !ReferenceEquals(source, _technicianRosterSource))
         {
             _techniciansView.Day.Show(document.Tickets.Select(ticket => new PersonalDayTicket(ticket, "État non vérifié", "", "", null, false, false)), document, "", null);
+            _techniciansView.Day.ShowBriefing(TicketDailyBriefing.Build(_previousSessionWorkplace.DayBaseline, _previousSessionWorkplace.DayBaselineScope, _previousSessionWorkplace.DayBaselineAt, Array.Empty<PersonalDayObservation>(), "", _previousSessionWorkplace.LastSessionStartedAt, null, DateTimeOffset.Now, false));
             return;
         }
         var operation = new CancellationTokenSource(); _personalDayCancellation = operation;
@@ -133,7 +158,13 @@ public partial class MainWindow
                     foreach (var row in tech.Rows)
                     { if (!owners.TryGetValue(row, out var list)) owners[row] = list = new(); list.Add(tech.Key); }
                 var cityNames = cities?.Matches.Where(match => match.CityName != null).ToDictionary(match => match.RowIndex, match => match.CityName!) ?? new Dictionary<int, string>();
-                string Cell(string[] row, string role) => workload.Global.Column(role)?.Index is int column && column < row.Length ? row[column] ?? "" : "";
+                string Cell(string[] row, string role)
+                {
+                    if (workload.Global.Column(role)?.Index is not int column || column >= row.Length) return "";
+                    var value = DashboardService.NormalizeValue(row[column], role, source.Headers[column], settings.Dashboard);
+                    return role == "due" && DashboardService.TrySourceDate(value, settings.Dashboard, source.ExtractedAt.Offset, out var date)
+                        ? new DateTimeOffset(DateTime.SpecifyKind(date, DateTimeKind.Unspecified), source.ExtractedAt.Offset).ToString("O", System.Globalization.CultureInfo.InvariantCulture) : value;
+                }
                 for (var index = 0; index < source.Rows.Count; index++)
                 {
                     if ((index & 127) == 0) operation.Token.ThrowIfCancellationRequested();
@@ -146,7 +177,7 @@ public partial class MainWindow
                     if (record.Title.Length == 0) record.Title = title;
                     var city = cityNames.GetValueOrDefault(index, Cell(row, "location"));
                     if (mine.Contains(index) || saved.ContainsKey(key))
-                        current.TryAdd(key, new(record, status, city, Cell(row, "due"), statusCode == 0 ? null : statusCode is >= 1 and <= 4, true, mine.Contains(index)));
+                        current.TryAdd(key, new(record, status, city, Cell(row, "due"), statusCode == 0 ? null : statusCode is >= 1 and <= 4, true, mine.Contains(index), DashboardService.Priority(Cell(row, "priority"))));
                     if (statusCode < 5)
                         dispatch.TryAdd(key, new(key, reference.Id, title, city, Cell(row, "category"), owners.GetValueOrDefault(index)?.ToArray() ?? Array.Empty<string>(), index, statusCode is >= 1 and <= 4));
                 }
@@ -157,6 +188,7 @@ public partial class MainWindow
             if (_closing || generation != _personalDayGeneration || !ReferenceEquals(source, _result)) return;
             var name = workload.Roster.Technicians.FirstOrDefault(tech => tech.Key == personalKey)?.Name ?? "";
             _techniciansView.Day.Show(projection.Day, document, name, source.ExtractedAt);
+            PresentDailyBriefing(projection.Day, source, personalKey, settings);
             _techniciansView.Planning.Show(workload, _technicianPreferences, projection.Dispatch);
         }
         catch (OperationCanceledException) { }
@@ -169,5 +201,33 @@ public partial class MainWindow
             if (ReferenceEquals(_personalDayCancellation, operation)) _personalDayCancellation = null;
             operation.Dispose();
         }
+    }
+
+    private void RefreshPersonalTours(string personalKey)
+    {
+        try
+        {
+            var tours = ScheduledTourStore.Load(System.IO.Path.Combine(AppPaths.DataRoot, "scheduled-tours.json")).ForDate(DateOnly.FromDateTime(DateTime.Today));
+            var key = TechnicianDashboardService.IdentityKey(personalKey);
+            _techniciansView?.Day.ShowTours(tours.Where(tour => key.Length == 0 || tour.TechnicianKey.Length == 0 || tour.TechnicianKey == key).ToArray(), key.Length > 0);
+        }
+        catch (Exception error) { _techniciansView?.Day.ShowTours(Array.Empty<ScheduledTourDayItem>(), personalKey.Length > 0, "Lecture des tournées impossible : " + AppPaths.SafeError(error)); }
+    }
+
+    private void PresentDailyBriefing(IReadOnlyList<PersonalDayTicket> day, ExtractionResult source, string personalKey, AppSettings settings)
+    {
+        var sourceKey = source.Provenance is { SearchVerified: true, ScopeVerified: true } ? SnapshotStore.SourceKey(source) : "";
+        var scope = sourceKey.Length == 0 ? "" : TicketActionService.Hash(sourceKey + "\n" + personalKey + "\n"
+            + SnapshotStore.SchemaFingerprint(source.Headers) + "\n" + SnapshotStore.RulesFingerprint(settings));
+        var observations = day.Where(item => item.InSource).Take(5000).Select(item => new PersonalDayObservation(item.Personal.Key, item.Personal.Id, item.Personal.Title, item.Status, item.Due, item.Mine, item.Priority)).ToArray();
+        var report = TicketDailyBriefing.Build(_previousSessionWorkplace.DayBaseline, _previousSessionWorkplace.DayBaselineScope, _previousSessionWorkplace.DayBaselineAt, observations, scope,
+            _previousSessionWorkplace.LastSessionStartedAt, source.ExtractedAt, DateTimeOffset.Now, source.Complete);
+        _techniciansView?.Day.ShowBriefing(report);
+        if (IsHistoricalResult || scope.Length == 0) return;
+        var stamp = scope + "|" + source.ExtractedAt.ToUnixTimeMilliseconds();
+        if (_briefingSavedStamp == stamp) return;
+        _briefingSavedStamp = stamp;
+        var copy = _workplace.Copy(); copy.DayBaseline = observations.ToList(); copy.DayBaselineScope = scope; copy.DayBaselineAt = source.ExtractedAt;
+        SavePersonalWorkspace(copy);
     }
 }

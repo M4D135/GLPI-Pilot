@@ -18,6 +18,7 @@ public partial class MainWindow
             try { _alerts.SaveRules(rules); if (_dashboard != null && _result != null) RefreshAlerts(_result, _dashboard); _alertsView.ShowStatus("Règles enregistrées. Les mesures indisponibles ou les relevés incomplets ne ferment pas une alerte active."); }
             catch (Exception error) { _alertsView.ShowStatus(AppPaths.SafeError(error)); }
         };
+        _alertsView.ResolveRequested += (id, reason) => AlertAction(() => _alerts.Resolve(id, reason));
         _alertsView.AcknowledgeRequested += id => AlertAction(() => _alerts.Acknowledge(id));
         _alertsView.SnoozeRequested += id => AlertAction(() => _alerts.Snooze(id, TimeSpan.FromHours(1)));
         _alertsView.RowsRequested += incident =>
@@ -38,7 +39,7 @@ public partial class MainWindow
         if (IsHistoricalResult || !ReferenceEquals(source, _result)) return;
         try
         {
-            var count = _alerts.Evaluate(source, snapshot);
+            var count = _alerts.Evaluate(source, snapshot, settings: _settings);
             _alertsView?.Show(_alerts.Document); UpdateAlertBadge();
             if (count > 0) AddLog($"ALERTES · {count} nouvelle(s) condition(s) déclenchée(s) ; consultez l’onglet Alertes.");
         }

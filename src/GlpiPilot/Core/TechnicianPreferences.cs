@@ -16,13 +16,17 @@ public sealed class TechnicianPreference
     public DateTime? UnavailableFrom { get; set; }
     public DateTime? UnavailableUntil { get; set; }
     public string AvailabilityNote { get; set; } = "";
+    public List<TechnicianWorkPeriod> WorkPeriods { get; set; } = new();
+    public List<TechnicianCapacityDay> CapacityDays { get; set; } = new();
+    public List<TechnicianCategoryEstimate> CategoryEstimates { get; set; } = new();
     public TechnicianPreference Copy() => new()
     {
         Favorite = Favorite, ActiveTarget = ActiveTarget, Notes = Notes,
         Skills = Skills?.ToList() ?? new(), PrimaryTerritories = PrimaryTerritories?.ToList() ?? new(),
         BackupTerritories = BackupTerritories?.ToList() ?? new(), DailyCapacityMinutes = DailyCapacityMinutes,
         EstimatedTicketMinutes = EstimatedTicketMinutes, UnavailableFrom = UnavailableFrom,
-        UnavailableUntil = UnavailableUntil, AvailabilityNote = AvailabilityNote
+        UnavailableUntil = UnavailableUntil, AvailabilityNote = AvailabilityNote,
+        WorkPeriods = WorkPeriods.Select(p => p.Copy()).ToList(), CapacityDays = CapacityDays.Select(d => d.Copy()).ToList(), CategoryEstimates = CategoryEstimates.Select(e => e.Copy()).ToList()
     };
 }
 
@@ -56,6 +60,7 @@ public sealed class TechnicianPreferences
         if (!normalizedPreference.Favorite && !normalizedPreference.ActiveTarget.HasValue && normalizedPreference.Notes.Length == 0
             && normalizedPreference.Skills.Count == 0 && normalizedPreference.PrimaryTerritories.Count == 0 && normalizedPreference.BackupTerritories.Count == 0
             && !normalizedPreference.DailyCapacityMinutes.HasValue && !normalizedPreference.EstimatedTicketMinutes.HasValue
+            && normalizedPreference.WorkPeriods.Count == 0 && normalizedPreference.CapacityDays.Count == 0 && normalizedPreference.CategoryEstimates.Count == 0
             && !normalizedPreference.UnavailableFrom.HasValue && !normalizedPreference.UnavailableUntil.HasValue && normalizedPreference.AvailabilityNote.Length == 0)
             copy.Technicians.Remove(normalizedKey);
         else copy.Technicians[normalizedKey] = normalizedPreference;
@@ -145,6 +150,7 @@ public sealed class TechnicianPreferences
                 throw new InvalidDataException("Une liste de compétences ou de secteurs est invalide (50 valeurs de 160 caractères maximum).");
             return items.Select(text => text.Trim()).Where(text => text.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
+        TechnicianCalendar.Validate(value);
         var availability = (value.AvailabilityNote ?? "").Trim();
         if (availability.Length > 1200 || availability.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t')))
             throw new InvalidDataException("La note de disponibilité dépasse 1 200 caractères.");
@@ -153,7 +159,8 @@ public sealed class TechnicianPreferences
             Favorite = value.Favorite, ActiveTarget = value.ActiveTarget, Notes = notes,
             Skills = Labels(value.Skills), PrimaryTerritories = Labels(value.PrimaryTerritories), BackupTerritories = Labels(value.BackupTerritories),
             DailyCapacityMinutes = value.DailyCapacityMinutes, EstimatedTicketMinutes = value.EstimatedTicketMinutes,
-            UnavailableFrom = value.UnavailableFrom?.Date, UnavailableUntil = value.UnavailableUntil?.Date, AvailabilityNote = availability
+            UnavailableFrom = value.UnavailableFrom?.Date, UnavailableUntil = value.UnavailableUntil?.Date, AvailabilityNote = availability,
+            WorkPeriods = value.WorkPeriods.Select(p => p.Copy()).ToList(), CapacityDays = value.CapacityDays.Select(d => d.Copy()).ToList(), CategoryEstimates = value.CategoryEstimates.Select(e => e.Copy()).ToList()
         };
     }
 }

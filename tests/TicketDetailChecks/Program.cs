@@ -55,7 +55,12 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Menu : annulation d’un onglet AJAX conserve la recherche", LazyTabCancellation),
     ("Menu : clé native stable après réordonnancement des sélecteurs", StableTabIdentity),
     ("Menu : panneau absent ou inactif ne reprend jamais les champs précédents", StrictTabScope),
-    ("Menu : autre installation GLPI et cible secondaire ambiguë refusées", SameInstallation)
+    ("Menu : autre installation GLPI et cible secondaire ambiguë refusées", SameInstallation),
+    ("Observations : échéances rôles attentes relations et documents explicites", StructuredObservations),
+    ("Actions : aperçu sans mutation puis une seule soumission vérifiée", AssistedPreviewAndOneWrite),
+    ("Actions : installation identité structure et aperçu périmé refusés", AssistedRejectsUnsafeAndStale),
+    ("Actions : résultat ambigu sans aucune relance automatique", AssistedAmbiguousNeverRetries),
+    ("Documents : téléchargement explicite authentifié et refus du HTML SSO", AuthenticatedDocumentDownload)
 };
 var filter = Environment.GetEnvironmentVariable("GLPI_TEST_FILTER");
 if (!string.IsNullOrWhiteSpace(filter)) checks = checks.Where(check => check.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -89,7 +94,7 @@ async Task<FixtureSession> Setup(string html, Func<IRoute, Uri, Task<bool>>? cus
     });
     var search = await context.NewPageAsync();
     await search.GotoAsync(listUrl);
-    var settings = new AppSettings { PortalUrl = listUrl, TimeoutSeconds = 7, TicketDetails = new() };
+    var settings = new AppSettings { PortalUrl = listUrl, TimeoutSeconds = 7, DetailTimeoutSeconds = 5, TicketDetails = new() };
     var service = new BrowserService();
     service.AttachForTesting(context, listUrl);
     var log = new ConcurrentQueue<string>(); service.Log += log.Enqueue;
@@ -517,6 +522,167 @@ async Task ReadOnly()
     Require(await page.EvaluateAsync<int>("window.formSubmissions+window.businessClicks+window.tabClicks+window.__focusCalls") == 0, "La lecture automatique a déclenché une action ou un focus JS.");
     Require(await page.Locator("#name").InputValueAsync() == result.Title && await page.Locator("#status").InputValueAsync() == "En attente" && await page.Locator("#private").IsCheckedAsync(), "Contrôles de la fiche modifiés.");
     Require(!session.Requests.Any(request => request.Method != "GET"), "La lecture automatique a envoyé un formulaire.");
+}
+
+async Task StructuredObservations()
+{
+    var html = """
+    <!doctype html><title>Ticket synthétique</title><form id="itil-form"><input type="hidden" name="id" value="42"><label for="name">Titre</label><input id="name" name="name" value="Lecture structurée"></form>
+    <div class="timeline_history" id="observed">
+      <div class="h_item" id="task-1"><time class="h_date">20/10/2026</time><div class="h_content ITILTask"><div class="rich_text_container">Tâche explicite</div><span class="state" title="À faire">À faire</span><span data-task-owner>Alice</span><time data-due-date datetime="2026-10-21T09:00:00">21/10/2026 09:00</time><time data-planned-start datetime="2026-10-20T10:00:00">20/10/2026</time></div></div>
+      <div class="h_item" id="task-2"><time class="h_date">20/10/2026</time><div class="h_content ITILTask"><div class="rich_text_container">Sans échéance</div></div></div>
+      <div class="h_item" id="validation-1"><div class="h_content TicketValidation"><div class="rich_text_container">Accord demandé</div><span data-validation-owner>Responsable</span><span data-validation-status>En attente</span><time data-requested-at>20/10/2026 10:00</time></div></div>
+      <div class="h_item waiting" id="wait-1"><div class="h_content"><span data-waiting-start>20/10/2026 10:00</span><span data-waiting-end>20/10/2026 12:00</span><span data-waiting-reason>Livraison</span></div></div>
+      <div class="h_item" id="followup-1"><time class="h_date">21/10/2026 09:00</time><span class="h_user_name">Auteur déclaré</span><span data-actor-role="requester">Demandeur</span><div class="h_content ITILFollowup"><div class="rich_text_container">Précision attendue</div></div></div>
+      <div class="h_item" hidden><div class="h_content ITILTask"><span data-due-date>NEVER_HIDDEN_DEADLINE</span></div></div>
+      <a href="/glpi/front/document.send.php?docid=7&amp;tickets_id=42">Pièce synthétique.pdf</a>
+      <a href="/glpi/front/problem.form.php?id=17">Problème lié</a><a href="/glpi/front/computer.form.php?id=18">PC-18</a>
+      <a href="/other/front/problem.form.php?id=17">NEVER_OTHER_INSTALLATION</a><a href="/glpi/front/problem.form.php?id=18&amp;delete=1">NEVER_BUSINESS_LINK</a>
+    </div>
+    """;
+    await using var session = await Setup(html); var result = await Read(session);
+    Require(result.ObservedItems.Count(item => item.Kind == "task") == 2, "Tâches structurées absentes/dupliquées.");
+    var task = result.ObservedItems.Single(item => item.Title == "Tâche explicite");
+    Require(task.Due == "2026-10-21T09:00:00" && task.Status == "À faire" && task.Owner == "Alice", "Échéance, état ou propriétaire explicite perdu.");
+    Require(result.ObservedItems.Single(item => item.Title == "Sans échéance").Due == "", "Date de création détournée en échéance.");
+    Require(result.ObservedItems.Single(item => item.Kind == "validation").RequestedAt.Contains("20/10/2026", StringComparison.Ordinal), "Date de validation non observée.");
+    Require(result.ObservedItems.Single(item => item.Kind == "waiting").WaitingReason == "Livraison", "Motif non lu.");
+    Require(result.ObservedItems.Single(item => item.Kind == "followup").AuthorRole == "requester", "Origine explicite non lue.");
+    Require(result.ObservedItems.Count(item => item.Kind == "document") == 1 && result.ObservedItems.Count(item => item.Kind == "relation") == 2, "Index documents/relations incorrect.");
+    Require(!JsonSerializer.Serialize(result.ObservedItems).Contains("NEVER_", StringComparison.Ordinal), "Valeur masquée ou lien interdit retenu.");
+    Require(!session.Requests.Any(request => request.Method != "GET" || request.Path.Contains("document.send", StringComparison.Ordinal)), "Lecture déclenche action ou téléchargement.");
+}
+
+static string ActionFixture(string kind, string existingContent = "", string selected = "7", string extraFields = "", string actionOverride = "")
+{
+    var path = actionOverride.Length > 0 ? actionOverride : kind == "assignment" ? "/glpi/front/ticket.form.php" : kind == "task" ? "/glpi/front/tickettask.form.php" : "/glpi/front/itilfollowup.form.php";
+    var fields = kind == "assignment" ? $"<input type='hidden' name='id' value='42'><label for='actor'>Attribué à</label><select id='actor' name='_users_id_assign' class='select2-hidden-accessible' style='display:none'><option value='7' {(selected == "7" ? "selected" : "")}>Alice</option><option value='8' {(selected == "8" ? "selected" : "")}>Bob</option></select><span class='select2-container'>{(selected == "8" ? "Bob" : "Alice")}</span>"
+        : "<input type='hidden' name='items_id' value='42'><input type='hidden' name='itemtype' value='Ticket'><label for='action-content'>Contenu</label><textarea id='action-content' name='content'></textarea><label for='privacy'>Privé</label><input id='privacy' type='checkbox' name='is_private' value='1' checked>";
+    if (kind == "task") fields = fields.Replace("id='action-content' name='content'", "id='action-content' name='content' style='display:none'", StringComparison.Ordinal)
+        + "<div class='tox-tinymce'><iframe id='action-content_ifr' style='width:600px;height:150px'></iframe></div><script>const f=document.getElementById('action-content_ifr'); f.contentDocument.body.contentEditable='true'; window.tinymce={get:id=>id==='action-content'?{getContent:()=>f.contentDocument.body.innerText,save:()=>document.getElementById(id).value=f.contentDocument.body.innerText}:null};</script>";
+    var eventClass = kind == "task" ? "ITILTask" : "ITILFollowup";
+    return "<!doctype html><html><head><meta charset='utf-8'><title>Fiche synthétique</title></head><body><a href='/glpi/front/logout.php'>Déconnexion</a><form id='itil-form'><input type='hidden' name='id' value='42'><label for='name'>Titre</label><input id='name' name='name' value='Fiche de test'></form>"
+        + $"<form id='action-form' method='post' action='{path}'>{fields}{extraFields}<input type='hidden' name='_glpi_csrf_token' value='NEVER_ACTION_CSRF'><button name='{(kind == "assignment" ? "update" : "add")}' value='1' type='submit'>Enregistrer</button></form>"
+        + "<div class='timeline_history'>" + (existingContent.Length == 0 ? "" : $"<div class='h_item' id='entry-501'><div class='h_content {eventClass}'><div class='rich_text_container'>{System.Net.WebUtility.HtmlEncode(existingContent)}</div></div></div>") + "</div></body></html>";
+}
+
+async Task AssistedPreviewAndOneWrite()
+{
+    foreach (var kind in new[] { "followup", "task", "assignment" })
+    {
+        var posted = ""; var selected = "7"; var submissions = 0;
+        await using var session = await Setup(ActionFixture(kind), async (route, uri) =>
+        {
+            if (route.Request.Method == "POST")
+            {
+                submissions++; var pairs = (route.Request.PostData ?? "").Split('&', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Split('=', 2)).Select(pair => new KeyValuePair<string, string>(Uri.UnescapeDataString(pair[0].Replace('+', ' ')), pair.Length == 2 ? Uri.UnescapeDataString(pair[1].Replace('+', ' ')) : "")).ToArray();
+                Require(pairs.Any(pair => pair.Key == "_glpi_csrf_token" && pair.Value == "NEVER_ACTION_CSRF"), "Le formulaire natif a perdu sa protection CSRF.");
+                posted = pairs.FirstOrDefault(pair => pair.Key == "content").Value ?? ""; selected = pairs.FirstOrDefault(pair => pair.Key == "_users_id_assign").Value ?? selected;
+                await route.FulfillAsync(new() { Status = 303, Headers = new Dictionary<string, string> { ["Location"] = detailUrl } }); return true;
+            }
+            if (uri.AbsolutePath.EndsWith("ticket.form.php", StringComparison.Ordinal)) { await route.FulfillAsync(new() { ContentType = "text/html", Body = ActionFixture(kind, posted, selected) }); return true; }
+            return false;
+        });
+        await Read(session);
+        var ticket = new TicketReference("42", detailUrl);
+        var candidates = await session.Service.LearnTicketActionsAsync(ticket, session.Settings, CancellationToken.None);
+        Require(candidates.Count == 1 && candidates[0].Adapter.Kind == kind, "Formulaire natif non appris : " + kind);
+        Require(!JsonSerializer.Serialize(candidates).Contains("NEVER_ACTION_CSRF", StringComparison.Ordinal), "Jeton exposé dans l’adaptateur appris.");
+        var value = kind == "assignment" ? "8" : "Constat synthétique\nProchaine action explicite";
+        var preview = await session.Service.PreviewTicketActionAsync(ticket, new(candidates[0].Adapter, value, value), session.Settings, CancellationToken.None);
+        Require(submissions == 0 && (kind == "assignment" ? await session.Service.TicketPage!.Locator("#actor").InputValueAsync() == "7" : await session.Service.TicketPage!.Locator("#action-content").InputValueAsync() == ""), "Prévisualiser a modifié ou soumis un champ.");
+        await Reject(() => session.Service.ConfirmTicketActionAsync(preview.Token, false, session.Settings, CancellationToken.None), "confirmation explicite");
+        Require(submissions == 0, "Envoi sans confirmation.");
+        var outcome = await session.Service.ConfirmTicketActionAsync(preview.Token, true, session.Settings, CancellationToken.None);
+        Require(submissions == 1 && outcome.Verified, "Soumission unique/relecture non vérifiée : " + kind + " / " + submissions + " envoi(s) / " + outcome.Message);
+        await Reject(() => session.Service.ConfirmTicketActionAsync(preview.Token, true, session.Settings, CancellationToken.None), "déjà été consommé");
+        Require(submissions == 1 && session.Search.Url == listUrl && ReferenceEquals(session.Service.ActivePage, session.Search), "Envoi répété ou recherche modifiée.");
+        Require(!string.Join(" ", session.Log).Contains("Constat synthétique", StringComparison.Ordinal), "Contenu de suivi exposé dans le journal.");
+    }
+}
+
+async Task AssistedRejectsUnsafeAndStale()
+{
+    foreach (var unsafeHtml in new[]
+    {
+        ActionFixture("followup", actionOverride:"http://foreign-ticket.test/glpi/front/itilfollowup.form.php"),
+        ActionFixture("followup", actionOverride:"/other/front/itilfollowup.form.php"),
+        ActionFixture("followup", extraFields:"<input type='hidden' name='delete' value='1'>"),
+        ActionFixture("followup").Replace("name='items_id' value='42'", "name='items_id' value='43'", StringComparison.Ordinal),
+        ActionFixture("followup").Replace("method='post'", "method='get'", StringComparison.Ordinal),
+        ActionFixture("followup").Replace("method='post'", "method='post' target='search-page'", StringComparison.Ordinal)
+    })
+    {
+        await using var session = await Setup(unsafeHtml); await Read(session);
+        Require((await session.Service.LearnTicketActionsAsync(new("42", detailUrl), session.Settings, CancellationToken.None)).Count == 0, "Formulaire dangereux appris.");
+        Require(!session.Requests.Any(request => request.Method == "POST"), "Inspection dangereuse a soumis.");
+    }
+    await using (var session = await Setup(ActionFixture("followup")))
+    {
+        await Read(session); var ticket = new TicketReference("42", detailUrl);
+        var candidate = (await session.Service.LearnTicketActionsAsync(ticket, session.Settings, CancellationToken.None)).Single();
+        var preview = await session.Service.PreviewTicketActionAsync(ticket, new(candidate.Adapter, "Test sécurisé", "Test sécurisé"), session.Settings, CancellationToken.None);
+        await session.Service.TicketPage!.Locator("#privacy").UncheckAsync();
+        await Reject(() => session.Service.ConfirmTicketActionAsync(preview.Token, true, session.Settings, CancellationToken.None), "changé depuis l’aperçu");
+        Require(!session.Requests.Any(request => request.Method == "POST"), "Formulaire modifié après aperçu soumis.");
+        await session.Service.TicketPage.Locator("#privacy").CheckAsync();
+        preview = await session.Service.PreviewTicketActionAsync(ticket, new(candidate.Adapter, "Valeur prévue", "Valeur prévue"), session.Settings, CancellationToken.None);
+        await session.Service.TicketPage.Locator("#action-content").EvaluateAsync("e=>e.addEventListener('input',()=>document.getElementById('privacy').checked=false)");
+        await Reject(() => session.Service.ConfirmTicketActionAsync(preview.Token, true, session.Settings, CancellationToken.None), "autre champ a changé");
+        Require(!session.Requests.Any(request => request.Method == "POST"), "Effet secondaire d’un champ non annoncé soumis.");
+    }
+}
+
+async Task AssistedAmbiguousNeverRetries()
+{
+    var submissions = 0;
+    await using var session = await Setup(ActionFixture("followup"), async (route, uri) =>
+    {
+        if (route.Request.Method != "POST") return false;
+        submissions++;
+        await route.FulfillAsync(new() { Status = 503, ContentType = "text/html", Body = "<h1>État inconnu</h1>" }); return true;
+    });
+    await Read(session); var ticket = new TicketReference("42", detailUrl);
+    var candidate = (await session.Service.LearnTicketActionsAsync(ticket, session.Settings, CancellationToken.None)).Single();
+    var preview = await session.Service.PreviewTicketActionAsync(ticket, new(candidate.Adapter, "Message de test", "Message de test"), session.Settings, CancellationToken.None);
+    var outcome = await session.Service.ConfirmTicketActionAsync(preview.Token, true, session.Settings, CancellationToken.None);
+    Require(!outcome.Verified && submissions == 1 && outcome.Message.Contains("non confirmé", StringComparison.Ordinal), "Un échec a été déclaré réussi ou répété.");
+    await Reject(() => session.Service.ConfirmTicketActionAsync(preview.Token, true, session.Settings, CancellationToken.None), "déjà été consommé");
+    Require(submissions == 1 && session.Search.Url == listUrl, "Nouvel envoi après résultat ambigu ou recherche modifiée.");
+}
+
+async Task AuthenticatedDocumentDownload()
+{
+    var reserve = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); reserve.Start(); var port = ((System.Net.IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
+    using var server = new System.Net.HttpListener(); server.Prefixes.Add($"http://127.0.0.1:{port}/"); server.Start();
+    var origin = $"http://127.0.0.1:{port}"; var total = 0; var authenticated = false; var html = false;
+    var task = Task.Run(async () =>
+    {
+        for (var i = 0; i < 2; i++)
+        {
+            var request = await server.GetContextAsync(); total++; authenticated |= request.Request.Cookies["fixture-auth"]?.Value == "synthetic-session";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(html ? "<html>Connexion</html>" : "Document fictif authentifié");
+            request.Response.ContentType = html ? "text/html" : "application/pdf"; request.Response.ContentLength64 = bytes.Length;
+            await request.Response.OutputStream.WriteAsync(bytes); request.Response.Close();
+        }
+    });
+    await using var context = await browser.NewContextAsync();
+    await context.AddCookiesAsync(new[] { new Cookie { Name = "fixture-auth", Value = "synthetic-session", Url = origin } });
+    await using var service = new BrowserService(); service.AttachForTesting(context, origin + "/glpi/front/ticket.php");
+    var settings = new AppSettings { PortalUrl = origin + "/glpi/front/ticket.php" };
+    var ticket = new TicketReference("42", origin + "/glpi/front/ticket.form.php?id=42");
+    var document = new TicketObservedItem { Kind = "document", Identity = "7", Url = origin + "/glpi/front/document.send.php?docid=7&tickets_id=42" };
+    var folder = Path.Combine(Path.GetTempPath(), "glpi-document-check-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
+    try
+    {
+        Require(total == 0, "Téléchargement avant action explicite.");
+        var file = Path.Combine(folder, "piece.pdf"); await service.DownloadTicketDocumentAsync(ticket, document, settings, file, CancellationToken.None);
+        Require(authenticated && File.ReadAllText(file) == "Document fictif authentifié", "Téléchargement hors contexte authentifié ou contenu perdu.");
+        html = true; await Reject(() => service.DownloadTicketDocumentAsync(ticket, document, settings, Path.Combine(folder, "login.pdf"), CancellationToken.None), "page HTML");
+        await task;
+        Require(total == 2 && !File.Exists(Path.Combine(folder, "login.pdf")) && !Directory.EnumerateFiles(folder, "*.partial").Any(), "Page de connexion enregistrée ou fichier partiel oublié.");
+    }
+    finally { server.Stop(); Directory.Delete(folder, true); }
 }
 
 sealed class FixtureSession(IBrowserContext context, IPage search, BrowserService service, AppSettings settings,

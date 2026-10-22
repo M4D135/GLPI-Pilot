@@ -4,12 +4,18 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/GlpiPilot/Core/TicketDailyBriefing.cs" Link="TicketDailyBriefing.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketActionService.cs" Link="TicketActionService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketLinkPolicy.cs" Link="TicketLinkPolicy.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketEnrichmentService.cs" Link="TicketEnrichmentService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketRecurrenceService.cs" Link="TicketRecurrenceService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketInsightService.cs" Link="TicketInsightService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TicketIntelligenceService.cs" Link="TicketIntelligenceService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/WorkplaceStore.cs" Link="Core/WorkplaceStore.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TicketReadingService.cs" Link="Core/TicketReadingService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TicketDetailModels.cs" Link="Core/TicketDetailModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/Technician*.cs" Link="Core/%(Filename)%(Extension)" />
-    <Compile Include="../../src/GlpiPilot/Core/Dashboard*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/Dashboard*.cs" Exclude="../../src/GlpiPilot/Core/DashboardGeography.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
   </ItemGroup>
 </Project>

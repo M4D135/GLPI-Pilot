@@ -11,13 +11,13 @@ public static class ConfigurationTransferService
     public const string Schema = "glpi-pilot.configuration";
     public const int SchemaVersion = 1;
     public static string ApplicationVersion => AppPaths.ApplicationVersion;
-    public const int MaximumFileBytes = 1024 * 1024;
+    public const int MaximumFileBytes = 16 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true, MaxDepth = 24 };
     private static readonly HashSet<string> Shareable = new(StringComparer.OrdinalIgnoreCase)
     {
         "PortalUrl", "BrowserChannel", "Theme", "AutoMode", "AutoSaveXlsx", "ReadySelector", "NextSelector", "SelectorOrigin",
-        "TimeoutSeconds", "DownloadTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "TableSelector", "TableHeaderFingerprint",
+        "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "ReconnectAttempts", "ResumePagination", "CheckpointMaximumAgeMinutes", "MinimumFreeSpaceMb", "MaxPages", "MaxRows", "ExpectedTotal", "TableSelector", "TableHeaderFingerprint",
         "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector",
         "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TicketDetails", "Dashboard", "Cities", "Queries", "Sources"
     };
@@ -25,33 +25,36 @@ public static class ConfigurationTransferService
     { "AutoLoadOnSelection", "AutoReadTreatment", "IdColumn", "UrlTemplate", "IncludeAutoDetected", "MaxRowsPerSection", "Sections" };
     private static readonly HashSet<string> SectionProperties = new(StringComparer.OrdinalIgnoreCase) { "Name", "Selector", "Kind", "TabSelector" };
     private static readonly HashSet<string> DashboardProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "ColumnMappings", "StaleDays", "OldDays", "DueSoonHours", "DateCulture", "Layout", "PersonalLayout", "Weather", "AssignmentCountingMode", "PriorityRules" };
+    { "ColumnMappings", "StaleDays", "OldDays", "DueSoonHours", "DateCulture", "NumberCulture", "SourceTimeZone", "MultiValueSeparators", "ValueDictionaries", "DueHorizonHours", "SatisfactionScale", "HistoryCadenceHours", "Layout", "PersonalLayout", "Weather", "AssignmentCountingMode", "PriorityRules" };
     private static readonly HashSet<string> LayoutProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "FilterPresets" };
+    { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "CatalogRecent", "FilterPresets" };
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Name", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks" };
+    { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks" };
     private static readonly HashSet<string> MappingKeys = new(StringComparer.OrdinalIgnoreCase)
-    { "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "updatedBy", "resolved", "closed", "due", "assignee", "group", "requester", "category", "entity", "location", "city", "postal", "source", "solution" };
+    { "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "updatedBy", "resolved", "closed", "due", "assignee", "group", "requester", "category", "entity", "location", "city", "postal", "source", "solution", "satisfaction", "satisfaction-invited" };
     private static readonly HashSet<string> CitySettingsProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Enabled", "TitleColumn", "Cities", "Sites" };
+    { "Enabled", "TitleColumn", "LocationColumn", "SourcePriority", "Cities", "Sites", "Buildings" };
     private static readonly HashSet<string> CityDefinitionProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Name", "Aliases", "PostalCode", "Latitude", "Longitude", "Region", "Department", "Sector", "ExcludedTerms", "Rules" };
+    { "Id", "Name", "Aliases", "PostalCode", "Latitude", "Longitude", "Region", "Department", "Sector", "TerritoryPath", "ExcludedTerms", "Rules" };
     private static readonly HashSet<string> QueryLibraryProperties = new(StringComparer.OrdinalIgnoreCase) { "Queries" };
     private static readonly HashSet<string> SavedQueryProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Name", "Description", "Category", "BaseProbe", "Match", "Aggregate", "AggregateField", "GroupBy", "Favorite", "Conditions", "ConditionExpression", "Parameters", "ComputedFields", "GroupBySecondary", "GroupByTertiary", "GroupDateBucket", "SecondaryDateBucket", "TertiaryDateBucket", "Percentile" };
     private static readonly HashSet<string> QueryConditionProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Field", "Operator", "Value", "Value2", "ValueSource", "Value2Source" };
-    private static readonly HashSet<string> SourceProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "Name", "Url", "Browser", "Mode", "IncludedInCampaign" };
+    private static readonly HashSet<string> SourceProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "Name", "Url", "Browser", "Mode", "IncludedInCampaign", "Acquisition", "Interpretation", "RestoreWorkspace", "WorkspaceQueries" };
     private static readonly HashSet<string> WeatherProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "OverdueWeight", "PriorityWeight", "AssignmentWeight", "StaleWeight", "OldWeight", "WatchThreshold", "RainThreshold", "StormThreshold", "MinimumCoveragePercent", "MinimumWeightPercent" };
     private static readonly HashSet<string> FilterProperties = new(StringComparer.OrdinalIgnoreCase) { "Kind", "SourceKey", "Value", "Value2", "Exclude" };
     private static readonly HashSet<string> PresetProperties = new(StringComparer.OrdinalIgnoreCase) { "Name", "Filters" };
     private static readonly HashSet<string> ParameterProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Label", "Type", "DefaultValue" };
     private static readonly HashSet<string> ComputedProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Label", "Function", "Field", "OtherField", "Constant", "Unit" };
-    private static readonly HashSet<string> CityRuleProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "Term", "RequiredTerms", "ExcludedTerms", "ContextColumn", "Priority" };
-    private static readonly HashSet<string> SiteProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "CityId", "Name", "Aliases", "Address", "Latitude", "Longitude" };
+    private static readonly HashSet<string> CityRuleProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "Term", "RequiredTerms", "ExcludedTerms", "ContextColumn", "Priority", "Position", "TokenPosition", "TitlePattern" };
+    private static readonly HashSet<string> SiteProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "CityId", "Name", "Aliases", "Address", "Latitude", "Longitude", "Openings", "ClosedDates", "Contact", "Equipment" };
+    private static readonly HashSet<string> BuildingProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "SiteId", "Name", "Aliases", "Floor" };
+    private static readonly HashSet<string> OpeningProperties = new(StringComparer.OrdinalIgnoreCase) { "Day", "From", "Until" };
+    private static readonly HashSet<string> AcquisitionProperties = new(StringComparer.Ordinal) { "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "ReconnectAttempts", "ResumePagination", "AutoSaveXlsx" };
     private static readonly HashSet<string> CredentialParameters = new(StringComparer.OrdinalIgnoreCase)
     {
         "code", "state", "session_state", "access_token", "id_token", "refresh_token", "SAMLResponse", "SAMLRequest", "RelayState",
@@ -80,7 +83,7 @@ public static class ConfigurationTransferService
             WriteShareable(writer, element);
             writer.WriteEndObject();
         }
-        if (content.Length > MaximumFileBytes) throw Invalid("La configuration portable dépasse la limite de 1 Mio.");
+        if (content.Length > MaximumFileBytes) throw Invalid("La configuration portable dépasse la limite de 16 Mio.");
         WriteAtomically(path, content.ToArray());
     }
 
@@ -105,7 +108,7 @@ public static class ConfigurationTransferService
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor == 0)))
+                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1)))
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);
@@ -137,6 +140,7 @@ public static class ConfigurationTransferService
             imported.Dashboard.OpenPersonalAfterExtraction = current.Dashboard?.OpenPersonalAfterExtraction ?? false;
             imported.Normalize();
             ValidateAndSanitize(imported);
+            foreach (var source in imported.Sources) source.ExportFolder = current.Sources.FirstOrDefault(old => old.Id == source.Id)?.ExportFolder ?? "";
             return imported;
         }
         catch (JsonException)
@@ -167,6 +171,13 @@ public static class ConfigurationTransferService
         {
             source.Url = SharedUrl(source.Url);
             if (source.Url.Length == 0) throw Invalid("Chaque source partagée doit posséder une adresse de recherche.");
+            if (source.Acquisition.Count > 0 || source.Interpretation != null || source.WorkspaceQueries != null)
+            {
+                var nested = new AppSettings(); source.ApplyTo(nested); if (source.WorkspaceQueries != null) nested.Queries = source.WorkspaceQueries.Copy(); nested.Sources.Clear();
+                ValidateAndSanitize(nested); source.Capture(nested);
+                source.Interpretation!.PersonalTechnician = ""; source.Interpretation.OpenPersonalAfterExtraction = false;
+            }
+            source.ExportFolder = "";
         }
         settings.SelectorOrigin = SharedOrigin(settings.SelectorOrigin);
         settings.TableFrameOrigin = SharedOrigin(settings.TableFrameOrigin);
@@ -205,6 +216,7 @@ public static class ConfigurationTransferService
         if (dashboard.OldDays < dashboard.StaleDays) throw Invalid("Le seuil des tickets anciens doit être supérieur ou égal au seuil sans mise à jour.");
         Range(dashboard.DueSoonHours, 1, 720, "Échéance proche en heures");
         dashboard.DateCulture = EnumValue(dashboard.DateCulture, "Culture des dates", "fr-FR", "en-GB", "en-US", "invariant");
+        try { DashboardService.ValidateSettings(dashboard); } catch (InvalidOperationException error) { throw Invalid(error.Message); }
         var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pair in dashboard.ColumnMappings)
         {
@@ -264,12 +276,36 @@ public static class ConfigurationTransferService
 
     private static void ValidateNestedProperties(JsonElement settings, bool allowLocalPreferences = false)
     {
-        ValidateObjectList(settings, "Sources", 100, SourceProperties, source =>
+        JsonRange(settings, "ListTimeoutSeconds", 5, 600); JsonRange(settings, "DetailTimeoutSeconds", 5, 600);
+        JsonRange(settings, "ReconnectAttempts", 0, 5); JsonRange(settings, "CheckpointMaximumAgeMinutes", 5, 1440); JsonRange(settings, "MinimumFreeSpaceMb", 32, 32768);
+        var allowedSources = new HashSet<string>(SourceProperties, StringComparer.OrdinalIgnoreCase); if (allowLocalPreferences) allowedSources.Add("ExportFolder");
+        ValidateObjectList(settings, "Sources", 100, allowedSources, source =>
         {
             JsonText(source, "Id", 96, true); JsonText(source, "Name", 120, true); JsonText(source, "Url", 8192, true);
             if (!Guid.TryParseExact(Find(source, "Id")!.Value.GetString(), "N", out _)) throw Invalid("Identifiant de source invalide.");
             _ = SharedUrl(Find(source, "Url")!.Value.GetString()!);
             JsonEnum(source, "Browser", "msedge", "chrome"); JsonEnum(source, "Mode", "native", "pagination");
+            if (Find(source, "Acquisition") is { } acquisition)
+            {
+                RequireProperties(acquisition, AcquisitionProperties);
+                foreach (var property in acquisition.EnumerateObject())
+                {
+                    if (property.Value.ValueKind != JsonValueKind.String || property.Value.GetString()!.Length > 8192) throw Invalid("Repère ou délai de source invalide.");
+                    var value = property.Value.GetString()!;
+                    if (property.Name is "ResumePagination" or "AutoSaveXlsx") { if (!bool.TryParse(value, out _)) throw Invalid("Option de collecte de source invalide."); }
+                    else if (property.Name is "TimeoutSeconds" or "DownloadTimeoutSeconds" or "ListTimeoutSeconds" or "DetailTimeoutSeconds" or "MaxPages" or "MaxRows" or "ExpectedTotal" or "ReconnectAttempts")
+                    {
+                        if (property.Name == "ExpectedTotal" && value.Length == 0) continue;
+                        if (!int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var number)) throw Invalid("Délai ou limite de source invalide.");
+                        var bounds = property.Name switch { "TimeoutSeconds" => (1, 1800), "DownloadTimeoutSeconds" => (1, 7200), "ListTimeoutSeconds" or "DetailTimeoutSeconds" => (5, 600), "MaxPages" => (1, 10000), "MaxRows" => (1, 1000000), "ExpectedTotal" => (0, 10000000), _ => (0, 5) };
+                        Range(number, bounds.Item1, bounds.Item2, "Délai ou limite de source");
+                    }
+                }
+            }
+            var child = new Dictionary<string, JsonElement>();
+            if (Find(source, "Interpretation") is { ValueKind: not JsonValueKind.Null } interpretation) child["Dashboard"] = interpretation;
+            if (Find(source, "WorkspaceQueries") is { ValueKind: not JsonValueKind.Null } workspace) child["Queries"] = workspace;
+            if (child.Count > 0) ValidateNestedProperties(JsonSerializer.SerializeToElement(child), allowLocalPreferences);
         });
         if (Find(settings, "Sources") is { ValueKind: JsonValueKind.Array } sourceList)
         {
@@ -314,7 +350,8 @@ public static class ConfigurationTransferService
                     ValidateObjectList(city, "Rules", 16, CityRuleProperties);
                 }
             }
-            ValidateObjectList(cities, "Sites", 2000, SiteProperties);
+            ValidateObjectList(cities, "Sites", 2000, SiteProperties, site => ValidateObjectList(site, "Openings", 42, OpeningProperties));
+            ValidateObjectList(cities, "Buildings", 5000, BuildingProperties);
             // Validate the raw city data before normalization can repair or bound
             // local settings. Invalid shared aliases and coordinates are rejected.
             var configured = JsonSerializer.Deserialize<CitySettings>(cities.GetRawText(), JsonOptions)
@@ -340,6 +377,16 @@ public static class ConfigurationTransferService
                 allowedDashboard.Add("OpenPersonalAfterExtraction");
             }
             RequireProperties(dashboard, allowedDashboard);
+            if (Find(dashboard, "ValueDictionaries") is { } dictionaries)
+            {
+                RequireObject(dictionaries); if (dictionaries.EnumerateObject().Count() > 60) throw Invalid("Au maximum 60 dictionnaires de valeurs sont acceptés.");
+                foreach (var dictionary in dictionaries.EnumerateObject())
+                {
+                    Text(dictionary.Name, 200, "Champ du dictionnaire"); RequireObject(dictionary.Value); if (dictionary.Value.EnumerateObject().Count() > 2000) throw Invalid("Un dictionnaire accepte 2 000 correspondances.");
+                    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var pair in dictionary.Value.EnumerateObject()) { Text(pair.Name, 1000, "Valeur d’origine"); if (!names.Add(pair.Name) || pair.Value.ValueKind != JsonValueKind.String) throw Invalid("Correspondance de valeur absente, dupliquée ou invalide."); Text(pair.Value.GetString()!, 1000, "Valeur normalisée"); }
+                }
+            }
             JsonEnum(dashboard, "AssignmentCountingMode", "participation", "fractional", "cell");
             if (Find(dashboard, "Weather") is { ValueKind: not JsonValueKind.Null } weather)
             {
@@ -358,7 +405,7 @@ public static class ConfigurationTransferService
         RequireProperties(layout, LayoutProperties);
         JsonRange(layout, "Version", 1, 1);
         JsonText(layout, "ActiveBoardId", 96);
-        ValidateStringList(layout, "CatalogFavorites", 512, 240);
+        ValidateStringList(layout, "CatalogFavorites", 512, 240); ValidateStringList(layout, "CatalogRecent", 30, 240);
         ValidateObjectList(layout, "FilterPresets", 30, PresetProperties, preset => { JsonText(preset, "Name", 120, true); ValidateFilters(preset, "Filters"); });
         if (Find(layout, "Boards") is not { } boards) return;
         if (boards.ValueKind != JsonValueKind.Array || boards.GetArrayLength() is < 1 or > 12)
@@ -382,6 +429,8 @@ public static class ConfigurationTransferService
                 if (!widgetIds.Add(Find(widget, "Id")!.Value.GetString()!)) throw Invalid("Les widgets d’un même tableau de bord doivent avoir des identifiants uniques.");
                 JsonText(widget, "SourceKey", 120); JsonText(widget, "Title", 180); JsonText(widget, "Note", 4000);
                 JsonRange(widget, "Span", 3, 12); JsonRange(widget, "Height", 160, 960); JsonRange(widget, "TopCount", 3, 30);
+                JsonEnum(widget, "StackedMode", "volume", "percent"); JsonRange(widget, "HistoryPeriodDays", 1, 3650);
+                if (JsonThreshold(widget, "ParetoThresholdPercent") is double pareto && (pareto < 1 || pareto > 100)) throw Invalid("Le seuil de Pareto doit être compris entre 1 et 100.");
                 JsonText(widget, "Section", 80); ValidateFilters(widget, "Filters");
                 if (Find(widget, "HistogramBreaks") is { } breaks)
                 {
@@ -398,7 +447,7 @@ public static class ConfigurationTransferService
                 var lowerIsBetter = Find(widget, "LowerIsBetter") is not { ValueKind: JsonValueKind.False };
                 if (warning.HasValue && critical.HasValue && (lowerIsBetter ? critical < warning : critical > warning))
                     throw Invalid("Le seuil critique du widget doit être au-delà du seuil d’avertissement dans le sens défavorable choisi.");
-                foreach (string boolean in new[] { "ShowDescription", "Hidden", "Locked", "LowerIsBetter", "AutoHeight" })
+                foreach (string boolean in new[] { "ShowDescription", "Hidden", "Locked", "LowerIsBetter", "AutoHeight", "StartNewRow", "ShowMiniHistory" })
                     if (Find(widget, boolean) is { } value && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                         throw Invalid("Une option de widget doit valoir vrai ou faux.");
             }
@@ -499,6 +548,23 @@ public static class ConfigurationTransferService
                 foreach (var field in property.Value.EnumerateObject()) if (DashboardProperties.Contains(field.Name)) field.WriteTo(writer);
                 writer.WriteEndObject();
             }
+            else if (property.Name.Equals("Sources", StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.Array)
+            {
+                writer.WritePropertyName(property.Name); writer.WriteStartArray();
+                foreach (var source in property.Value.EnumerateArray())
+                {
+                    writer.WriteStartObject();
+                    foreach (var field in source.EnumerateObject())
+                    {
+                        if (!SourceProperties.Contains(field.Name)) continue;
+                        if (field.Name.Equals("Interpretation", StringComparison.OrdinalIgnoreCase) && field.Value.ValueKind == JsonValueKind.Object)
+                        { writer.WritePropertyName(field.Name); writer.WriteStartObject(); foreach (var setting in field.Value.EnumerateObject()) if (DashboardProperties.Contains(setting.Name)) setting.WriteTo(writer); writer.WriteEndObject(); }
+                        else field.WriteTo(writer);
+                    }
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+            }
             else property.WriteTo(writer);
         }
         writer.WriteEndObject();
@@ -523,13 +589,13 @@ public static class ConfigurationTransferService
     private static byte[] ReadBounded(string path)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (file.Length == 0 || file.Length > MaximumFileBytes) throw Invalid("La configuration doit contenir entre 1 octet et 1 Mio.");
+        if (file.Length == 0 || file.Length > MaximumFileBytes) throw Invalid("La configuration doit contenir entre 1 octet et 16 Mio.");
         using var memory = new MemoryStream((int)file.Length);
         var buffer = new byte[16_384];
         int read;
         while ((read = file.Read(buffer)) > 0)
         {
-            if (memory.Length + read > MaximumFileBytes) throw Invalid("La configuration dépasse la limite de 1 Mio.");
+            if (memory.Length + read > MaximumFileBytes) throw Invalid("La configuration dépasse la limite de 16 Mio.");
             memory.Write(buffer, 0, read);
         }
         return memory.ToArray();

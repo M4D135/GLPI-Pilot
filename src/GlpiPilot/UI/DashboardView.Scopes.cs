@@ -265,36 +265,16 @@ public sealed partial class DashboardView
             var accent = new ComboBox { Width = 100, ItemsSource = DashboardWidgetSettings.Accents, SelectedItem = "blue", Margin = new Thickness(4, 0, 5, 0) };
             var style = new ComboBox { Width = 110, ItemsSource = DashboardWidgetSettings.Styles, SelectedItem = "surface", Margin = new Thickness(0, 0, 5, 0) };
             var span = new ComboBox { Width = 65, ItemsSource = new[] { 3, 4, 6, 8, 12 }, SelectedItem = 6, Margin = new Thickness(0, 0, 5, 0) };
+            var height = new ComboBox { Width = 90, ItemsSource = new[] { 160, 200, 240, 320, 400, 480, 640, 800, 960 }, SelectedItem = 320, ToolTip = "Hauteur minimale du groupe", Margin = new Thickness(0, 0, 5, 0) };
             var section = new TextBox { Width = 150, MaxLength = 80, ToolTip = "Nom de section · vide pour Général", Margin = new Thickness(0, 0, 5, 0) };
-            foreach (var control in new FrameworkElement[] { accent, style, span, section }) panel.Children.Add(control);
-            panel.Children.Add(Mini("Appliquer au groupe", "Appliquer accent, style, largeur et section aux widgets sélectionnés non verrouillés.", () => Change(() =>
-            { foreach (var widget in Board.Widgets.Where(x => _selectedWidgets.Contains(x.Id) && !x.Locked)) { widget.Accent = accent.SelectedItem?.ToString() ?? "blue"; widget.Style = style.SelectedItem?.ToString() ?? "surface"; widget.Span = (int)(span.SelectedItem ?? 6); widget.Section = section.Text.Trim(); } })));
+            foreach (var control in new FrameworkElement[] { accent, style, span, height, section }) panel.Children.Add(control);
+            panel.Children.Add(Mini("Appliquer au groupe", "Appliquer accent, style, largeur, hauteur minimale et section aux widgets sélectionnés non verrouillés.", () => Change(() =>
+            { foreach (var widget in Board.Widgets.Where(x => _selectedWidgets.Contains(x.Id) && !x.Locked)) { widget.Accent = accent.SelectedItem?.ToString() ?? "blue"; widget.Style = style.SelectedItem?.ToString() ?? "surface"; widget.Span = (int)(span.SelectedItem ?? 6); widget.Height = (int)(height.SelectedItem ?? 320); widget.AutoHeight = false; widget.Section = section.Text.Trim(); } })));
+            panel.Children.Add(Mini("Aligner par lignes", "Regrouper les widgets sélectionnés non verrouillés sur des lignes alignées, avec la même largeur, hauteur minimale et section.", () => Change(() => DashboardLayoutEngine.AlignGroup(Board, _selectedWidgets, (int)(span.SelectedItem ?? 6), (int)(height.SelectedItem ?? 320), section.Text.Trim()))));
             panel.Children.Add(Mini("Masquer", "Masquer les widgets sélectionnés. Annuler permet de les retrouver.", () => Change(() => { foreach (var widget in Board.Widgets.Where(x => _selectedWidgets.Contains(x.Id) && !x.Locked)) widget.Hidden = true; _selectedWidgets.Clear(); })));
         }
         _body.Children.Add(panel);
     }
 
-    private void ExportDashboardImage()
-    {
-        try
-        {
-            if (_data == null || _busy) return;
-            var dialog = new SaveFileDialog { Filter = "Image PNG (*.png)|*.png", DefaultExt = ".png", AddExtension = true, FileName = "GLPI-Dashboard-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png" };
-            if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
-            var editing = _editing; _editing = false; Render(); UpdateLayout();
-            try
-            {
-                var width = Math.Max(1, _body.ActualWidth); var height = Math.Max(1, _body.ActualHeight);
-                var scale = Math.Min(1, 8192d / Math.Max(width, height));
-                var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale), 96, 96, PixelFormats.Pbgra32);
-                var visual = new DrawingVisual(); using (var drawing = visual.RenderOpen())
-                { drawing.DrawRectangle((Brush)FindResource("WindowBrush"), null, new Rect(0, 0, width * scale, height * scale)); drawing.PushTransform(new ScaleTransform(scale, scale)); drawing.DrawRectangle(new VisualBrush(_body), null, new Rect(0, 0, width, height)); }
-                bitmap.Render(visual); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                using var stream = new FileStream(dialog.FileName, FileMode.Create, FileAccess.Write); encoder.Save(stream);
-                _analysisMessage = "Image enregistrée : " + dialog.FileName + (scale < 1 ? " · dimensions adaptées à 8 192 pixels" : "");
-            }
-            finally { _editing = editing; Render(); }
-        }
-        catch (Exception error) { _analysisMessage = "Export de l’image : " + error.Message; Render(); }
-    }
+    private void ExportDashboardImage() => ExportDashboardVisual();
 }

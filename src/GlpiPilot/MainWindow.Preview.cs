@@ -77,7 +77,7 @@ public partial class MainWindow
     private void BuildPreview(bool resetDashboard = true)
     {
         if (_result == null || _closing || _previewWorkspaceDisposed) return;
-        RefreshQualityWorkspace();
+        ObserveSchema(); RefreshQualityWorkspace();
         _filterTimer.Stop();
         OnExtractionChanged();
         if (resetDashboard)
@@ -126,7 +126,8 @@ public partial class MainWindow
         if (_previewTransformFingerprint != fingerprint) { _previewTransform = new(); _previewTransformFingerprint = fingerprint; }
         var transform = _previewTransform.Copy();
         var scope = _dashboardPreviewRows?.ToArray();
-        var culture = _settings.Dashboard.DateCulture == "invariant" ? CultureInfo.InvariantCulture : CultureInfo.GetCultureInfo(_settings.Dashboard.DateCulture);
+        var dateCulture = EffectiveDashboardSettings(_settings.Dashboard).DateCulture;
+        var culture = dateCulture == "invariant" ? CultureInfo.InvariantCulture : CultureInfo.GetCultureInfo(dateCulture);
         StatsText.Text = term.Length == 0 ? "Préparation de l’aperçu…" : "Recherche complète en cours…";
         if (_preview == null)
         {
@@ -152,6 +153,7 @@ public partial class MainWindow
             previousView?.Dispose();
             ApplyPreviewColumnPreferences();
             ApplyPreviewSortIndicators();
+            AddHeaderFilters();
             ApplyInterfaceDensity();
             UpdatePreviewSummary(source, built.Query, term.Length > 0);
             UpdateControls();
@@ -368,8 +370,9 @@ public partial class MainWindow
         ShowInlinePanel(dialog);
     }
 
-    private static int? PreviewColumnIndex(DataGridColumn column)
+    private static int? PreviewColumnIndex(DataGridColumn? column)
     {
+        if (column == null) return null;
         var name = column.SortMemberPath;
         return name.Length > 1 && name[0] == 'C' && int.TryParse(name.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var index) && index >= 0
             ? index : null;

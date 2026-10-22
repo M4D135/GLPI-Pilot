@@ -32,6 +32,10 @@ public sealed class TicketWorkplaceView : UserControl
     private long _searchGeneration;
     public PersonalTicketEditorView Editor { get; } = new();
     public TicketIntelligenceView Intelligence { get; } = new();
+    public TicketInsightsView Insights { get; } = new();
+    public TicketActionsView Actions { get; } = new();
+    public TicketDraftView Drafts { get; } = new();
+    public TicketEnrichmentView Enrichment { get; } = new();
     public TicketTimelineFilter TimelineFilter => new(_type.SelectedIndex > 0 ? _type.SelectedItem as string ?? "" : "", _author.Text.Trim(), _from.SelectedDate, _to.SelectedDate);
     public bool GroupByDay => _groupDay.IsChecked == true;
     public string SearchText => _search.Text.Trim();
@@ -42,6 +46,8 @@ public sealed class TicketWorkplaceView : UserControl
     public event Action? FiltersChanged;
     public event Action? FavoriteSectionRequested;
     public event Action? DefaultSectionRequested;
+    public event Action<int>? MoveSectionRequested;
+    public event Action? ReadingPositionChanged;
     public event Action<bool>? GroupByDayChanged;
 
     public TicketWorkplaceView(UIElement reader)
@@ -63,6 +69,11 @@ public sealed class TicketWorkplaceView : UserControl
         _handoverPage = new TabItem { Header = "Passation", Content = handoverRoot };
         _pages.Items.Add(_readerPage); _pages.Items.Add(summaryPage); _pages.Items.Add(_personalPage); _pages.Items.Add(_searchPage); _pages.Items.Add(_handoverPage);
         _pages.Items.Add(new TabItem { Header = "Rapprochements", Content = Intelligence });
+        _pages.Items.Add(new TabItem { Header = "Planification et relations", Content = Insights });
+        _pages.Items.Add(new TabItem { Header = "Brouillon de suivi", Content = Drafts });
+        _pages.Items.Add(new TabItem { Header = "Actions assistées", Content = Actions });
+        _pages.Items.Add(new TabItem { Header = "Enrichissement", Content = Enrichment });
+        Drafts.PrepareFollowupRequested += text => { Actions.UseDraft(text); _pages.SelectedItem = _pages.Items.OfType<TabItem>().First(page => ReferenceEquals(page.Content, Actions)); };
         var tools = new StackPanel { Margin = new Thickness(12) };
         tools.Children.Add(WorkplaceControls.Label("Filtres des rubriques de traitement", 16));
         var filter = new WrapPanel(); _type.ItemsSource = new[] { "Tous les types" }; _type.SelectedIndex = 0;
@@ -74,8 +85,10 @@ public sealed class TicketWorkplaceView : UserControl
         var sectionActions = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
         _favoriteSection = WorkplaceControls.Command("Favori de rubrique : basculer", () => FavoriteSectionRequested?.Invoke());
         _defaultSection = WorkplaceControls.Command("Ouvrir cette rubrique par défaut", () => DefaultSectionRequested?.Invoke());
-        sectionActions.Children.Add(_favoriteSection); sectionActions.Children.Add(_defaultSection); tools.Children.Add(sectionActions);
-        tools.Children.Add(WorkplaceControls.Label("Sélectionnez d’abord la rubrique dans Fiche GLPI. Les favoris apparaissent en tête du menu de lecture."));
+        sectionActions.Children.Add(_favoriteSection); sectionActions.Children.Add(_defaultSection);
+        sectionActions.Children.Add(WorkplaceControls.Command("Monter la rubrique", () => MoveSectionRequested?.Invoke(-1)));
+        sectionActions.Children.Add(WorkplaceControls.Command("Descendre la rubrique", () => MoveSectionRequested?.Invoke(1))); tools.Children.Add(sectionActions);
+        tools.Children.Add(WorkplaceControls.Label("Sélectionnez d’abord la rubrique dans Fiche GLPI. L’ordre personnalisé est prioritaire ; les favoris sont regroupés parmi les rubriques sans ordre personnalisé."));
         _pages.Items.Add(new TabItem { Header = "Lecture", Content = WorkplaceControls.Viewport(tools) });
         Grid.SetRow(_pages, 1); root.Children.Add(_pages); Content = root;
         _type.SelectionChanged += (_, _) => { if (!_updating) FiltersChanged?.Invoke(); };
@@ -84,7 +97,10 @@ public sealed class TicketWorkplaceView : UserControl
         _to.SelectedDateChanged += (_, _) => { if (!_updating) FiltersChanged?.Invoke(); };
         _groupDay.Checked += (_, _) => { if (!_updating) { GroupByDayChanged?.Invoke(true); FiltersChanged?.Invoke(); } };
         _groupDay.Unchecked += (_, _) => { if (!_updating) { GroupByDayChanged?.Invoke(false); FiltersChanged?.Invoke(); } };
+        _pages.SelectionChanged += (_, e) => { if (!_updating && e.Source == _pages) ReadingPositionChanged?.Invoke(); };
         Editor.HandoverRequested += ShowHandover;
+        Intelligence.ReadingFilterChanged += () => { if (!_updating) ReadingPositionChanged?.Invoke(); };
+        _search.TextChanged += (_, _) => { if (!_updating) ReadingPositionChanged?.Invoke(); };
         AutomationProperties.SetAutomationId(this, "TicketWorkplace");
     }
 
@@ -126,6 +142,10 @@ public sealed class TicketWorkplaceView : UserControl
     public void Show(WorkplaceDocument document, PersonalTicket? personal, TicketDetailResult? detail, TicketReadChanges? changes = null)
     {
         if (!ReferenceEquals(_detail, detail)) { ++_searchGeneration; _searchResults.ItemsSource = null; _searchCount.Text = "Rechercher dans toutes les sections déjà lues."; }
+        var changedTicket = _personal?.Key != personal?.Key || _detail == null && detail != null;
+        Insights.Show(detail);
+        Actions.ShowTicket(detail?.Ticket);
+        Drafts.Show(personal, detail);
         _detail = detail; _personal = personal; _ticketTabs.Children.Clear();
         foreach (var key in document.OpenTicketKeys)
         {
@@ -151,11 +171,29 @@ public sealed class TicketWorkplaceView : UserControl
                 .Where(row => row.Length > 0).Select(row => row[0]).Distinct() ?? Array.Empty<string>()).ToArray();
             _type.ItemsSource = types; _type.SelectedItem = types.Contains(selectedType) ? selectedType : types[0];
             _groupDay.IsChecked = document.GroupTimelineByDay;
+            if (changedTicket && personal != null)
+            {
+                var position = personal.ReadingPosition;
+                _search.Text = position.WholeTicketSearch; Intelligence.FilterText = position.IntelligenceSearch;
+                _type.SelectedItem = types.Contains(position.Type) ? position.Type : types[0];
+                _author.Text = position.Author; _from.SelectedDate = position.From; _to.SelectedDate = position.To;
+                _pages.SelectedIndex = Math.Clamp(position.PageIndex, 0, _pages.Items.Count - 1);
+            }
         }
         finally { _updating = false; }
     }
 
+    public TicketReadingPosition CapturePosition(TicketReadingPosition? previous = null)
+    {
+        var position = previous?.Copy() ?? new();
+        position.Type = _type.SelectedIndex > 0 ? _type.SelectedItem as string ?? "" : "";
+        position.Author = _author.Text; position.From = _from.SelectedDate; position.To = _to.SelectedDate;
+        position.WholeTicketSearch = _search.Text; position.IntelligenceSearch = Intelligence.FilterText;
+        position.PageIndex = Math.Max(0, _pages.SelectedIndex); return position;
+    }
+
     public void ShowPersonal() => _pages.SelectedItem = _personalPage;
     public void ShowHandover() => _pages.SelectedItem = _handoverPage;
+    public void ShowEnrichment() => _pages.SelectedItem = _pages.Items.OfType<TabItem>().First(page => ReferenceEquals(page.Content, Enrichment));
     public void ShowReader() => _pages.SelectedItem = _readerPage;
 }

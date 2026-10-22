@@ -12,6 +12,7 @@ internal static class Program
     [STAThread]
     public static int Main()
     {
+        if (UpdateService.TryRunMaintenance(Environment.GetCommandLineArgs().Skip(1).ToArray(), out var maintenanceCode)) return maintenanceCode;
         StartupDiagnostics.Start(AppPaths.ApplicationVersion);
         try { return RunApplication(); }
         catch (Exception error)

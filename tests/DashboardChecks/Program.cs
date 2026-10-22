@@ -854,6 +854,79 @@ Test("Expanded export includes analytical sources and never exports incompatible
     Check(exported.Rows.Any(x => x[0] == "Âge et échéance des actifs"));
 });
 
+Test("Explicit source number culture validates grouping and rejects malformed or competing separators", () =>
+{
+    Check(DashboardService.TrySourceNumber("1 234,50", new(), out var french) && french == 1234.5);
+    Check(DashboardService.TrySourceNumber("2\u202f000.25", new(), out var legacy) && legacy == 2000.25);
+    Check(!DashboardService.TrySourceNumber("1 23", new(), out _) && !DashboardService.TrySourceNumber("1,234.5", new(), out _));
+    Check(DashboardService.TrySourceNumber("1,234.5", new() { NumberCulture = "en-US" }, out var english) && english == 1234.5);
+    Check(!DashboardService.TrySourceNumber("1,23.5", new() { NumberCulture = "en-US" }, out _) && !DashboardService.TrySourceNumber("Infinity", new(), out _));
+});
+Test("Source timezone converts naive dates and rejects ambiguous or skipped daylight-saving wall times", () =>
+{
+    var settings = new DashboardSettings { SourceTimeZone = "Europe/Paris" };
+    Check(DashboardService.TrySourceDate("2026-07-01 12:00", settings, TimeSpan.Zero, out var utc) && utc.Hour == 10);
+    Check(!DashboardService.TrySourceDate("2026-03-29 02:30", settings, TimeSpan.Zero, out _));
+    Check(!DashboardService.TrySourceDate("2026-10-25 02:30", settings, TimeSpan.Zero, out _));
+    Check(DashboardService.TrySourceDate("2026-10-25T02:30:00+02:00", settings, TimeSpan.Zero, out var explicitOffset) && explicitOffset.Hour == 0);
+});
+Test("Value dictionaries interpret semantic fields while preserving raw cells and deep copies", () =>
+{
+    var data = Sample(); data.Rows[0][2] = "READY"; var settings = new DashboardSettings { ValueDictionaries = new() { ["status"] = new() { ["ready"] = "Résolu" } } };
+    var snapshot = Calc(data, settings); Equal(snapshot.Metric("resolved")!.Value, 2, "mapped resolved"); Check(data.Rows[0][2] == "READY");
+    var copy = settings.Copy(); copy.ValueDictionaries["status"]["ready"] = "Clos"; Check(settings.ValueDictionaries["status"]["ready"] == "Résolu");
+});
+Test("Duplicate dictionary keys differing only by case recover deterministically without a startup exception", () =>
+{
+    var settings = new DashboardSettings { ValueDictionaries = new() { ["status"] = new() { ["x"] = "Nouveau", ["X"] = "Clos" }, ["STATUS"] = new() { ["x"] = "Résolu" } } };
+    var copy = settings.Copy(); Check(copy.ValueDictionaries.Count == 1); Check(DashboardService.NormalizeValue("X", "status", "Statut", copy) == "Résolu");
+});
+Test("Exclusive due horizons conserve every active row at overdue and exact boundary edges", () =>
+{
+    var data = new ExtractionResult { Headers = new() { "ID", "Statut", "Temps de résolution" }, Complete = true, ExpectedTotal = 5 };
+    foreach (var (id, hours) in new[] { ("1", -1d), ("2", 0d), ("3", 24d), ("4", 48d) }) data.Rows.Add(new[] { id, "Nouveau", clock.AddHours(hours).ToString("O") });
+    data.Rows.Add(new[] { "5", "Nouveau", "unknown" });
+    var distribution = Calc(data, new() { DueHorizonHours = new() { 0, 24, 48 } }).Distributions.Single(x => x.Key == "due-exclusive");
+    Check(distribution.Available && distribution.Buckets.Sum(x => x.Count) == 5 && distribution.Buckets.SelectMany(x => x.Rows).Distinct().Count() == 5);
+    Check(distribution.Buckets[0].Rows.SequenceEqual(new[] { 0 }) && distribution.Buckets[2].Rows.SequenceEqual(new[] { 2 }) && distribution.Buckets[^1].Rows.SequenceEqual(new[] { 4 }));
+});
+Test("Satisfaction includes valid zero notes and separates snapshot coverage from actual invitations", () =>
+{
+    var data = new ExtractionResult { Headers = new() { "ID", "Satisfaction", "Enquête envoyée" }, Complete = true,
+        Rows = new() { new[] { "1", "0", "oui" }, new[] { "2", "5", "oui" }, new[] { "3", "", "oui" }, new[] { "4", "6", "" } } };
+    var d = Calc(data); Equal(d.Metric("satisfaction-score")!.Value, 2.5, "mean"); Equal(d.Metric("satisfaction-responses")!.Value, 2, "responses");
+    Equal(d.Metric("satisfaction-coverage")!.Value, 50, "source coverage"); Equal(d.Metric("satisfaction-response-rate")!.Value, 200d / 3, "invited response rate");
+    Check(d.Metric("satisfaction-score")!.Rows.SequenceEqual(new[] { 0, 1 }));
+});
+Test("Absent satisfaction fields never fabricate satisfaction or a zero response rate", () =>
+{
+    var d = Calc(); Check(d.Metric("satisfaction-score")!.Value == null && d.Metric("satisfaction-responses")!.Value == null && d.Metric("satisfaction-response-rate")!.Value == null);
+});
+Test("Workload weather describes observed concentration and remains unknown for a single assignee", () =>
+{
+    var source = new ExtractionResult { Headers = new() { "ID", "Statut", "Attribué à - Technicien" }, Complete = true };
+    for (var i = 0; i < 12; i++) source.Rows.Add(new[] { (i + 1).ToString(), "Nouveau", i < 10 ? "Alex" : i == 10 ? "Sam" : "Jo" });
+    var d = Calc(source); var weather = d.WeatherProfiles["workload"]; Check(weather.Score > 0 && weather.Signals[0].Rows.Length == 10 && weather.Description.Contains("productivité"));
+    source.Rows = source.Rows.Take(2).ToList(); Check(Calc(source).WeatherProfiles["workload"].State == "unknown");
+});
+Test("Group dimensions and row alignment are deterministic and do not mutate locked widgets", () =>
+{
+    var board = DashboardLayoutSettings.CreateBoard("Test", "empty");
+    board.Widgets.AddRange(new[] { new DashboardWidgetSettings { Id = "before", Span = 3, Height = 220 }, new DashboardWidgetSettings { Id = "a" }, new DashboardWidgetSettings { Id = "locked", Locked = true, Height = 190 }, new DashboardWidgetSettings { Id = "b" }, new DashboardWidgetSettings { Id = "after" } });
+    DashboardLayoutEngine.AlignGroup(board, new[] { "a", "b", "locked" }, 6, 400, "Aligned");
+    var placements = DashboardLayoutEngine.Arrange(board.Widgets, 1200); var a = placements.Single(x => x.Id == "a"); var b = placements.Single(x => x.Id == "b");
+    Check(a.Top == b.Top && a.Height == 400 && b.Height == 400 && a.Column == 0 && b.Column == 6); Check(board.Widgets.Single(x => x.Id == "locked").Height == 190);
+    var narrow = DashboardLayoutEngine.Arrange(board.Widgets, 500); Check(narrow.All(x => x.Span == 12));
+});
+Test("Recent widgets and analytical presentation options survive deep copy and bounded normalization", () =>
+{
+    var settings = new DashboardLayoutSettings { CatalogRecent = Enumerable.Range(0, 40).Select(i => "metric\n" + i).ToList() }; settings.Normalize(); Check(settings.CatalogRecent.Count == 30);
+    var widget = settings.Boards[0].Widgets[0]; widget.StackedMode = "volume"; widget.ParetoThresholdPercent = 63; widget.HistoryPeriodDays = 14; widget.StartNewRow = true;
+    settings.Validate(); var copy = settings.Copy(); copy.CatalogRecent.Clear(); Check(settings.CatalogRecent.Count == 30);
+    var saved = System.Text.Json.JsonSerializer.Deserialize<DashboardLayoutSettings>(System.Text.Json.JsonSerializer.Serialize(settings))!; saved.Validate();
+    Check(saved.Boards[0].Widgets[0].ParetoThresholdPercent == 63 && saved.Boards[0].Widgets[0].StackedMode == "volume" && saved.Boards[0].Widgets[0].StartNewRow);
+});
+
 int failures = 0;
 foreach (var (name, run) in tests)
 {

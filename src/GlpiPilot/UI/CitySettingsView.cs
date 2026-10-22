@@ -141,7 +141,7 @@ public sealed partial class CitySettingsView : UserControl
                 Enabled = _enabled.IsChecked == true,
                 TitleColumn = string.IsNullOrWhiteSpace(_titleColumn.Text) ? "" : _titleColumn.Text,
                 Cities = _rows.Select((row, index) => ReadCity(row, index + 1)).ToList(),
-                Sites = ReadSites()
+                Sites = ReadSites(), Buildings = ReadBuildings(), LocationColumn = _locationField.Text, SourcePriority = _sourceKinds.Select(item => item.Key).ToList()
             };
             // Validate the raw draft before Copy/Normalize can repair or bound it.
             settings.Validate();
@@ -213,7 +213,7 @@ public sealed partial class CitySettingsView : UserControl
             Id = row.Id, Name = row.Name.Trim(), Aliases = ParseAliases(row.Aliases), PostalCode = row.PostalCode.Trim(),
             Latitude = ReadCoordinate(latitudeText, 90, "latitude", row.Name, number),
             Longitude = ReadCoordinate(longitudeText, 180, "longitude", row.Name, number),
-            Region = row.Advanced.Region, Department = row.Advanced.Department, Sector = row.Advanced.Sector,
+            Region = row.Advanced.Region, Department = row.Advanced.Department, Sector = row.Advanced.Sector, TerritoryPath = row.Advanced.TerritoryPath,
             ExcludedTerms = row.Advanced.ExcludedTerms.ToList(), Rules = row.Advanced.Rules.Select(rule => rule.Copy()).ToList()
         };
     }

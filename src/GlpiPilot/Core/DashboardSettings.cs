@@ -7,6 +7,13 @@ public sealed class DashboardSettings
     public int OldDays { get; set; } = 30;
     public int DueSoonHours { get; set; } = 24;
     public string DateCulture { get; set; } = "fr-FR";
+    public string NumberCulture { get; set; } = "fr-FR";
+    public string SourceTimeZone { get; set; } = "";
+    public string MultiValueSeparators { get; set; } = ";\n|";
+    public Dictionary<string, Dictionary<string, string>> ValueDictionaries { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<double> DueHorizonHours { get; set; } = new() { 0, 24, 48, 168, 720 };
+    public double SatisfactionScale { get; set; } = 5;
+    public int HistoryCadenceHours { get; set; } = 24;
     public DashboardLayoutSettings Layout { get; set; } = new();
     private DashboardLayoutSettings? _personalLayout;
     // An older configuration starts with a copy of its existing board. From then
@@ -30,6 +37,8 @@ public sealed class DashboardSettings
         copy.Layout = Layout?.Copy() ?? new();
         copy._personalLayout = _personalLayout?.Copy() ?? copy.Layout.Copy();
         copy.Weather = Weather?.Copy() ?? new();
+        copy.DueHorizonHours = new(DueHorizonHours ?? new());
+        copy.ValueDictionaries = CleanDictionaries(ValueDictionaries);
         copy.PriorityRules = new(PriorityRules ?? new(), StringComparer.Ordinal);
         if (ColumnMappings is not null)
             foreach (var pair in ColumnMappings) copy.ColumnMappings[pair.Key] = pair.Value ?? "";
@@ -37,9 +46,20 @@ public sealed class DashboardSettings
         return copy;
     }
 
+    private static Dictionary<string, Dictionary<string, string>> CleanDictionaries(Dictionary<string, Dictionary<string, string>>? dictionaries) =>
+        (dictionaries ?? new()).Where(p => !string.IsNullOrWhiteSpace(p.Key) && p.Key.Length <= 200).GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Take(60)
+        .ToDictionary(group => group.Key, group => (group.Last().Value ?? new()).Where(v => !string.IsNullOrWhiteSpace(v.Key) && v.Key.Length <= 1000 && v.Value != null && v.Value.Length <= 1000)
+            .GroupBy(v => v.Key, StringComparer.OrdinalIgnoreCase).Take(2000).ToDictionary(v => v.Key, v => v.Last().Value, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
     internal void Normalize()
     {
         DateCulture ??= "fr-FR";
+        NumberCulture ??= "fr-FR"; SourceTimeZone ??= ""; MultiValueSeparators ??= ";\n|";
+        if (MultiValueSeparators.Length > 32) MultiValueSeparators = MultiValueSeparators[..32];
+        ValueDictionaries = CleanDictionaries(ValueDictionaries);
+        DueHorizonHours = (DueHorizonHours ?? new()).Where(double.IsFinite).Where(v => v >= 0 && v <= 87600).Append(0).Distinct().Order().Take(20).ToList();
+        if (!double.IsFinite(SatisfactionScale) || SatisfactionScale <= 0 || SatisfactionScale > 100) SatisfactionScale = 5;
+        HistoryCadenceHours = Math.Clamp(HistoryCadenceHours, 1, 720);
         PersonalTechnician ??= "";
         Weather ??= new();
         Weather.Normalize();

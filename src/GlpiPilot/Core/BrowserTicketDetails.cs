@@ -15,6 +15,7 @@ public sealed partial class BrowserService
     private IPage? _ticketPage;
     private IPage? _ticketAnchorPage;
     private string? _ticketBridge;
+    private int _ticketDetailTimeoutMilliseconds = 30000;
     public IPage? TicketPage => _ticketPage is { IsClosed: false } ? _ticketPage : _ticketAnchorPage is { IsClosed: false } ? _ticketAnchorPage : null;
     private bool IsTicketDetailPage(IPage page) => _ticketPages.ContainsKey(page);
 
@@ -109,6 +110,7 @@ public sealed partial class BrowserService
         if (options.MaxRowsPerSection is < 1 or > 100000)
             throw new InvalidOperationException("La limite de lignes par section doit être comprise entre 1 et 100 000.");
         await _ticketReadGate.WaitAsync(ct);
+        _ticketDetailTimeoutMilliseconds = Math.Clamp(settings.DetailTimeoutSeconds, 5, 600) * 1000;
         IPage? page = null;
         try
         {
@@ -240,8 +242,8 @@ public sealed partial class BrowserService
         await frame.EvaluateAsync(_ticketBridge).WaitAsync(TimeSpan.FromSeconds(5), ct);
     }
 
-    private static Task<T> ReadTicketJsonAsync<T>(IFrame frame, string function, object? argument, CancellationToken ct) =>
-        ReadJsonAsync<T>(frame, function, argument, ct).WaitAsync(TimeSpan.FromSeconds(5), ct);
+    private Task<T> ReadTicketJsonAsync<T>(IFrame frame, string function, object? argument, CancellationToken ct) =>
+        ReadJsonAsync<T>(frame, function, argument, ct).WaitAsync(TimeSpan.FromMilliseconds(_ticketDetailTimeoutMilliseconds), ct);
 
     private static bool TicketUrlMatches(string url, TicketReference ticket, out bool wrongTicket)
     {
@@ -268,7 +270,7 @@ public sealed partial class BrowserService
     private async Task NavigateTicketAsync(IPage page, string url, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        try { await page.GotoAsync(url, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 15000 }).WaitAsync(ct); }
+        try { await page.GotoAsync(url, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = _ticketDetailTimeoutMilliseconds }).WaitAsync(ct); }
         catch (TimeoutException) { /* Continue observing natural SSO redirects. */ }
         catch (PlaywrightException ex) when (ex.Message.Contains("ERR_ABORTED", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("interrupted by another navigation", StringComparison.OrdinalIgnoreCase)) { }
         ct.ThrowIfCancellationRequested();
@@ -407,7 +409,7 @@ public sealed partial class BrowserService
         EnsureTicketPageIdentity(page, ticket);
         var again = await ReadTicketJsonAsync<TicketDomTab>(choice.Frame, "arg => window.__glpiPilotTicket.tab(arg)", new { selector = choice.Tab.Selector, id = ticket.Id, origin = Origin(ticket.Url), ticketPath = new Uri(ticket.Url).AbsolutePath }, ct);
         if (!again.Allowed || again.Proof != choice.Tab.Proof || again.Key != choice.Tab.Key || again.Matches != 1) return "Le repère de l’onglet a changé ; aucun clic n’a été effectué.";
-        await choice.Frame.Locator(again.Selector).ClickAsync(new() { Timeout = 5000 }).WaitAsync(ct);
+        await choice.Frame.Locator(again.Selector).ClickAsync(new() { Timeout = _ticketDetailTimeoutMilliseconds }).WaitAsync(ct);
         await Task.Delay(200, ct);
         EnsureTicketPageIdentity(page, ticket);
         Log?.Invoke("FICHE · onglet de consultation reconnu ouvert.");
@@ -451,10 +453,10 @@ public sealed partial class BrowserService
             }
             if (timer.ElapsedMilliseconds >= 500 && frames.Count > 0 && frames.All(item => item.Inspection.Ready && !item.Inspection.Busy)) break;
             await Task.Delay(250, ct);
-        } while (timer.Elapsed.TotalSeconds < 8);
+        } while (timer.Elapsed.TotalMilliseconds < _ticketDetailTimeoutMilliseconds);
         if (frames.Count == 0 || frames.Any(item => item.Inspection.Busy || !item.Inspection.Ready))
         { result.Warnings.Add(tab.Name + " : le contenu de cet onglet n’est pas devenu lisible dans le délai prévu."); return; }
-        var initialCount = result.Sections.Count;
+        var initialCount = result.Sections.Count; var initialObservations = result.ObservedItems.Count;
         foreach (var item in frames)
         foreach (var section in item.Inspection.Sections)
         {
@@ -464,6 +466,7 @@ public sealed partial class BrowserService
             { Name = section.Name == "Contenu de l’onglet" ? tab.Name : section.Name, Selector = section.Selector, Kind = section.Kind, TabSelector = tab.Selector }, options.MaxRowsPerSection, progress, ct);
         }
         foreach (var section in result.Sections.Skip(initialCount)) { section.TabName = tab.Name; section.TabKey = tab.Key; }
+        foreach (var observation in result.ObservedItems.Skip(initialObservations)) observation.SourceTabKey = tab.Key;
         tab.Loaded = true;
         if (result.Sections.Count == initialCount) result.Warnings.Add(tab.Name + " : aucun contenu de consultation exploitable n’a été trouvé.");
         Log?.Invoke($"FICHE · onglet lu : {result.Sections.Count - initialCount} section(s) ; autres onglets accessibles à la demande.");
@@ -491,7 +494,7 @@ public sealed partial class BrowserService
             }
             if (!wait) break;
             await Task.Delay(250, ct);
-        } while (timer.Elapsed.TotalSeconds < 8);
+        } while (timer.Elapsed.TotalMilliseconds < _ticketDetailTimeoutMilliseconds);
         return (null, reason);
     }
 
@@ -521,6 +524,16 @@ public sealed partial class BrowserService
                 Status = data.Rows.Count == data.TotalRows ? "Section visible lue" : "Section limitée", Warnings = data.Warnings
             }
         });
+        var observed = await ReadTicketJsonAsync<List<TicketObservedItem>>(frame, "arg => window.__glpiPilotTicket.observe(arg)",
+            new { selector = definition.Selector, maxRows = maximum, id = ticket.Id, origin = Origin(ticket.Url), ticketPath = new Uri(ticket.Url).AbsolutePath }, ct);
+        EnsureTicketPageIdentity(page, ticket);
+        var observedKeys = result.ObservedItems.Select(item => (item.Kind, item.Identity, item.Title, item.Url, item.Date)).ToHashSet();
+        foreach (var item in observed)
+        {
+            if (result.ObservedItems.Count >= 6000) { result.Warnings.Add("L’index structuré est limité à 6 000 éléments ; les autres éléments ne sont pas comptés."); break; }
+            item.SourceSection = name; item.SourceTabSelector = definition.TabSelector; item.SourceSelector = definition.Selector; item.ObservedAt = result.ReadAt;
+            if (observedKeys.Add((item.Kind, item.Identity, item.Title, item.Url, item.Date))) result.ObservedItems.Add(item);
+        }
         progress?.Report(new(result.Sections.Count, result.Sections.Sum(section => section.Data.Rows.Count), null, "Lecture des sections du ticket…"));
     }
 

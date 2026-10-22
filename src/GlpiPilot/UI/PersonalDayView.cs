@@ -8,7 +8,7 @@ using GlpiPilot.Core;
 
 namespace GlpiPilot.UI;
 
-public sealed record PersonalDayTicket(PersonalTicket Personal, string Status, string City, string Due, bool? Active, bool InSource, bool Mine);
+public sealed record PersonalDayTicket(PersonalTicket Personal, string Status, string City, string Due, bool? Active, bool InSource, bool Mine, int? Priority = null);
 
 public sealed class PersonalDayView : UserControl
 {
@@ -32,6 +32,11 @@ public sealed class PersonalDayView : UserControl
     private WorkplaceDocument _document = new();
     private bool _busy, _refreshing;
     private bool _updatingPreferences;
+    private bool _stateRestored;
+    private readonly TextBlock _briefingSummary = WorkplaceControls.Label("");
+    private readonly DataGrid _briefingGrid = new() { AutoGenerateColumns = true, IsReadOnly = true, CanUserAddRows = false, EnableRowVirtualization = true };
+    private readonly TextBlock _tourSummary = WorkplaceControls.Label("");
+    private readonly DataGrid _tourGrid = new() { AutoGenerateColumns = true, IsReadOnly = true, CanUserAddRows = false, EnableRowVirtualization = true };
     private bool _refreshingTemplates;
     public event Action<PersonalTicket>? TicketRequested;
     public event Action<PersonalTicket>? SaveRequested;
@@ -39,6 +44,8 @@ public sealed class PersonalDayView : UserControl
     public event Action<string, List<string>>? TemplateSaveRequested;
     public event Action<string>? TemplateDeleteRequested;
     public event Action<bool>? DesktopRemindersChanged;
+    public event Action<string, int, string>? ViewStateChanged;
+    public event Action? ToursRequested;
 
     public PersonalDayView()
     {
@@ -68,9 +75,14 @@ public sealed class PersonalDayView : UserControl
         _pages.Items.Add(new TabItem { Header = "Préférences personnelles", Content = WorkplaceControls.Viewport(preferences) });
         _desktopReminders.Checked += (_, _) => { if (!_updatingPreferences) DesktopRemindersChanged?.Invoke(true); };
         _desktopReminders.Unchecked += (_, _) => { if (!_updatingPreferences) DesktopRemindersChanged?.Invoke(false); };
+        var briefingRoot = new DockPanel(); DockPanel.SetDock(_briefingSummary, Dock.Top); briefingRoot.Children.Add(_briefingSummary); briefingRoot.Children.Add(_briefingGrid);
+        _pages.Items.Add(new TabItem { Header = "Briefing de session", Content = briefingRoot });
+        var toursRoot = new DockPanel(); var toursTop = new StackPanel(); toursTop.Children.Add(_tourSummary); toursTop.Children.Add(WorkplaceControls.Command("Ouvrir les tournées", () => ToursRequested?.Invoke())); DockPanel.SetDock(toursTop, Dock.Top); toursRoot.Children.Add(toursTop); toursRoot.Children.Add(_tourGrid);
+        _pages.Items.Add(new TabItem { Header = "Tournées du jour", Content = toursRoot });
+        _briefingGrid.MouseDoubleClick += (_, _) => { if (_briefingGrid.SelectedItem is PersonalBriefingLine row && _rows.FirstOrDefault(item => item.Ticket.Personal.Key == row.TicketKey) is { } ticket) TicketRequested?.Invoke(ticket.Ticket.Personal); };
         Content = _pages;
         _scope.SelectionChanged += (_, _) => ApplyFilter(); _search.TextChanged += (_, _) => ApplyFilter();
-        _grid.SelectionChanged += (_, _) => { if (!_refreshing) ShowEditor(); };
+        _grid.SelectionChanged += (_, _) => { if (!_refreshing) { ShowEditor(); NotifyState(); } };
         _grid.MouseDoubleClick += (_, args) => { if (args.OriginalSource is DependencyObject element && ItemsControl.ContainerFromElement(_grid, element) is DataGridRow) OpenSelected(); };
         _grid.KeyDown += (_, args) => { if (args.Key == Key.Enter) { OpenSelected(); args.Handled = true; } };
         _editor.SaveRequested += ticket => SaveRequested?.Invoke(ticket);
@@ -94,6 +106,7 @@ public sealed class PersonalDayView : UserControl
     public void Show(IEnumerable<PersonalDayTicket> tickets, WorkplaceDocument document, string personalName, DateTimeOffset? extractedAt)
     {
         _document = document;
+        if (!_stateRestored) { _refreshing = true; try { _scope.SelectedIndex = document.DayScope; _search.Text = document.DaySearch; } finally { _refreshing = false; } _stateRestored = true; }
         _updatingPreferences = true; try { _desktopReminders.IsChecked = document.DesktopReminders; } finally { _updatingPreferences = false; }
         _rows = tickets.Select(ticket => new DayRow(ticket)).OrderBy(row => row.Ticket.Personal.QueueOrder ?? int.MaxValue)
             .ThenBy(row => row.Ticket.Personal.ReminderAt ?? DateTimeOffset.MaxValue).ThenBy(row => row.Id).ToList();
@@ -116,7 +129,8 @@ public sealed class PersonalDayView : UserControl
 
     private void ApplyFilter()
     {
-        var selected = (_grid.SelectedItem as DayRow)?.Ticket.Personal.Key;
+        if (_refreshing) return;
+        var selected = (_grid.SelectedItem as DayRow)?.Ticket.Personal.Key ?? _document.DaySelectedKey;
         var now = DateTimeOffset.Now; var query = _search.Text.Trim();
         var shown = _rows.Where(row =>
         {
@@ -135,7 +149,16 @@ public sealed class PersonalDayView : UserControl
         _refreshing = true;
         try { _grid.ItemsSource = shown; _grid.SelectedItem = shown.FirstOrDefault(row => row.Ticket.Personal.Key == selected) ?? shown.FirstOrDefault(); }
         finally { _refreshing = false; }
-        _count.Text = $"{shown.Length:N0} tickets affichés · ordre personnel indépendant de GLPI"; ShowEditor();
+        _count.Text = $"{shown.Length:N0} tickets affichés · ordre personnel indépendant de GLPI"; ShowEditor(); NotifyState();
+    }
+
+    private void NotifyState() { if (!_refreshing && _stateRestored) ViewStateChanged?.Invoke(_search.Text, _scope.SelectedIndex, (_grid.SelectedItem as DayRow)?.Ticket.Personal.Key ?? ""); }
+
+    public void ShowBriefing(PersonalBriefingReport report) { _briefingSummary.Text = report.Summary; _briefingGrid.ItemsSource = report.Lines; }
+    public void ShowTours(IReadOnlyList<ScheduledTourDayItem> tours, bool personalIdentity, string warning = "")
+    {
+        _tourSummary.Text = $"{tours.Count} tournée(s) pour le {DateTime.Today:dd/MM/yyyy}" + (personalIdentity ? " · mon identité et tournées sans affectation." : " · toutes les identités, identité personnelle non choisie.") + " " + warning;
+        _tourGrid.ItemsSource = tours.Select(tour => new { Tournée = tour.Name, État = ScheduledTourService.StateLabel(tour.State), Début = tour.StartTime, Fin = tour.EndTime, Technicien = tour.TechnicianKey, Tickets = string.Join(", ", tour.TicketIds) }).ToArray();
     }
 
     private void ShowEditor()

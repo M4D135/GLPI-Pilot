@@ -54,6 +54,16 @@ try
     for (var index = 0; index < StartupBackupService.MaximumBackups; index++) File.WriteAllText(Path.Combine(root, "Backups", "before-synthetic-" + index + ".zip"), "synthetic");
     Reject("Backup budget stops without deleting earlier snapshots", () => StartupBackupService.Prepare(root, "2.1.0"));
     Check("Budget overflow preserved earlier backup", File.Exists(backup.Path));
+    var extendedRoot = Path.Combine(root, "extended"); Directory.CreateDirectory(extendedRoot);
+    foreach (var name in new[] { "scheduled-tours.json", "table-layouts.json", "selection-basket.json", "site-populations.json", "language-assistant.local.json", "ticket-action-adapters.json", "update-policy.json" })
+        File.WriteAllText(Path.Combine(extendedRoot, name), "{\"synthetic\":true}");
+    var extended = StartupBackupService.Prepare(extendedRoot, "2.1.0");
+    using (var archive = ZipFile.OpenRead(extended.Path))
+        Check("New workspace preferences remain recoverable before migration", extended.Files == 7 && archive.Entries.Count == 8 && archive.GetEntry("update-policy.json") != null && archive.GetEntry("language-assistant.local.json") != null);
+    using (var alerts = File.Create(Path.Combine(extendedRoot, "alerts.json"))) alerts.SetLength(17 * 1024 * 1024);
+    var larger = StartupBackupService.Prepare(extendedRoot, "2.1.0");
+    using (var archive = ZipFile.OpenRead(larger.Path))
+        Check("Valid alert history above sixteen MiB is preserved before migration", archive.GetEntry("alerts.json")?.Length == 17 * 1024 * 1024 && File.Exists(extended.Path));
     Check("Permission failure advice identifies local write locations", StartupDiagnostics.RecoveryAdvice(new UnauthorizedAccessException()).Contains("%LOCALAPPDATA%"));
     Check("Missing dependency advice requests complete autonomous pack", StartupDiagnostics.RecoveryAdvice(new FileNotFoundException()).Contains("runtime"));
     Check("Advice follows nested loader failure", StartupDiagnostics.RecoveryAdvice(new Exception("outer", new BadImageFormatException())).Contains("x64"));

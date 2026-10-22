@@ -366,6 +366,8 @@ public partial class MainWindow
 
     private void ClearTicketPresentation(string title, string message)
     {
+        CaptureTicketReadingPosition(); FlushTicketDrafts();
+        _readingTicketKey = _readingSectionKey = "";
         TicketCellTextBox.Clear(); TicketCellExpander.IsExpanded = false;
         _ticketDetail = null;
         _ticketDisplayedCacheKey = null;
@@ -391,6 +393,8 @@ public partial class MainWindow
 
     private void PresentTicketResult(TicketDetailResult result, bool fromCache, string cacheKey)
     {
+        CaptureTicketReadingPosition(); FlushTicketDrafts();
+        _readingTicketKey = _readingSectionKey = "";
         _ticketDetail = result;
         _ticketDisplayedCacheKey = cacheKey;
         _selectedTicket = result.Ticket;
@@ -398,8 +402,8 @@ public partial class MainWindow
         TicketMetaText.Text = $"{result.Sections.Count} section(s) · Lu le {result.ReadAt.LocalDateTime:dd/MM/yyyy à HH:mm:ss}";
         TicketStateText.Text = fromCache ? "Données conservées en mémoire. Actualiser relit le portail." : "Lecture terminée. Aucune modification apportée au ticket.";
         RememberPersonalTicketRead(result, !fromCache);
-        BuildTicketNavigation();
         RefreshPersonalTicketPresentation();
+        BuildTicketNavigation();
         UpdateTicketControls();
     }
 
@@ -471,7 +475,8 @@ public partial class MainWindow
         }
         if (items.Count == 0)
             foreach (var section in result.Sections) items.Add(new("section:" + items.Count, section.Name, $"{section.Data.Rows.Count:N0} lignes", section));
-        items = items.OrderBy(item => _workplace.FavoriteSections.Contains(item.Key) ? 0 : 1)
+        items = items.OrderBy(item => _workplace.SectionOrder.IndexOf(item.Key) is int order && order >= 0 ? order : int.MaxValue)
+            .ThenBy(item => _workplace.FavoriteSections.Contains(item.Key) ? 0 : 1)
             .Select(item => _workplace.FavoriteSections.Contains(item.Key) ? item with { Label = "★ " + item.Label } : item).ToList();
         selectedKey ??= _workplace.Tickets.FirstOrDefault(item => item.Key == WorkplaceStore.TicketKey(result.Ticket))?.PreferredSection;
         if (string.IsNullOrEmpty(selectedKey)) selectedKey = _workplace.DefaultSection;
@@ -523,8 +528,14 @@ public partial class MainWindow
                         new Progress<ExtractionProgress>(p => { if (generation == _ticketGeneration && !_closing) TicketStateText.Text = p.Message; }), linked.Token);
                     linked.Token.ThrowIfCancellationRequested();
                     if (_closing || generation != _ticketGeneration || !ReferenceEquals(displayed, _ticketDetail)) return;
-                    displayed.Sections.RemoveAll(section => section.TabKey == entry.Tab.Key || section.TabSelector == entry.Tab.Selector);
-                    displayed.Sections.AddRange(additional.Sections);
+                    if (additional.Tabs.Any(tab => tab.Key == entry.Tab.Key && tab.Loaded))
+                    {
+                        displayed.ObservedItems.RemoveAll(item => item.SourceTabKey == entry.Tab.Key || item.SourceTabSelector == entry.Tab.Selector);
+                        displayed.Sections.RemoveAll(section => section.TabKey == entry.Tab.Key || section.TabSelector == entry.Tab.Selector);
+                        displayed.Sections.AddRange(additional.Sections);
+                        displayed.ObservedItems = displayed.ObservedItems.Concat(additional.ObservedItems).OrderByDescending(item => item.ObservedAt ?? DateTimeOffset.MinValue)
+                            .DistinctBy(i => (i.Kind, i.Identity, i.Title, i.Url, i.Date)).Take(6000).ToList();
+                    }
                     foreach (var updated in additional.Tabs)
                     {
                         var original = displayed.Tabs.FirstOrDefault(tab => tab.Key == updated.Key);
@@ -562,15 +573,22 @@ public partial class MainWindow
 
     private void PresentTicketNavigationEntry(TicketNavigationEntry entry)
     {
+        CaptureTicketReadingPosition();
+        var position = CurrentReadingPosition();
+        _readingTicketKey = _ticketDetail == null ? "" : WorkplaceStore.TicketKey(_ticketDetail.Ticket);
+        _readingSectionKey = entry.Key;
+        _restoringReadingPosition = true;
         _ticketNavigationUpdating = true;
         try
         {
-            TicketSearchBox.Clear();
+            TicketSearchBox.Text = position?.SectionKey == entry.Key ? position.Search : "";
+            TicketViewModeBox.SelectedIndex = position?.ViewMode ?? 0;
             TicketSectionBox.ItemsSource = entry.Section == null ? null : new[] { entry.Section };
             TicketSectionBox.SelectedIndex = entry.Section == null ? -1 : 0;
         }
         finally { _ticketNavigationUpdating = false; }
         BuildTicketSectionPreview();
+        _restoringReadingPosition = false; QueueReadingPositionSave();
         if (entry.Section == null)
         {
             TicketSectionTitleText.Text = entry.Label;
@@ -621,12 +639,17 @@ public partial class MainWindow
             for (var i = 0; i < data.Headers.Count; i++) row[i] = i < values.Length ? values[i] : "";
             _ticketPreview.Rows.Add(row);
         }
+        var changes = CurrentReadingChanges();
+        _changedTicketRows = changes?.NewOrChangedRows.Values.SelectMany(set => set).ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>();
         TicketGrid.ItemsSource = _ticketPreview.DefaultView;
+        var position = CurrentReadingPosition();
+        if (position?.SectionKey == _readingSectionKey && position.RowIndex >= 0 && position.RowIndex < TicketGrid.Items.Count)
+        { TicketGrid.SelectedIndex = position.RowIndex; TicketGrid.ScrollIntoView(TicketGrid.SelectedItem); }
         TicketRowsText.Text = search.Length > 0 ? $"{matching.Count:N0} / {data.Rows.Count:N0} lignes" : $"{data.Rows.Count:N0} lignes · {data.Headers.Count} colonnes";
         var reader = TicketViewModeBox.SelectedIndex == 0 && section.Kind is "fields" or "text" or "timeline";
         TicketReaderHost.Visibility = reader ? Visibility.Visible : Visibility.Collapsed;
         TicketGrid.Visibility = reader ? Visibility.Collapsed : Visibility.Visible;
-        if (reader) _ticketReader?.Show(section, displayed, _ticketWorkplaceView?.GroupByDay == true);
+        if (reader) _ticketReader?.Show(section, displayed, _ticketWorkplaceView?.GroupByDay == true, changes?.PreviousReadAt, _changedTicketRows, position?.SectionKey == _readingSectionKey ? position.ScrollOffset : 0);
         TicketCellExpander.Visibility = reader ? Visibility.Collapsed : Visibility.Visible;
         TicketEmptyPanel.Visibility = data.Headers.Count > 0 && matching.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
         TicketEmptyTitleText.Text = search.Length > 0 ? "Aucun résultat dans cette rubrique" : "Section sans données";
@@ -636,6 +659,8 @@ public partial class MainWindow
             + (data.Rows.Count > PreviewLimit ? $" · Aperçu limité à {PreviewLimit:N0} lignes ; l’Excel contient toutes les lignes lues." : "")
             + " · La lecture des sections ne confirme pas l’exhaustivité globale du ticket.";
         if (timelineSelection?.UnreadableDates > 0) TicketSummaryText.Text += $" · {timelineSelection.UnreadableDates:N0} date(s) illisible(s) exclue(s) du filtre de période.";
+        if (changes?.RowComparisonComplete == false) TicketSummaryText.Text += " · Comparaison détaillée limitée à 10 000 lignes mémorisées ; les autres lignes ne sont pas qualifiées comme nouvelles.";
+        QueueReadingPositionSave();
         UpdateTicketControls();
     }
 

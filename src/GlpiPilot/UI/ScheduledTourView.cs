@@ -12,7 +12,7 @@ using Microsoft.Win32;
 namespace GlpiPilot.UI;
 
 /// <summary>Local dated itineraries with a reviewable ticket basket and an explicit saved draft.</summary>
-public sealed class ScheduledTourView : UserControl, IDisposable
+public sealed partial class ScheduledTourView : UserControl, IDisposable
 {
     private readonly string _path;
     private readonly ComboBox _saved = new() { MinWidth = 220, MaxWidth = 380, DisplayMemberPath = "Name", SelectedValuePath = "Id", Margin = new Thickness(0, 0, 10, 6) };
@@ -47,6 +47,7 @@ public sealed class ScheduledTourView : UserControl, IDisposable
     public Task WhenIdle => _work;
     public ScheduledTour? Draft => _draft?.Copy();
     public event Action<string>? Log;
+    public event Action? SavedToursChanged;
 
     public ScheduledTourView(string path)
     {
@@ -58,11 +59,11 @@ public sealed class ScheduledTourView : UserControl, IDisposable
         toolbar.Children.Add(Command("Créer un scénario", () => { var draft = ReadDraft(); var name = draft.Name.Length > 105 ? draft.Name[..105] : draft.Name; LoadTour(ScheduledTourService.Duplicate(draft, name + " · scénario"), true); }));
         toolbar.Children.Add(Command("Retirer du registre", () =>
         {
-            if (_draft == null || _storeBroken) return; var draft = ReadDraft(); var updated = _store.Without(draft.Id); updated.Save(_path); _store = updated; _dirty = false; RefreshSavedChoices();
+            if (_draft == null || _storeBroken) return; var draft = ReadDraft(); var updated = _store.Without(draft.Id); updated.Save(_path); _store = updated; _dirty = false; RefreshSavedChoices(); SavedToursChanged?.Invoke();
             Status("Tournée retirée du registre. Le brouillon reste affiché et peut être enregistré à nouveau.");
         }));
         root.Children.Add(toolbar); Grid.SetRow(_tabs, 1); root.Children.Add(_tabs); _status.Margin = new Thickness(0, 6, 0, 0); Grid.SetRow(_status, 2); root.Children.Add(_status);
-        BuildBasket(); BuildSchedule(); BuildReconciliation(); BuildScenarios(); Content = root;
+        BuildBasket(); BuildSchedule(); BuildReconciliation(); BuildScenarios(); BuildTerrainServices(); Content = root;
         try { _store = ScheduledTourStore.Load(_path); RefreshSavedChoices(); } catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
         { _storeBroken = true; Status("Les tournées mémorisées ne peuvent pas être lues : " + error.Message + " Le fichier existant est conservé.", true); }
         _saved.SelectionChanged += (_, _) =>
@@ -95,21 +96,22 @@ public sealed class ScheduledTourView : UserControl, IDisposable
     private void BuildSchedule()
     {
         var page = Page(true); var header = new StackPanel(); var fields = new WrapPanel(); fields.Children.Add(Field("Nom", _name)); fields.Children.Add(Field("Date", _date)); fields.Children.Add(Field("Départ", _startTime)); fields.Children.Add(Field("Fin de journée", _endTime)); fields.Children.Add(Field("Retour · minutes", _returnMinutes)); header.Children.Add(fields);
-        var points = new StackPanel(); points.Children.Add(PointEditor("Point de départ", _startPlace, _startLabel, _startLatitude, _startLongitude)); points.Children.Add(PointEditor("Point de retour", _endPlace, _endLabel, _endLatitude, _endLongitude)); points.Children.Add(Field("Consignes générales", _notes));
+        var points = new StackPanel(); points.Children.Add(PointEditor("Point de départ", _startPlace, _startLabel, _startLatitude, _startLongitude)); points.Children.Add(PointEditor("Point de retour", _endPlace, _endLabel, _endLatitude, _endLongitude)); points.Children.Add(Field("Consignes générales", _notes)); points.Children.Add(BuildLifecycle());
         header.Children.Add(new Expander { Header = "Départ, retour et consignes", Content = points, Margin = new Thickness(0, 4, 0, 5) });
         var commands = new WrapPanel(); commands.Children.Add(Command("Calculer le planning", QueueCalculation)); commands.Children.Add(Command("↑ Monter", () => Move(-1))); commands.Children.Add(Command("↓ Descendre", () => Move(1)));
         commands.Children.Add(Command("Proximité indicative", () => { if (_context == null) return; LoadTour(ScheduledTourService.OrderByProximity(ReadDraft(), _context), true); QueueCalculation(); }));
         _calendar = Command("Exporter calendrier ICS…", () => ExportSchedule(true)); _briefing = Command("Briefing imprimable…", () => ExportSchedule(false)); commands.Children.Add(_calendar); commands.Children.Add(_briefing); header.Children.Add(commands); header.Children.Add(_scheduleSummary); page.Children.Add(header);
-        Column(_stops, "N°", "Number", 50); Column(_stops, "Lieu", "Place", 240); Column(_stops, "Tickets", "Tickets", 70); Column(_stops, "Technicien", "Technician", 170); Column(_stops, "Début", "Start", 90); Column(_stops, "Fin", "Finish", 90); Column(_stops, "Verrou", "Locked", 75); Column(_stops, "Signal", "Warning", 270);
+        Column(_stops, "N°", "Number", 50); Column(_stops, "Lieu", "Place", 240); Column(_stops, "Tickets", "Tickets", 70); Column(_stops, "Technicien", "Technician", 170); Column(_stops, "Date", "Date", 110); Column(_stops, "Début", "Start", 90); Column(_stops, "Fin", "Finish", 90); Column(_stops, "Verrou", "Locked", 75); Column(_stops, "Signal", "Warning", 270);
         Grid.SetRow(_stops, 1); page.Children.Add(_stops);
         var values = new WrapPanel(); _stopTechnician.SetBinding(ComboBox.SelectedValueProperty, new Binding(nameof(ScheduledTourStop.TechnicianKey)) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged }); _stopTechnician.SelectionChanged += (_, _) => Changed();
         values.Children.Add(Field("Technicien de l’étape", _stopTechnician));
-        foreach (var (label, property, width) in new[] { ("Intervention · min", nameof(ScheduledTourStop.DurationMinutes), 95d), ("Trajet avant · min", nameof(ScheduledTourStop.TravelMinutes), 95d), ("Au plus tôt", nameof(ScheduledTourStop.Earliest), 85d), ("Fin au plus tard", nameof(ScheduledTourStop.Latest), 85d) })
+        foreach (var (label, property, width) in new[] { ("Intervention · min", nameof(ScheduledTourStop.DurationMinutes), 95d), ("Trajet avant · min", nameof(ScheduledTourStop.TravelMinutes), 95d), ("Date · AAAA-MM-JJ", nameof(ScheduledTourStop.Date), 115d), ("Au plus tôt", nameof(ScheduledTourStop.Earliest), 85d), ("Fin au plus tard", nameof(ScheduledTourStop.Latest), 85d) })
         {
-            var input = new TextBox { Width = width, MaxLength = 5 }; input.SetBinding(TextBox.TextProperty, new Binding(property) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged, ValidatesOnExceptions = true }); input.TextChanged += (_, _) => Changed(); values.Children.Add(Field(label, input));
+            var input = new TextBox { Width = width, MaxLength = property == nameof(ScheduledTourStop.Date) ? 10 : 5 }; input.SetBinding(TextBox.TextProperty, new Binding(property) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged, ValidatesOnExceptions = true }); input.TextChanged += (_, _) => Changed(); values.Children.Add(Field(label, input));
         }
         var locked = new CheckBox { Content = "Verrouiller", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8) }; locked.SetBinding(CheckBox.IsCheckedProperty, new Binding(nameof(ScheduledTourStop.Locked)) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged }); locked.Checked += (_, _) => Changed(); locked.Unchecked += (_, _) => Changed(); values.Children.Add(locked);
         _stopEditor.Children.Add(values); var note = new TextBox { MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 64 }; note.SetBinding(TextBox.TextProperty, new Binding(nameof(ScheduledTourStop.Notes)) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged }); note.TextChanged += (_, _) => Changed(); _stopEditor.Children.Add(Field("Consignes de l’étape sélectionnée", note));
+        _stopEditor.Children.Add(BuildFieldDetails());
         Grid.SetRow(_stopEditor, 2); page.Children.Add(_stopEditor); _tabs.Items.Add(new TabItem { Header = "Planning daté", Content = page });
     }
     private void BuildReconciliation()
@@ -124,9 +126,10 @@ public sealed class ScheduledTourView : UserControl, IDisposable
     {
         var page = Page(); var header = new StackPanel(); header.Children.Add(Label("Répartir et comparer", 18, "TextBrush", FontWeights.SemiBold));
         header.Children.Add(Label("La répartition équilibre les minutes d’intervention et les trajets saisis entre les techniciens choisis. Elle conserve les étapes verrouillées. C’est une proposition de planning local ; compétences, congés et routes ne sont pas supposés.", 12, "MutedBrush")); header.Children.Add(_distributionTechnicians);
+        var span = new WrapPanel(); span.Children.Add(Field("Nombre de jours · 1 à 14", _distributionDays)); span.Children.Add(Command("Répartir selon disponibilités et compétences", AllocateAcrossDays)); header.Children.Add(span);
         var actions = new WrapPanel { Margin = new Thickness(0, 7, 0, 5) }; actions.Children.Add(Command("Répartir entre les techniciens choisis", () => { var keys = _distributionTechnicians.SelectedItems.OfType<TourTechnicianChoice>().Select(item => item.Key).ToArray(); LoadTour(ScheduledTourService.Distribute(ReadDraft(), keys), true); QueueCalculation(); }));
         actions.Children.Add(_comparison); actions.Children.Add(Command("Comparer au scénario enregistré", CompareScenario)); header.Children.Add(actions); header.Children.Add(_compareSummary); page.Children.Add(header);
-        Column(_loads, "Technicien", "Technician", 190); Column(_loads, "Étapes", "Stops", 75); Column(_loads, "Tickets", "Tickets", 75); Column(_loads, "Intervention · min", "InterventionMinutes", 140); Column(_loads, "Trajets · min", "TravelMinutes", 110); Column(_loads, "Attente · min", "WaitMinutes", 110); Column(_loads, "Retour estimé", "Finish", 165, "dd/MM HH:mm"); Column(_loads, "Dépassement", "OutsideDay", 115);
+        Column(_loads, "Date", "Date", 110); Column(_loads, "Technicien", "Technician", 190); Column(_loads, "Étapes", "Stops", 75); Column(_loads, "Tickets", "Tickets", 75); Column(_loads, "Intervention · min", "InterventionMinutes", 140); Column(_loads, "Trajets · min", "TravelMinutes", 110); Column(_loads, "Attente · min", "WaitMinutes", 110); Column(_loads, "Retour estimé", "Finish", 165, "dd/MM HH:mm"); Column(_loads, "Dépassement", "OutsideDay", 115);
         Grid.SetRow(_loads, 1); page.Children.Add(_loads); _tabs.Items.Add(new TabItem { Header = "Répartition et scénarios", Content = page });
     }
 
@@ -177,14 +180,15 @@ public sealed class ScheduledTourView : UserControl, IDisposable
         SaveBeforeSwitch(); var date = DateOnly.FromDateTime(_date.SelectedDate ?? DateTime.Today); var name = string.IsNullOrWhiteSpace(_name.Text) ? "Tournée du " + date.ToString("dd/MM/yyyy") : _name.Text.Trim();
         LoadTour(ScheduledTourService.Create(_context, selected, name, date), true); _tabs.SelectedIndex = 1; QueueCalculation();
     }
-    private void LoadTour(ScheduledTour tour, bool changed = false)
+    private void LoadTour(ScheduledTour tour, bool changed = false, bool preserveState = false)
     {
+        if (changed && !preserveState) tour = ScheduledTourService.PrepareEdit(tour, "Modification du planning après validation");
         tour.Validate(); _loading = true;
         try
         {
             _draft = tour.Copy(); _schedule = null; _name.Text = tour.Name; _date.SelectedDate = DateTime.ParseExact(tour.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture); _startTime.Text = tour.StartTime; _endTime.Text = tour.EndTime; _returnMinutes.Text = tour.ReturnMinutes.ToString(CultureInfo.InvariantCulture);
             _startLabel.Text = tour.Start.Label; _startLatitude.Text = Number(tour.Start.Latitude); _startLongitude.Text = Number(tour.Start.Longitude);
-            _endLabel.Text = tour.End.Label; _endLatitude.Text = Number(tour.End.Latitude); _endLongitude.Text = Number(tour.End.Longitude); _notes.Text = tour.Notes;
+            _endLabel.Text = tour.End.Label; _endLatitude.Text = Number(tour.End.Latitude); _endLongitude.Text = Number(tour.End.Longitude); _notes.Text = tour.Notes; _stateLabel.Text = "État : " + ScheduledTourService.StateLabel(tour.State); _stateHistory.ItemsSource = tour.StateHistory; _weatherGrid.ItemsSource = tour.Weather;
             _saved.SelectedValue = tour.Id; PopulateStops(); _reconciliation.ItemsSource = null; _loads.ItemsSource = null; _dirty = changed;
         }
         finally { _loading = false; }
@@ -206,7 +210,7 @@ public sealed class ScheduledTourView : UserControl, IDisposable
         if (_storeBroken) throw new InvalidDataException("Le registre existant est illisible ; il est conservé. Corrigez ce fichier avant d’enregistrer une nouvelle tournée.");
         var draft = ReadDraft(); var store = _store.With(draft); store.Save(_path); _store = store; _draft = draft; _dirty = false;
         var loading = _loading; _loading = true; try { PopulateStops(); } finally { _loading = loading; }
-        RefreshSavedChoices(); Status("Tournée enregistrée localement avec ses tickets, lieux, horaires et consignes."); Log?.Invoke($"TOURNÉE DATÉE · {draft.Tickets.Count} tickets et {draft.Stops.Count} étapes mémorisés localement.");
+        RefreshSavedChoices(); SavedToursChanged?.Invoke(); Status("Tournée enregistrée localement avec ses tickets, lieux, horaires et consignes."); Log?.Invoke($"TOURNÉE DATÉE · {draft.Tickets.Count} tickets et {draft.Stops.Count} étapes mémorisés localement.");
     }
     private void RefreshSavedChoices()
     {
@@ -221,7 +225,7 @@ public sealed class ScheduledTourView : UserControl, IDisposable
     }
     private async Task CalculateAsync(ScheduledTour draft, TourPlanningContext context, long generation, CancellationToken ct)
     {
-        try { var result = await Task.Run(() => ScheduledTourService.Calculate(draft, context, ct), ct); if (Current(generation, ct)) { _draft = draft; PublishSchedule(result); } }
+        try { var result = await Task.Run(() => { RefreshDeclaredAvailability(draft); return ScheduledTourService.Calculate(draft, context, ct); }, ct); if (Current(generation, ct)) { _draft = draft; PublishSchedule(result); } }
         catch (OperationCanceledException) { }
         catch (Exception error) { if (Current(generation, ct)) Status("Le planning ne peut pas être calculé : " + error.Message, true); }
         finally { FinishOperation(generation); }
@@ -242,16 +246,18 @@ public sealed class ScheduledTourView : UserControl, IDisposable
             var visit = _schedule?.Visits.FirstOrDefault(item => item.Stop.Id == stop.Id);
             var place = _context == null ? stop.PlaceKey : ScheduledTourService.PlaceName(_context, stop);
             var technician = _context?.Technicians.FirstOrDefault(item => item.Key == stop.TechnicianKey)?.Name ?? (stop.TechnicianKey.Length > 0 ? stop.TechnicianKey : "À attribuer");
-            return new StopDisplay(index + 1, stop, place, technician, visit?.Start.ToString("HH:mm") ?? "—", visit?.Finish.ToString("HH:mm") ?? "—", visit?.Warning ?? "À calculer");
+            return new StopDisplay(index + 1, stop, place, technician, visit?.Start.ToString("HH:mm") ?? "—", visit?.Finish.ToString("HH:mm") ?? "—", visit?.Warning ?? "À calculer", stop.Date.Length == 0 ? _draft.Date : stop.Date);
         }).ToArray(); _stops.ItemsSource = rows; _stops.SelectedItem = rows?.FirstOrDefault(row => row.Stop.Id == id) ?? rows?.FirstOrDefault();
     }
     private void Move(int direction) { if (_stops.SelectedItem is StopDisplay row) { LoadTour(ScheduledTourService.Move(ReadDraft(), row.Stop.Id, direction), true); QueueCalculation(); } }
     private void CompareScenario()
     {
         if (_context == null || _comparison.SelectedItem is not ScheduledTour comparison) throw new InvalidDataException("Choisissez un scénario enregistré à comparer.");
-        var current = ScheduledTourService.Calculate(ReadDraft(), _context); var other = ScheduledTourService.Calculate(comparison, _context);
-        string Summary(TourSchedule schedule) => $"{schedule.Tour.Name} : {schedule.Tour.Tickets.Count} tickets, {schedule.Visits.Count} étapes, {schedule.Technicians.Sum(tech => tech.InterventionMinutes)} min d’intervention, {schedule.Technicians.Sum(tech => tech.TravelMinutes)} min de trajets saisis, {schedule.Visits.Count(visit => visit.Late)} fenêtres dépassées.";
-        _compareSummary.Text = Summary(current) + "\n" + Summary(other) + "\nComparez aussi les périmètres : des paniers différents ne mesurent pas le même travail."; _loads.ItemsSource = current.Technicians;
+        var draft = ReadDraft(); var current = ScheduledTourService.CompareFacts(draft, _context); var other = ScheduledTourService.CompareFacts(comparison, _context);
+        string Summary(TourScenarioComparison facts) => $"{facts.Name} : {facts.Tickets} tickets · {facts.Stops} étapes · {facts.InterventionMinutes} min d’intervention · {facts.TravelMinutes} min de trajet · {facts.WaitingMinutes} min d’attente · {facts.MissedWindows} fenêtres dépassées · {facts.ClosedSites} sites fermés · {facts.MissedDueDates} étapes après échéance · {facts.UnknownDueDates} tickets sans échéance · routes {(facts.RoadKm.HasValue ? facts.RoadKm.Value.ToString("N1") + " km" : "incomplètes ou non calculées")}.";
+        var sameBasket = draft.SourceKey == comparison.SourceKey && draft.Tickets.Select(ticket => ticket.TicketId).ToHashSet(StringComparer.Ordinal).SetEquals(comparison.Tickets.Select(ticket => ticket.TicketId));
+        _compareSummary.Text = Summary(current) + "\n" + Summary(other) + "\n" + (sameBasket ? "Même panier : arbitrez les échéances, les fenêtres et les kilomètres réellement disponibles." : "Paniers différents : ces volumes ne mesurent pas le même travail.");
+        _loads.ItemsSource = ScheduledTourService.Calculate(draft, _context).Technicians;
     }
     private void ExportSchedule(bool calendar)
     {
@@ -267,7 +273,9 @@ public sealed class ScheduledTourView : UserControl, IDisposable
     }
     private void Changed()
     {
-        if (_loading || _draft == null) return; _dirty = true; _schedule = null; _scheduleSummary.Text = "Modifications en attente de calcul. Les exports seront disponibles après recalcul du planning."; UpdateEnabled();
+        if (_loading || _draft == null) return;
+        if (_draft.State != "draft") { _draft.StateHistory.Add(new(_draft.State, "draft", DateTimeOffset.Now, "Modification du planning après validation")); _draft.StateHistory = _draft.StateHistory.TakeLast(100).ToList(); _draft.State = "draft"; _stateLabel.Text = "État : Brouillon"; }
+        _dirty = true; _schedule = null; _scheduleSummary.Text = "Modifications en attente de calcul. Les exports seront disponibles après recalcul du planning."; UpdateEnabled();
     }
     public void SetBusy(bool busy) { _externalBusy = busy; UpdateEnabled(); }
     public void ShowEmpty()
@@ -287,6 +295,7 @@ public sealed class ScheduledTourView : UserControl, IDisposable
         if (_save != null) _save.IsEnabled = enabled && _draft != null && !_storeBroken;
         if (_calendar != null) _calendar.IsEnabled = enabled && _schedule?.CanExportCalendar == true;
         if (_briefing != null) _briefing.IsEnabled = enabled && _schedule != null;
+        _allowCoordinates.IsEnabled = enabled; _routingEndpoint.IsReadOnly = _weatherEndpoint.IsReadOnly = _routingProfile.IsReadOnly = !enabled; _distributionDays.IsReadOnly = !enabled; _stateReason.IsReadOnly = !enabled; _terrainCancel.IsEnabled = _working && !_disposed;
     }
     private void Status(string text, bool warning = false) { _status.Text = text; _status.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "MutedBrush"); }
     private void Guard(Action action) { try { action(); } catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException) { Status(error.Message, true); } }
@@ -302,7 +311,7 @@ public sealed class ScheduledTourView : UserControl, IDisposable
     private static bool HasErrors(DependencyObject element) { if (Validation.GetHasError(element)) return true; for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) if (HasErrors(VisualTreeHelper.GetChild(element, i))) return true; return false; }
     public void Dispose() { if (_disposed) return; _disposed = true; ++_generation; _operation?.Cancel(); _operation?.Dispose(); }
     private sealed record PlaceChoice(string Key, string Label);
-    private sealed record StopDisplay(int Number, ScheduledTourStop Stop, string Place, string Technician, string Start, string Finish, string Warning) { public int Tickets => Stop.TicketIds.Count; public string Locked => Stop.Locked ? "Oui" : "Non"; }
+    private sealed record StopDisplay(int Number, ScheduledTourStop Stop, string Place, string Technician, string Start, string Finish, string Warning, string Date) { public int Tickets => Stop.TicketIds.Count; public string Locked => Stop.Locked ? "Oui" : "Non"; }
     private sealed class BasketRow : INotifyPropertyChanged
     {
         private bool _selected; public bool Selected { get => _selected; set { if (_selected == value) return; _selected = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Selected))); } }

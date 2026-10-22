@@ -9,19 +9,21 @@ public sealed class DashboardLayoutSettings
     public string ActiveBoardId { get; set; } = "";
     public List<DashboardBoardSettings> Boards { get; set; } = new();
     public List<string> CatalogFavorites { get; set; } = new();
+    public List<string> CatalogRecent { get; set; } = new();
     public List<DashboardFilterPreset> FilterPresets { get; set; } = new();
 
     public DashboardLayoutSettings Copy() => new()
     {
         Version = Version, ActiveBoardId = ActiveBoardId,
         Boards = Boards?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
-        CatalogFavorites = new(CatalogFavorites ?? new()),
+        CatalogFavorites = new(CatalogFavorites ?? new()), CatalogRecent = new(CatalogRecent ?? new()),
         FilterPresets = FilterPresets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new()
     };
 
     public void Normalize()
     {
         Version = 1;
+        CatalogRecent = (CatalogRecent ?? new()).Where(x => x is not null && x.Length <= 240).Distinct(StringComparer.Ordinal).Take(30).ToList();
         CatalogFavorites = (CatalogFavorites ?? new()).Where(x => x is not null && x.Length <= 240).Distinct(StringComparer.Ordinal).Take(512).ToList();
         FilterPresets = (FilterPresets ?? new()).Where(x => x is not null).Take(30).ToList();
         foreach (var preset in FilterPresets) preset.Normalize();
@@ -41,7 +43,7 @@ public sealed class DashboardLayoutSettings
     {
         if (Version != 1 || Boards is null || Boards.Count is < 1 or > 12)
             throw new InvalidDataException("La disposition doit contenir de 1 à 12 tableaux de bord, au format 1.");
-        if (CatalogFavorites is null || CatalogFavorites.Count > 512 || CatalogFavorites.Any(x => x is null || x.Length > 240)
+        if (CatalogRecent is null || CatalogRecent.Count > 30 || CatalogRecent.Any(x => x is null || x.Length > 240) || CatalogFavorites is null || CatalogFavorites.Count > 512 || CatalogFavorites.Any(x => x is null || x.Length > 240)
             || FilterPresets is null || FilterPresets.Count > 30)
             throw new InvalidDataException("Les favoris et contextes du dashboard dépassent les limites autorisées.");
         foreach (var preset in FilterPresets) preset.Validate();
@@ -202,7 +204,7 @@ public sealed class DashboardBoardSettings
 
 public sealed class DashboardWidgetSettings
 {
-    public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note", "matrix", "histogram", "boxplot", "scatter", "history" };
+    public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note", "matrix", "histogram", "boxplot", "scatter", "history", "map" };
     public static readonly string[] Styles = { "surface", "outline", "accent", "minimal" };
     public static readonly string[] Accents = { "blue", "teal", "green", "orange", "red", "purple", "slate" };
     public static readonly string[] Presentations = { "bars", "list", "compact", "donut", "gauge", "pareto", "columns", "heatmap", "stacked" };
@@ -213,6 +215,11 @@ public sealed class DashboardWidgetSettings
     public int Span { get; set; } = 4;
     public int Height { get; set; } = 320;
     public bool AutoHeight { get; set; } = true;
+    public bool StartNewRow { get; set; }
+    public string StackedMode { get; set; } = "percent";
+    public double ParetoThresholdPercent { get; set; } = 80;
+    public bool ShowMiniHistory { get; set; } = true;
+    public int HistoryPeriodDays { get; set; } = 7;
     public string Style { get; set; } = "surface";
     public string Accent { get; set; } = "blue";
     public string Presentation { get; set; } = "bars";
@@ -237,6 +244,8 @@ public sealed class DashboardWidgetSettings
     }
     public void ValidateThresholds()
     {
+        if (StackedMode is not ("percent" or "volume") || !double.IsFinite(ParetoThresholdPercent) || ParetoThresholdPercent is <= 0 or > 100 || HistoryPeriodDays is < 1 or > 3650)
+            throw new InvalidDataException("Empilage volume/pourcentage, seuil de Pareto ]0 ; 100] et période de 1 à 3 650 jours sont requis.");
         if (!ValidNumber(TargetValue, positive: true) || !ValidNumber(WarningValue) || !ValidNumber(CriticalValue))
             throw new InvalidDataException("Les objectifs et seuils doivent être des nombres finis entre 0 et 1 000 000 000 000 ; l’objectif doit être strictement positif.");
         if (WarningValue.HasValue && CriticalValue.HasValue && (LowerIsBetter
@@ -255,6 +264,9 @@ public sealed class DashboardWidgetSettings
         Section = (Section ?? "")[..Math.Min(Section?.Length ?? 0, 80)];
         Filters ??= new();
         HistogramBreaks = (HistogramBreaks ?? new()).Where(double.IsFinite).Where(x => Math.Abs(x) <= 1e9).Distinct().Order().Take(30).ToList();
+        if (StackedMode is not ("percent" or "volume")) StackedMode = "percent";
+        if (!double.IsFinite(ParetoThresholdPercent) || ParetoThresholdPercent is <= 0 or > 100) ParetoThresholdPercent = 80;
+        HistoryPeriodDays = Math.Clamp(HistoryPeriodDays, 1, 3650);
         Span = Math.Clamp(Span, 3, 12); Height = Math.Clamp(Height, 160, 960); TopCount = Math.Clamp(TopCount, 3, 30);
         if (!Styles.Contains(Style)) Style = "surface";
         if (!Accents.Contains(Accent)) Accent = "blue";
@@ -319,6 +331,7 @@ public static class DashboardLayoutEngine
         var columns = new double[12]; var result = new List<DashboardPlacement>();
         foreach (var widget in widgets.Where(x => !x.Hidden))
         {
+            if (widget.StartNewRow) Array.Fill(columns, columns.Max());
             var span = Math.Clamp(EffectiveSpan(widget.Span, width), 3, 12);
             var bestColumn = 0; var bestTop = double.MaxValue;
             for (var col = 0; col <= 12 - span; col++)
@@ -332,6 +345,25 @@ public static class DashboardLayoutEngine
             for (var col = bestColumn; col < bestColumn + span; col++) columns[col] = bestTop + height + gap;
         }
         return result;
+    }
+
+
+    public static void AlignGroup(DashboardBoardSettings board, IEnumerable<string> ids, int span, int height, string section)
+    {
+        var selected = ids.ToHashSet(StringComparer.Ordinal);
+        var widgets = board.Widgets.Where(x => selected.Contains(x.Id) && !x.Locked && !x.Hidden).ToArray();
+        if (widgets.Length == 0) return;
+        var index = board.Widgets.IndexOf(widgets[0]);
+        foreach (var widget in widgets) board.Widgets.Remove(widget);
+        board.Widgets.InsertRange(index, widgets);
+        var columnsPerRow = Math.Max(1, 12 / Math.Clamp(span, 3, 12));
+        for (var i = 0; i < widgets.Length; i++)
+        {
+            var widget = widgets[i]; widget.Span = Math.Clamp(span, 3, 12); widget.Height = Math.Clamp(height, 160, 960);
+            widget.AutoHeight = false; widget.StartNewRow = i % columnsPerRow == 0; widget.Section = section;
+        }
+        var following = board.Widgets.Skip(index + widgets.Length).FirstOrDefault(x => !x.Hidden && !x.Locked);
+        if (following is not null && following.Section == section) following.StartNewRow = true;
     }
 
     public static bool Move(DashboardBoardSettings board, string id, string? beforeId)

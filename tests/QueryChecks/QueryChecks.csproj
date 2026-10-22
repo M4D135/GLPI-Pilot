@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/GlpiPilot/Core/QuerySettings.cs" Link="QuerySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/QueryPackService.cs" Link="QueryPackService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/QueryService.cs" Link="QueryService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="CitySettings.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="CityDetectionService.cs" />

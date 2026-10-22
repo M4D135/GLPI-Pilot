@@ -40,7 +40,7 @@ public sealed partial class DashboardView
             "weather" => WeatherContent(widget), "timeline" => TimelineContent(widget),
             "attention" => AttentionContent(widget), "quality" => QualityContent(widget),
             "matrix" => MatrixContent(widget), "histogram" => HistogramContent(widget), "boxplot" => BoxContent(widget),
-            "scatter" => ScatterContent(widget), "history" => HistoryContent(widget),
+            "scatter" => ScatterContent(widget), "history" => HistoryContent(widget), "map" => MapContent(widget),
             _ => Text("Type de widget non disponible.", 13, "MutedBrush")
         };
     }
@@ -49,7 +49,7 @@ public sealed partial class DashboardView
     {
         var metric = _data!.Metric(widget.SourceKey);
         if (metric is null) return Missing("Cet indicateur n’existe pas dans le relevé. Choisissez une autre source du widget.");
-        if (widget.Presentation == "gauge") return GaugeContent(widget, metric);
+        if (widget.Presentation == "gauge") { var gauge = new StackPanel(); gauge.Children.Add(GaugeContent(widget, metric)); if (widget.ShowMiniHistory) gauge.Children.Add(MiniHistory(widget)); return gauge; }
         var panel = new StackPanel();
         var number = metric.Value.HasValue ? metric.Value.Value.ToString(metric.Unit is "h" or "j" or "%" ? "N1" : "N0", CultureInfo.CurrentCulture) : "—";
         var suffix = metric.Value.HasValue && metric.Unit is "h" or "j" or "%" ? " " + metric.Unit : "";
@@ -61,6 +61,7 @@ public sealed partial class DashboardView
         var action = Command(panel, () => ActivateRows(metric.Rows, WidgetTitle(widget), metricKey: metric.Key), metric.Value.HasValue && (metric.Rows.Length > 0 || metric.Value == 0));
         action.Background = Brushes.Transparent; action.BorderThickness = new Thickness(0); action.Padding = new Thickness(0); action.Margin = new Thickness(0); action.HorizontalContentAlignment = HorizontalAlignment.Stretch; action.VerticalContentAlignment = VerticalAlignment.Top; action.ToolTip = metric.Explanation;
         var content = new StackPanel(); content.Children.Add(action);
+        if (widget.ShowMiniHistory) content.Children.Add(MiniHistory(widget));
         if (widget.ShowDescription && widget.Presentation != "compact") content.Children.Add(Details("Comprendre cet indicateur", Text(metric.Explanation, 11, "MutedBrush")));
         return content;
     }

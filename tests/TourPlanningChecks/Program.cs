@@ -497,6 +497,7 @@ Test("Scheduled cancellation is honored before creating exporting or reconciling
     Throws<OperationCanceledException>(() => ScheduledTourService.OrderByProximity(tour, context, cts.Token));
 });
 
+TerrainChecks.Register(Test);
 var passed = 0;
 try
 {

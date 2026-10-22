@@ -137,6 +137,31 @@ Test("Conservative actor parsing preserves accents, commas and slashes", () =>
     Check(names.Count == 3 && names[0] == "Élodie" && names[1] == "Elodie" && names[2] == "Dupont, Léa / Support");
     Check(names.SequenceEqual(DashboardService.SplitTechnicianNames(" Élodie ; E\u0301LODIE\nElodie | Dupont, Léa / Support; Aucun")));
 });
+Test("Technician identity and status use the source dictionaries and declared separators", () =>
+{
+    var data = Sample(); data.Rows[1][7] = "Équipe A"; data.Rows[1][2] = "WAIT-MAPPED";
+    var settings = new DashboardSettings { MultiValueSeparators = "/" };
+    settings.ValueDictionaries["assignee"] = new() { ["Équipe A"] = "Alice / Bob" }; settings.ValueDictionaries["status"] = new() { ["WAIT-MAPPED"] = "En attente" };
+    var roster = TechnicianDashboardService.Detect(data, settings);
+    var alice = roster.Technicians.Single(item => item.Key == "ALICE"); var bob = roster.Technicians.Single(item => item.Key == "BOB");
+    Check(alice.Rows.SequenceEqual(new[] { 0, 1, 3 }) && bob.Rows.SequenceEqual(new[] { 1, 2 }) && alice.ActiveCount == 2 && bob.ActiveCount == 1);
+    var personal = TechnicianDashboardService.CalculateForTechnician(data, settings, "Alice", clock);
+    Check(personal.Metric("active")!.Value == 2 && personal.Metric("pending")!.Value == 1 && personal.Metric("total")!.Rows.SequenceEqual(alice.Rows));
+    Check(data.Rows[1][7] == "Équipe A" && data.Rows[1][2] == "WAIT-MAPPED", "Interpretation modified source cells.");
+});
+Test("Workload samples and calendar means use the same source formats as the dashboard", () =>
+{
+    var data = Sample(); data.Rows = new() { data.Rows[0] }; data.ExpectedTotal = 1;
+    data.Rows[0][3] = "P1"; data.Rows[0][4] = "OPENED"; data.Rows[0][5] = "CHECKED"; data.Rows[0][6] = "DEADLINE";
+    var settings = new DashboardSettings { DateCulture = "en-US", SourceTimeZone = "UTC" };
+    settings.ValueDictionaries["priority"] = new() { ["P1"] = "Haute" };
+    settings.ValueDictionaries["created"] = new() { ["OPENED"] = "10/20/2026 10:00" };
+    settings.ValueDictionaries["updated"] = new() { ["CHECKED"] = "10/21/2026 09:00" };
+    settings.ValueDictionaries["due"] = new() { ["DEADLINE"] = "10/21/2026 11:00" };
+    var entry = Entry(Calculate(data, settings), "Alice");
+    Check(entry.HighCount == 1 && entry.Measure("high").Sample == 1 && entry.Measure("soon").Count == 1 && entry.Measure("overdue").Count == 0);
+    Close(entry.MeanAgeDays, 1); Close(entry.MeanInactivityDays, 1d / 24);
+});
 Test("Duplicate ticket IDs stay as occurrences without inflating unique-ticket claims", () =>
 {
     var data = Sample(); data.Rows[1][0] = data.Rows[0][0];

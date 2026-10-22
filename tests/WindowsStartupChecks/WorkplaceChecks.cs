@@ -148,6 +148,7 @@ internal static partial class Program
         Pass("Dispatch workspace renders coverage, before/after estimates and local handover with explained skill/territory recommendations");
         technicians.RestoreWorkspace("team");
         workplace.ShowReader();
+        await ExerciseWorkplaceCompletionAsync(tabs);
     }
 
     private static T WorkplaceField<T>(object owner, string name) where T : class =>

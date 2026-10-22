@@ -73,6 +73,8 @@ public static class TicketReadingService
         return result;
     }
 
+    public static string RowFingerprint(IEnumerable<string> row) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(row)))).ToLowerInvariant();
+
     public static string SectionKey(TicketDetailSection section) =>
         string.Join(" · ", new[] { section.TabKey, section.Name, section.Kind }.Where(value => !string.IsNullOrWhiteSpace(value)));
 
@@ -98,6 +100,7 @@ public static class TicketReadingService
         foreach (var field in detail.Sections.Where(section => section.Kind == "fields").SelectMany(section => section.Data.Rows)
             .Where(row => row.Length >= 2 && (Contains(row[0], "attente") || Contains(row[0], "validation") || Contains(row[0], "échéance"))).Take(20))
             result.Add(new[] { field[0] + " · champ lu", field[1] });
+        result.AddRange(TicketInsightService.Summary(detail));
         return result;
     }
 

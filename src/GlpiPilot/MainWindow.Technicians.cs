@@ -193,6 +193,7 @@ public partial class MainWindow
         var settings = _technicianRosterSettings!.Copy();
         var cities = CitySourceIsCurrent() ? _cityEnrichment : null;
         var queries = _settings.Queries.Copy();
+        var geography = IsHistoricalResult ? _historicalDocument!.Cities.Copy() : _settings.Cities.Copy();
         var referenceTime = IsHistoricalResult ? source.ExtractedAt : DateTimeOffset.Now;
         _selectedTechnicianKey = TechnicianDashboardService.IdentityKey(key);
         var selectedKey = _selectedTechnicianKey;
@@ -205,9 +206,11 @@ public partial class MainWindow
         {
             var snapshot = await Task.Run(() =>
             {
+                var populations = new AnalyticsPopulationStore().LoadOrEmpty(out var populationWarning);
                 var calculated = TechnicianDashboardService.CalculateForKnownTechnician(source, settings, roster, selectedKey, referenceTime, operation.Token);
-                AppendLocalDashboardProbes(calculated, source, settings, cities, queries, operation.Token);
-                AttachDashboardScope(calculated, source, settings, cities, queries);
+                if (populationWarning.Length > 0) calculated.Warnings.Add(populationWarning);
+                AppendLocalDashboardProbes(calculated, source, settings, cities, queries, operation.Token, geography, populations);
+                AttachDashboardScope(calculated, source, settings, cities, queries, geography, populations);
                 return calculated;
             }, operation.Token);
             if (operation.IsCancellationRequested || _closing || generation != _technicianGeneration || !ReferenceEquals(source, _result) || _selectedTechnicianKey != selectedKey) return;

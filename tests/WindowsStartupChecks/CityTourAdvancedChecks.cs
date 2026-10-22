@@ -18,8 +18,8 @@ internal static partial class Program
         configured.Cities[0].Region = "Région synthétique"; configured.Cities[0].Sector = "Secteur test";
         configured.Cities[0].Rules.Add(new() { Term = "PAR", RequiredTerms = new() { "Agence" }, Priority = 15 });
         configured.Sites.Add(new() { CityId = configured.Cities[0].Id, Name = "Bâtiment Nord", Latitude = 48.8, Longitude = 2.4 });
-        int? correctionRow = null; string? correctionCity = null;
-        void Correct(int row, string city, string site) { correctionRow = row; correctionCity = city; }
+        int? correctionRow = null; string? correctionCity = null; string? correctionReason = null;
+        void Correct(int row, string city, string site, string reason) { correctionRow = row; correctionCity = city; correctionReason = reason; }
         editor.LocalCorrectionRequested += Correct;
         try
         {
@@ -37,8 +37,9 @@ internal static partial class Program
             await SelectSectionAsync(editor, "Lieux à vérifier"); await FlushLayoutAsync();
             var queue = CityTourField<DataGrid>(editor, "_unlocatedGrid"); Require(queue.Items.Count == 1, "Unmatched ticket did not enter the city review queue."); queue.SelectedIndex = 0;
             CityTourField<ComboBox>(editor, "_correctionCity").SelectedValue = configured.Cities[0].Id;
+            CityTourField<TextBox>(editor, "_correctionReason").Text = "Lieu confirmé dans la fiche de test";
             Click(editor, "Corriger localement");
-            Require(correctionRow == 0 && correctionCity == configured.Cities[0].Id, "A local city correction did not retain the exact original row and canonical city.");
+            Require(correctionRow == 0 && correctionCity == configured.Cities[0].Id && correctionReason == "Lieu confirmé dans la fiche de test", "A local city correction did not retain the exact original row, canonical city and declared reason.");
             Click(editor, "Revenir à la détection"); Require(correctionCity == "", "Removing a manual correction did not emit the explicit reset.");
             await SelectSectionAsync(editor, "Sites"); await FlushLayoutAsync();
             Require(CityTourField<DataGrid>(editor, "_sitesGrid").Items.Count == 1, "The real site reference did not render.");

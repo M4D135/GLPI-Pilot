@@ -16,9 +16,11 @@ public sealed partial class BrowserService : IAsyncDisposable
     private BrowserProfileLease? _profileLease;
     private IBrowserContext? _context;
     private readonly string _bridge;
+    private readonly PaginationCheckpointStore _checkpoints;
     private DateTimeOffset _openedAt;
     private string _portalOrigin = "";
     private string _channel = "";
+    private string _profileInstallation = "";
     private TaskCompletionSource<IDownload>? _downloadWaiter;
     private IPage? _downloadPage;
     private IPage? _activePage;
@@ -32,8 +34,9 @@ public sealed partial class BrowserService : IAsyncDisposable
     public IPage? ActivePage => _activePage is { IsClosed: false } && !IsTicketDetailPage(_activePage) ? _activePage : null;
     public long PagesRevision => Interlocked.Read(ref _pagesRevision);
 
-    public BrowserService(string? bridge = null)
+    public BrowserService(string? bridge = null, PaginationCheckpointStore? checkpoints = null)
     {
+        _checkpoints = checkpoints ?? new PaginationCheckpointStore();
         if (bridge != null) { _bridge = bridge; return; }
         var assembly = Assembly.GetExecutingAssembly();
         var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith("BrowserScripts.bridge.js", StringComparison.Ordinal));
@@ -47,8 +50,12 @@ public sealed partial class BrowserService : IAsyncDisposable
     public async Task OpenAsync(AppSettings settings, CancellationToken cancellationToken, bool background = true)
     {
         var uri = TargetUrlPolicy.Validate(settings.PortalUrl);
-        if (_context != null && _channel != settings.BrowserChannel)
-            throw new InvalidOperationException("Ferme d’abord la fenêtre du navigateur piloté avant de changer de navigateur.");
+        var installation = ObjectIdentity.InstallationKey(settings.PortalUrl);
+        if (_context != null && (_channel != settings.BrowserChannel || _profileInstallation != installation))
+        {
+            Log?.Invoke("SOURCE · changement d’installation : fermeture du contexte précédent et ouverture du profil isolé correspondant.");
+            await DisposeAsync();
+        }
         SetBackgroundMode(background);
 
         if (_context == null)
@@ -56,13 +63,13 @@ public sealed partial class BrowserService : IAsyncDisposable
             var packagedDriver = Path.Combine(AppContext.BaseDirectory, "wad");
             if (Directory.Exists(Path.Combine(packagedDriver, ".playwright")))
                 Environment.SetEnvironmentVariable("PLAYWRIGHT_DRIVER_SEARCH_PATH", packagedDriver);
-            _profileLease = BrowserProfileLease.Acquire(AppPaths.Profile(settings.BrowserChannel));
+            _profileLease = BrowserProfileLease.Acquire(AppPaths.Profile(settings.BrowserChannel, settings.PortalUrl));
             Log?.Invoke(background ? "Ouverture du navigateur en arrière-plan avec le profil réservé à GLPI Pilot." : "Ouverture du navigateur avec le profil réservé à GLPI Pilot.");
             if (background) BackgroundLaunchStateChanged?.Invoke(true);
             try
             {
                 _playwright ??= await Playwright.CreateAsync();
-                _context = await _playwright.Chromium.LaunchPersistentContextAsync(AppPaths.Profile(settings.BrowserChannel), new()
+                _context = await _playwright.Chromium.LaunchPersistentContextAsync(AppPaths.Profile(settings.BrowserChannel, settings.PortalUrl), new()
                 {
                     Channel = settings.BrowserChannel == "chrome" ? "chrome" : "msedge",
                     Headless = false,
@@ -73,6 +80,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                     Args = background ? new[] { "--window-size=1280,900" } : new[] { "--start-maximized" }
                 });
                 _channel = settings.BrowserChannel;
+                _profileInstallation = installation;
                 _presentationWarningLogged = false;
                 ConfigureContext(_context);
                 // Keep the initial browser window open while the launch guard is held.
@@ -159,6 +167,7 @@ public sealed partial class BrowserService : IAsyncDisposable
         _portalOrigin = Origin(portalUrl);
         _targetUrl = portalUrl;
         _channel = "msedge";
+        _profileInstallation = ObjectIdentity.InstallationKey(portalUrl);
         _openedAt = DateTimeOffset.UtcNow;
         ConfigureContext(context);
     }
@@ -348,25 +357,50 @@ public sealed partial class BrowserService : IAsyncDisposable
         var reachedEnd = false;
         var interrupted = false;
         var customNext = settings.SelectorOrigin == table.FrameOrigin ? settings.NextSelector : "";
+        var store = _checkpoints;
+        var startedAt = DateTimeOffset.Now;
+        string firstSignature = "";
         try
         {
             var originalScope = await CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
-            for (var pageNo = 1; pageNo <= (followingPages ? settings.MaxPages : 1); pageNo++)
+            var (_, first, _) = await ReadAsync(table, customNext, ct);
+            firstSignature = first.Signature;
+            var saved = followingPages && settings.ResumePagination && originalScope.Known ? store.Load(settings) : null;
+            if (saved != null && saved.ScopeFingerprint == originalScope.Fingerprint && saved.FirstSignature == first.Signature
+                && saved.Data.Headers.SequenceEqual(first.Headers) && saved.Data.ExpectedTotal == first.ExpectedTotal)
+            {
+                var firstUrl = table.Page!.Url;
+                try
+                {
+                    await NavigateTargetAsync(table.Page, saved.LastUrl, ct);
+                    await ReplaceRecoveredTableAsync(table, settings, ct);
+                    var (_, last, _) = await ReadAsync(table, customNext, ct);
+                    var restoredScope = await CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
+                    if (last.Signature != saved.LastSignature || restoredScope.Fingerprint != originalScope.Fingerprint)
+                        throw new InvalidOperationException("Le point de reprise ne correspond plus à la dernière page conservée.");
+                    result = saved.Data; keys = saved.Keys; signatures = new(saved.Signatures, StringComparer.Ordinal); startedAt = saved.StartedAt;
+                    result.Provenance.Resumed = true; result.Provenance.ResumeStartedAt = saved.StartedAt;
+                    Log?.Invoke($"REPRISE · {result.Pages} pages et {result.Rows.Count} lignes conservées ; première et dernière pages, colonnes, total et périmètre recontrôlés.");
+                    reachedEnd = !await AdvancePaginationAsync(table, last, settings, originalScope, ct);
+                }
+                catch (Exception error) when (error is PlaywrightException or InvalidOperationException or TimeoutException)
+                {
+                    Log?.Invoke("REPRISE · point devenu incompatible ; nouvelle collecte depuis la première page.");
+                    await NavigateTargetAsync(table.Page!, firstUrl, ct); await ReplaceRecoveredTableAsync(table, settings, ct);
+                    result = new() { Title = table.Label, SourceUrl = AppPaths.SafeUrl(firstUrl), Scope = "À partir de la première page", ExpectedTotal = settings.ExpectedTotal, ExtractedAt = DateTimeOffset.Now };
+                    keys.Clear(); signatures.Clear(); startedAt = DateTimeOffset.Now; store.Delete(settings.PortalUrl);
+                }
+            }
+            for (var pageNo = result.Pages + 1; !reachedEnd && pageNo <= (followingPages ? settings.MaxPages : 1); pageNo++)
             {
                 ct.ThrowIfCancellationRequested();
                 var (frame, snapshot, _) = await ReadAsync(table, customNext, ct);
                 var currentScope = await CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
                 if (originalScope.Fingerprint.Length > 0 && currentScope.Fingerprint != originalScope.Fingerprint)
                     throw new InvalidOperationException("La recherche, l’entité ou le profil GLPI a changé pendant la pagination. Les pages suivantes n’ont pas été mélangées au relevé initial.");
-                if (pageNo == 1)
-                {
-                    result.Headers = snapshot.Headers;
-                    result.ExpectedTotal ??= snapshot.ExpectedTotal;
-                }
-                else if (!result.Headers.SequenceEqual(snapshot.Headers))
-                    throw new InvalidOperationException("Les colonnes ont changé pendant l’extraction.");
-                if (!signatures.Add(snapshot.Signature))
-                    throw new InvalidOperationException("Une page déjà lue a été retrouvée. Arrêt pour éviter une boucle ou des doublons.");
+                if (pageNo == 1) { result.Headers = snapshot.Headers; result.ExpectedTotal ??= snapshot.ExpectedTotal; }
+                else if (!result.Headers.SequenceEqual(snapshot.Headers)) throw new InvalidOperationException("Les colonnes ont changé pendant l’extraction.");
+                if (!signatures.Add(snapshot.Signature)) throw new InvalidOperationException("Une page déjà lue a été retrouvée. Arrêt pour éviter une boucle ou des doublons.");
                 if (snapshot.ExpectedTotal.HasValue && result.ExpectedTotal.HasValue && snapshot.ExpectedTotal != result.ExpectedTotal)
                     throw new InvalidOperationException("Le nombre de résultats a changé pendant l’extraction. Relance la recherche avec un tri stable.");
                 foreach (var warning in snapshot.Warnings) if (!result.Warnings.Contains(warning)) result.Warnings.Add(warning);
@@ -374,8 +408,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                 {
                     ct.ThrowIfCancellationRequested();
                     if (result.Rows.Count >= settings.MaxRows) throw new InvalidOperationException($"Limite de {settings.MaxRows:N0} lignes atteinte. Modifie la limite ou réduis la recherche.");
-                    var row = snapshot.Rows[i];
-                    var key = i < snapshot.Keys.Count ? snapshot.Keys[i] : "";
+                    var row = snapshot.Rows[i]; var key = i < snapshot.Keys.Count ? snapshot.Keys[i] : "";
                     if (followingPages && !string.IsNullOrEmpty(key))
                     {
                         var rowHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\u001f", row))));
@@ -389,34 +422,17 @@ public sealed partial class BrowserService : IAsyncDisposable
                     result.Rows.Add(row);
                 }
                 result.Pages = pageNo;
+                if (followingPages && settings.ResumePagination && originalScope.Known)
+                {
+                    try { store.Save(new() { Target = TargetUrlPolicy.PersistedTarget(settings.PortalUrl), StartedAt = startedAt, ScopeFingerprint = originalScope.Fingerprint,
+                        FirstSignature = firstSignature, LastUrl = TargetUrlPolicy.PersistedTarget(table.Page!.Url), LastSignature = snapshot.Signature,
+                        Data = result, Keys = keys, Signatures = signatures.ToList() }, ct); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Log?.Invoke("REPRISE · point non enregistré : " + AppPaths.SafeError(error)); }
+                }
                 progress?.Report(new(pageNo, result.Rows.Count, result.ExpectedTotal, $"Page {pageNo} lue · {result.Rows.Count:N0} lignes"));
                 if (!followingPages) { reachedEnd = true; break; }
-                var next = snapshot.Next;
-                if (next?.Ambiguous == true) throw new InvalidOperationException("Plusieurs contrôles de pagination sont possibles. Choisis « Suivant » dans Réglages.");
-                if (next == null || next.Disabled || string.IsNullOrWhiteSpace(next.Selector)) { reachedEnd = true; break; }
-                if (pageNo == settings.MaxPages) throw new InvalidOperationException($"Limite de {settings.MaxPages} pages atteinte.");
-                await ClickNextAsync(frame, next, table.FrameOrigin, ct);
-                // The next read must observe actual data change. A successful click is not enough.
-                var wait = Stopwatch.StartNew();
-                var changed = false;
-                while (wait.Elapsed < TimeSpan.FromSeconds(Math.Min(settings.TimeoutSeconds, 45)))
-                {
-                    ct.ThrowIfCancellationRequested();
-                    await Task.Delay(250, ct);
-                    try
-                    {
-                        var (_, candidate, _) = await ReadAsync(table, customNext, ct);
-                        if (candidate.Signature != snapshot.Signature && candidate.Rows.Count > 0)
-                        {
-                            await Task.Delay(350, ct);
-                            var (_, stable, _) = await ReadAsync(table, customNext, ct);
-                            if (stable.Signature == candidate.Signature) { changed = true; break; }
-                        }
-                    }
-                    catch (PlaywrightException) { }
-                    catch (InvalidOperationException) when (Origin(table.Page!.Url) == table.TopOrigin && Origin(table.Frame!.Url) == table.FrameOrigin) { }
-                }
-                if (!changed) throw new InvalidOperationException("La page suivante n’a pas pu être confirmée. Les lignes déjà extraites sont conservées.");
+                if (pageNo == settings.MaxPages && snapshot.Next is { Disabled: false, Selector.Length: > 0 }) throw new InvalidOperationException($"Limite de {settings.MaxPages} pages atteinte.");
+                reachedEnd = !await AdvancePaginationAsync(table, snapshot, settings, originalScope, ct);
             }
         }
         catch (OperationCanceledException) { interrupted = true; result.Warnings.Add("Extraction arrêtée à la demande de l’utilisateur."); }
@@ -439,6 +455,8 @@ public sealed partial class BrowserService : IAsyncDisposable
             if (!result.ExpectedTotal.HasValue) result.Warnings.Add("Total global inconnu : l’exhaustivité ne peut pas être confirmée.");
             result.Status = interrupted ? "Extraction partielle" : "Pagination terminée — exhaustivité à vérifier";
         }
+        if (followingPages && reachedEnd && !interrupted)
+        { try { store.Delete(settings.PortalUrl); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Log?.Invoke("REPRISE · nettoyage différé du point terminé."); } }
         Log?.Invoke(result.Status + $" · {result.Rows.Count:N0} lignes · {result.Pages} page(s).");
         return result;
     }

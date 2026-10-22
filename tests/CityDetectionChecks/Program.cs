@@ -544,6 +544,7 @@ Test("Advanced city copies keep independent rules and site aliases", () =>
     Assert(city.Rules[0].RequiredTerms[0] == "Agence" && settings.Sites[0].Aliases[0] == "CTR");
 });
 
+CityTerrainChecks.Register(Test);
 var passed = 0;
 foreach (var (name, run) in checks)
     try { run(); passed++; Console.WriteLine("PASS  " + name); }

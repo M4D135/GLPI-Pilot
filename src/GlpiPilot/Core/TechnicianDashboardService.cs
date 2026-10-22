@@ -47,10 +47,10 @@ public static class TechnicianDashboardService
             if ((iteration++ & 255) == 0) ct.ThrowIfCancellationRequested();
             var row = data.Rows[index];
             if (technicianColumn >= row.Length) continue;
-            var technicians = SplitTechnicians(row[technicianColumn]);
+            var technicians = DashboardService.SplitTechnicianNames(DashboardService.NormalizeValue(row[technicianColumn], "assignee", data.Headers[technicianColumn], settings), settings.MultiValueSeparators);
             multipleAssignments |= technicians.Count > 1;
             var status = statusColumn is int statusIndex && statusIndex < row.Length
-                ? DashboardService.Status(row[statusIndex] ?? "") : 0;
+                ? DashboardService.Status(DashboardService.NormalizeValue(row[statusIndex], "status", data.Headers[statusIndex], settings)) : 0;
             foreach (var technician in technicians)
             {
                 var key = IdentityKey(technician);

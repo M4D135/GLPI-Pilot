@@ -1,4 +1,4 @@
-GLPI Pilot 1.5.0 — dashboards et atelier de requêtes
+GLPI Pilot 2.1.0 — dashboards et atelier de requêtes
 
 ZOOM ET DEFILEMENT
 Les boutons − / 100 % / + règlent l’interface de 75 à 150 %, par pas de 5 %.
@@ -25,8 +25,8 @@ Personnaliser ouvre le mode édition. Le catalogue permet de rechercher
 les indicateurs, les répartitions, la météo, l’activité datée, les tickets
 à examiner, la qualité et les notes. Il contient aussi Localisation et
 Mes requêtes après calcul du relevé. Disponibles seulement cache les
-sources qui ne peuvent pas être calculées. Les favoris du catalogue
-restent des favoris de session ; les favoris de requêtes sont enregistrés.
+sources qui ne peuvent pas être calculées. Les favoris du catalogue et des requêtes sont enregistrés ; les widgets
+récemment utilisés sont également accessibles.
 
 DEPLACER ET REDIMENSIONNER
 Déplacer la poignée d’une carte avant une autre, ou sur le fond pour la
@@ -111,7 +111,7 @@ même en OU. Une moyenne sans valeur exploitable est indisponible.
 Le widget Qualité liste les sondes, leurs échantillons et leurs limites.
 Cliquer un chiffre, une barre ou une ligne retrouve les lignes source.
 L’aperçu affiche au plus 10 000 correspondances ; recherche et statistiques
-portent sur toutes les lignes chargées. Le tri porte sur l’aperçu affiché.
+portent sur toutes les lignes chargées. Le tri du relevé porte sur toutes les lignes avant la limite d’affichage.
 Bilan Excel exporte tous les indicateurs et répartitions du périmètre,
 avec leurs avertissements. Un bilan dépassant Excel est proposé en CSV.
 Recalculer reste local. Extraire tout récupère un nouveau relevé GLPI.
@@ -124,3 +124,19 @@ Les critères que vous avez saisis font donc partie du fichier transmis.
 Le choix C’est moi, les objectifs/notes de gestion des techniciens, l’ordre
 de tournée, les colonnes de l’aperçu, le dossier d’exports et le SSO restent
 sur le poste. Aucun relevé ou cookie n’est intégré à ce fichier partagé.
+
+COMPLEMENTS 2.1
+Sections déplaçables en bloc, dimensions/alignements de widgets en lot,
+barres empilées en volume ou pourcentage et seuil de Pareto configurable.
+Les mini-historiques recalculent filtres et identité personnelle sur les
+archives comparables, avec trous de collecte et limites explicites.
+La carte locale utilise uniquement les coordonnées déclarées ; son filtre
+se combine avec les autres widgets. Les taux par site exigent un effectif
+ou nombre de postes daté, valide et sourcé.
+PNG et PDF natif incluent un cartouche de contexte. Le rapport HTML autonome
+réunit indicateurs, graphiques, qualité, critères, provenance et tickets.
+L’atelier présente des hiérarchies à trois niveaux, recalcule les sous-totaux
+sur les contributeurs et importe des packs JSON avec examen des conflits.
+L’assistant produit un brouillon validé puis prévisualisé ; il ne lance ni
+requête ni appel à un fournisseur à l’ouverture de son panneau.
+Voir Dashboards-et-extraction.md et Guide-2.1.md pour les limites et usages.

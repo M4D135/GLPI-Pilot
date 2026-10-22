@@ -214,14 +214,14 @@ public static class QueryService
                 return Number(row, field, out var number) ? number.ToString("R", CultureInfo.InvariantCulture) : "";
             }
             var cells = Data.Rows[row];
-            return cells is not null && field.Index < cells.Length ? cells[field.Index]?.Trim() ?? "" : "";
+            return cells is not null && field.Index >= 0 && field.Index < cells.Length ? DashboardService.NormalizeValue(cells[field.Index], field.Key.StartsWith("role:", StringComparison.Ordinal) ? field.Key[5..] : "", Data.Headers[field.Index], Settings) : "";
         }
 
         public bool Number(int row, BoundField field, out double result)
         {
             result = default;
-            if (field.Computation is not { } definition) return QueryText.TryNumber(Cell(row, field), out result);
-            if (definition.Function is "lower" or "concat" or "coalesce") return QueryText.TryNumber(Cell(row, field), out result);
+            if (field.Computation is not { } definition) return DashboardService.TrySourceNumber(Cell(row, field), Settings, out result);
+            if (definition.Function is "lower" or "concat" or "coalesce") return DashboardService.TrySourceNumber(Cell(row, field), Settings, out result);
             if (definition.Function == "length") { result = Cell(row, field.Left!).EnumerateRunes().Count(); return true; }
             if (definition.Function is "days-between" or "age-days")
             {
@@ -242,7 +242,7 @@ public static class QueryService
             return double.IsFinite(result);
         }
         public bool Date(int row, BoundField field, out DateTime date) =>
-            DashboardService.TryDate(Cell(row, field), Settings.DateCulture, Snapshot.CalculatedAt.Offset, out date);
+            DashboardService.TrySourceDate(Cell(row, field), Settings, Snapshot.CalculatedAt.Offset, out date);
 
         private static string BoundedConcat(string left, string separator, string right)
         {
@@ -338,6 +338,7 @@ public static class QueryService
         var metric = new DashboardMetric(MetricKey(query.Id), query.Name, calculation.Value, calculation.Unit,
             explanation.Trim(), calculation.Contributions, calculation.Sample);
         DashboardDistribution? distribution = null; IReadOnlyList<QueryGroupResult> groupResults = Array.Empty<QueryGroupResult>();
+        var hierarchy = new List<QueryGroupResult>();
         if (bound.Groups.Length > 0)
         {
             var baseGroups = GroupRows(context, bound.Groups, population, ct);
@@ -354,6 +355,21 @@ public static class QueryService
             }
             groupResults = groups.OrderByDescending(group => group.Value ?? double.NegativeInfinity)
                 .ThenBy(group => group.Label, StringComparer.OrdinalIgnoreCase).ToArray();
+            hierarchy.AddRange(groupResults);
+            for (var depth = 1; depth < bound.Groups.Length; depth++)
+            {
+                var fields = bound.Groups.Take(depth).ToArray();
+                var basePrefixes = GroupRows(context, fields, population, ct);
+                var selectedPrefixes = GroupRows(context, fields, filtered, ct);
+                foreach (var pair in query.Aggregate == "percent" ? basePrefixes : selectedPrefixes)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var rows = selectedPrefixes.TryGetValue(pair.Key, out var chosen) ? chosen.Rows.Distinct().ToArray() : Array.Empty<int>();
+                    var denominator = basePrefixes.TryGetValue(pair.Key, out var basis) ? basis.Rows.Distinct().Count() : 0;
+                    var subtotal = Aggregate(context, query, bound.Aggregate, rows, denominator, ct);
+                    hierarchy.Add(new(string.Join(" › ", pair.Value.Labels), pair.Value.Labels, rows.Length, subtotal.Value, subtotal.Unit, subtotal.Sample, rows, subtotal.Contributions, denominator));
+                }
+            }
             var buckets = groupResults.Select(group => new DashboardBucket(group.Label, group.Count, group.Rows,
                 group.Value, group.Unit, group.Sample, query.Aggregate != "count")).ToArray();
             var note = "Calcul « " + query.Aggregate + " » dans chaque groupe, avec effectif et contributions propres. Les cellules vides ou dates illisibles restent dans des groupes explicites. ";
@@ -368,7 +384,7 @@ public static class QueryService
         if (calculation.Unreadable > 0) message += $" {calculation.Unreadable:N0} valeur(s) absente(s) ou illisible(s) exclue(s) de l’agrégat.";
         if (calculation.Value is null) message += " Agrégat non calculable sur cet échantillon.";
         return new() { QueryId = query.Id, Available = true, Message = message, Rows = filtered, Metric = metric,
-            Distribution = distribution, Groups = groupResults, UnknownRows = unknownRows };
+            Distribution = distribution, Groups = groupResults, Hierarchy = hierarchy, UnknownRows = unknownRows };
     }
 
     private static AggregateValue Aggregate(EvaluationContext context, SavedQuery query, BoundField? field,
@@ -462,7 +478,7 @@ public static class QueryService
     private static IReadOnlyList<string> Values(EvaluationContext context, int row, BoundField field)
     {
         var raw = context.Cell(row, field);
-        return field.IsTechnician ? DashboardService.SplitTechnicianNames(raw) : raw.Length == 0 ? Array.Empty<string>() : new[] { raw };
+        return field.IsTechnician ? DashboardService.SplitTechnicianNames(raw, context.Settings.MultiValueSeparators) : raw.Length == 0 ? Array.Empty<string>() : new[] { raw };
     }
     private static bool? Matches(EvaluationContext context, int row, BoundCondition condition)
     {

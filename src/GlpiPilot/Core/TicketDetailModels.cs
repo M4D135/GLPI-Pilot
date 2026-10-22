@@ -82,4 +82,56 @@ public sealed class TicketDetailResult
     public List<TicketDetailSection> Sections { get; set; } = new();
     public List<TicketDetailTab> Tabs { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
+    public List<TicketObservedItem> ObservedItems { get; set; } = new();
+}
+
+/// <summary>Only visible, explicitly labelled values; missing values remain empty.</summary>
+public sealed class TicketObservedItem
+{
+    [System.Text.Json.Serialization.JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("kind")]
+    public string Kind { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("identity")]
+    public string Identity { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("sourceTabKey")]
+    public string SourceTabKey { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("sourceTabSelector")]
+    public string SourceTabSelector { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("sourceSelector")]
+    public string SourceSelector { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("sourceSection")]
+    public string SourceSection { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("title")]
+    public string Title { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("date")]
+    public string Date { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("author")]
+    public string Author { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("authorRole")]
+    public string AuthorRole { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("owner")]
+    public string Owner { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("status")]
+    public string Status { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("due")]
+    public string Due { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("plannedStart")]
+    public string PlannedStart { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("plannedEnd")]
+    public string PlannedEnd { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("completedAt")]
+    public string CompletedAt { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("requestedAt")]
+    public string RequestedAt { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("waitingStart")]
+    public string WaitingStart { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("waitingEnd")]
+    public string WaitingEnd { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("waitingReason")]
+    public string WaitingReason { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+    [System.Text.Json.Serialization.JsonPropertyName("relatedType")]
+    public string RelatedType { get; set; } = "";
 }

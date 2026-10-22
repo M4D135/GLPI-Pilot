@@ -22,7 +22,7 @@ public sealed partial class QueryWorkshopView
         var filters = new StackPanel();
         var actions = new WrapPanel(); actions.Children.Add(_new); actions.Children.Add(_duplicate); actions.Children.Add(_delete);
         _templates.Content = "Modèles +"; _templates.ToolTip = "Ajouter les modèles manquants à ce brouillon, sans remplacer les requêtes existantes";
-        actions.Children.Add(_templates);
+        actions.Children.Add(_templates); AddPackActions(actions);
         var edit = Command("Modifier la requête →"); edit.Click += (_, _) => _sections.SelectedItem = _definitionTab;
         edit.Content = "Modifier →"; edit.ToolTip = "Ouvrir la définition de la requête sélectionnée";
         actions.Children.Add(edit);
@@ -287,7 +287,7 @@ public sealed partial class QueryWorkshopView
     {
         var allowed = !_busy && !_disposed; var selected = SelectedQuery;
         _new.IsEnabled = allowed && _working.Queries.Count < MaximumQueries;
-        _templates.IsEnabled = allowed;
+        _templates.IsEnabled = allowed; _importPack.IsEnabled = _exportPack.IsEnabled = _builtinPacks.IsEnabled = allowed;
         _duplicate.IsEnabled = allowed && selected != null && _working.Queries.Count < MaximumQueries;
         _delete.IsEnabled = allowed && selected != null; _restore.IsEnabled = allowed && _dirty;
         _search.IsEnabled = _categoryFilter.IsEnabled = _favoritesOnly.IsEnabled = _libraryList.IsEnabled = allowed;

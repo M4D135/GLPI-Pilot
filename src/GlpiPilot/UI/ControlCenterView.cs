@@ -7,7 +7,7 @@ using GlpiPilot.Core;
 
 namespace GlpiPilot.UI;
 
-public sealed class ControlCenterView : UserControl
+public sealed partial class ControlCenterView : UserControl
 {
     private readonly DataGrid _sourcesGrid = PilotControls.Table(editable: true);
     private ObservableCollection<SourceProfile> _sources = new();
@@ -45,10 +45,13 @@ public sealed class ControlCenterView : UserControl
         _sourcesGrid.Columns.Add(new DataGridComboBoxColumn { Header = "Navigateur", SelectedItemBinding = new Binding("Browser"), ItemsSource = new[] { "msedge", "chrome" }, Width = 100 });
         _sourcesGrid.Columns.Add(new DataGridComboBoxColumn { Header = "Méthode", SelectedItemBinding = new Binding("Mode"), ItemsSource = new[] { "native", "pagination" }, Width = 105 });
         _sourcesGrid.Columns.Add(new DataGridCheckBoxColumn { Header = "Campagne", Binding = new Binding("IncludedInCampaign"), Width = 90 });
+        PilotControls.Column(_sourcesGrid, "Dossier de sortie propre à la source", "ExportFolder", 220);
+        _sourcesGrid.Columns.Add(new DataGridCheckBoxColumn { Header = "Restaurer aussi requêtes et dashboards", Binding = new Binding("RestoreWorkspace"), Width = 170 });
         _sourcesGrid.ItemsSource = _sources;
         var sourceActions = new WrapPanel();
         sourceActions.Children.Add(PilotControls.Button("Ajouter", () => { var item = new SourceProfile(); _sources.Add(item); _sourcesGrid.SelectedItem = item; }));
         sourceActions.Children.Add(PilotControls.Button("Mémoriser la source actuelle", () => CurrentSourceRequested?.Invoke()));
+        sourceActions.Children.Add(PilotControls.Button("Actualiser le profil sélectionné", () => { if (_sourcesGrid.SelectedItem is SourceProfile source) CaptureSourceRequested?.Invoke(source.Id); }));
         sourceActions.Children.Add(PilotControls.Button("Utiliser cette source", UseSelected));
         sourceActions.Children.Add(PilotControls.Button("Retirer", () => { if (_sourcesGrid.SelectedItem is SourceProfile item) _sources.Remove(item); }));
         sourceActions.Children.Add(PilotControls.Button("Extraire la campagne", () => CampaignRequested?.Invoke()));
@@ -87,6 +90,7 @@ public sealed class ControlCenterView : UserControl
         backupActions.Children.Add(PilotControls.Button("Examiner et restaurer", () => { if (_backups.SelectedItem is SettingsBackup backup) RestoreSettingsRequested?.Invoke(backup.Path); }));
         var backupPanel = new DockPanel(); DockPanel.SetDock(backupActions, Dock.Top); backupPanel.Children.Add(backupActions); backupPanel.Children.Add(_backups);
         tabs.Items.Add(new TabItem { Header = "Réglages sauvegardés", Content = backupPanel });
+        AddCompletionTabs(tabs);
         var toolbar = new WrapPanel(); toolbar.Children.Add(PilotControls.Button("Enregistrer les réglages", () => SaveRequested?.Invoke()));
         Content = PilotControls.Page("Sources et organisation", "Préparez vos recherches, programmez les collectes et retrouvez le résultat des opérations.", tabs, toolbar);
     }
@@ -100,6 +104,7 @@ public sealed class ControlCenterView : UserControl
         _retention.Text = h.RetentionDays.ToString(); _maximum.Text = h.MaximumSnapshots.ToString(); _budget.Text = h.StorageBudgetMb.ToString();
         var i = settings.Interface; _density.SelectedValue = i.Density; _accent.SelectedValue = i.Accent; _systemTheme.IsChecked = i.FollowWindowsTheme;
         _contrast.IsChecked = i.HighContrast; _motion.IsChecked = i.ReduceMotion; _focus.IsChecked = i.FocusMode; _frozen.Text = i.FrozenColumns.ToString();
+        LoadCompletion(settings);
     }
     public void ApplyTo(AppSettings settings)
     {
@@ -116,6 +121,7 @@ public sealed class ControlCenterView : UserControl
         settings.Interface.Density = _density.SelectedValue?.ToString() ?? "balanced"; settings.Interface.Accent = _accent.SelectedValue?.ToString() ?? "blue";
         settings.Interface.FollowWindowsTheme = _systemTheme.IsChecked == true; settings.Interface.HighContrast = _contrast.IsChecked == true;
         settings.Interface.ReduceMotion = _motion.IsChecked == true; settings.Interface.FocusMode = _focus.IsChecked == true; settings.Interface.FrozenColumns = Number(_frozen, 0, 8);
+        ApplyCompletion(settings);
     }
     public void AddSource(SourceProfile source) { _sources.Add(source); _sourcesGrid.SelectedItem = source; }
     public void ShowOperations(IReadOnlyList<OperationEntry> entries) => _operations.ItemsSource = entries;

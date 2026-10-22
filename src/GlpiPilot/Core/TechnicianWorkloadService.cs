@@ -81,18 +81,18 @@ public static class TechnicianWorkloadService
         var inactivity = new Dictionary<int, double>();
         var now = global.CalculatedAt.DateTime;
         string Cell(int index, string role) => global.Column(role)!.Index is int column && column < source.Rows[index].Length
-            ? source.Rows[index][column] ?? "" : "";
+            ? DashboardService.NormalizeValue(source.Rows[index][column], role, source.Headers[column], settings) : "";
         var iteration = 0;
         foreach (var index in active)
         {
             if ((iteration++ & 255) == 0) ct.ThrowIfCancellationRequested();
             if (DashboardService.Priority(Cell(index, "priority")).HasValue) samples["high"].Add(index);
-            if (DashboardService.TryDate(Cell(index, "due"), settings.DateCulture, global.CalculatedAt.Offset, out _))
+            if (DashboardService.TrySourceDate(Cell(index, "due"), settings, global.CalculatedAt.Offset, out _))
             { samples["overdue"].Add(index); samples["soon"].Add(index); }
-            var createdValid = DashboardService.TryDate(Cell(index, "created"), settings.DateCulture, global.CalculatedAt.Offset, out var created) && created <= now;
+            var createdValid = DashboardService.TrySourceDate(Cell(index, "created"), settings, global.CalculatedAt.Offset, out var created) && created <= now;
             if (createdValid)
             { samples["old"].Add(index); age[index] = (now - created).TotalDays; }
-            if (DashboardService.TryDate(Cell(index, "updated"), settings.DateCulture, global.CalculatedAt.Offset, out var updated)
+            if (DashboardService.TrySourceDate(Cell(index, "updated"), settings, global.CalculatedAt.Offset, out var updated)
                 && updated <= now && (!createdValid || updated >= created))
             { samples["stale"].Add(index); inactivity[index] = (now - updated).TotalDays; }
         }

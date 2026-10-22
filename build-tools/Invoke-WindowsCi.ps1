@@ -15,7 +15,7 @@ This script does not imply that Windows checks passed until each executable succ
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('BclChecks', 'BrowserChecks', 'WpfChecks', 'BuildPack', 'PackStartup')]
+    [ValidateSet('BclChecks', 'BrowserChecks', 'WpfChecks', 'BuildPack', 'PackStartup', 'UpdateStartup')]
     [string]$Stage,
     [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/windows-ci')
 )
@@ -353,13 +353,17 @@ try {
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '\d+/\d+ Foundation checks passed\.' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '39/39 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '102/102' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '112/112' },
                 @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '29/29 checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
-                @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '33/33' },
-                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '75/75' },
-                @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '59/59' },
-                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '92/92 vérifications réussies.' },
+                @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '35/35' },
+                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '91/91' },
+                @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '87/87' },
+                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '99/99 vérifications réussies.' },
+                @{ Project = 'AnalyticsChecks'; Log = 'analytics-checks.log'; Summary = '32/32 vérifications réussies.' },
+                @{ Project = 'CompletionChecks'; Log = 'completion-checks.log'; Summary = '44/44 Completion checks passed.' },
+                @{ Project = 'UpdateChecks'; Log = 'update-checks.log'; Summary = '24/24 update checks passed.' },
+                @{ Project = 'LanguageAssistantChecks'; Log = 'language-assistant-checks.log'; Summary = ''; Pattern = '\d+/\d+ language assistant checks passed; synthetic handlers only, no provider contacted\.' },
                 @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '38/38' },
                 @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' }
             )
@@ -384,7 +388,7 @@ try {
                     -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 180 -ExpectedPattern '\d+/\d+ vérifications.*réussies\.'
             }
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/TicketDetailChecks/TicketDetailChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win') `
-                -LogName 'ticketdetailchecks.log' -TimeoutSeconds 180 -ExpectedSummary '27/27 contrôles de lecture de fiche réussis.'
+                -LogName 'ticketdetailchecks.log' -TimeoutSeconds 180 -ExpectedSummary '32/32 contrôles de lecture de fiche réussis.'
             $driver = Join-Path $repository 'tests/AutomationChecks/bin/Release/net10.0/.playwright'
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
@@ -419,6 +423,14 @@ try {
             [IO.File]::WriteAllText((Join-Path $logs 'executable-sha256.txt'), ($exeHashes['PROD'] + "  GLPI-Pilot.exe`n"), $utf8)
         }
         'PackStartup' { Test-PackStartup }
+        'UpdateStartup' {
+            $harness = Join-Path $OutputDirectory 'update-harness'
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('publish', 'tests/WindowsUpdateChecks/WindowsUpdateChecks.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=false', '-o', $harness) `
+                -LogName 'windows-update-build.log' -TimeoutSeconds 420
+            $pack = Get-Pack -Edition 'PROD'
+            Invoke-CheckedProcess -Executable (Join-Path $harness 'WindowsUpdateChecks.exe') -Arguments @($pack.FullName, (Join-Path $logs 'windows-update')) `
+                -LogName 'windows-update-checks.log' -TimeoutSeconds 300 -ExpectedSummary '4/4 Windows update checks passed.'
+        }
     }
 }
 finally { Pop-Location }

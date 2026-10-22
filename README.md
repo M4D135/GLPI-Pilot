@@ -1,10 +1,10 @@
-# GLPI Pilot 2.0.0 — Windows x64
+# GLPI Pilot 2.1.0 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, gestion locale des techniciens, lecture des tickets, requêtes, lieux, tournées, historiques et alertes. Aucun accès API, base de données ou serveur GLPI n’est nécessaire.
 
 ## Télécharger le pack complet
 
-Les [Releases](https://github.com/M4D135/GLPI-Pilot/releases) contiennent les packs Windows validés. La publication de la version 2.0.0 exige les contrôles de ses moteurs, de son interface et du démarrage de son EXE. Une archive nommée **PREVERSION** indique une compilation locale dont l’exécution Windows reste à vérifier ; son statut figure dans `wad/version.json` et `wad/docs/ETAT-PREVERSION.txt`.
+Les [Releases](https://github.com/M4D135/GLPI-Pilot/releases) contiennent les packs Windows validés. La publication de la version 2.1.0 exige les contrôles de ses moteurs, de son interface et du démarrage de son EXE. Une archive nommée **PREVERSION** indique une compilation locale dont l’exécution Windows reste à vérifier ; son statut figure dans `wad/version.json` et `wad/docs/ETAT-PREVERSION.txt`.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -23,7 +23,19 @@ Extraire **tout le ZIP** dans un dossier puis ouvrir **GLPI-Pilot.exe**. Garder 
 
 Le navigateur reste ouvert derrière GLPI Pilot pendant l’extraction. **Voir le navigateur / Revenir à GLPI Pilot** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. La priorité de fenêtre est relâchée à la fin du traitement. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Ce que propose la version 2.0
+## Nouveautés de la version 2.1
+
+- Profils complets par installation GLPI, campagnes avec bilan autonome par source, délais séparés, contrôle d’espace libre et reprise de pagination après vérification des pages conservées. La reconnexion SSO ou réseau est bornée et refuse un périmètre différent.
+- Assistant de correspondance avec aperçu brut/interprété, conventions de nombres et de dates, fuseau, séparateurs multiples et dictionnaires propres à la source. Changements de colonnes détectés, propositions de renommage soumises à validation, panier persistant et lecture universelle des cellules par F2.
+- Analyses longitudinales : périodes sans observation, mouvements, transferts, cohortes, incertitude des durées par statut, scénarios de stock et anomalies. Cartes locales reliées aux widgets, taux par effectifs datés et mini-historiques. Exports PNG/PDF avec cartouche et rapport HTML complet autonome.
+- Tâches, attentes, validations, relations et documents structurés à partir des seules informations lues. Lecture restaurée par ticket, briefing de session, enrichissement ciblé et brouillons de suivis. Les affectations, suivis et tâches peuvent être préparés puis confirmés individuellement dans les formulaires GLPI reconnus, avec reçu et relecture.
+- Calendriers de présence et capacités par demi-journée, estimations par catégorie, hiérarchie jusqu’au bâtiment, horaires des sites, états des tournées et répartition sur plusieurs jours. Adaptateurs facultatifs OSRM et Open-Meteo, avec choix du service et consentement explicite à l’envoi des coordonnées.
+- Horaires fixes multiples, recettes conditionnelles, alertes de variation et de fraîcheur, résolution motivée, import avec différences détaillées et arbitrage des conflits. Assistant de requêtes et de synthèse local ou raccordé à un fournisseur choisi, avec aperçu et références contrôlées.
+- Concentration F11, navigation personnalisable, palettes de couleurs adaptées, placement sur un moniteur disponible, diagnostic relisible et mise à jour vérifiée avec sauvegarde et retour arrière.
+
+Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livré et les prérequis restants. La validation du portail/SSO et du matériel de l’entreprise nécessite cet environnement ; la signature de confiance de l’EXE nécessite un certificat de l’éditeur. Aucun de ces deux prérequis n’est présenté comme accompli par les tests synthétiques.
+
+## Fonctions disponibles
 
 ### Interface et relevé
 
@@ -40,7 +52,7 @@ Le navigateur reste ouvert derrière GLPI Pilot pendant l’extraction. **Voir l
 - Volumes, actifs, attentes, priorités, échéances, affectations, ancienneté, dates, lieux et couverture des données ; méthodes et effectifs accessibles.
 - Anneaux, jauges, histogrammes, matrices colorées, barres empilées, Pareto, boîtes statistiques, médiane/P90 et nuage âge × échéance.
 - Météos de santé du relevé configurables : synthèse, échéances, qualité, localisation. Elles ne représentent pas la météo climatique.
-- Quatre courbes historiques globales sur archives comparables. Export du dashboard en PNG et bilan CSV/Excel détaillé.
+- Courbes et mini-historiques sur archives comparables, avec ruptures explicites. Export PNG/PDF avec date, filtres et complétude ; bilan CSV/Excel et rapport HTML autonome complet.
 
 ### Techniciens et travail personnel
 
@@ -57,7 +69,7 @@ Le navigateur reste ouvert derrière GLPI Pilot pendant l’extraction. **Voir l
 - File des lieux à vérifier, corrections locales par installation et identifiant unique ; import CSV du référentiel avec comparatif avant application.
 - Colonnes enrichies, indicateurs de couverture et répartitions par ville/site/territoire.
 - Tournées datées à partir d’un panier explicite, départ/retour, durées, fenêtres horaires, étapes verrouillées, scénarios et répartition par durées.
-- Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs : aucun routage routier/temps réel n’est calculé.
+- Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs par défaut. Un service OSRM compatible peut fournir distances et durées routières après configuration et consentement ; sa provenance et sa date restent visibles.
 
 ### Atelier de requêtes
 
@@ -79,7 +91,7 @@ Le constructeur propose expressions imbriquées **ET / OU / NON**, comparaison e
 
 Le mode automatique privilégie le CSV **toutes les pages** proposé par GLPI. S’il est indisponible, il peut utiliser une option d’affichage complet existante puis, si autorisé, parcourir la pagination depuis la première page. **Un fichier corrompu ou un export ambigu n’entraîne pas de repli silencieux.**
 
-Le moteur vérifie la recherche, le contexte observable, les totaux, les colonnes et les doublons de pages. Un échantillon d’identifiants visibles est rapproché du CSV. Une variation du périmètre interrompt la lecture ; les lignes déjà récupérées restent identifiées comme partielles. Les exports à contrôler portent `a-verifier` dans leur nom. Un fichier local importé n’est pas certifié comme extraction exhaustive du portail.
+Le moteur vérifie la recherche, le contexte observable, les totaux, les colonnes et les doublons de pages. Un échantillon de 25 identifiants au maximum et les valeurs des colonnes comparables sont rapprochés du CSV. Les cellules visiblement abrégées sont exclues de la comparaison de valeurs. Une variation du périmètre interrompt la lecture ; les lignes déjà récupérées restent identifiées comme partielles. Les exports à contrôler portent `a-verifier` dans leur nom. Un fichier local importé n’est pas certifié comme extraction exhaustive du portail.
 
 La limite de lignes de l’application peut réduire le volume chargé ; elle ne tronque pas le CSV natif téléchargé. Une annulation ne déclenche pas d’annonce de réussite. Le diagnostic technique distingue les étapes sans inclure les cellules, cookies ou jetons de la session.
 
@@ -87,12 +99,13 @@ La limite de lignes de l’application peut réduire le volume chargé ; elle ne
 
 Les données de travail résident dans `%LOCALAPPDATA%\GLPI-Pilot`, indépendamment du dossier de l’EXE : profil du navigateur, préférences, archives, cache facultatif, notes et tournées. Les exports vont dans le dossier choisi. La configuration partageable contient les définitions d’équipe et les adresses autorisées, pas la session SSO.
 
-Fermer l’application avant de remplacer le pack, puis extraire le nouveau ZIP dans un nouveau dossier. Ne pas mélanger ses fichiers avec un ancien `wad`. Une sauvegarde des préférences existantes précède la première ouverture d’une nouvelle version. Un second lancement rappelle la fenêtre déjà ouverte. Si aucune fenêtre n’apparaît, utiliser `wad/support/DIAGNOSTIC_DEMARRAGE.cmd` ; le dernier journal est `Logs/demarrage-dernier.log` dans les données locales.
+Dans **Confort et maintenance → Vérifier une mise à jour**, examiner la release officielle, vérifier le pack puis confirmer son installation. L’assistant conserve une sauvegarde et exige un démarrage confirmé ; un échec déclenche une restauration. Le remplacement manuel reste possible : fermer l’application et extraire le nouveau ZIP dans un nouveau dossier. Ne pas mélanger ses fichiers avec un ancien `wad`. Une sauvegarde des préférences existantes précède la première ouverture d’une nouvelle version. Un second lancement rappelle la fenêtre déjà ouverte. Si aucune fenêtre n’apparaît, utiliser `wad/support/DIAGNOSTIC_DEMARRAGE.cmd` ; le dernier journal est `Logs/demarrage-dernier.log` dans les données locales.
 
 ## Documentation
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
-- [Notes de version 2.0.0](docs/RELEASE-2.0.0.md)
+- [Notes de version 2.1.0](docs/RELEASE-2.1.0.md)
+- [Nouveaux parcours, services facultatifs et maintenance](docs/Guide-2.1.md)
 - [Dashboards, indicateurs et extraction](docs/Dashboards-et-extraction.md)
 - [Travail personnel, tickets et techniciens](docs/Travail-personnel-et-techniciens.md)
 - [Requêtes, villes, sites et tournées](docs/Requetes-villes-tournees.md)
@@ -108,12 +121,16 @@ Projet C# WPF, .NET 10. Avec le SDK .NET 10 et PowerShell 7.2 ou ultérieur sous
 .\build.ps1
 ```
 
-Le script fabrique PROD et DEV avec l’EXE autonome et le pilote Playwright externe dans `wad/.playwright`. Le workflow Windows exécute les tests métier, les parcours navigateur sur pages synthétiques, le rendu réel des vues dans les deux thèmes et le démarrage du pack extrait. Il vérifie également un second lancement, le zoom et sa persistance, les empreintes des fichiers et le commit source avant de publier les deux ZIP dans une Release.
+Le script fabrique PROD et DEV avec l’EXE autonome et le pilote Playwright externe dans `wad/.playwright`. Le workflow Windows exécute les tests métier, les parcours navigateur sur pages synthétiques, le rendu réel des vues dans les deux thèmes, le démarrage du pack extrait et des remplacements/restaurations réels sur des copies de ce pack. Il vérifie également un second lancement, le zoom et sa persistance, les empreintes des fichiers et le commit source avant de publier les deux ZIP dans une Release.
 
 Une compilation croisée ne prouve pas le fonctionnement de l’EXE sous Windows. Les résultats définitifs sont les journaux du [workflow associé au commit livré](https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml). Le portail d’entreprise et son SSO réel restent à confirmer dans cet environnement.
 
 ## Limites explicites
 
-GLPI Pilot consulte les pages et exports accessibles au compte. Les notes, affectations simulées, tournées et corrections sont locales : elles ne modifient pas GLPI. Les colonnes absentes restent indisponibles ; les durées calendaires ne prouvent pas le respect d’un SLA, et un stock de tickets ne mesure pas la productivité d’un technicien.
+Les données absentes restent indisponibles. Les dates sont calendaires ; un stock ou une estimation ne mesure pas la productivité d’un technicien. Les analyses historiques décrivent des observations et leurs incertitudes : une disparition n’est pas une résolution, une projection n’est pas un engagement de résultat.
 
-Les courbes historiques personnelles, cartes intégrées, routage externe, prévisions statistiques, synchronisation entre collègues, signature de l’EXE et mise à jour automatique ne sont pas livrés dans cette version. Le cache est daté ; les sources peuvent changer après l’extraction. Outil indépendant, sans affiliation au projet GLPI.
+Les notes, tournées, corrections et scénarios restent locaux. Seule une action GLPI préparée dans l’assistant dédié puis confirmée explicitement peut écrire dans le portail, selon les droits du compte. Un résultat d’envoi ambigu est signalé et n’est jamais relancé automatiquement.
+
+Les services de routage, météo et génération externe sont désactivés tant qu’aucun fournisseur n’est configuré et autorisé. Le mode local de l’assistant repose sur des règles explicites et une synthèse extractive ; il n’est pas un modèle généraliste exécuté hors ligne. Une réponse externe doit respecter le schéma borné et citer des références présentes dans le contexte ; sa pertinence doit être relue avant usage.
+
+Les packs conservent commit et empreintes. La chaîne Authenticode est prête, mais aucun certificat de confiance n’a été fourni pour cette livraison : les empreintes ne constituent pas une signature d’éditeur. Le comportement du portail privé, de son SSO et des configurations physiques de plusieurs écrans reste à vérifier sur les postes concernés. Outil indépendant, sans affiliation au projet GLPI.

@@ -1,59 +1,71 @@
-# Historique, qualité, alertes et organisation
+# Historique, qualité et automatisations — version 2.1
 
-## Des relevés datés et comparables
+Ces fonctions travaillent à partir des données réellement recueillies. Une ligne absente d’un relevé ne prouve pas sa résolution ; une donnée inconnue n’est jamais transformée en zéro. Les fonctions d’écriture GLPI disposent d’un parcours distinct avec aperçu et confirmation.
 
-L’archivage local est activable dans **Sources et organisation**. Chaque relevé enregistré conserve ses cellules, son origine, la méthode d’extraction, les dates, les limites observées et les règles utilisées pour interpréter ses colonnes. Une empreinte SHA-256 contrôle l’intégrité du contenu compressé lors de sa réouverture. Il s’agit d’un contrôle de corruption, pas d’une signature ni d’une preuve inviolable.
+## Archives et comparaisons
 
-La rétention est réglable par âge, nombre d’archives et budget disque. Le réglage initial est de 180 jours, 500 archives et 1 024 Mio. La dernière archive de chaque source, son dernier relevé complet comparable et les archives protégées sont conservés : elles peuvent donc faire dépasser un objectif de rétention. Le catalogue permet de protéger un relevé, de le rouvrir et de l’exporter. L’ouverture du dernier relevé au démarrage est facultative.
+L’archivage conserve cellules, provenance, règles de calcul, requêtes et référentiel géographique. Les nouvelles archives conservent aussi les décisions de localisation effectivement utilisées et l’inventaire daté des effectifs/postes. Les anciennes archives restent lisibles ; une preuve absente rend indisponible seulement le filtre ou l’indicateur qui en dépend.
 
-Un historique se consulte à sa date et avec ses règles d’interprétation enregistrées. Les seuils modifiés depuis ne réécrivent pas ses cellules. La présentation actuelle peut être utilisée pour le consulter. Une fiche de ticket rouverte dans le navigateur reste, elle, une lecture du portail à l’instant de l’ouverture ; elle ne devient pas rétroactivement la fiche d’origine de l’archive.
+La conservation se règle par âge, nombre et budget disque. Les réglages initiaux sont de 180 jours, 500 archives et 1 024 Mio. Les archives protégées et les derniers relevés utiles de chaque source sont conservés, même si cela fait dépasser l’objectif de rétention. Le catalogue persistant et les index d’identifiants sont reconstructibles depuis les archives.
 
-La comparaison exige deux relevés complets de la même recherche et du même contexte observable, des colonnes et règles compatibles, des identifiants valides et uniques et un ordre temporel cohérent. Elle distingue les tickets apparus, absents et modifiés. Résolutions, réouvertures et changements d’affectation ne sont comptés que lorsqu’ils sont observés entre deux lignes possédant le même identifiant. Une ligne absente peut être sortie du filtre, déplacée ou devenue inaccessible : elle n’est jamais comptée comme résolue pour cette seule raison.
+Une archive s’ouvre à sa date et avec ses règles. Les changements actuels de dictionnaire, de seuil ou de correction locale ne réécrivent pas son contenu. Ouvrir la fiche GLPI d’un ticket lance une consultation actuelle, distincte de cette preuve historique.
 
-Les courbes globales utilisent quatre indicateurs stockés dans des archives comparables : volume, actifs, échéances dépassées, priorités hautes actives. Un point incompatible crée une rupture. Les courbes personnelles et filtrées ne sont pas reconstruites dans cette version.
+La comparaison métier exige des relevés complets, de même recherche et contexte observable, avec schémas, règles et identités compatibles. Elle distingue apparitions, absences et changements de champs. Résolutions, réouvertures et transferts exigent le même identifiant observé des deux côtés. La file de lecture ciblée permet, sur demande, de vérifier l’état actuel des absents.
 
-## Examiner la qualité
+## Séries et analyses historiques
 
-L’espace **Qualité** sépare l’exhaustivité de l’extraction, la présence des colonnes nécessaires et l’interprétation de leurs valeurs. Il donne, par colonne, le nombre de valeurs renseignées, vides ou illisibles et des exemples utiles. Le comptage des valeurs distinctes est borné ; le rapport l’indique lorsqu’une limite est atteinte.
+Les séries matérialisent les observations, les incompatibilités et les trous de collecte par rapport à la cadence attendue. Une rupture n’est pas comblée par une valeur interpolée. Les mini-historiques des indicateurs recalculent l’identité personnelle et les définitions des filtres dans chaque archive comparable : ils ne réutilisent ni les numéros de lignes ni la sélection du relevé actuel.
 
-Les contrôles recherchent notamment les identifiants non interprétables ou répétés, les dates futures, les dates de résolution ou clôture antérieures à l’ouverture, les statuts non reconnus et les champs nécessaires absents. Les lignes en cause sont accessibles sans recopier leur contenu dans les journaux techniques. Les limites d’affichage du détail ne réduisent pas les compteurs globaux.
+Le recalcul est borné à 120 archives, deux millions de lignes de calcul et 250 000 valeurs par opération. Les limites et preuves manquantes créent des ruptures explicites. Pour les taux par site, les effectifs/postes doivent être valables à la date observée et leur source reste consultable.
 
-Un import local CSV/XLSX reste de portée GLPI non confirmée. Le lecteur XLSX utilise la première feuille visible, les valeurs de cellules et les résultats de formules déjà enregistrés : il n’exécute pas les formules, ne calcule pas Excel et ne suit pas les liens externes. Les formats usuels de dates, les chaînes partagées et les identifiants à zéros initiaux sont pris en compte. Une feuille atypique peut nécessiter un CSV préparé depuis Excel.
+Les analyses proposent cohortes à J+1/J+7/J+30, mouvements de périmètre, transferts, calendrier des événements observés, décomposition des variations et anomalies robustes. Le temps dans un statut comporte des bornes d’incertitude entre deux observations. Les scénarios linéaires de stock affichent leurs hypothèses ; ils ne sont pas des prévisions garanties.
 
-## Alertes sur les chiffres disponibles
+## Qualité et correspondances
 
-Dans **Alertes**, créer une règle à partir d’une mesure du catalogue ou d’une requête. Définir l’opérateur, le seuil, l’échantillon minimal et l’exigence d’un relevé complet et vérifié. Jusqu’à 50 règles locales sont conservées.
+L’espace **Qualité** sépare complétude de l’extraction, présence des champs et interprétation. Il présente valeurs renseignées/vides/illisibles, diversité bornée, exemples et lignes en cause. Les contrôles portent notamment sur identifiants répétés, dates futures ou incohérentes et statuts inconnus.
 
-Les évaluations se font sur le dashboard global du relevé courant, sans filtre de consultation. Les démonstrations, archives rouvertes et dashboards personnels ne déclenchent pas ces alertes. Un même relevé n’ouvre pas plusieurs fois la même occurrence. Les incidents sont séparés par source et par définition de règle.
+Le schéma est mémorisé par source : ajouts, suppressions, doublons et changements d’ordre déclenchent une information ; les renommages restent des propositions. L’assistant présente valeur brute et interprétée avant application. Une archive est en lecture seule ; les correspondances d’un import local s’appliquent au seul résultat concerné. Un résultat d’un autre portail ne modifie pas le profil actuellement actif.
 
-Une valeur inconnue, un échantillon trop petit ou un relevé partiel ne clôture pas une alerte existante. La clôture par retour à la normale nécessite une mesure valide. Modifier ou désactiver une règle termine ses anciennes occurrences en indiquant le changement de règle ; cela n’est pas présenté comme une amélioration des données.
+Chaque source peut définir culture de dates, convention numérique, fuseau, séparateurs multivaleurs et dictionnaires de normalisation. Les cellules brutes sont conservées et accessibles par **F2**.
 
-La prise en compte et le report d’une heure organisent les alertes à examiner. Une nouvelle occurrence après retour à la normale repart sans prise en compte. L’accès aux tickets concernés nécessite que le relevé associé soit encore chargé. Ce système reste dans l’application ; il n’envoie ni courriel ni message à un collègue. Les notifications Windows des rappels personnels appartiennent à **Ma journée**.
+Un CSV/XLSX local garde une provenance locale non certifiée GLPI. Le lecteur XLSX utilise la première feuille visible et les valeurs déjà enregistrées ; il n’exécute ni formules ni liens externes. Les colonnes atypiques restent à vérifier dans l’aperçu.
 
-## Vues du relevé
+## Alertes et santé des collectes
 
-**Vues** mémorise la recherche, les filtres par colonne, jusqu’à quatre niveaux de tri et les colonnes affichées. Les filtres couvrent texte, égalité, présence, nombres et dates, selon le type choisi. Un clic d’en-tête trie tout le résultat local ; Maj + clic ajoute un niveau. Les filtres et tris sont appliqués avant la limite de 10 000 lignes de l’aperçu.
+Une règle porte sur une mesure ou une requête, avec seuil, variation absolue ou variation en pourcentage. Les variations exigent une référence comparable ; une référence absente ou un dénominateur nul reste inconnu. Les évaluations utilisent le relevé courant global. Démonstrations, archives rouvertes et vues personnelles ne déclenchent pas ces alertes.
 
-La structure exacte des en-têtes lie une vue à son relevé pour éviter d’appliquer des numéros de colonnes à des champs différents. Jusqu’à 64 vues sont conservées localement. **Exporter la vue** exporte toutes les lignes qui correspondent aux critères, avec les colonnes visibles, même si l’aperçu n’en affiche qu’une partie. L’export complet garde son périmètre distinct.
+Un incident est isolé par source et définition de règle. Les occurrences répétées sont regroupées et les nouveaux tickets contributeurs distingués. Une mesure inconnue, partielle ou insuffisamment couverte ne résout pas un incident. Le retour à la normale doit être prouvé ; une résolution manuelle exige un motif et conserve l’historique.
 
-## Sources, campagnes et horaires
+L’onglet **Santé des collectes** présente fraîcheur, collectes attendues manquantes et échecs répétés. Les plages de tranquillité s’appliquent aux lancements programmés et aux rappels personnels Windows. Aucun courriel ou message à un collègue n’est envoyé.
 
-Chaque source mémorise un nom, l’URL de recherche, le navigateur et la méthode d’extraction. La campagne parcourt les sources cochées successivement ; elle ne lance pas plusieurs sessions SSO en parallèle et ne fusionne pas arbitrairement les recherches. Les fichiers et archives gardent leur source.
+## Vues du relevé et reprise du travail
 
-La programmation est désactivée par défaut. Lorsqu’elle est activée, elle s’exécute seulement tant que GLPI Pilot reste ouvert. L’intervalle est borné à 5 minutes minimum. Un travail déjà en cours, un éditeur intégré ouvert, une plage silencieuse ou le verrouillage de la session Windows retardent le lancement. Un contrôle de fraîcheur signale un relevé ancien. Aucune tâche Windows permanente n’est installée et l’application ne se réveille pas lorsqu’elle est fermée.
+Les vues nommées mémorisent recherche, filtres typés, quatre niveaux de tri et présentation des colonnes. Les en-têtes permettent de filtrer directement ; les familles facilitent affichage/masquage groupés. Les filtres et tris s’appliquent avant la limite de 10 000 lignes de l’aperçu. L’export de la vue comprend toutes les lignes correspondantes.
 
-Le journal d’opérations conserve le type d’opération, ses dates, son résultat et les erreurs utiles, dans une limite de 500 entrées. Une opération restée ouverte lors de l’arrêt précédent est marquée comme interrompue ; elle n’est pas automatiquement annoncée réussie ni reprise au milieu d’une pagination.
+Le panier persistant utilise les identités vérifiées des objets et reste indépendant des filtres. Il refuse identifiants ambigus, démonstrations et recherches multi-types sans type fiable. L’ordre/largeur des colonnes est mémorisé par tableau ; sélection et position de lecture sont isolées par source, y compris entre deux imports locaux distincts.
 
-## Configuration et récupération
+## Sources, campagnes et reprise de collecte
 
-L’enregistrement des réglages est atomique. Les 30 versions précédentes valides sont conservées lorsque le contenu change. Un fichier courant illisible est conservé à part ; le logiciel essaie une sauvegarde valide et affiche ce qu’il a récupéré. La restauration manuelle présente un aperçu avant application.
+Chaque profil mémorise acquisition, repères, délais, conventions et dossier local. Sur choix explicite, il restaure aussi requêtes et dashboards. Le profil navigateur est séparé par installation GLPI et navigateur. Le prévol contrôle adresses, limites, écriture, verrou de profil et espace disque.
 
-L’import d’une configuration permet de sélectionner les sections et de comparer leurs volumes. Le mode fusion conserve les éléments déjà présents avec le même identifiant, puis ajoute les nouveaux dans les limites prises en charge. Le remplacement est explicite par section. Une ancienne configuration qui ne possède pas de liste de sources conserve les sources du poste destinataire.
+Une campagne parcourt les sources successivement et produit un bilan JSON/CSV par source. Une erreur n’efface pas les réussites et n’empêche pas l’examen des autres sources. Une annulation distingue sources commencées et sources non exécutées.
 
-Le partage inclut les réglages de recherche, les repères, les définitions de dashboard, les villes/sites et les requêtes. Le profil SSO, les cookies, le dossier d’export, l’identité personnelle, le zoom, la programmation, l’historique, les alertes et les notes locales ne sont pas transmis par ce fichier. Les adresses partagées restent des informations d’équipe à vérifier avant de remettre la configuration à un collègue.
+La pagination peut enregistrer un point de reprise borné. Après interruption, la reprise recontrôle contexte, schéma, total et pages témoins. Une reconnexion SSO ou réseau n’autorise pas à poursuivre avec un périmètre modifié. Le reçu conserve méthode, tri observé, horaires et durées de phases. L’échantillon de l’export natif rapproche les identifiants et les valeurs comparables ; un export corrompu ne devient pas un succès par repli silencieux.
 
-## Présentation et démonstration
+## Programmation et recettes
 
-Les réglages locaux proposent densité, couleur d’accent, suivi du thème Windows, contraste, réduction des animations, colonnes figées et mode concentré qui masque le journal et le contexte secondaire. Les dimensions et la position de la fenêtre sont enregistrées lorsqu’elles ont changé. Le zoom est mémorisé séparément.
+La programmation est désactivée par défaut. Elle utilise un intervalle (minimum cinq minutes) ou plusieurs horaires fixes sur les jours choisis. Elle exige que GLPI Pilot reste ouvert et la session disponible. Un travail actif, un éditeur, le verrouillage ou une plage silencieuse retardent le lancement. Sortie de veille et retour réseau déclenchent un nouvel examen des échéances, sans tâche Windows permanente.
 
-La démonstration charge 180 tickets entièrement fictifs. Ils ne sont pas archivés et ne déclenchent pas les alertes. Le mode permet d’explorer l’interface avant de se connecter à son portail.
+Une recette commence par une extraction inconditionnelle. Les étapes suivantes — contrôle, enrichissement, archivage et exports — peuvent être ordonnées et conditionnées aux résultats. Le moteur valide la recette avant lancement et journalise les étapes exécutées, ignorées ou échouées. La lecture ciblée de fiches conserve ses propres limites et dates de lecture.
+
+L’ordonnanceur privilégie les vues visibles, annule les calculs remplacés et empêche un résultat périmé de s’afficher. Un dashboard caché dont le calcul a été annulé reprend lorsqu’il redevient visible.
+
+## Configuration, partage et récupération
+
+L’enregistrement est atomique et conserve trente versions valides. Un fichier illisible est préservé et une récupération depuis une version valide reste explicitement signalée. Import et restauration présentent un comparatif détaillé des ajouts, retraits, changements et réordonnancements.
+
+L’import permet de sélectionner les sections et d’arbitrer chaque conflit : courant, importé ou deux variantes. Les identifiants et références liés sont réécrits ensemble lorsque deux variantes sont conservées. Les champs inconnus, limites invalides et références incohérentes sont refusés avant application.
+
+Le partage transmet les définitions de travail choisies. Cookies, sessions SSO, identité personnelle, notes privées, dossiers locaux et clé du fournisseur d’assistance restent sur le poste. Les adresses et critères que contient le fichier partagé doivent être relus avant transmission.
+
+Avant un changement de version, les paramètres reconnus sont sauvegardés avec leur empreinte, notamment tournées, panier, tableaux, effectifs, adaptateurs et politique de mise à jour. L’assistant de mise à jour vérifie provenance et contenu, sauvegarde les binaires et restaure la version précédente si le démarrage échoue. Voir [Guide 2.1](Guide-2.1.md) pour les commandes et la signature facultative.

@@ -447,5 +447,78 @@
       alreadyActive: element.getAttribute('aria-selected') === 'true' || element.classList.contains('active') || !!element.closest('.ui-tabs-active'), proof, key };
   }
 
-  window.__glpiPilotTicket = Object.freeze({ version: '1.3.0', inspect, read, tab, tabs });
+  function observe(argument = {}) {
+    if (location.origin !== argument.origin) return [];
+    const identity = inspect({ id: argument.id, origin: argument.origin });
+    if (identity.authentication || identity.wrongId) return [];
+    const found = query(argument.selector);
+    if (found.nodes.length !== 1 || !visible(found.nodes[0])) return [];
+    const root = found.nodes[0], values = [];
+    const value = (node, selectors) => {
+      for (const selector of selectors.split(',')) {
+        const child = node.querySelector(selector.trim());
+        if (child && visible(child) && !unsafeElement(child) && !secretGroup(child))
+          return tidy(child.getAttribute('datetime') || textOf(child));
+      }
+      return '';
+    };
+    const labelled = (node, aliases) => {
+      for (const row of node.querySelectorAll('tr,.row,.form-group,dl')) {
+        if (!visible(row)) continue;
+        const label = row.querySelector('th,label,dt,.col-form-label');
+        if (!label || !aliases.includes(norm(textOf(label)).replace(/[:*]$/g, '').trim())) continue;
+        const cell = row.querySelector('td,dd,.field-value,.form-control-plaintext');
+        if (cell && visible(cell) && !unsafeElement(cell) && !secretGroup(cell)) return textOf(cell);
+      }
+      return '';
+    };
+    const nodes = [...root.querySelectorAll(TIMELINE_ITEMS)].filter(n => visible(n) && !n.parentElement?.closest(TIMELINE_ITEMS));
+    for (const node of nodes.slice(0, Math.min(5000, Math.max(1, argument.maxRows || 5000)))) {
+      const content = node.querySelector('.h_content,.timeline-content,.timeline-item-content') || node;
+      const signature = [content.className, node.className, node.getAttribute('data-itemtype'), node.getAttribute('data-type')].join(' ');
+      const kind = /ITILFollowup|followup/i.test(signature) ? 'followup' : /ITILTask|TicketTask|task/i.test(signature) ? 'task'
+        : /Validation/i.test(signature) ? 'validation' : /waiting|pending/i.test(signature) ? 'waiting' : '';
+      if (!kind) continue;
+      const roleElement = node.querySelector('[data-actor-role],.actor-role');
+      const role = roleElement && visible(roleElement) ? tidy(roleElement.getAttribute('data-actor-role') || textOf(roleElement)) : '';
+      const state = node.querySelector('.state[title]');
+      values.push({ kind, identity: node.getAttribute('data-items-id') || node.id || '', sourceSection: argument.selector,
+        title: value(content, '.rich_text_container,.timeline-item-content,.item_content,.timeline-content-body'),
+        date: value(node, '.h_date,time,.timeline-date,[data-timeline-date]'), author: value(node, '.h_user_name,.timeline-author,[data-timeline-author]'), authorRole: role,
+        owner: value(node, '[data-task-owner],[data-validation-owner],.task-assignee,.validation-user') || labelled(node, ['responsable','validateur','assigne a','assigned to']),
+        status: state && visible(state) ? tidy(state.getAttribute('title')) : value(node, '[data-task-status],[data-validation-status],.validation-status') || labelled(node, ['etat','statut','status']),
+        due: value(node, '[data-due-date],.task-due,time[itemprop="endDate"]') || labelled(node, ['echeance','date limite','due date']),
+        plannedStart: value(node, '[data-planned-start],.planning-start') || labelled(node, ['debut planifie','date de debut','begin','start date']),
+        plannedEnd: value(node, '[data-planned-end],.planning-end') || labelled(node, ['fin planifiee','date de fin','end date']),
+        completedAt: value(node, '[data-completed-at],.completed-at') || labelled(node, ['termine le','date achevement','completed at']),
+        requestedAt: value(node, '[data-requested-at],.validation-requested-at') || labelled(node, ['date de demande','requested at']),
+        waitingStart: value(node, '[data-waiting-start],.waiting-start') || labelled(node, ['debut de mise en attente','waiting start']),
+        waitingEnd: value(node, '[data-waiting-end],.waiting-end') || labelled(node, ['fin de mise en attente','waiting end']),
+        waitingReason: value(node, '[data-waiting-reason],.waiting-reason') || labelled(node, ['motif attente','motif de mise en attente','waiting reason']) });
+    }
+    const path = argument.ticketPath || location.pathname;
+    const installation = path.slice(0, path.lastIndexOf('/front/') + 1);
+    for (const link of root.querySelectorAll('a[href]')) {
+      if (!visible(link) || unsafeElement(link) || secretGroup(link)) continue;
+      let url; try { url = new URL(link.href, location.href); } catch { continue; }
+      if (url.origin !== argument.origin || !url.pathname.startsWith(installation + 'front/') || url.username || url.password || url.hash || new Set(url.searchParams.keys()).size !== [...url.searchParams.keys()].length
+        || [...url.searchParams.keys()].some(k => /delete|purge|update|add|token|action|submit|force|clone/i.test(k))) continue;
+      const endpoint = url.pathname.slice((installation + 'front/').length), title = textOf(link);
+      if (!title) continue;
+      if (endpoint === 'document.send.php' && /^\d+$/.test(url.searchParams.get('docid') || '')
+        && [...url.searchParams.keys()].every(k => ['docid','tickets_id','itemtype','items_id'].includes(k))
+        && ['tickets_id','items_id'].every(k => !url.searchParams.has(k) || url.searchParams.get(k) === argument.id)
+        && (!url.searchParams.has('itemtype') || url.searchParams.get('itemtype') === 'Ticket'))
+        values.push({kind:'document', identity:url.searchParams.get('docid'), title, url:url.href, sourceSection:argument.selector});
+      else {
+        const match = /^(ticket|problem|change|computer|monitor|printer|networkequipment|peripheral|phone|software|user|group)\.form\.php$/.exec(endpoint);
+        if (match && /^\d+$/.test(url.searchParams.get('id') || '') && [...url.searchParams.keys()].every(k => k === 'id'))
+          values.push({kind:'relation', identity:url.searchParams.get('id'), title, url:url.href, relatedType:match[1], sourceSection:argument.selector});
+      }
+      if (values.length >= 6000) break;
+    }
+    return values;
+  }
+
+  window.__glpiPilotTicket = Object.freeze({ version: '1.4.0', inspect, read, tab, tabs, observe });
 })();

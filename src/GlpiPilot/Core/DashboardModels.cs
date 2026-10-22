@@ -29,10 +29,13 @@ public sealed record DashboardBox(string Label, int Sample, double Minimum, doub
     double Median, double ThirdQuartile, double Maximum, double P90, int[] Rows);
 public sealed record DashboardBoxSeries(string Key, string Title, bool Available, string Unit,
     IReadOnlyList<DashboardBox> Boxes, string Explanation);
+public sealed record DashboardGeoPoint(string Key, string Label, double Latitude, double Longitude, int[] Rows, int[] ActiveRows);
 public sealed record DashboardHistoryPoint(DateTimeOffset CapturedAt, double? Value, int Rows,
     bool Complete, bool Comparable, string SnapshotId, string Note = "");
 public sealed record DashboardHistorySeries(string Key, string Title, string Unit,
     IReadOnlyList<DashboardHistoryPoint> Points, string Explanation);
+public sealed record DashboardHistoryScope(string Key, IReadOnlyList<DashboardScopeFilter> CommonFilters,
+    IReadOnlyList<DashboardScopeFilter> WidgetFilters);
 
 public sealed class DashboardSnapshot
 {
@@ -61,9 +64,12 @@ public sealed class DashboardSnapshot
     public List<DashboardScatter> Scatters { get; init; } = new();
     public List<DashboardBoxSeries> BoxSeries { get; init; } = new();
     public List<DashboardHistorySeries> History { get; init; } = new();
+    public List<DashboardGeoPoint> Geography { get; init; } = new();
     public Dictionary<string, DashboardWeather> WeatherProfiles { get; init; } = new(StringComparer.Ordinal);
     [System.Text.Json.Serialization.JsonIgnore]
     public Func<int[], string, CancellationToken, DashboardSnapshot>? RecalculateScope { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Func<IReadOnlyList<DashboardHistoryScope>, CancellationToken, IReadOnlyDictionary<string, IReadOnlyList<DashboardHistorySeries>>>? RecalculateHistories { get; set; }
     public DashboardWeather Weather { get; set; } = new("unknown", "Météo indéterminée", "◌", null, 0,
         "Importez ou extrayez un relevé pour calculer sa météo.", Array.Empty<DashboardSignal>());
     public DashboardMetric? Metric(string key) => Metrics.FirstOrDefault(x => x.Key == key);

@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
 using GlpiPilot.Core;
 using GlpiPilot.UI;
 using Microsoft.Win32;
@@ -19,9 +21,10 @@ public partial class MainWindow
         _citySettingsView = new CitySettingsView();
         SettingsCitiesHost.Content = _citySettingsView;
         _citySettingsView.SaveRequested += async () => await SaveCitySettingsAsync();
-        _citySettingsView.LocalCorrectionRequested += async (row, city, site) => await SaveCityCorrectionAsync(row, city, site);
+        _citySettingsView.LocalCorrectionRequested += async (row, city, site, reason) => await SaveCityCorrectionAsync(row, city, site, reason);
         _tourPlanningView = new TourPlanningView();
         ToursHost.Content = _tourPlanningView;
+        _tourPlanningView.SavedToursChanged += RefreshPersonalDay;
         _tourPlanningView.SettingsRequested += OpenCitySettings;
         _tourPlanningView.Log += message => AddLog(message);
         _tourPlanningView.RowsRequested += (rows, label) =>
@@ -59,10 +62,11 @@ public partial class MainWindow
 
     private DashboardSettings EffectiveDashboardSettings(DashboardSettings settings)
     {
-        var effective = IsHistoricalResult ? _historicalDocument!.Dashboard.Copy() : settings.Copy();
-        if (IsHistoricalResult)
+        var localMapping = LocalMappingForCurrentResult();
+        var effective = IsHistoricalResult ? _historicalDocument!.Dashboard.Copy() : localMapping ?? settings.Copy();
+        if (IsHistoricalResult || localMapping != null)
         {
-            // Keep today’s presentation, but replay the recorded interpretation and date.
+            // Keep today's presentation and personal identity while using the result's interpretation.
             effective.Layout = settings.Layout.Copy(); effective.PersonalLayout = settings.PersonalLayout.Copy();
             effective.PersonalTechnician = settings.PersonalTechnician;
         }
@@ -77,7 +81,7 @@ public partial class MainWindow
     private async Task<CityEnrichmentResult> EnrichCitiesAsync(ExtractionResult source, AppSettings settings, CancellationToken ct)
     {
         var cities = settings.Cities.Copy();
-        var dashboard = settings.Dashboard.Copy();
+        var dashboard = _localMappings.Get(source) ?? settings.Dashboard.Copy();
         return await Task.Run(() =>
         {
             var corrections = CityOverrideStore.Load(Path.Combine(AppPaths.DataRoot, "city-overrides.json"));
@@ -85,7 +89,7 @@ public partial class MainWindow
         }, ct);
     }
 
-    private async Task SaveCityCorrectionAsync(int row, string cityId, string siteId)
+    private async Task SaveCityCorrectionAsync(int row, string cityId, string siteId, string reason)
     {
         if (_busy || _closing || !CitySourceIsCurrent()) return;
         await RunAsync("Application de la correction locale de lieu…", async ct =>
@@ -104,7 +108,7 @@ public partial class MainWindow
             var path = Path.Combine(AppPaths.DataRoot, "city-overrides.json");
             var result = await Task.Run(() =>
             {
-                var store = CityOverrideStore.Load(path).With(cityId.Length == 0 ? null : new CityTicketOverride { CityId = cityId, SiteId = siteId }, sourceKey, ticketId);
+                var store = CityOverrideStore.Load(path).With(cityId.Length == 0 ? null : new CityTicketOverride { CityId = cityId, SiteId = siteId, Reason = reason }, sourceKey, ticketId);
                 var report = CityDetectionService.Enrich(source, _settings.Cities, _settings.Dashboard, ct, store.Overrides);
                 ct.ThrowIfCancellationRequested(); store.Save(path); return report;
             }, ct);
@@ -137,14 +141,34 @@ public partial class MainWindow
     private async Task SaveCitySettingsAsync()
     {
         if (_busy || _closing || _citySettingsView == null) return;
-        await RunAsync("Enregistrement des correspondances et recalcul des villes…", async ct =>
+        CitySettings draft;
+        try { draft = _citySettingsView.ReadSettings(); } catch (Exception error) { ShowError(error); return; }
+        var source = CitySourceIsCurrent() ? _cityEnrichment!.Source : _result;
+        if (source == null)
         {
-            var settings = _settings.Copy();
-            settings.Cities = _citySettingsView.ReadSettings();
-            ApplyDashboardSettingsFields(settings);
-            await SaveAndReapplyCitiesAsync(settings, ct);
-            SetStatus("Correspondances enregistrées. La colonne des villes, les dashboards et les tournées utilisent le relevé recalculé.");
+            await RunAsync("Enregistrement du référentiel…", async ct => { var settings = _settings.Copy(); settings.Cities = draft; await SaveAndReapplyCitiesAsync(settings, ct); }); return;
+        }
+        CityDetectionPreview? preview = null;
+        await RunAsync("Simulation de toutes les localisations avant application…", async ct =>
+        {
+            var settings = _settings.Copy(); settings.Cities = draft; ApplyDashboardSettingsFields(settings);
+            var before = await EnrichCitiesAsync(source, _settings, ct); var after = await EnrichCitiesAsync(source, settings, ct);
+            preview = await Task.Run(() => CityDetectionReview.Compare(before, after, ct), ct);
         });
+        if (preview == null || _closing) return;
+        var panel = new Grid(); panel.RowDefinitions.Add(new() { Height = GridLength.Auto }); panel.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var header = new StackPanel(); header.Children.Add(PilotControls.Text("Impact des règles sur le relevé complet", 22));
+        header.Children.Add(PilotControls.Text($"{preview.TotalRows:N0} lignes examinées · {preview.ChangedRows:N0} localisations modifiées. {preview.Changes.Count:N0} changements affichés (limite 1 000). Aucun changement enregistré.")); panel.Children.Add(header);
+        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, EnableRowVirtualization = true, ItemsSource = preview.Changes, Margin = new Thickness(0, 12, 0, 12) };
+        foreach (var (label, path, width) in new[] { ("Ligne", "RowIndex", 65d), ("Avant", "Before", 180d), ("Après", "After", 180d), ("Décision", "Explanation", 420d) }) grid.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(path), Width = width });
+        Grid.SetRow(grid, 1); panel.Children.Add(grid);
+        var apply = PilotControls.Button("Enregistrer et appliquer ce résultat", async () =>
+        {
+            if (_busy || _closing) return;
+            if (!ReferenceEquals(source, CitySourceIsCurrent() ? _cityEnrichment!.Source : _result)) { ShowError(new InvalidDataException("Le relevé a changé ; relancez la simulation avant application.")); return; }
+            await RunAsync("Application des localisations vérifiées…", async ct => { var settings = _settings.Copy(); settings.Cities = draft; ApplyDashboardSettingsFields(settings); await SaveAndReapplyCitiesAsync(settings, ct); CloseInlinePanel(); SetStatus("Référentiel enregistré après simulation du relevé complet."); });
+        });
+        Grid.SetRow(apply, 2); panel.Children.Add(apply); ShowInlinePanel(panel);
     }
 
     private async Task SaveAndReapplyCitiesAsync(AppSettings settings, CancellationToken ct)

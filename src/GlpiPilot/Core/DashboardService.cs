@@ -31,6 +31,8 @@ public static class DashboardService
         new DashboardRole("postal", "Code postal", new[] { "Code postal", "Postal code", "Postcode", "ZIP code" }),
         new DashboardRole("source", "Origine de la demande", new[] { "Source de la demande", "Origine de la demande", "Source de demande", "Request source", "Source" }),
         new DashboardRole("updatedBy", "Dernière modification par", new[] { "Dernière modification par", "Last update by", "Last edited by", "Updated by" }),
+        new DashboardRole("satisfaction", "Note de satisfaction", new[] { "Satisfaction", "Note de satisfaction", "Satisfaction score", "Satisfaction - Note" }),
+        new DashboardRole("satisfaction-invited", "Invitation à l’enquête de satisfaction", new[] { "Date d'envoi de l'enquête", "Enquête envoyée", "Satisfaction - Date d'envoi", "Survey sent" }),
         new DashboardRole("solution", "Solution", new[] { "Solution", "Solution - Description", "Solutions - Description", "Solution description" })
     };
 
@@ -71,7 +73,7 @@ public static class DashboardService
         var columns = ResolveColumns(data.Headers, settings);
         var index = columns.ToDictionary(x => x.Role, x => x.Index);
         bool Has(string key) => index[key].HasValue;
-        string Cell(string[] row, string key) => index[key] is int n && n < row.Length ? (row[n] ?? "").Trim() : "";
+        string Cell(string[] row, string key) => index[key] is int n && n < row.Length ? NormalizeValue(row[n], key, data.Headers[n], settings) : "";
         var result = new DashboardSnapshot
         {
             CalculatedAt = now, ExtractedAt = data.ExtractedAt, RowCount = selectedRows?.Length ?? data.Rows.Count,
@@ -104,7 +106,7 @@ public static class DashboardService
                 if (IsMissing(raw)) return null;
                 var bit = DateFieldBit(key);
                 datePresent |= bit;
-                if (!TryDate(raw, settings.DateCulture, now.Offset, out var value))
+                if (!TrySourceDate(raw, settings, now.Offset, out var value))
                 { dateInvalid |= bit; invalid[key] = invalid.GetValueOrDefault(key) + 1; return null; }
                 if (!mayBeFuture && value > wallNow)
                 { dateFuture |= bit; future[key] = future.GetValueOrDefault(key) + 1; return null; }
@@ -115,7 +117,7 @@ public static class DashboardService
             {
                 Index = i, Id = NormalizeId(Cell(row, "id")), Title = Cell(row, "title"),
                 Status = Status(Cell(row, "status")), Priority = Priority(Cell(row, "priority")),
-                Type = TypeKind(Cell(row, "type")), Assignee = assignee, TechnicianCount = SplitTechnicianNames(assignee).Count, Group = Cell(row, "group"),
+                Type = TypeKind(Cell(row, "type")), Assignee = assignee, TechnicianCount = SplitTechnicianNames(assignee, settings.MultiValueSeparators).Count, Group = Cell(row, "group"),
                 Created = Date("created"), Updated = Date("updated"), Resolved = Date("resolved"), Closed = Date("closed"), Due = Date("due", true),
                 DatePresent = datePresent, DateInvalid = dateInvalid, DateFuture = dateFuture
             });
@@ -277,6 +279,34 @@ public static class DashboardService
                 r.Created.HasValue ? (wallNow - r.Created.Value).TotalDays : null, string.Join(" · ", reasons)));
         }
         ct.ThrowIfCancellationRequested();
+        var dueBoundaries = settings.DueHorizonHours.Order().Distinct().ToArray();
+        var horizonBuckets = new List<DashboardBucket>();
+        if (Has("due") && activeKnown)
+        {
+            var overdueRows = active.Where(r => r.Due.HasValue && r.Due < wallNow).Select(r => r.Index).ToArray();
+            horizonBuckets.Add(new("Dépassée", overdueRows.Length, overdueRows));
+            for (var i = 0; i < dueBoundaries.Length; i++)
+            {
+                var low = dueBoundaries[i]; var upperBound = i + 1 < dueBoundaries.Length ? dueBoundaries[i + 1] : double.PositiveInfinity;
+                var rows = active.Where(r => r.Due.HasValue && (r.Due.Value - wallNow).TotalHours >= low && (r.Due.Value - wallNow).TotalHours < upperBound).Select(r => r.Index).ToArray();
+                horizonBuckets.Add(new(double.IsPositiveInfinity(upperBound) ? $"≥ {low:0.##} h" : $"[{low:0.##} ; {upperBound:0.##}[ h", rows.Length, rows));
+            }
+            var absentDue = active.Where(r => !r.Due.HasValue).Select(r => r.Index).ToArray(); horizonBuckets.Add(new("Sans échéance exploitable", absentDue.Length, absentDue));
+        }
+        result.Distributions.Add(new("due-exclusive", "Échéances · tranches exclusives", Has("due") && activeKnown, active.Count,
+            "Chaque actif figure exactement dans une tranche : dépassée, intervalle de temps restant ou sans échéance exploitable. Bornes configurées dans les réglages ; aucune règle SLA supposée.", horizonBuckets));
+        var scores = Has("satisfaction") ? records.Select(r => (Record: r, Raw: Cell(data.Rows[r.Index], "satisfaction")))
+            .Select(x => (x.Record, Value: TrySourceNumber(x.Raw, settings, out var number) ? (double?)number : null))
+            .Where(x => x.Value is double score && score >= 0 && score <= settings.SatisfactionScale).ToArray() : Array.Empty<(Record Record, double? Value)>();
+        var scoreRows = scores.Select(x => x.Record.Index).ToArray();
+        Number("satisfaction-score", "Satisfaction moyenne", scores.Length == 0 ? null : scores.Average(x => x.Value!.Value), "sur " + settings.SatisfactionScale.ToString("G", CultureInfo.CurrentCulture),
+            "Moyenne des seules notes présentes, finies et dans l’échelle configurée. Une absence de réponse n’est pas une note zéro.", scores.Length, scoreRows);
+        Number("satisfaction-responses", "Réponses de satisfaction", Has("satisfaction") ? scores.Length : null, "réponses", "Notes exploitables dans le relevé courant.", records.Count, scoreRows);
+        Number("satisfaction-coverage", "Couverture de satisfaction du relevé", Has("satisfaction") && records.Count > 0 ? 100d * scores.Length / records.Count : null, "%",
+            "Notes exploitables rapportées à tous les tickets du relevé, pas taux de réponse des seuls destinataires d’une enquête.", records.Count, scoreRows);
+        var invitedRows = Has("satisfaction-invited") ? records.Where(r => { var raw = Cell(data.Rows[r.Index], "satisfaction-invited"); return Normalize(raw) is "oui" or "yes" or "true" or "1" || TrySourceDate(raw, settings, now.Offset, out _); }).Select(r => r.Index).ToArray() : Array.Empty<int>();
+        Number("satisfaction-response-rate", "Réponse aux enquêtes envoyées", Has("satisfaction") && Has("satisfaction-invited") && invitedRows.Length > 0 ? 100d * scoreRows.Intersect(invitedRows).Count() / invitedRows.Length : null,
+            "%", "Notes exploitables parmi les invitations explicitement datées ou marquées envoyées. Les invitations inconnues restent hors du dénominateur.", invitedRows.Length, scoreRows.Intersect(invitedRows).ToArray());
         return result;
 
         void AddAnalysisSeries()
@@ -303,7 +333,7 @@ public static class DashboardService
                     if ((cells.Count & 255) == 0) ct.ThrowIfCancellationRequested();
                     string Label(string role) => role switch { "status" => StatusLabel(record.Status), "urgency" or "impact" => SeverityLabel(Severity(Cell(data.Rows[record.Index], role)), role == "impact"), _ => IsMissing(Cell(data.Rows[record.Index], role)) ? "Non renseigné" : Cell(data.Rows[record.Index], role) };
                     var raw = Label(rowRole);
-                    var names = rowRole == "assignee" && settings.AssignmentCountingMode != "cell" ? SplitTechnicianNames(raw) : new[] { raw };
+                    var names = rowRole == "assignee" && settings.AssignmentCountingMode != "cell" ? SplitTechnicianNames(raw, settings.MultiValueSeparators) : new[] { raw };
                     if (names.Count == 0) names = new[] { "Non renseigné" };
                     var share = rowRole == "assignee" && settings.AssignmentCountingMode == "fractional" ? 1d / names.Count : 1d;
                     foreach (var name in names)
@@ -576,6 +606,21 @@ public static class DashboardService
 
     public static void ValidateSettings(DashboardSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (settings.DueHorizonHours == null || settings.DueHorizonHours.Count is < 1 or > 20 || settings.DueHorizonHours[0] != 0
+            || settings.DueHorizonHours.Any(v => !double.IsFinite(v) || v < 0 || v > 87600)
+            || !settings.DueHorizonHours.SequenceEqual(settings.DueHorizonHours.Distinct().Order())
+            || !double.IsFinite(settings.SatisfactionScale) || settings.SatisfactionScale <= 0 || settings.SatisfactionScale > 100
+            || settings.HistoryCadenceHours is < 1 or > 720)
+            throw new InvalidOperationException("Tranches d’échéance : 0 puis des bornes croissantes en heures ; échelle satisfaction de 0 à 100 ; cadence de 1 à 720 h.");
+        try { if (settings.NumberCulture != "invariant") CultureInfo.GetCultureInfo(settings.NumberCulture); }
+        catch (CultureNotFoundException) { throw new InvalidOperationException("Le format numérique de la source n’est pas reconnu."); }
+        if (!string.IsNullOrWhiteSpace(settings.SourceTimeZone))
+        {
+            try { TimeZoneInfo.FindSystemTimeZoneById(settings.SourceTimeZone); }
+            catch (Exception error) when (error is TimeZoneNotFoundException or InvalidTimeZoneException) { throw new InvalidOperationException("Le fuseau horaire de la source n’est pas reconnu."); }
+        }
+
         if (settings.StaleDays is < 1 or > 3650 || settings.OldDays < settings.StaleDays || settings.OldDays > 3650 || settings.DueSoonHours is < 1 or > 720)
             throw new InvalidOperationException("Tableau de bord : seuils de 1 à 3 650 jours, âge ancien ≥ inactivité, échéance de 1 à 720 heures.");
         if (settings.DateCulture is not ("fr-FR" or "en-GB" or "en-US" or "invariant"))
@@ -688,6 +733,26 @@ public static class DashboardService
         snapshot.WeatherProfiles["deadlines"] = Profile("Météo des échéances", "overdue", "active-no-due");
         snapshot.WeatherProfiles["quality"] = Profile("Météo de qualité", "unknown-status", "missing-id", "invalid-dates", "inconsistent-dates");
         snapshot.WeatherProfiles["geography"] = Profile("Météo des lieux", "city-unmatched", "city-ambiguous", "city-no-title");
+        var assigned = snapshot.Distributions.FirstOrDefault(x => x.Key == "active-assignee");
+        var unassignedRows = snapshot.Metric("without-technician")?.Rows.ToHashSet() ?? new HashSet<int>();
+        var loads = assigned?.Buckets.Where(x => x.Rows.Any(row => !unassignedRows.Contains(row))).Select(x => (Bucket: x, Load: x.Rows.Count(row => !unassignedRows.Contains(row)))).Where(x => x.Load > 0).ToArray();
+        if (assigned?.Available != true || loads is null || loads.Length < 2 || snapshot.Metric("active")?.Value is not double activeCount || activeCount <= 0)
+            snapshot.WeatherProfiles["workload"] = new("unknown", "Météo de la charge · observation insuffisante", "◌", null, 0,
+                "Deux techniciens affectés au moins et des statuts exploitables sont nécessaires pour décrire la concentration de charge. Les capacités, absences et temps de travail ne sont pas déduits du relevé.", Array.Empty<DashboardSignal>());
+        else
+        {
+            var median = Percentile(loads.Select(x => (double)x.Load).Order().ToArray(), .5)!.Value;
+            var concentrated = loads.Where(x => x.Load > 2 * median).SelectMany(x => x.Bucket.Rows).Distinct().ToArray();
+            var signals = new[] {
+                new DashboardSignal("Actifs dans une charge supérieure à deux médianes", concentrated.Length, (int)activeCount, (int)activeCount, 1, concentrated,
+                    $"Médiane {median:0.##} tickets parmi {loads.Length} techniciens présents dans les affectations. Un ticket partagé est compté une seule fois dans ce signal."),
+                new DashboardSignal("Actifs sans technicien", unassignedRows.Count, (int)activeCount, (int)activeCount, 1, unassignedRows.ToArray(), "Absence d’affectation explicite dans le relevé.") };
+            var score = signals.Average(x => Math.Min(100, 100d * x.Count / x.Sample));
+            var state = score >= settings.Weather.StormThreshold ? "storm" : score >= settings.Weather.RainThreshold ? "rain" : score >= settings.Weather.WatchThreshold ? "watch" : "sun";
+            if (!snapshot.Complete && state == "sun") state = "partial";
+            snapshot.WeatherProfiles["workload"] = new(state, "Météo de la charge observée" + (snapshot.Complete ? "" : " · partielle"), state switch { "storm" => "ϟ", "rain" => "☂", "watch" => "⛅", "sun" => "☀", _ => "◌" }, score, 2,
+                "Moyenne des parts d’actifs sans technicien et présents dans une affectation supérieure à deux fois la médiane observée. Décrit une concentration ; ne mesure ni productivité, ni capacité, ni surcharge réelle. Les techniciens sans ticket dans ce relevé ne sont pas observés.", signals);
+        }
     }
 
     public static long EstimatedExportRows(DashboardSnapshot snapshot) => 4L + (snapshot.IsFiltered ? 2 : 0) + snapshot.Weather.Signals.Count + snapshot.Metrics.Count
@@ -778,6 +843,75 @@ public static class DashboardService
             if (seen.Add(name.ToUpperInvariant())) result.Add(name);
         }
         return result;
+    }
+
+    public static string NormalizeValue(string? value, string role, string header, DashboardSettings settings)
+    {
+        var raw = (value ?? "").Trim();
+        if (settings.ValueDictionaries.TryGetValue(role, out var dictionary) || settings.ValueDictionaries.TryGetValue(header, out dictionary))
+        {
+            var match = dictionary.FirstOrDefault(p => string.Equals(p.Key, raw, StringComparison.OrdinalIgnoreCase));
+            if (match.Key != null) return match.Value;
+        }
+        return raw;
+    }
+    public static bool TrySourceNumber(string raw, DashboardSettings settings, out double value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(raw) || raw.Length > 200) return false;
+        try
+        {
+            var culture = settings.NumberCulture == "invariant" ? CultureInfo.InvariantCulture : CultureInfo.GetCultureInfo(settings.NumberCulture);
+            var text = raw.Trim().Replace('\u00a0', ' ').Replace('\u202f', ' ');
+            var decimalSeparator = culture.NumberFormat.NumberDecimalSeparator;
+            var groupSeparator = culture.NumberFormat.NumberGroupSeparator.Replace('\u00a0', ' ').Replace('\u202f', ' ');
+            // Legacy exports use either decimal comma or decimal point in otherwise French cells.
+            if (decimalSeparator == "," && groupSeparator != "." && text.Contains('.') && !text.Contains(',')) decimalSeparator = ".";
+            var sign = ""; if (text[0] is '+' or '-') { sign = text[..1]; text = text[1..]; }
+            var exponent = ""; var exponentAt = text.IndexOfAny(new[] { 'e', 'E' });
+            if (exponentAt >= 0)
+            {
+                exponent = text[exponentAt..]; text = text[..exponentAt];
+                if (!Regex.IsMatch(exponent, @"^[eE][+-]?[0-9]{1,4}$")) return false;
+            }
+            var pieces = text.Split(decimalSeparator, StringSplitOptions.None);
+            if (pieces.Length > 2 || pieces.Length == 2 && (pieces[1].Length == 0 || pieces[1].Any(ch => ch is < '0' or > '9'))) return false;
+            var integer = pieces[0].Length == 0 && pieces.Length == 2 ? "0" : pieces[0];
+            var groups = groupSeparator.Length > 0 ? integer.Split(groupSeparator, StringSplitOptions.None) : new[] { integer };
+            if (groups.Any(g => g.Length == 0 || g.Any(ch => ch is < '0' or > '9'))) return false;
+            if (groups.Length > 1)
+            {
+                var sizes = culture.NumberFormat.NumberGroupSizes; var position = 0;
+                for (var i = groups.Length - 1; i > 0; i--)
+                {
+                    var size = sizes[Math.Min(position++, sizes.Length - 1)]; if (size == 0 || groups[i].Length != size) return false;
+                }
+                var leading = sizes[Math.Min(position, sizes.Length - 1)]; if (leading != 0 && groups[0].Length > leading) return false;
+            }
+            var normalized = sign + string.Concat(groups) + (pieces.Length == 2 ? "." + pieces[1] : "") + exponent;
+            return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
+        }
+        catch (CultureNotFoundException) { return false; }
+    }
+    public static bool TrySourceDate(string raw, DashboardSettings settings, TimeSpan referenceOffset, out DateTime value)
+    {
+        value = default;
+        if (!TryDate(raw, settings.DateCulture, referenceOffset, out var parsed)) return false;
+        if (string.IsNullOrWhiteSpace(settings.SourceTimeZone) || Regex.IsMatch(raw, @"(?:Z|[+-]\d{2}:?\d{2})$", RegexOptions.IgnoreCase)) { value = parsed; return true; }
+        try
+        {
+            var zone = TimeZoneInfo.FindSystemTimeZoneById(settings.SourceTimeZone);
+            var wall = DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
+            if (zone.IsInvalidTime(wall) || zone.IsAmbiguousTime(wall)) return false;
+            value = new DateTimeOffset(wall, zone.GetUtcOffset(wall)).ToOffset(referenceOffset).DateTime; return true;
+        }
+        catch (Exception error) when (error is TimeZoneNotFoundException or InvalidTimeZoneException or ArgumentException) { return false; }
+    }
+    public static IReadOnlyList<string> SplitTechnicianNames(string? value, string separators)
+    {
+        if (separators == ";\n|" || string.IsNullOrEmpty(separators)) return SplitTechnicianNames(value);
+        return (value ?? "").Split(separators.ToCharArray(), StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Where(v => !IsMissing(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private static int DateFieldBit(string key) => key switch { "created" => 1, "updated" => 2, "resolved" => 4, "closed" => 8, "due" => 16, _ => 0 };

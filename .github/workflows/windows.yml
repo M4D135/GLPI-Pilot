@@ -12,8 +12,7 @@ on:
       - 'licenses/**'
       - 'README.md'
       - 'build.ps1'
-      - 'build-tools/Invoke-WindowsCi.ps1'
-      - 'build-tools/publish-release.sh'
+      - 'build-tools/**'
       - '.github/workflows/windows.yml'
       - 'global.json'
       - 'NuGet.Config'
@@ -96,6 +95,10 @@ jobs:
         timeout-minutes: 8
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup
 
+      - name: Vérifier le remplacement réel du pack et le retour arrière
+        timeout-minutes: 8
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage UpdateStartup
+
       - name: Joindre le pack PROD Windows validé
         id: upload_prod
         # Official release v7.0.2. Upload the ready ZIP directly, without a second ZIP wrapper.
@@ -128,6 +131,7 @@ jobs:
           - WindowsStartupChecks : contrôles WPF de production chargés et rendus sous Windows, délai maximal 90 s.
           - Pack PROD extrait : fenêtre principale visible, marqueur ContentRendered reçu, configuration synthétique inchangée, fermeture normale.
           - Zoom de la fenêtre réelle : boutons +/−/100 %, bornes 75–150 %, fenêtre compacte, mémorisation à 110 % et retour à 100 % après redémarrage.
+          - Mise à jour réelle sur copies du pack : processus en cours et EXE verrouillé refusés, démarrage confirmé puis restauration après échec forcé.
           - Captures des vues Windows en thèmes clair/sombre et à plusieurs tailles jointes aux journaux.
           - [Télécharger PROD]($env:PROD_URL) · [Télécharger DEV]($env:DEV_URL).
           - Chaque ZIP contient uniquement GLPI-Pilot.exe et wad à sa racine ; DEV inclut les sources dépliées.

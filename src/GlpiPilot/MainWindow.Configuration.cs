@@ -46,7 +46,7 @@ public partial class MainWindow
             if (_busy || _closing) return;
             try
             {
-                var settings = ConfigurationReview.Apply(_settings, imported, parts, merge);
+                var settings = ConfigurationReview.Apply(_settings, imported, parts, merge, review.Decisions);
                 settings.Save(); _settings = settings;
                 CloseInlinePanel(); LoadSettingsFields(); _controlCenter?.Load(_settings);
                 ApplyInterfacePreferences(); UpdateThemeButton(); ResetAutomaticSchedule();

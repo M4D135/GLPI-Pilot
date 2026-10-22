@@ -45,12 +45,14 @@ public sealed class TourPlanningView : UserControl, IDisposable
     public event Action? SettingsRequested;
     public event Action<string, string>? MapRequested;
     public event Action<string>? Log;
+    public event Action? SavedToursChanged;
 
     public TourPlanningView(string? orderPreferencesPath = null)
     {
         _orderPreferencesPath = orderPreferencesPath ?? Path.Combine(AppPaths.DataRoot, "tour-order.json");
         _scheduledView = new ScheduledTourView(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_orderPreferencesPath))!, "scheduled-tours.json"));
         _scheduledView.Log += message => Log?.Invoke(message);
+        _scheduledView.SavedToursChanged += () => SavedToursChanged?.Invoke();
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
         var root = new Grid();

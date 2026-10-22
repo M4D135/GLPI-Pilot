@@ -47,7 +47,14 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Automatique : export ambigu refusé sans lancer un repli", CheckAmbiguousNativeNoFallback),
     ("Automatique : export incomplet signalé et jamais remplacé silencieusement", CheckNativeIncomplete),
     ("Automatique : changement de contexte après le téléchargement signalé", CheckNativeScopeChange),
-    ("Échantillon : identifiants groupés normalisés, colonnes absentes non devinées", CheckSampleNormalization)
+    ("Échantillon : identifiants groupés normalisés, colonnes absentes non devinées", CheckSampleNormalization),
+    ("Reprise : pages conservées recontrôlées après annulation", () => CheckCheckpoint(false)),
+    ("Reprise : page conservée modifiée, collecte redémarrée", () => CheckCheckpoint(true)),
+    ("Reconnexion : expiration SSO puis reprise de la page exacte", () => CheckReconnect(false)),
+    ("Reconnexion : changement de périmètre refusé après SSO", () => CheckReconnect(true)),
+    ("Réseau : coupure transitoire et reprise sans doublons", () => CheckNetwork(false)),
+    ("Réseau : tentatives épuisées et relevé partiel conservé", () => CheckNetwork(true)),
+    ("Échantillon : mêmes ID mais valeurs différentes refusées", CheckNativeWrongCells)
 };
 int failures = 0;
 try
@@ -65,7 +72,7 @@ finally
 }
 return failures == 0 ? 0 : 1;
 
-async Task<Harness> Open(string? html = null, string? csv = null)
+async Task<Harness> Open(string? html = null, string? csv = null, PaginationCheckpointStore? checkpoints = null)
 {
     var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
     await context.RouteAsync("http://glpi.test/**", async route =>
@@ -83,7 +90,7 @@ async Task<Harness> Open(string? html = null, string? csv = null)
     });
     var page = await context.NewPageAsync();
     await page.GotoAsync("http://glpi.test/front/computer.php");
-    var service = new BrowserService();
+    var service = new BrowserService(checkpoints: checkpoints);
     service.AttachForTesting(context, "http://glpi.test/front/computer.php");
     return new(context, page, service);
 }
@@ -93,6 +100,9 @@ AppSettings Settings() => new()
     PortalUrl = "http://glpi.test/front/computer.php",
     SelectorOrigin = "http://glpi.test",
     TimeoutSeconds = 1,
+    ListTimeoutSeconds = 5,
+    DetailTimeoutSeconds = 5,
+    ResumePagination = false,
     MaxPages = 10,
     MaxRows = 100,
     ExportFolder = temporary
@@ -465,6 +475,75 @@ Task CheckSampleNormalization()
     native.Headers[0] = "Sans identité";
     True(!ExtractionVerificationService.VerifyNativeSample(visible, native, new()).Available, "Aucun numéro ne doit être déduit d’une autre colonne.");
     return Task.CompletedTask;
+}
+
+string PagedHtml() => WithCriteria()
+    .Replace("<button id=\"next\" aria-label=\"Page suivante\">Suivant</button>", "<a id=\"next\" rel=\"next\" href=\"?start=2\" aria-label=\"Page suivante\">Suivant</a>", StringComparison.Ordinal)
+    .Replace("let current=0;", "let current=Math.min(2,Math.floor(Number(new URL(location.href).searchParams.get('start')||'0')/2));", StringComparison.Ordinal)
+    .Replace("document.getElementById('next').addEventListener('click',()=>{if(current<2){current++;render();}});", "", StringComparison.Ordinal)
+    .Replace("</body>", "<script>document.getElementById('next').href='?start='+((current+1)*2);document.getElementById('next').setAttribute('aria-disabled',current===2?'true':'false');</script></body>", StringComparison.Ordinal);
+
+async Task CheckCheckpoint(bool changed)
+{
+    var store = new PaginationCheckpointStore(Path.Combine(temporary, "resume-" + Guid.NewGuid().ToString("N")));
+    var settings = Settings(); settings.ResumePagination = true; settings.TimeoutSeconds = 8;
+    await using (var h = await Open(PagedHtml(), checkpoints: store))
+    {
+        using var cancellation = new CancellationTokenSource(); var calls = 0;
+        var result = await h.Service.ExtractAsync(await Table(h), true, settings, new InlineProgress<ExtractionProgress>(_ => { if (++calls == 2) cancellation.Cancel(); }), cancellation.Token);
+        Equal(4, result.Rows.Count); True(!result.Complete && store.Load(settings)?.Data.Pages == 2, "Les deux pages contrôlées doivent être conservées avant l’annulation.");
+    }
+    var html = changed ? PagedHtml().Replace("P-MA-003", "P-MA-003 corrigé", StringComparison.Ordinal) : PagedHtml();
+    await using (var h = await Open(html, checkpoints: store))
+    {
+        var progressPages = 0;
+        var result = await h.Service.ExtractAsync(await Table(h), true, settings, new InlineProgress<ExtractionProgress>(_ => progressPages++), CancellationToken.None);
+        True(result.Complete, string.Join(" | ", result.Warnings)); Equal(5, result.Rows.Count); Equal(3, result.Pages);
+        Equal(!changed, result.Provenance.Resumed); Equal(changed ? 3 : 1, progressPages);
+        True(store.Load(settings) == null, "Le point terminé doit être supprimé.");
+        if (changed) True(result.Rows.Any(row => row.Contains("P-MA-003 corrigé")), "La collecte redémarrée doit contenir la valeur actuelle.");
+    }
+}
+
+async Task CheckReconnect(bool changedScope)
+{
+    await using var h = await Open(PagedHtml()); var requests = 0;
+    await h.Context.RouteAsync("**/front/computer.php?start=2", async route =>
+    {
+        var body = ++requests == 1
+            ? "<html><body><form><input type='password'></form><script>setTimeout(()=>location.href='/front/computer.php?start=2',1100)</script></body></html>"
+            : changedScope ? PagedHtml().Replace("value='origin'", "value='other'", StringComparison.Ordinal) : PagedHtml();
+        await route.FulfillAsync(new() { Status = 200, ContentType = "text/html", Body = body });
+    });
+    var settings = Settings(); settings.TimeoutSeconds = 8; var logs = new List<string>(); h.Service.Log += logs.Add;
+    var result = await h.Service.ExtractAsync(await Table(h), true, settings, null, CancellationToken.None);
+    Equal(changedScope ? 2 : 5, result.Rows.Count); Equal(!changedScope, result.Complete);
+    True(logs.Any(line => line.StartsWith("RECONNEXION", StringComparison.Ordinal)), "L’expiration SSO doit passer par le chemin de reprise.");
+    if (changedScope) True(result.Warnings.Any(line => line.Contains("périmètre", StringComparison.OrdinalIgnoreCase)), "Le changement de recherche doit être expliqué.");
+    else Equal(3, result.Pages);
+}
+
+async Task CheckNetwork(bool permanent)
+{
+    await using var h = await Open(PagedHtml()); var requests = 0;
+    await h.Context.RouteAsync("**/front/computer.php?start=2", async route =>
+    {
+        if (++requests == 1 || permanent) await route.AbortAsync("connectionreset");
+        else await route.FulfillAsync(new() { Status = 200, ContentType = "text/html", Body = PagedHtml() });
+    });
+    var settings = Settings(); settings.TimeoutSeconds = 8; settings.ReconnectAttempts = 2; var logs = new List<string>(); h.Service.Log += logs.Add;
+    var result = await h.Service.ExtractAsync(await Table(h), true, settings, null, CancellationToken.None);
+    Equal(permanent ? 2 : 5, result.Rows.Count); Equal(!permanent, result.Complete);
+    var attempts = logs.Count(line => line.StartsWith("RECONNEXION", StringComparison.Ordinal));
+    True(requests >= 2 && attempts == (permanent ? 2 : 1), $"La reconnexion doit borner les tentatives applicatives : {attempts} reprises, {requests} requêtes (reprises internes Chromium comprises). " + string.Join(" | ", result.Warnings));
+    if (!permanent) Equal(3, result.Pages);
+}
+
+async Task CheckNativeWrongCells()
+{
+    await using var h = await Open(NativeHtml(), NativeCsv().Replace("P-MA-001", "Une autre valeur", StringComparison.Ordinal));
+    try { await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Valeurs natives incompatibles publiées"); }
+    catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.OrdinalIgnoreCase), "Les valeurs incompatibles doivent interrompre la certification, même avec les bons ID."); }
 }
 
 static void Equal<T>(T expected, T actual)
