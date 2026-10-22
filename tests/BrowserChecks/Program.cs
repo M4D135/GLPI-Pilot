@@ -862,7 +862,11 @@ async Task CheckNativeWrongCells()
     Equal(5, run.Data.Rows.Count);
     True(!run.Data.Complete && run.Data.Provenance.ScopeVerified, "Les valeurs divergentes restent consultables sans certifier leur concordance ; le contrôle final du périmètre doit s'exécuter.");
     True(run.Data.Warnings.Any(line => line.Contains("valeurs comparables diffèrent", StringComparison.Ordinal)), "La réserve de comparaison doit accompagner les données importées.");
-    True(run.Data.Status.Contains("affichage à vérifier", StringComparison.Ordinal) && !run.Data.Status.Contains("modifiée pendant", StringComparison.Ordinal), "Une différence de présentation n'établit pas un changement pendant l'opération.");
+    True(run.Data.Quality is { ReceptionComplete: true, ScopeStable: true, FinalTotalVerified: true,
+        InitialSample: { IdentityVerified: true, RepresentationVerified: false },
+        FinalSample: { IdentityVerified: true, RepresentationVerified: false } },
+        "La réception complète et le périmètre stable restent distincts des valeurs divergentes constatées avant et après le transfert.");
+    Equal("Import terminé · 5 lignes chargées", run.Data.Status);
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL ·", StringComparison.Ordinal)), "L'import doit aller jusqu'au contrôle final.");
     True(File.Exists(retained) && (await File.ReadAllTextAsync(retained!)).Contains("Une autre valeur", StringComparison.Ordinal), "Le fichier natif divergent doit rester intact.");
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON DÉTAIL · Colonne liste", StringComparison.Ordinal)), "Le diagnostic de colonne doit être présent dans le vrai parcours automatique.");
