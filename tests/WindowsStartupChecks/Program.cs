@@ -62,7 +62,7 @@ internal sealed class WindowsWebViewFixture
                 var width = await page.EvaluateAsync<double>("innerWidth");
                 await NavigateAsync(page, "settings");
                 await page.GetByLabel("Zoom de l’interface (%)", new() { Exact = true }).FillAsync("125");
-                await page.GetByLabel("Thème", new() { Exact = true }).SelectOptionAsync("light");
+                await page.GetByRole(AriaRole.Combobox, new() { Name = "Thème", Exact = true }).SelectOptionAsync("light");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light' && document.querySelector('#zoom-label').innerText.includes('125')");
                 Check(await page.EvaluateAsync<double>("innerWidth") < width * .9, "The interface zoom changes native WebView2 scaling rather than just a displayed number.");
@@ -82,7 +82,7 @@ internal sealed class WindowsWebViewFixture
                 }
                 Check(true, "Every feature screen opens inside the real Windows WebView2 host.");
                 await NavigateAsync(page, "home");
-                await page.GetByRole(AriaRole.Button, new() { Name = "Thème", Exact = true }).ClickAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Changer de thème", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
                 await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "home-dark.png"), FullPage = true });
                 Native.ShowWindow(second.MainWindowHandle, 6);

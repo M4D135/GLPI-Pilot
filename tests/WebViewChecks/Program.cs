@@ -192,7 +192,7 @@ internal static class Program
             var output = Path.GetFullPath(args[captureArg + 1]); Directory.CreateDirectory(output);
             await page.Locator(".nav-item[data-page='home']").ClickAsync(); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "home-light.png"), FullPage = true });
-            await page.GetByRole(AriaRole.Button, new() { Name = "Thème", Exact = true }).ClickAsync(); await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Changer de thème", Exact = true }).ClickAsync(); await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
             await page.Locator(".nav-item[data-page='dashboard']").ClickAsync(); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "dashboard-dark.png"), FullPage = true });
         }
