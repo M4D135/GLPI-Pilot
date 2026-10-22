@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.1 — tableaux de bord WebView et atelier de requêtes
+GLPI Pilot 3.0.2 — tableaux de bord WebView et atelier de requêtes
 
 OUVRIR LE BON ESPACE
 La navigation Analyser contient Dashboard, Atelier de requêtes,
@@ -20,6 +20,16 @@ le bandeau est replié.
 Voir les lignes du périmètre ouvre le détail paginé du calcul courant.
 Cliquer une cellule permet d’examiner sa valeur brute et son interprétation.
 Le lien d’un ticket conserve l’identité de sa ligne et la révision du relevé.
+
+RELEVE NATIF A VERIFIER
+Depuis 3.0.2, un CSV valide dont les identifiants concordent reste disponible
+même si certaines valeurs diffèrent de l’affichage GLPI. Les dashboards,
+requêtes, villes et exports utilisent ses lignes avec la réserve affichée.
+Complete=false signifie que la concordance ou l’exhaustivité n’est pas
+certifiée ; le nombre de lignes peut pourtant correspondre au total annoncé.
+Le contrôle final reste actif. Une alerte exigeant un relevé complet ne peut
+pas considérer cette réserve comme résolue. Le CSV natif et ses contrôles C1
+restent intacts ; aucune conversion de ponctuation n’est appliquée aux données.
 
 COMMANDES DU DASHBOARD
 La barre principale propose Modifier le dashboard, Filtres et comparaison

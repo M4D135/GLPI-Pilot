@@ -429,6 +429,41 @@ pas modifiées. Un identifiant manquant provoque un refus explicite. Une colonne
 ID absente ou ambiguë empêche la certification. Ce contrôle complète le
 comptage ; il ne prouve pas à lui seul l’identité de toute la recherche.
 
+### CSV valide et concordance des valeurs en 3.0.2
+
+La version 3 pouvait interrompre le parcours après la lecture réussie d’un
+CSV lorsque des valeurs différaient de leur présentation HTML, même avec
+les bons identifiants. Cette régression d’usage par rapport à 2.0 empêchait
+alors de retrouver les données dans le relevé, Excel et les villes.
+
+En 3.0.2, si le CSV est valide et que les identifiants de l’échantillon
+concordent, ces écarts ne bloquent plus son utilisation. Les lignes sont
+chargées, les dashboards et requêtes restent disponibles, et les exports
+Excel ainsi que l’enrichissement des villes suivent les réglages habituels.
+Le résultat conserve `Complete=false`, l’état **À vérifier** et un diagnostic
+agrégé tant que sa concordance n’est pas établie. Un total de lignes conforme
+ne supprime pas cette réserve. Le CSV téléchargé garde exactement ses octets ;
+les données d’origine ne sont pas corrigées pour faire disparaître un écart.
+
+L’adaptateur DOM 1.1.2 lit les demandeurs multiples même si leurs fiches
+d’information masquées contiennent des sauts de ligne. Les textes longs
+abrégés par `(...)` sont développés depuis le popup statique associé, après
+vérification de leur préfixe. Les clones du premier texte dans un popup
+extérieur sont reconnus par leur parent propriétaire. Les séparateurs HR
+gardent une frontière entre les textes ; ils ne servent pas à réécrire les
+séparateurs du CSV. Les commandes GLPI de lecture supplémentaire ne sont
+écartées que dans leur structure reconnue.
+
+GLPI peut produire un texte différent pour la liste et le CSV à partir d’un
+même contenu riche : mise en forme, listes ou autres conventions d’export.
+Ce constat ne justifie pas de supprimer globalement ponctuation ou casse,
+ni de convertir les contrôles C1 en signes typographiques. Ces différences
+restent signalées lorsque leur équivalence n’est pas prouvée. Les sources
+publiques et la portée des corrections figurent dans les
+[notes 3.0.2](RELEASE-3.0.2.md).
+
+### Contrôle final maintenu
+
 Un contrôle final compare le contexte, le total et, pour le natif, l’échantillon
 encore visible. Si le contexte a changé, le résultat reste à vérifier. Si la
 page disparaît après une lecture paginée, les lignes déjà lues sont enregistrées

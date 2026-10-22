@@ -61,9 +61,12 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Reconnexion : changement de périmètre refusé après SSO", () => CheckReconnect(true)),
     ("Réseau : coupure transitoire et reprise sans doublons", () => CheckNetwork(false)),
     ("Réseau : tentatives épuisées et relevé partiel conservé", () => CheckNetwork(true)),
-    ("Échantillon : mêmes ID mais valeurs différentes refusées", CheckNativeWrongCells),
+    ("Échantillon : mêmes ID, valeurs différentes importées avec réserve", CheckNativeWrongCells),
+    ("Échantillon : 788 lignes et 32 écarts disponibles, CSV intact et Excel qualifié", CheckNativeReviewableSample),
     ("Échantillon : cellule GLPI multivaluée complète rapprochée du CSV", () => CheckNativeMultiValue(false)),
-    ("Échantillon : divergence après le premier élément multivalué refusée", () => CheckNativeMultiValue(true))
+    ("Échantillon : divergence après le premier élément multivalué non certifiée", () => CheckNativeMultiValue(true)),
+    ("Échantillon : demandeurs imbriqués et textes longs GLPI entièrement rapprochés", () => CheckNativeRichCells(false)),
+    ("Échantillon : fin de texte long modifiée conservée sans certification", () => CheckNativeRichCells(true))
 };
 if (args.Length != 0)
 {
@@ -475,10 +478,11 @@ async Task CheckNativeIncomplete()
 
 async Task CheckNativeScopeChange()
 {
-    await using var h = await Open(NativeHtml(true), NativeCsv());
+    await using var h = await Open(NativeHtml(true), NativeCsv().Replace("P-MA-001", "Valeur différente", StringComparison.Ordinal));
     var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
     True(!run.Data.Complete && !run.Data.Provenance.ScopeVerified, "Une recherche modifiée pendant le transfert ne peut pas devenir comparable.");
     True(run.Data.Warnings.Any(x => x.Contains("contexte de recherche", StringComparison.Ordinal)), "L’écart de contexte doit être visible.");
+    True(run.Data.Status.Contains("périmètre", StringComparison.Ordinal) && run.Data.Warnings.Any(x => x.Contains("valeurs comparables diffèrent", StringComparison.Ordinal)), "Les écarts de valeurs initiaux ne doivent ni empêcher le contrôle final ni masquer le périmètre modifié.");
 }
 
 async Task CheckNativeFinalSampleUnavailable()
@@ -594,6 +598,10 @@ Task CheckSampleAmbiguity()
     var native = new ExtractionResult { Headers = new() { "ID", "Code A", "Code-A" }, Rows = new() { new[] { "123", "Beta", "Alpha" } } };
     var ambiguous = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
     True(!ambiguous.Available && !ambiguous.Matches && ambiguous.Diagnostics.Any(line => line.Contains("2, 3", StringComparison.Ordinal)), "Des en-têtes normalisés identiques ne doivent pas être liés par première occurrence.");
+    native.Rows[0][0] = "999";
+    var wrongFile = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    True(wrongFile.Available && !wrongFile.Matches && wrongFile.Missing == 1, "Des en-têtes ambigus ne doivent pas masquer les identifiants absents d’un mauvais fichier.");
+    native.Rows[0][0] = "123";
     visible.Headers = new() { "ID", "Titre" }; native.Headers = new() { "ID", "Titre", "Titre (2)" };
     var renamed = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
     True(!renamed.Available && !renamed.Matches, "Le suffixe ajouté à un en-tête CSV dupliqué ne prouve pas quel champ correspond au premier titre visible.");
@@ -671,11 +679,55 @@ async Task CheckNativeWrongCells()
     await using var h = await Open(NativeHtml(), NativeCsv().Replace("P-MA-001", "Une autre valeur", StringComparison.Ordinal));
     var logs = new List<string>(); string? retained = null;
     var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add; service.NativeFileSaved += path => retained = path;
-    try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Valeurs natives incompatibles publiées"); }
-    catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.OrdinalIgnoreCase), "Les valeurs incompatibles doivent interrompre la certification, même avec les bons ID."); }
+    var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+    Equal(5, run.Data.Rows.Count);
+    True(!run.Data.Complete && run.Data.Provenance.ScopeVerified, "Les valeurs divergentes restent consultables sans certifier leur concordance ; le contrôle final du périmètre doit s'exécuter.");
+    True(run.Data.Warnings.Any(line => line.Contains("valeurs comparables diffèrent", StringComparison.Ordinal)), "La réserve de comparaison doit accompagner les données importées.");
+    True(run.Data.Status.Contains("affichage à vérifier", StringComparison.Ordinal) && !run.Data.Status.Contains("modifiée pendant", StringComparison.Ordinal), "Une différence de présentation n'établit pas un changement pendant l'opération.");
+    True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL ·", StringComparison.Ordinal)), "L'import doit aller jusqu'au contrôle final.");
     True(File.Exists(retained) && (await File.ReadAllTextAsync(retained!)).Contains("Une autre valeur", StringComparison.Ordinal), "Le fichier natif divergent doit rester intact.");
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON DÉTAIL · Colonne liste", StringComparison.Ordinal)), "Le diagnostic de colonne doit être présent dans le vrai parcours automatique.");
     True(!string.Join("\n", logs).Contains("Une autre valeur", StringComparison.Ordinal), "La valeur divergente ne doit pas être inscrite au journal.");
+    Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
+}
+
+async Task CheckNativeReviewableSample()
+{
+    // Synthetic equivalent of the reported shape, with no original headers,
+    // identities, addresses or contents. Keep the native export authoritative.
+    string[] headers = ["ID", "Titre", "Statut", "Priorité", "Date de création", "Dernière modification", "Demandeur", "Attribué à - Technicien", "Entité", "Type", "Description", "Suivis", "Solution", "Catégorie"];
+    var rows = Enumerable.Range(1, 788).Select(number => new[] {
+        number.ToString(), "Bureau Exemple " + number, "En cours", "Moyenne", "2026-01-01 09:00", "2026-01-02 09:00", "Demandeur Exemple", "Technicien Exemple", "Entité Exemple", "Incident", "Description Exemple", "Suivi Exemple", "Solution Exemple", "Matériel"
+    }).ToList();
+    var displayed = rows.Take(20).Select(row => row.ToArray()).ToArray();
+    displayed[0][1] = "Bureau \"Exemple\""; rows[0][1] = "Bureau ''Exemple''";
+    for (var index = 0; index < 2; index++) rows[index][6] += " modifié";
+    for (var index = 0; index < 14; index++) rows[index][10] += index < 2 ? "\u0092modifié" : " modifié";
+    for (var index = 0; index < 6; index++) rows[index][11] += " modifié";
+    for (var index = 0; index < 10; index++) rows[index][12] += index == 0 ? "\u0085modifié" : " modifié";
+    string H(string value) => System.Net.WebUtility.HtmlEncode(value);
+    var markup = "<thead><tr><th><input type='checkbox' aria-label='Tout sélectionner'></th>" + string.Concat(headers.Select(header => "<th>" + H(header) + "</th>")) + "</tr></thead><tbody id='computer-rows'>"
+        + string.Concat(displayed.Select(row => "<tr><td><input type='checkbox'></td>" + string.Concat(row.Select(value => "<td>" + H(value) + "</td>")) + "</tr>")) + "</tbody>";
+    var html = NativeHtml().Replace("</body>", "<script>document.querySelector('#search-results').innerHTML=" + System.Text.Json.JsonSerializer.Serialize(markup)
+        + ";document.querySelector('#page-summary').textContent='Affichage de 1 à 20 sur 788 éléments';document.querySelector('#page-number').textContent='Page 1 sur 40';</script></body>", StringComparison.Ordinal);
+    string CsvRow(IEnumerable<string> row) => string.Join(';', row.Select(value => "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\""));
+    var csv = "\ufeff" + CsvRow(headers) + "\r\n" + string.Join("\r\n", rows.Select(CsvRow)) + "\r\n";
+    await using var h = await Open(html, csv);
+    var settings = NativeSettings(); settings.ExpectedTotal = 788; settings.MaxRows = 1000; settings.AutoSaveXlsx = true;
+    settings.Cities.Enabled = true; settings.Cities.Cities = [new() { Name = "Bureau", Aliases = ["BUR"] }];
+    var logs = new List<string>(); var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add;
+    var run = await service.RunAsync(settings, null, CancellationToken.None);
+    Equal(788, run.Data.Rows.Count); Equal(788, run.Data.ExpectedTotal);
+    True(!run.Data.Complete && run.Data.Provenance.ScopeVerified && run.Data.Provenance.Method == "native-csv", "L'export validé par ses ID doit être chargé avec une réserve de valeurs, sans repli ni certification abusive.");
+    True(run.Cities is { Applied: true, MatchedCount: 788 }, "L'enrichissement des villes doit rester disponible et conserver la réserve du relevé.");
+    True(logs.Any(line => line.Contains("32/260 valeurs comparables diffèrent", StringComparison.Ordinal)), "Le scénario doit réellement reproduire 32 écarts sur 260 comparaisons.");
+    True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL ·", StringComparison.Ordinal)) && logs.Any(line => line.Contains("contrôle avant/après=identique", StringComparison.Ordinal)), "Les contrôles finaux doivent être exécutés malgré les écarts d'affichage.");
+    True(File.Exists(run.ExcelPath) && Path.GetFileName(run.ExcelPath!).StartsWith("GLPI-a-verifier-", StringComparison.Ordinal), "L'export Excel doit être fourni avec son statut explicite.");
+    var nativeBytes = await File.ReadAllBytesAsync(run.NativePath!);
+    True(Encoding.UTF8.GetBytes(csv).SequenceEqual(nativeBytes), "Le CSV UTF-8 BOM et ses caractères C1 doivent rester identiques octet pour octet.");
+    Equal(rows[0][10], run.Data.Rows[0][10]); Equal(rows[0][12], run.Data.Rows[0][12]);
+    True(!string.Join('\n', logs).Contains("Description Exemple", StringComparison.Ordinal) && !string.Join('\n', logs).Contains("Demandeur Exemple", StringComparison.Ordinal), "Les diagnostics de comparaison ne doivent pas recopier les données synthétiques.");
+    Equal("Page 1 sur 40", await h.Page.Locator("#page-number").InnerTextAsync());
 }
 
 async Task CheckNativeMultiValue(bool changed)
@@ -698,8 +750,9 @@ async Task CheckNativeMultiValue(bool changed)
     var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add; service.NativeFileSaved += path => retained = path;
     if (changed)
     {
-        try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Une divergence dans le second élément a été publiée"); }
-        catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.OrdinalIgnoreCase), "Tous les éléments doivent participer à la comparaison."); }
+        var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+        True(!run.Data.Complete && run.Data.Warnings.Any(line => line.Contains("valeurs comparables diffèrent", StringComparison.Ordinal)), "Le second élément doit participer à la comparaison sans rendre le CSV entier inaccessible.");
+        Equal("P-MA-001\nAnnexe modifiée", run.Data.Rows[0][1]);
         True(!string.Join("\n", logs).Contains("Annexe modifiée", StringComparison.Ordinal), "Le diagnostic ne doit pas exposer le contenu du popup ni du CSV.");
     }
     else
@@ -709,6 +762,38 @@ async Task CheckNativeMultiValue(bool changed)
         True(logs.Any(line => line.StartsWith("ÉCHANTILLON · Les 2 identifiants et 2 valeurs", StringComparison.Ordinal)), "Les cellules complètes doivent être effectivement comparées, pas exclues.");
     }
     True(File.Exists(retained), "Le téléchargement natif est conservé."); Equal(csv, await File.ReadAllTextAsync(retained!));
+}
+
+async Task CheckNativeRichCells(bool changed)
+{
+    // Public GLPI Search::giveItem/showItem and DbUtils::getUserName structures:
+    // cloned long-text triplets and nested hidden user cards, synthetic data only.
+    var html = NativeHtml().Replace("</body>", """
+        <style>.tooltip-invisible { display:none }</style><script>
+        const user = (name,id) => `${name}<a href='/front/user.form.php?id=${id}'><span id='tooltip${id}' class='fas fa-info'></span></a><div id='contenttooltip${id}' class='tooltip-invisible'>FICHE PRIVEE FICTIVE<br>CONTACT FICTIF<br></div>`;
+        const long = (prefix,full,id) => `<span id='text${id}'>${prefix}&nbsp;(...)</span> <span id='tooltip${id+1}' class='fas fa-comments'></span><div id='contenttooltip${id+1}' class='tooltip-invisible'><div class='fup-popup'>${full}</div></div>`;
+        const table = document.querySelector('#search-results');
+        table.innerHTML = '<thead><tr><th></th><th>ID</th><th>Titre</th><th>Demandeur</th><th>Description</th></tr></thead><tbody id="computer-rows"></tbody>';
+        for (let id=101;id<=102;id++) {
+          const firstUser=user('Alice Exemple',id*100), secondUser=user('Bob Exemple',id*100+1);
+          const first=long('Premier contenu','Premier contenu complet avec détail.',id*100+10), second=long('Deuxième contenu','Deuxième contenu complet avec détail.',id*100+20);
+          document.querySelector('#computer-rows').insertAdjacentHTML('beforeend',`<tr><td></td><td>${id}</td><td>P-MA-00${id-100}</td><td>${firstUser} <span id='tooltip${id*100+30}' class='fas fa-comments'></span><div id='contenttooltip${id*100+30}' class='tooltip-invisible'><div class='fup-popup'>${firstUser}<br>${secondUser}<br></div></div></td><td>${first} <span id='tooltip${id*100+40}' class='fas fa-comments'></span><div id='contenttooltip${id*100+40}' class='tooltip-invisible'><div class='fup-popup'>${first}<hr>${second}<hr></div></div></td></tr>`);
+        }
+        </script></body>
+        """, StringComparison.Ordinal);
+    const string full = "Premier contenu complet avec détail.\nDeuxième contenu complet avec détail.";
+    var csv = "ID;Titre;Demandeur;Description\r\n" + string.Join("\r\n", Enumerable.Range(101, 5).Select(id =>
+        $"{id};P-MA-00{id - 100};\"Alice Exemple\nBob Exemple\";\"{(changed && id == 101 ? full.Replace("Deuxième contenu complet avec détail.", "Deuxième contenu complet avec une autre fin.", StringComparison.Ordinal) : full)}\"")) + "\r\n";
+    await using var h = await Open(html, csv);
+    var logs = new List<string>(); var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add;
+    var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+    Equal(5, run.Data.Rows.Count); Equal(!changed, run.Data.Complete);
+    Equal("Alice Exemple\nBob Exemple", run.Data.Rows[0][2]);
+    Equal(changed ? full.Replace("Deuxième contenu complet avec détail.", "Deuxième contenu complet avec une autre fin.", StringComparison.Ordinal) : full, run.Data.Rows[0][3]);
+    True(run.Data.Provenance.ScopeVerified && run.Data.Provenance.Method == "native-csv", "Les cellules développées doivent traverser la collecte native et son contrôle final.");
+    True(logs.Any(line => line.StartsWith("ÉCHANTILLON ·", StringComparison.Ordinal) && line.Contains(changed ? "1/6 valeurs comparables diffèrent" : "6 valeurs comparables", StringComparison.Ordinal)), "Les textes complets doivent être comparés sans exclusion pour abréviation ni perte des demandeurs suivants.");
+    True(!string.Join('\n', logs).Contains("FICHE PRIVEE", StringComparison.Ordinal) && !run.Data.Rows.SelectMany(row => row).Any(value => value.Contains("FICHE PRIVEE", StringComparison.Ordinal)), "Les fiches utilisateur imbriquées ne deviennent jamais des valeurs de ticket ni du diagnostic.");
+    Equal(csv, await File.ReadAllTextAsync(run.NativePath!));
 }
 
 static void Equal<T>(T expected, T actual)

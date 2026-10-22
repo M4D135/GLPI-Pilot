@@ -125,13 +125,16 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct);
                     Log?.Invoke("ÉCHANTILLON · " + check.Explanation);
                     foreach (var diagnostic in check.Diagnostics) Log?.Invoke("ÉCHANTILLON DÉTAIL · " + diagnostic);
-                    if (check.Available && !check.Matches)
+                    // A wrong sample identifies a different file. Value differences
+                    // can instead come from GLPI's HTML/CSV representations: retain
+                    // the usable CSV, but do not certify it as a comparable snapshot.
+                    if (check.Missing > 0)
                         throw new InvalidDataException(check.Explanation + " Le fichier natif reste conservé ; aucun relevé complet n’a été publié.");
-                    if (!check.Available)
+                    if (!check.Available || !check.Matches)
                     {
                         data.Complete = false;
-                        data.Warnings.Add(check.Explanation + " Le comptage est disponible, mais le lien entre le fichier et les lignes visibles n’a pas pu être vérifié.");
-                        data.Status = "Export natif chargé — identité du périmètre à vérifier";
+                        data.Warnings.Add(check.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.");
+                        data.Status = "Export natif chargé — comparaison avec l’affichage à vérifier";
                     }
                 }
                 catch (NativeExportUnavailableException) when (download == null && settings.Automation.AutomaticPaginationFallback
@@ -161,6 +164,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             data.Warnings.Add("Le contrôle final du tableau est indisponible. Les lignes déjà lues sont conservées avec une couverture non confirmée. " + AppPaths.SafeError(error));
         }
         var stableScope = scopeEvidence.Fingerprint.Length > 0 && scopeEvidence.Fingerprint == afterScope.Fingerprint;
+        var totalChanged = visibleBefore?.ExpectedTotal is int initialTotal && visibleAfter?.ExpectedTotal is int finalTotal && initialTotal != finalTotal;
         if (!stableScope)
         {
             data.Complete = false;
@@ -169,7 +173,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         }
         if (visibleAfter != null)
         {
-            if (visibleBefore?.ExpectedTotal is int initialTotal && visibleAfter.ExpectedTotal is int finalTotal && initialTotal != finalTotal)
+            if (totalChanged)
             {
                 data.Complete = false; data.Status = "Extraction à vérifier — total GLPI modifié";
                 data.Warnings.Add("Le total GLPI a changé entre le début et la fin de l’extraction. Les données sont conservées avec une couverture non confirmée.");
@@ -181,13 +185,18 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 foreach (var diagnostic in finalSample.Diagnostics) Log?.Invoke("ÉCHANTILLON FINAL DÉTAIL · " + diagnostic);
                 if (!finalSample.Available)
                 {
-                    data.Complete = false; data.Status = "Export reçu — contrôle final de l’échantillon indisponible";
+                    data.Complete = false;
+                    if (stableScope && !totalChanged) data.Status = "Export reçu — contrôle final de l’échantillon indisponible";
                     data.Warnings.Add(finalSample.Explanation + " Le contrôle de l’échantillon n’est plus disponible après le transfert ; la couverture reste à vérifier.");
                 }
                 else if (!finalSample.Matches)
                 {
-                    data.Complete = false; data.Status = "Export reçu — liste visible modifiée pendant l’opération";
-                    data.Warnings.Add("L’échantillon visible après le transfert ne correspond plus entièrement au fichier reçu. La recherche a pu évoluer pendant le téléchargement ; la couverture reste à vérifier.");
+                    data.Complete = false;
+                    if (stableScope && !totalChanged) data.Status = finalSample.Missing > 0
+                        ? "Export natif chargé — identifiants de l’échantillon final à vérifier"
+                        : "Export natif chargé — comparaison avec l’affichage à vérifier";
+                    var warning = finalSample.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.";
+                    if (!data.Warnings.Contains(warning, StringComparer.Ordinal)) data.Warnings.Add(warning);
                 }
             }
         }

@@ -301,13 +301,99 @@ async function run() {
   equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'An ordinary information tooltip is never expanded into a result value');
   await popupFixture();
   await page.evaluate(() => { document.querySelectorAll('#contenttooltip110 br').forEach(br => br.replaceWith(document.createElement('hr'))); });
-  equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'Horizontal-rule popups without a proven CSV item boundary remain unchanged');
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple\nBob Exemple', 'Horizontal-rule popups preserve a text boundary without imitating CSV punctuation or lost delimiters');
   await popupFixture();
   await page.evaluate(() => { const content = document.querySelector('#contenttooltip110'); content.after(content.cloneNode(true)); });
   equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'Duplicate popup IDs cannot choose a hidden source ambiguously');
   await popupFixture();
   await page.evaluate(() => { document.querySelectorAll('#contenttooltip110 .fup-popup a')[1].textContent = 'Bob Modifié'; });
   equal((await readPopupTable()).rows[0][4], 'Alice Exemple\nBob Modifié', 'A changed later popup item remains in the compared data instead of being discarded');
+
+  for (const hiddenClass of ['invisible', 'tooltip-invisible']) {
+    await popupFixture();
+    await page.evaluate(hiddenClass => {
+      const user = (name, id) => `${name} <a id="tooltiplink${id}" href="/glpi/front/user.form.php?id=${id}"><span id="tooltip${id}" class="fas fa-info pointer"></span></a><div id="contenttooltip${id}" class="${hiddenClass}"><strong>Nom</strong>: ${name}<br><strong>Identifiant</strong>: HIDDEN-USER-CARD-${id}<br></div>`;
+      const first = user('Alice Exemple', 301), second = user('Bob Exemple', 302);
+      document.querySelector('#popup-results tbody tr td:last-child').innerHTML = `${first} <span id="tooltip310" class="fas fa-comments pointer"></span><div id="contenttooltip310" class="${hiddenClass}"><div class="fup-popup">${first}<br>${second}<br></div></div>`;
+    }, hiddenClass);
+    equal((await readPopupTable()).rows[0][4], 'Alice Exemple\nBob Exemple', hiddenClass + ': nested hidden user-card BRs do not hide later requesters from the native comparison');
+    ok(!JSON.stringify((await readPopupTable()).rows).includes('HIDDEN-USER-CARD'), hiddenClass + ': nested user-card contents remain excluded from every extracted value');
+  }
+
+  // Search::giveItem creates each shortened span and its own static tooltip;
+  // Search::showItem then copies the first complete triplet into an outer list
+  // tooltip. Those two owners legitimately contain the same generated IDs.
+  const longTextFixture = async (hiddenClass = 'tooltip-invisible', delimiter = null) => {
+    await popupFixture();
+    await page.evaluate(({ hiddenClass, delimiter }) => {
+      const item = (prefix, full, id) => `<span id="text${id}">${prefix}&nbsp;(...)</span> <span id="tooltip${id + 100}" class="fas fa-comments fa-fw"></span><div id="contenttooltip${id + 100}" class="${hiddenClass}"><div class="fup-popup">${full}</div></div><script type="application/x-synthetic-tooltip">ignored</script>`;
+      const first = item('Premier contenu', 'Premier contenu complet avec détail.', 401);
+      const second = item('Deuxième contenu', 'Deuxième contenu complet avec détail.', 402);
+      document.querySelector('#popup-results tbody tr td:last-child').innerHTML = delimiter
+        ? `${first} <span id="tooltip599" class="fas fa-comments fa-fw"></span><div id="contenttooltip599" class="${hiddenClass}"><div class="fup-popup">${first}<${delimiter}>${second}<${delimiter}></div></div>`
+        : first;
+    }, { hiddenClass, delimiter });
+  };
+  for (const hiddenClass of ['invisible', 'tooltip-invisible']) {
+    for (const delimiter of ['br', 'hr']) {
+      await longTextFixture(hiddenClass, delimiter);
+      equal((await readPopupTable()).rows[0][4], 'Premier contenu complet avec détail.\nDeuxième contenu complet avec détail.', hiddenClass + '/' + delimiter + ': cloned first-item IDs and independently paired text popups retain every complete value');
+    }
+    await longTextFixture(hiddenClass);
+    equal((await readPopupTable()).rows[0][4], 'Premier contenu complet avec détail.', hiddenClass + ': the paired long-text popup replaces the exact shortened preview');
+  }
+  await longTextFixture();
+  await page.evaluate(() => {
+    document.querySelector('#contenttooltip501 .fup-popup').innerHTML = '<div class="long_text">Premier contenu complet avec détail. ...<p class="read_more"><span class="read_more_button">...</span></p></div><script type="application/x-synthetic-tooltip">ignored</script>';
+  });
+  equal((await readPopupTable()).rows[0][4], 'Premier contenu complet avec détail. ...', 'The generated RichText read-more control is excluded while literal ellipsis in its content stays intact');
+  const longTextDom = await page.locator('html').innerHTML();
+  await readPopupTable();
+  equal(await page.locator('html').innerHTML(), longTextDom, 'Long-text expansion reads the existing DOM without opening or rewriting the popup');
+
+  const rejectedLongText = [
+    ['A different full-text prefix cannot replace the visible preview', () => { document.querySelector('#contenttooltip501 .fup-popup').textContent = 'Autre contenu complet avec détail.'; }],
+    ['A full value no longer than the preview prefix does not prove truncation', () => { document.querySelector('#contenttooltip501 .fup-popup').textContent = 'Premier contenu'; }],
+    ['A different popup ID cannot supply the long text', () => { document.querySelector('#contenttooltip501').id = 'contenttooltip999'; }],
+    ['An ordinary fa-info tooltip cannot supply the long text', () => { document.querySelector('#tooltip501').className = 'fas fa-info'; }],
+    ['Duplicate popup IDs under the same owner reject long-text expansion', () => { const content = document.querySelector('#contenttooltip501'); content.after(content.cloneNode(true)); }],
+    ['Duplicate preview IDs under the same owner reject long-text expansion', () => { const preview = document.querySelector('#text401'); const duplicate = document.createElement('span'); duplicate.id = preview.id; preview.before(duplicate); }],
+    ['A hidden marker does not authorize reading its long-text popup', () => { document.querySelector('#tooltip501').style.display = 'none'; }],
+    ['An AJAX placeholder without a static fup-popup is left unread', () => { document.querySelector('#contenttooltip501').innerHTML = '<div>HIDDEN-AJAX-PLACEHOLDER</div>'; }],
+    ['An explicitly excluded popup stays excluded despite matching IDs', () => { document.querySelector('#contenttooltip501').setAttribute('aria-hidden', 'true'); }]
+  ];
+  for (const [label, mutate] of rejectedLongText) {
+    await longTextFixture();
+    await page.evaluate(mutate);
+    equal((await readPopupTable()).rows[0][4], 'Premier contenu (...)', label);
+  }
+  await longTextFixture();
+  await page.evaluate(() => { document.querySelector('#text401').textContent = 'Premier contenu visible'; });
+  equal((await readPopupTable()).rows[0][4], 'Premier contenu visible', 'A span without the exact GLPI abbreviation suffix remains literal');
+  await longTextFixture();
+  await page.evaluate(() => { document.querySelector('#text401').after(document.createTextNode(' TEXTE AJOUTÉ')); });
+  equal((await readPopupTable()).rows[0][4], 'Premier contenu (...) TEXTE AJOUTÉ', 'Unrelated text between preview and marker prevents their association');
+  await longTextFixture();
+  await page.evaluate(() => {
+    document.querySelector('#text401').textContent = 'Premier\u0092 contenu\u0085 (...)';
+    document.querySelector('#contenttooltip501 .fup-popup').textContent = 'Premier\u0092 contenu\u0085 complet\u0092 avec détail.';
+  });
+  equal((await readPopupTable()).rows[0][4], 'Premier\u0092 contenu\u0085 complet\u0092 avec détail.', 'C1 code points remain exact in both the prefix proof and the recovered full value');
+  await longTextFixture('tooltip-invisible', 'br');
+  await page.evaluate(() => { document.querySelector('#contenttooltip502 .fup-popup').textContent = 'Deuxième contenu réellement modifié.'; });
+  equal((await readPopupTable()).rows[0][4], 'Premier contenu complet avec détail.\nDeuxième contenu réellement modifié.', 'A changed later long-text item remains visible to the native comparison');
+  await longTextFixture('tooltip-invisible', 'br');
+  await page.evaluate(() => { document.querySelector('#contenttooltip599 #contenttooltip501 .fup-popup').textContent = 'Premier contenu complet différent.'; });
+  equal((await readPopupTable()).rows[0][4], 'Premier contenu complet avec détail.', 'A different expanded first clone cannot authorize the outer multivalue popup');
+  await longTextFixture();
+  await page.evaluate(() => { document.querySelector('#contenttooltip501 .fup-popup').innerHTML += '<div class="tooltip-invisible">HIDDEN-UNRELATED-CONTENT</div><div hidden>HIDDEN-UNRELATED-CONTENT</div>'; });
+  equal((await readPopupTable()).rows[0][4], 'Premier contenu complet avec détail.', 'Unrelated hidden descendants stay excluded inside a validated long-text popup');
+  await longTextFixture('tooltip-invisible', 'br');
+  await page.evaluate(() => {
+    document.querySelectorAll('[id="text401"]').forEach(span => { span.innerHTML = 'Premier<br>contenu&nbsp;(...)'; });
+    document.querySelectorAll('[id="contenttooltip501"] .fup-popup').forEach(popup => { popup.innerHTML = 'Premier<br>contenu complet avec détail.'; });
+  });
+  equal((await readPopupTable()).rows[0][4], 'Premier\ncontenu complet avec détail.\nDeuxième contenu complet avec détail.', 'Line breaks inside a proven long preview remain part of its first item rather than outer-list separators');
   log(checks + ' native export DOM checks passed.');
 }
 

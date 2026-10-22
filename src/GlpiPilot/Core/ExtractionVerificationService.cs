@@ -66,7 +66,23 @@ public static class ExtractionVerificationService
             sample.Add(id);
         }
         if (sample.Count == 0) return new(false, false, 0, 0, "La liste affichée ne fournit aucun identifiant à rapprocher.");
-        var found = new HashSet<string>(StringComparer.Ordinal);
+        // Establish the identity first, even if non-ID headers later turn out to
+        // be ambiguous. A header ambiguity must never hide a missing sample ID.
+        var found = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var row in downloaded.Rows)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (right < row.Length)
+            {
+                var id = NormalizeId(row[right]);
+                if (sample.Contains(id)) found.TryAdd(id, row);
+            }
+            if (found.Count == sample.Count) break;
+        }
+        var missing = sample.Count - found.Count;
+        if (missing > 0)
+            return new(true, false, sample.Count, missing,
+                $"{missing} identifiant(s) de la liste affichée manquent dans l’export sur un échantillon de {sample.Count}. Le fichier reçu peut correspondre à un autre périmètre ou à une recherche ayant évolué.");
         var shownRows = visible.Rows.Where(row => left < row.Length && sample.Contains(NormalizeId(row[left]))).GroupBy(row => NormalizeId(row[left])).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var shownHeaders = ComparisonHeaders(visible.Headers);
         var nativeHeaders = ComparisonHeaders(downloaded.Headers);
@@ -88,47 +104,38 @@ public static class ExtractionVerificationService
             return new(false, false, sample.Count, 0, "Rapprochement des valeurs indisponible : plusieurs en-têtes se confondent après normalisation. Le diagnostic indique les positions concernées sans recopier les en-têtes.")
             { Diagnostics = new[] { "Colonnes liste ambiguës (positions à partir de 1) : " + string.Join(", ", ambiguous) + ". Aucun rapprochement par première occurrence." } };
         diagnostics.Add($"Colonnes hors ID : liste={visible.Headers.Count - 1} ; CSV={downloaded.Headers.Count - 1} ; associées sans ambiguïté={comparable.Count}. Positions à partir de 1 ; rôles standard uniquement, aucun en-tête ni contenu recopié.");
-        foreach (var row in downloaded.Rows)
+        foreach (var (id, row) in found)
         {
             ct.ThrowIfCancellationRequested();
-            if (right < row.Length)
+            foreach (var pair in comparable)
             {
-                var id = NormalizeId(row[right]);
-                if (sample.Contains(id) && found.Add(id))
-                {
-                    foreach (var pair in comparable)
-                    {
-                        if (pair.Left >= shownRows[id].Length || pair.Right >= row.Length)
-                        { pair.Compared++; pair.Changed++; pair.MissingCells++; continue; }
-                        var shown = ComparableText(shownRows[id][pair.Left]); var received = ComparableText(row[pair.Right]);
-                        if (shown == received) { pair.Compared++; continue; }
-                        var controls = HasC1(shown) || HasC1(received);
-                        // An ellipsis inside ordinary text is data, not proof of truncation.
-                        // Even a terminal ellipsis only excludes a cell if the full CSV starts
-                        // with the entire displayed prefix. A different prefix must still fail.
-                        if (!controls && IsMatchingAbbreviation(shown, received)) { pair.Abbreviated++; continue; }
-                        pair.Compared++;
-                        // GLPI 9.5/10 Search::csv_clean emits two ASCII apostrophes
-                        // for each double quote. Compare that exact one-way export
-                        // representation only; do not rewrite either original cell.
-                        if (!controls && shown.Contains('"') && shown.Replace("\"", "''", StringComparison.Ordinal) == received)
-                        { pair.CsvQuotes++; continue; }
-                        DateTime a = default, b = default;
-                        var dates = !controls && IsDateRole(pair.Role)
-                            && DashboardService.TryDate(shown, settings.DateCulture, TimeSpan.Zero, out a)
-                            && DashboardService.TryDate(received, settings.DateCulture, TimeSpan.Zero, out b);
-                        if (dates && a == b) continue;
-                        pair.Changed++;
-                        if (controls) pair.Controls++;
-                        else if (shown.Length == 0 || received.Length == 0) pair.Empty++;
-                        else if (dates) pair.Dates++;
-                        else pair.Other++;
-                    }
-                }
+                if (pair.Left >= shownRows[id].Length || pair.Right >= row.Length)
+                { pair.Compared++; pair.Changed++; pair.MissingCells++; continue; }
+                var shown = ComparableText(shownRows[id][pair.Left]); var received = ComparableText(row[pair.Right]);
+                if (shown == received) { pair.Compared++; continue; }
+                var controls = HasC1(shown) || HasC1(received);
+                // An ellipsis inside ordinary text is data, not proof of truncation.
+                // Even a terminal ellipsis only excludes a cell if the full CSV starts
+                // with the entire displayed prefix. A different prefix must still fail.
+                if (!controls && IsMatchingAbbreviation(shown, received)) { pair.Abbreviated++; continue; }
+                pair.Compared++;
+                // GLPI 9.5/10 Search::csv_clean emits two ASCII apostrophes
+                // for each double quote. Compare that exact one-way export
+                // representation only; do not rewrite either original cell.
+                if (!controls && shown.Contains('"') && shown.Replace("\"", "''", StringComparison.Ordinal) == received)
+                { pair.CsvQuotes++; continue; }
+                DateTime a = default, b = default;
+                var dates = !controls && IsDateRole(pair.Role)
+                    && DashboardService.TryDate(shown, settings.DateCulture, TimeSpan.Zero, out a)
+                    && DashboardService.TryDate(received, settings.DateCulture, TimeSpan.Zero, out b);
+                if (dates && a == b) continue;
+                pair.Changed++;
+                if (controls) pair.Controls++;
+                else if (shown.Length == 0 || received.Length == 0) pair.Empty++;
+                else if (dates) pair.Dates++;
+                else pair.Other++;
             }
-            if (found.Count == sample.Count) break;
         }
-        var missing = sample.Count - found.Count;
         var comparedCells = comparable.Sum(column => column.Compared);
         var changedCells = comparable.Sum(column => column.Changed);
         var abbreviated = comparable.Sum(column => column.Abbreviated);
@@ -136,11 +143,9 @@ public static class ExtractionVerificationService
             diagnostics.Add($"Colonne liste {column.Left + 1} → CSV {column.Right + 1} ; rôle={column.Role} ; écarts={column.Changed}/{column.Compared} ; abrégées compatibles={column.Abbreviated} ; format guillemets CSV={column.CsvQuotes} ; avec contrôle C1={column.Controls} ; vide/non-vide={column.Empty} ; date/heure={column.Dates} ; cellule absente={column.MissingCells} ; autres={column.Other}.");
         if (comparable.Any(column => column.Controls > 0))
             diagnostics.Add("Les écarts contenant un contrôle C1 restent des divergences. Aucune conversion Windows-1252 ni substitution de ponctuation n’a été appliquée ; ces compteurs ne prouvent pas leur origine.");
-        return new(true, missing == 0 && changedCells == 0, sample.Count, missing, changedCells > 0
+        return new(true, changedCells == 0, sample.Count, 0, changedCells > 0
             ? $"{found.Count}/{sample.Count} identifiants de l’échantillon ont été rapprochés, mais {changedCells}/{comparedCells} valeurs comparables diffèrent entre la liste et l’export. L’affichage peut différer du CSV, ou la recherche peut avoir évolué. Le journal précise les colonnes et catégories d’écarts sans enregistrer les valeurs."
-            : missing == 0
-            ? $"Les {sample.Count} identifiants et {comparedCells} valeurs comparables de l’échantillon correspondent à l’export. {abbreviated} cellule(s) abrégée(s) au préfixe compatible sont exclues. Ce contrôle complète le comptage sans prouver à lui seul toute la recherche."
-            : $"{missing} identifiant(s) de la liste affichée manquent dans l’export sur un échantillon de {sample.Count}. Le fichier reçu peut correspondre à un autre périmètre ou à une recherche ayant évolué.")
+            : $"Les {sample.Count} identifiants et {comparedCells} valeurs comparables de l’échantillon correspondent à l’export. {abbreviated} cellule(s) abrégée(s) au préfixe compatible sont exclues. Ce contrôle complète le comptage sans prouver à lui seul toute la recherche.")
         { Diagnostics = diagnostics };
     }
 

@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 3.0.1</div>
+    <div class="eyebrow">Guide de prise en main · Version 3.0.2</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -69,6 +69,8 @@
       <h3>Méthodes et contrôle du résultat</h3>
       <p>L’export CSV <strong>toutes les pages</strong> est prioritaire. Si cette commande est indisponible, le logiciel peut utiliser une option d’affichage complet existante puis, si autorisé, parcourir la pagination depuis la première page. La recherche, les totaux, les colonnes et un échantillon d’identifiants sont contrôlés.</p>
       <div class="callout"><p><strong>Un transfert corrompu ou ambigu interrompt la collecte.</strong> Il ne déclenche pas un changement silencieux de méthode. Le fichier reçu reste intact. Un relevé partiel porte son état et ses avertissements ; une annulation n’est pas annoncée comme une réussite.</p></div>
+      <p><strong>À vérifier ne signifie pas que les lignes sont inutilisables.</strong> En 3.0.2, lorsque le CSV est valide et que les identifiants de l’échantillon concordent, des différences avec l’affichage GLPI n’empêchent plus de consulter le relevé, de produire le classeur Excel ou d’utiliser les dashboards et les villes. L’état reste <strong>À vérifier</strong> et les avertissements précisent les limites. Un identifiant attendu absent au premier contrôle ou un CSV corrompu reste un motif de refus.</p>
+      <p>Le contrôle final de la recherche, du total et de l’échantillon reste actif. Le classeur automatique d’un résultat à vérifier porte <code>a-verifier</code> dans son nom ; le CSV natif conserve son nom et son contenu. Les textes complets des popups GLPI sont récupérés seulement si leur association au texte visible est vérifiée. Les signes inhabituels ne sont pas recodés automatiquement.</p>
       <p>La limite de lignes règle le volume chargé dans l’application, sans tronquer le CSV natif reçu. Un total absent ou invérifiable empêche de confirmer l’exhaustivité. Une recherche peut évoluer pendant la récupération : utiliser un tri stable, et conserver les mêmes critères jusqu’à la fin.</p>
     </section>
     <section id="interface">
@@ -169,7 +171,7 @@
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 3.0.1 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 3.0.2 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

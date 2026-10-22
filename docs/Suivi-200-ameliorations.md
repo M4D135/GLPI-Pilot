@@ -1,6 +1,6 @@
 # Suivi des 200 améliorations de GLPI Pilot
 
-État du code 3.0.1 examiné le **22 octobre 2026**. Ce registre reprend les 200 propositions transmises pour poursuivre le projet ; leurs numéros restent stables. Les intitulés sont conservés pour faciliter le rapprochement avec la demande.
+État du code 3.0.2 examiné le **22 octobre 2026**. Ce registre reprend les 200 propositions transmises pour poursuivre le projet ; leurs numéros restent stables. Les intitulés sont conservés pour faciliter le rapprochement avec la demande.
 
 **Ce registre décrit la couverture fonctionnelle du code.** Il ne remplace pas les résultats de compilation, de rendu Windows ou d’essai sur le portail réel. La publication d’un pack et ses contrôles doivent être vérifiés dans le [rapport de vérification](Rapport-verification.txt) et le workflow du commit livré.
 
@@ -42,7 +42,7 @@ Les fonctionnalités facultatives raccordées (routage, météo, assistant et fo
 | 11 | Reprise d’une pagination interrompue | **Implémenté** | Points de reprise compressés et atomiques, bornés en âge/volume ; vérification du périmètre, du total, de la première page et de la dernière page acquise avant reprise. |
 | 12 | Pagination automatique de dernier recours | **Implémenté** | Repli lorsque l’export natif est réellement indisponible, avec plafonds, détection de pages répétées et arrêt motivé. |
 | 13 | Conditions de collecte visibles | **Implémenté** | Début, fin, méthode, périmètre, tri effectivement observé et durées des phases enregistrés avec la collecte. |
-| 14 | Vérification par échantillon | **Implémenté** | Comparaison des identifiants et cellules comparables de 25 lignes visibles au maximum ; divergences bloquantes et textes tronqués exclus du contrôle de valeur. |
+| 14 | Vérification par échantillon | **Implémenté** | Comparaison des identifiants et cellules comparables de 25 lignes visibles au maximum. Un ID attendu absent au rapprochement initial reste bloquant ; des valeurs différentes conservent le CSV valide utilisable avec `Complete=false` et diagnostic. Contrôle final maintenu, aucun recodage C1. Popups multivalués et aperçus GLPI `(...)` lus seulement sur preuve de leur association ; autres abréviations exclues uniquement dans les cas reconnus au préfixe compatible. |
 | 15 | Protection du dernier relevé valide | **Implémenté** | Les exports sont finalisés atomiquement ; la rétention préserve aussi le dernier relevé complet, vérifié et comparable malgré des essais partiels ultérieurs. |
 | 16 | Résultat clairement qualifié | **Implémenté** | Complétude, résultat vide confirmé, résultat partiel et erreur sont distingués dans les résultats, avertissements et journaux. |
 | 17 | Annulation pendant l’écriture | **Implémenté** | Les écritures CSV/XLSX et historiques prennent en compte l’annulation ; les fichiers temporaires restent distincts des destinations finalisées. |
@@ -358,7 +358,7 @@ Les fonctionnalités facultatives raccordées (routage, météo, assistant et fo
 
 ## Validation et prérequis restants
 
-Les 198 lignes implémentées décrivent une fonction reliée au produit dans le périmètre indiqué. Les tests de chaque version, leur exécution Windows et les empreintes des packs figurent dans le [rapport de vérification](Rapport-verification.txt), les [notes 3.0.1](RELEASE-3.0.1.md) et le workflow du commit livré.
+Les 198 lignes implémentées décrivent une fonction reliée au produit dans le périmètre indiqué. Les tests de chaque version, leur exécution Windows et les empreintes des packs figurent dans le [rapport de vérification](Rapport-verification.txt), les [notes 3.0.2](RELEASE-3.0.2.md) et le workflow du commit livré. La régression d’import 3.0.2 et les fixtures de textes longs ne prouvent pas que tous les écarts d’un portail privé sont résolus.
 
 - **197 — Validation du poste et du portail réels :** les tests synthétiques et le bureau Windows du runner ne remplacent pas les règles SSO, extensions, droits et périphériques de l’installation de l’utilisateur.
 - **198 — Certificat de signature :** le script de signature vérifie clé privée, usage, empreinte, signature et horodatage. Un certificat de confiance et son URL d’horodatage doivent être fournis à la chaîne avant de pouvoir annoncer une distribution signée.

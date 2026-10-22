@@ -2,7 +2,7 @@
   'use strict';
 
   // Reinstalling after every command is safe; a full navigation creates fresh state.
-  const VERSION = '1.1.1';
+  const VERSION = '1.1.2';
   if (window.__glpiPilot?.version === VERSION) return VERSION;
   try { window.__glpiPilot?.cancelPick(); } catch (_) { /* Previous document adapter. */ }
 
@@ -83,13 +83,60 @@
   }
 
   function cellText(cell) {
-    function read(node) {
+    const clean = text => text.replace(/\u00a0/g, ' ').split(/\r?\n/).map(s => s.replace(/[\t ]+/g, ' ').trim()).filter(Boolean).join('\n').trim();
+    const expandedPreviews = new WeakSet();
+    function omitted(node) {
+      if (node.matches('script,style,template,noscript,[hidden],[aria-hidden="true"],' + UI)) return true;
+      const style = getComputedStyle(node);
+      return style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse';
+    }
+    const uniquePeerId = node => node.id && [...node.parentElement.children].filter(peer => peer.id === node.id).length === 1;
+    function adjacent(first, second) {
+      if (!second || first.nextElementSibling !== second) return false;
+      for (let node = first.nextSibling; node !== second; node = node.nextSibling) {
+        if (node.nodeType === Node.TEXT_NODE && clean(node.nodeValue || '')) return false;
+      }
+      return true;
+    }
+    function pairedPopup(marker) {
+      if (!marker?.matches('span.fa-comments') || !/^tooltip\d+$/.test(marker.id) || omitted(marker) || !uniquePeerId(marker)) return null;
+      const content = marker.nextElementSibling;
+      if (!content?.matches('div.invisible,div.tooltip-invisible') || content.id !== 'content' + marker.id ||
+          !adjacent(marker, content) || !uniquePeerId(content) || getComputedStyle(content).display !== 'none' ||
+          content.matches('[hidden],[aria-hidden="true"],' + UI) || content.children.length !== 1 ||
+          !content.firstElementChild.matches('div.fup-popup')) return null;
+      const popup = content.firstElementChild;
+      if (omitted(popup) || [...content.childNodes].some(node => node.nodeType === Node.TEXT_NODE && clean(node.nodeValue || ''))) return null;
+      return popup;
+    }
+    function readMoreControl(node, popup) {
+      // RichText::getEnhancedHtml appends this control to its one long_text
+      // wrapper. Exclude only that generated control in a validated popup.
+      const wrapper = node.parentElement;
+      return popup && node.matches('p.read_more') && wrapper?.matches('div.long_text') &&
+        wrapper.parentElement === popup && popup.firstElementChild === wrapper &&
+        [...popup.children].every(child => child === wrapper || child.matches('script')) &&
+        wrapper.lastElementChild === node && node.children.length === 1 &&
+        node.firstElementChild.matches('span.read_more_button') && clean(node.textContent) === '...';
+    }
+    function expandedPreview(node, shortened) {
+      if (!node.matches('span') || !/^text\d+$/.test(node.id) || !uniquePeerId(node) || !shortened.endsWith(' (...)')) return null;
+      const marker = node.nextElementSibling;
+      if (!adjacent(node, marker)) return null;
+      const popup = pairedPopup(marker);
+      if (!popup) return null;
+      // These are DOM sibling references, not global ID lookups. showItem
+      // legitimately clones the first triplet into its outer list popup.
+      const prefix = shortened.slice(0, -6);
+      if (!prefix) return null;
+      const full = clean([...popup.childNodes].map(child => read(child, null, popup)).join(''));
+      return full.length > prefix.length && full.startsWith(prefix) ? full : null;
+    }
+    function read(node, owner = cell, popup = null) {
       if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
       if (!(node instanceof Element)) return '';
       if (node !== cell && (node.matches(TABLE) || node.matches(UI))) return '';
-      if (node.matches('script,style,template,noscript,[hidden],[aria-hidden="true"]')) return '';
-      const style = getComputedStyle(node);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return '';
+      if (omitted(node) || readMoreControl(node, popup)) return '';
       if (node.matches('input')) {
         const type = (node.getAttribute('type') || 'text').toLowerCase();
         if (['password', 'hidden', 'file', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image'].includes(type)) return '';
@@ -97,44 +144,55 @@
       }
       if (node.matches('textarea')) return node.value || '';
       if (node.matches('select')) return [...node.selectedOptions].map(o => o.textContent).join(', ');
-      if (node.matches('br')) return '\n';
+      if (node.matches('br,hr')) return '\n';
       if (node.matches('img')) return node.getAttribute('alt') || node.getAttribute('aria-label') || node.getAttribute('title') || '';
-      const text = [...node.childNodes].map(read).join('');
+      const text = [...node.childNodes].map(child => read(child, owner, popup)).join('');
       const fallback = node.getAttribute('aria-label') || node.getAttribute('title') || '';
       const iconOnly = /^[\p{P}\p{S}\s\uE000-\uF8FF]+$/u.test(compact(text));
       let value = compact(text) && !iconOnly ? text : fallback || text;
       if (fallback && (!compact(text) || iconOnly) && node.parentElement && [...node.parentElement.childNodes].some(sibling => sibling !== node && (sibling.nodeType === Node.TEXT_NODE || sibling instanceof Element && visible(sibling)) && plain(sibling.textContent).includes(plain(fallback)))) value = '';
+      if (node.parentElement === owner) {
+        const full = expandedPreview(node, clean(value));
+        if (full !== null) { value = full; expandedPreviews.add(node); }
+      }
       return /^(DIV|P|LI)$/.test(node.tagName) ? '\n' + value + '\n' : value;
     }
-    const clean = text => text.replace(/\u00a0/g, ' ').split(/\r?\n/).map(s => s.replace(/[\t ]+/g, ' ').trim()).filter(Boolean).join('\n').trim();
     const shown = clean(read(cell));
     // GLPI 9.5/10 showItem abbreviates long multivalue cells to their first item,
     // with no ellipsis. Html::showToolTip supplies the complete static list in a
     // specifically paired fa-comments popup. Read that list only when its first
     // item exactly proves the association with the displayed cell. Ordinary
     // information/title tooltips and every unpaired hidden subtree stay excluded.
-    const markers = [...cell.children].filter(node => node.matches('span.fa-comments') && /^tooltip\d+$/.test(node.id) && visible(node));
-    if (shown && markers.length === 1) {
-      const marker = markers[0];
-      const content = marker.nextElementSibling;
-      if (content?.matches('div.invisible,div.tooltip-invisible') && content.id === 'content' + marker.id &&
-          all('#' + css(marker.id)).length === 1 && all('#' + css(content.id)).length === 1 && !visible(content) &&
-          content.children.length === 1 && content.firstElementChild.matches('div.fup-popup')) {
-        const popup = content.firstElementChild;
-        const breaks = all('br', popup);
-        if (breaks.length >= 2 && breaks.every(node => node.parentElement === popup) && !all('hr,' + TABLE, popup).length) {
-          const parts = [''];
-          for (const node of popup.childNodes) {
-            if (node instanceof Element && node.matches('br')) parts.push('');
-            else parts[parts.length - 1] += read(node);
-          }
-          const items = parts.map(clean);
-          if (items.at(-1) === '') items.pop(); // showItem appends a BR after every item.
-          if (items.length >= 2 && items.every(item => item && !item.includes('\n')) && items[0] === shown) return items.join('\n');
-        }
+    const candidates = [];
+    for (const marker of [...cell.children].filter(node => node.matches('span.fa-comments') && visible(node))) {
+      if (!shown) break;
+      const popup = pairedPopup(marker);
+      if (!popup) continue;
+      const directBreaks = [...popup.children].filter(node => node.matches('br,hr') && !omitted(node));
+      const delimiter = directBreaks.some(node => node.matches('hr')) ? 'hr' : 'br';
+      if (directBreaks.filter(node => node.matches(delimiter)).length < 2) continue;
+      const parts = [''];
+      for (const node of popup.childNodes) {
+        if (node instanceof Element && node.matches(delimiter) && !omitted(node)) parts.push('');
+        else parts[parts.length - 1] += read(node, popup, popup);
       }
+      // A user item can itself contain a hidden fa-info card with BRs. Its
+      // omitted subtree is not a separator or part of the exported value. BRs
+      // inside an exactly proven long-text preview belong to that item too.
+      const structure = all('br,hr,' + TABLE, popup).filter(node => {
+        for (let parent = node; parent !== popup; parent = parent.parentElement) {
+          if (omitted(parent) || node.matches('br,hr') && expandedPreviews.has(parent)) return false;
+        }
+        return true;
+      });
+      if (structure.some(node => node.matches(TABLE)) || delimiter === 'br' && structure.some(node => node.matches('hr'))) continue;
+      const breaks = structure.filter(node => node.matches(delimiter));
+      if (breaks.length < 2 || breaks.some(node => node.parentElement !== popup)) continue;
+      const items = parts.map(clean);
+      if (items.at(-1) === '') items.pop(); // showItem appends a separator after every item.
+      if (items.length >= 2 && items.every(Boolean) && items[0] === shown) candidates.push(items.join('\n'));
     }
-    return shown;
+    return candidates.length === 1 ? candidates[0] : shown;
   }
 
   function rowCells(row, table) {

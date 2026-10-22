@@ -26,14 +26,41 @@ that exclude fake private sentinels. No real ticket information is included.
 9.5.13 and 10.0.22 renderers. Long multivalue cells display their first item and
 a `fa-comments` marker, with the complete static list in its paired popup;
 they do not display a textual ellipsis. The table adapter reads the complete
-list only when marker IDs are unique, marker and popup are adjacent siblings
-inside the same cell, the wrapper classes and `fup-popup` structure match,
-the list uses direct `br` separators, and its first item exactly matches the
-whole displayed cell value. No tooltip is opened and no request is issued.
-Other hidden content, ordinary information/title tooltips, mismatched IDs or
-first items, duplicate IDs, and horizontal-rule popups remain excluded.
+list only when marker IDs are unique among siblings, marker and popup are
+adjacent siblings, the wrapper classes and `fup-popup` structure match,
+the list uses direct `br` or `hr` separators, and its first item exactly
+matches the whole displayed cell value. Nested hidden user-information
+cards are excluded from both the item text and the separator count: their
+own `br` elements must not hide subsequent requesters. No tooltip is opened
+and no request is issued. Other hidden content, ordinary information/title
+tooltips, mismatched IDs or first items, and duplicate sibling IDs remain
+excluded.
 Later items remain part of the extracted value, so a real difference there
 still reaches the C# native-export integrity check.
+
+The run also constructs the official long-text pattern: `span#textN` with
+the exact ` (...)` abbreviation suffix, followed by a paired `fa-comments`
+popup. Only that span is replaced, and only when the full static popup text
+is longer and begins with its entire displayed prefix. Different IDs,
+prefixes, absent suffixes, hidden markers, AJAX placeholders and duplicate
+sibling IDs cannot authorize expansion. C1 code points remain unchanged.
+
+`Search::showItem` copies the first long-text triplet both into the visible
+cell and into the outer multivalue popup. The checks cover these legitimate
+cloned IDs for GLPI 9.5 and 10 with both separator types, while retaining
+different later values. Associations follow actual adjacent DOM nodes;
+they never resolve a tooltip with a global ID lookup. Line breaks inside a
+proven preview belong to that value rather than to the outer list. The
+specific generated `long_text > p.read_more > span.read_more_button` control
+is excluded inside a validated popup; literal ellipses remain in its content.
+
+Both `br` and `hr` preserve a newline boundary in the extracted text. This
+does not imitate native CSV punctuation or remove real characters to force
+agreement. In particular, GLPI 9.5 can remove an `hr` during CSV cleaning,
+whereas GLPI 10 can leave literal `<br>`/`<hr>` delimiters after normalization;
+rich-text conversion may also add Markdown-like punctuation. Such differences
+still reach the C# comparison. These fixtures prove the DOM extraction cases,
+not equivalence for every GLPI export or resolution of an unprovided CSV.
 
 The fixture also checks that status icons do not duplicate their adjacent
 labels, priority decoration does not add text, and visible IDs in titles are
@@ -45,6 +72,14 @@ preserved. Sources for the rendered structure:
 - [GLPI 10.0.22 Html::showToolTip](https://github.com/glpi-project/glpi/blob/10.0.22/src/Html.php#L3612-L3645)
 - [GLPI 9.5.13 hidden popup CSS](https://github.com/glpi-project/glpi/blob/9.5.13/css/styles.scss#L294-L296)
 - [GLPI 10.0.22 hidden popup CSS](https://github.com/glpi-project/glpi/blob/10.0.22/css/legacy/includes/_styles.scss#L131-L133)
+- [GLPI 9.5.13 user rendering and nested information cards](https://github.com/glpi-project/glpi/blob/9.5.13/inc/search.class.php#L5621-L5706)
+- [GLPI 9.5.13 user-card line breaks](https://github.com/glpi-project/glpi/blob/9.5.13/inc/dbutils.class.php#L1547-L1553)
+- [GLPI 9.5.13 long-text rendering](https://github.com/glpi-project/glpi/blob/9.5.13/inc/search.class.php#L6357-L6382)
+- [GLPI 10.0.22 long-text rendering](https://github.com/glpi-project/glpi/blob/10.0.22/src/Search.php#L7663-L7682)
+- [GLPI 10.0.22 exact abbreviation suffix](https://github.com/glpi-project/glpi/blob/10.0.22/src/Html.php#L282-L289)
+- [GLPI 10.0.22 generated read-more control](https://github.com/glpi-project/glpi/blob/10.0.22/src/RichText/RichText.php#L288-L327)
+- [GLPI 9.5.13 CSV cleaning order](https://github.com/glpi-project/glpi/blob/9.5.13/inc/search.class.php#L7370-L7375)
+- [GLPI 10.0.22 CSV cleaning order](https://github.com/glpi-project/glpi/blob/10.0.22/src/Search.php#L8853-L8857)
 
 ## Run on Windows
 

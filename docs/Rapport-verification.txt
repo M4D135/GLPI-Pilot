@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.1 — protocole et preuves de vérification
+GLPI Pilot 3.0.2 — protocole et preuves de vérification
 Date : 22 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
@@ -10,6 +10,26 @@ constitue la preuve de validation Windows :
 https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 Une version déjà publiée pour un autre commit ne peut pas être remplacée.
 La présence des tests ou leur compilation ne constitue pas leur exécution.
+
+REGRESSION D’IMPORT CORRIGEE EN 3.0.2
+Par rapport au parcours 2.0, la comparaison ajoutée en version 3 pouvait
+interrompre le traitement après la lecture réussie d’un CSV valide, avant
+sa mise à disposition dans le relevé, Excel et l’enrichissement des villes.
+Une fixture synthétique de 788 lignes, 20 identifiants visibles concordants
+et 32 écarts sur 260 valeurs comparées a reproduit cet échec avant correction.
+La fixture ne contient aucune donnée du portail privé et ne prouve pas
+l’origine des écarts observés dans ce portail.
+
+Le parcours corrigé a ensuite réussi localement sur cette fixture : 788
+lignes chargées et enrichies pour les villes, CSV natif inchangé, classeur
+disponible avec a-verifier dans son nom, Complete=false, réserve de concordance
+et contrôle final maintenus. Les contrôles C1 du fichier sont conservés.
+La validation Windows de 3.0.2 est à lire dans les journaux du commit livré ;
+aucun total de tests ni succès Windows n’est déduit de ce test local.
+Un mauvais échantillon d’identifiants au contrôle initial et un CSV corrompu
+restent refusés. Le contrôle final reste actif : une variation du contexte,
+du total ou de l’échantillon, ou un contrôle indisponible, maintient le relevé
+à vérifier. Aucune conversion C1 et aucune réécriture du CSV natif.
 
 VALIDATION LOCALE AVANT LA CHAINE WINDOWS
 Les suites métier utilisent des données et profils temporaires synthétiques.
@@ -59,9 +79,16 @@ Le diagnostic des divergences est agrégé par positions et rôles de colonne,
 sans recopier valeurs, identifiants ou en-têtes libres. Les contrôles C1 ne sont
 pas convertis. Les ellipses, dates, cellules absentes, en-têtes ambigus et perte
 du rapprochement au contrôle final possèdent des régressions dédiées.
-Les popups multivalués statiques GLPI 9.5/10 correctement associés sont lus en
-entier : un élément ultérieur divergent reste refusé. La représentation des
-guillemets par csv_clean est reconnue dans le seul sens liste vers CSV.
+L’adaptateur DOM 1.1.2 lit les popups multivalués statiques GLPI 9.5/10
+correctement associés, y compris les demandeurs dont les fiches d’information
+imbriquées contiennent leurs propres sauts de ligne. Les aperçus (...), leurs
+clones dans un popup extérieur et les séparateurs HR disposent de fixtures.
+La commande de lecture supplémentaire est exclue uniquement dans son wrapper
+GLPI reconnu. Un élément ultérieur divergent reste une divergence ; il ne
+devient pas une correspondance pour permettre l’import avec réserve.
+La représentation des guillemets par csv_clean est reconnue dans le seul
+sens liste vers CSV. Les variations de présentation RichText ne justifient
+pas de suppression générale de ponctuation, de casse ou de contrôles C1.
 
 INTERFACE LOCALE ET PONT C# (WebViewChecks)
 WebViewChecks : shell complet, 25 espaces, thèmes, navigation, tableaux,
