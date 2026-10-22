@@ -15,6 +15,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var clock = Stopwatch.StartNew();
         var startedAt = DateTimeOffset.Now;
         var runId = Guid.NewGuid().ToString("N")[..8];
+        var divergences = new NativeCellDivergenceReport(runId, startedAt);
         var phaseSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
         string activePhase = ""; var phaseStarted = TimeSpan.Zero;
         void Stage(string message, AutomaticRunPhase? phase = null)
@@ -122,7 +123,8 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     data = await Task.Run(() => NativeCsvImportService.Read(download.Path, AppPaths.SafeUrl(page.Url), download.ExpectedTotal,
                         settings.MaxRows, true, ct, diagnostics: message => Log?.Invoke(message)), ct);
                     method = "native-csv";
-                    var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct);
+                    var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct,
+                        cell => divergences.Add("initial", cell));
                     data.Quality!.InitialSample = check.Observation();
                     Log?.Invoke("ÉCHANTILLON · " + check.Explanation);
                     foreach (var diagnostic in check.Diagnostics) Log?.Invoke("ÉCHANTILLON DÉTAIL · " + diagnostic);
@@ -135,7 +137,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     {
                         data.Complete = false;
                         data.Warnings.Add(check.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.");
-                        data.Status = "Export natif chargé — comparaison avec l’affichage à vérifier";
+                        data.Status = $"Import terminé · {data.Rows.Count:N0} lignes chargées";
                     }
                 }
                 catch (NativeExportUnavailableException) when (download == null && settings.Automation.AutomaticPaginationFallback
@@ -168,8 +170,11 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var referenceTotal = visibleBefore?.ExpectedTotal ?? data.ExpectedTotal;
         var totalChanged = referenceTotal is int initialTotal && visibleAfter?.ExpectedTotal is int finalTotal && initialTotal != finalTotal;
         if (data.Quality is { } quality)
+        {
             quality.FinalTotalVerified = referenceTotal.HasValue && visibleAfter?.ExpectedTotal is int observedFinal
                 ? referenceTotal.Value == observedFinal : null;
+            quality.ScopeStable = stableScope;
+        }
         if (!stableScope)
         {
             data.Complete = false;
@@ -188,14 +193,15 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             }
             if (method == "native-csv")
             {
-                var finalSample = ExtractionVerificationService.VerifyNativeSample(visibleAfter, data, settings.Dashboard, ct);
+                var finalSample = ExtractionVerificationService.VerifyNativeSample(visibleAfter, data, settings.Dashboard, ct,
+                    cell => divergences.Add("final", cell));
                 data.Quality!.FinalSample = finalSample.Observation();
                 Log?.Invoke("ÉCHANTILLON FINAL · " + finalSample.Explanation);
                 foreach (var diagnostic in finalSample.Diagnostics) Log?.Invoke("ÉCHANTILLON FINAL DÉTAIL · " + diagnostic);
                 if (!finalSample.Available)
                 {
                     data.Complete = false;
-                    if (stableScope && !totalChanged) data.Status = "Export reçu — contrôle final de l’échantillon indisponible";
+                    if (stableScope && !totalChanged) data.Status = $"Import terminé · {data.Rows.Count:N0} lignes chargées";
                     data.Warnings.Add(finalSample.Explanation + " Le contrôle de l’échantillon n’est plus disponible après le transfert ; la couverture reste à vérifier.");
                 }
                 else if (!finalSample.Matches)
@@ -203,7 +209,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     data.Complete = false;
                     if (stableScope && !totalChanged) data.Status = finalSample.Missing > 0
                         ? "Export natif chargé — identifiants de l’échantillon final à vérifier"
-                        : "Export natif chargé — comparaison avec l’affichage à vérifier";
+                        : $"Import terminé · {data.Rows.Count:N0} lignes chargées";
                     var warning = finalSample.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.";
                     if (!data.Warnings.Contains(warning, StringComparer.Ordinal)) data.Warnings.Add(warning);
                 }
@@ -220,6 +226,22 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             ObservedSort = observedSort, Resumed = data.Provenance.Resumed, ResumeStartedAt = data.Provenance.ResumeStartedAt,
             StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
         };
+        if (divergences.Count > 0 && data.Quality is { } observedQuality)
+        {
+            try
+            {
+                observedQuality.DivergenceReportName = divergences.Save(AppPaths.CellDivergenceFolder);
+                observedQuality.DivergenceReportCount = divergences.Count;
+                observedQuality.DivergenceTotalCount = divergences.TotalCount;
+                Log?.Invoke($"ÉCARTS · diagnostic local enregistré : {observedQuality.DivergenceReportName} ; {divergences.Count}/{divergences.TotalCount} comparaisons détaillées. Accessible dans Qualité du relevé ; les valeurs restent dans ce fichier dédié.");
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                // A local diagnostic write must not discard an otherwise usable import.
+                data.Warnings.Add("Le diagnostic détaillé des écarts n’a pas pu être enregistré. Les données importées restent disponibles.");
+                Log?.Invoke("ÉCARTS · écriture du diagnostic local indisponible ; contenu de cellule absent du journal.");
+            }
+        }
         data.Warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToList();
         if (nativePath != null) primaryPath = nativePath;
         else if (data.Headers.Count > 0)

@@ -29,7 +29,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> LayoutProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "CatalogRecent", "FilterPresets" };
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Name", "Description", "Density", "Sections", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
+    { "Id", "Name", "Description", "Density", "HideUnavailableWidgets", "Sections", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
     private static readonly HashSet<string> DashboardSectionProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Title", "Description", "Accent", "Hidden" };
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks" };
@@ -417,6 +417,8 @@ public static class ConfigurationTransferService
             RequireProperties(board, BoardProperties);
             JsonText(board, "Id", 96, required: true); JsonText(board, "Name", 120, required: true);
             JsonText(board, "Description", 600); JsonEnum(board, "Density", "comfortable", "compact");
+            if (Find(board, "HideUnavailableWidgets") is { } hideUnavailable && hideUnavailable.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw Invalid("La visibilité des widgets indisponibles doit valoir vrai ou faux.");
             var sectionKeys = new HashSet<string>(StringComparer.Ordinal);
             ValidateObjectList(board, "Sections", 60, DashboardSectionProperties, section =>
             {

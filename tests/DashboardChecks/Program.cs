@@ -66,7 +66,8 @@ Test("Rolling events include only dates present in this snapshot", () =>
 });
 Test("Weighted weather has independent denominators and marks unknown status", () =>
 {
-    var d = Calc(); Equal(d.Weather.Score, 52.5, "weather score"); Check(d.Weather.State == "storm" && d.Weather.Title.Contains("partielles"));
+    var d = Calc(); Equal(d.Weather.Score, 52.5, "weather score"); Check(d.Weather.State == "storm" && d.Weather.Title.Contains("indicateurs disponibles"));
+    Check(d.Weather.Description.Contains("statuts non reconnus", StringComparison.Ordinal));
     Check(d.Weather.Signals.First().Sample == 2 && d.Weather.MeasuredWeight == 100);
 });
 Test("Missing dates and priorities do not become positive sunshine evidence", () =>
@@ -106,7 +107,7 @@ Test("Complete reception with representation reserves keeps usable counts and ca
     Check(d.Warnings.Count(warning => warning == "Réserve de comparaison synthétique") == 1);
     Check(d.Warnings.Any(warning => warning.StartsWith("Toutes les lignes annoncées", StringComparison.Ordinal))
         && !d.Warnings.Any(warning => warning.StartsWith("Périmètre incomplet", StringComparison.Ordinal)));
-    Check(d.Weather.State == "partial" && d.Weather.Title.Contains("relevé à vérifier", StringComparison.Ordinal)
+    Check(d.Weather.State == "partial" && !d.Weather.Title.Contains("relevé à vérifier", StringComparison.Ordinal)
         && !d.Weather.Title.Contains("données partielles", StringComparison.Ordinal));
     var subset = DashboardService.CalculateSubset(s, new(), new[] { 0 }, "Vue synthétique", clock);
     Check(subset.ReceptionComplete && !subset.Complete && subset.ExpectedTotal == 1);
@@ -124,6 +125,64 @@ Test("Changed final total and inconsistent receipt metadata cannot certify loade
     Check(!Calc(s).ReceptionComplete);
     s.Quality = null;
     Check(!Calc(s).ReceptionComplete, "Legacy partial records do not infer quality from matching row counts.");
+});
+Test("Received rows with unavailable signals keep the actual score and explain indicator coverage", () =>
+{
+    var s = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Date d'ouverture", "Dernière modification", "Technicien", "Groupe de techniciens" },
+        Rows = new() {
+            new[] { "1", "Nouveau", "01/09/2026 12:00", "01/10/2026 12:00", "", "" },
+            new[] { "2", "Nouveau", "01/09/2026 12:00", "01/10/2026 12:00", "Sam", "Support" },
+            new[] { "3", "Nouveau", "20/10/2026 12:00", "21/10/2026 12:00", "Sam", "Support" },
+            new[] { "4", "Nouveau", "20/10/2026 12:00", "21/10/2026 12:00", "Alex", "Support" } },
+        ExpectedTotal = 4, Complete = false, ExtractedAt = clock, Warnings = new() { "Réserve de concordance synthétique" },
+        Quality = new() { SourceRows = 4, ExpectedRows = 4, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true }
+    };
+    var d = Calc(s); Equal(d.Weather.Score, 40.625, "score from three available signals only");
+    Check(d.ReceptionComplete && !d.Complete && d.Weather.Signals.Count == 3 && d.Weather.MeasuredWeight == 40 && d.Weather.State == "rain");
+    Check(d.Metric("high")!.Value is null && d.Metric("overdue")!.Value is null, "Unavailable indicators must not become zero-valued evidence.");
+    Check(d.Weather.Title.Contains("indicateurs disponibles", StringComparison.Ordinal) && !d.Weather.Title.Contains("partiel", StringComparison.Ordinal));
+    Check(d.Weather.Description.Contains("seuil de couverture de 60 %", StringComparison.Ordinal)
+        && d.Weather.Description.Contains("Réception des lignes complète", StringComparison.Ordinal));
+    Check(s.Warnings.SequenceEqual(new[] { "Réserve de concordance synthétique" }) && !s.Complete);
+    foreach (var row in s.Rows) { row[2] = "20/10/2026 12:00"; row[3] = "21/10/2026 12:00"; }
+    s.Complete = true; s.Quality = null;
+    d = Calc(s); Equal(d.Weather.Score, 9.375, "low score from available signals");
+    Check(d.ReceptionComplete && d.Complete && d.Weather.State == "partial", "Insufficient indicator coverage never certifies sunshine, even for a complete receipt.");
+});
+Test("Weather profiles retain source reserves without calling received rows partial", () =>
+{
+    var s = Sample(); s.Rows = new() { s.Rows[1], (string[])s.Rows[1].Clone() }; s.Rows[1][0] = "202"; s.Rows[1][10] = "Alex";
+    s.ExpectedTotal = 2; s.Complete = false;
+    s.Quality = new() { SourceRows = 2, ExpectedRows = 2, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true };
+    var d = Calc(s);
+    foreach (var profile in new[] { d.WeatherProfiles["deadlines"], d.WeatherProfiles["quality"], d.WeatherProfiles["workload"] })
+        Check(profile.State == "partial" && !profile.Title.Contains("relevé à vérifier", StringComparison.Ordinal)
+            && profile.Description.Contains("Réception des lignes complète", StringComparison.Ordinal));
+    foreach (var row in s.Rows) row[2] = "Résolu";
+    d = Calc(s); Check(d.Weather.State == "partial" && d.Weather.Title == "Aucun actif dans ce relevé");
+    s.Quality.ScopeStable = false;
+    Check(Calc(s).Weather.Title.Contains("périmètre à vérifier", StringComparison.Ordinal));
+    s.Quality.ScopeStable = true; s.Quality.InitialSample = new() { IdentityVerified = false };
+    Check(Calc(s).Weather.Title.Contains("périmètre à vérifier", StringComparison.Ordinal));
+    s.Quality.InitialSample = null; s.Quality.FinalTotalVerified = false;
+    Check(Calc(s).Weather.Title.Contains("périmètre à vérifier", StringComparison.Ordinal));
+});
+Test("Column labels stay French while mapping states and exported explanations remain stable", () =>
+{
+    var s = Sample(); s.Headers[1] = "Status";
+    var settings = new DashboardSettings(); settings.ColumnMappings["priority"] = "Priorité configurée absente";
+    var d = Calc(s, settings);
+    Check(d.Column("id") is { State: "auto", StateLabel: "Reconnue automatiquement" });
+    Check(d.Column("status") is { State: "ambiguous", StateLabel: "Plusieurs colonnes possibles" });
+    Check(d.Column("priority") is { State: "missing-override", StateLabel: "Colonne configurée absente" });
+    Check(d.Column("impact") is { State: "missing", StateLabel: "Aucune colonne reconnue" });
+    settings.ColumnMappings["status"] = "Statut"; d = Calc(s, settings);
+    Check(d.Column("status") is { State: "configured", StateLabel: "Définie manuellement", Index: 2 });
+    var json = System.Text.Json.JsonSerializer.SerializeToElement(d.Column("status"), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+    Check(json.GetProperty("state").GetString() == "configured" && json.GetProperty("stateLabel").GetString() == "Définie manuellement");
+    Check(DashboardService.ToExport(d).Rows.Any(row => row[0] == "Correspondances" && row.Contains("Définie manuellement")));
 });
 Test("Empty snapshot never claims fine weather", () =>
 {
@@ -854,7 +913,7 @@ Test("Specialised geography weather stays unavailable without city evidence", ()
     snapshot.Metrics.Add(new("city-unmatched", "Sans correspondance", 1, "lignes", "", new[] { 0 }, 6));
     DashboardService.RefreshWeatherProfiles(snapshot, new());
     var profile = snapshot.WeatherProfiles["geography"];
-    Equal(profile.Score, 100d / 6, "specialised denominator"); Check(profile.Title.Contains("partiel") && profile.Signals.Single().Sample == 6);
+    Equal(profile.Score, 100d / 6, "specialised denominator"); Check(profile.Title.Contains("indicateurs disponibles") && profile.Signals.Single().Sample == 6);
 });
 Test("Numeric aggregates export actual values and preserve unavailable instead of count fallback", () =>
 {

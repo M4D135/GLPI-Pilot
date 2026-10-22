@@ -38,7 +38,76 @@ function editFilters(ctx,data,view,reload,defaultColumn=0){const transform=struc
 async function editColumns(ctx,data,reload){const info=await ctx.api.call('records.columns');const columns=structuredClone(info.columns).sort((a,b)=>a.displayIndex-b.displayIndex);const content=el('div');const search=input('',{class:'column-search',placeholder:'Rechercher une colonne…','aria-label':'Rechercher une colonne'});const paint=()=>content.replaceChildren(table(columns.filter(c=>data.headers[c.sourceIndex].toLocaleLowerCase('fr').includes(search.value.toLocaleLowerCase('fr'))),[{label:'Visible',render:c=>{const box=input('',{type:'checkbox',checked:c.visible});box.addEventListener('change',()=>c.visible=box.checked);return box;}},{label:'Colonne',render:c=>data.headers[c.sourceIndex]},{label:'Famille',render:c=>info.families.find(f=>f.index===c.sourceIndex)?.family||''},{label:'Largeur',render:c=>{const control=input(c.width,{type:'number',min:70,max:1200});control.addEventListener('change',()=>c.width=Number(control.value));return control;}},{label:'Ajustement',render:c=>{const control=input('',{type:'checkbox',checked:c.autoWidth});control.addEventListener('change',()=>c.autoWidth=control.checked);return control;}},{label:'Ordre',render:c=>toolbar(button('Monter',()=>{const i=columns.indexOf(c);if(i>0){[columns[i-1],columns[i]]=[columns[i],columns[i-1]];paint();}},{disabled:columns.indexOf(c)===0}),button('Descendre',()=>{const i=columns.indexOf(c);if(i<columns.length-1){[columns[i+1],columns[i]]=[columns[i],columns[i+1]];paint();}},{disabled:columns.indexOf(c)===columns.length-1}))}]));
  search.addEventListener('input',paint);const families=[...new Set(info.families.map(f=>f.family))];const family=select(families);dialog('Colonnes et disposition',el('div',{},search,toolbar(field('Famille',family),button('Afficher cette famille',()=>{for(const column of columns)if(info.families.find(f=>f.index===column.sourceIndex)?.family===family.value)column.visible=true;paint();}),button('Masquer cette famille',()=>{for(const column of columns)if(info.families.find(f=>f.index===column.sourceIndex)?.family===family.value)column.visible=false;paint();})),content),[{label:'Enregistrer',primary:true,action:async close=>{if(!columns.some(c=>c.visible))throw new Error('Conservez au moins une colonne visible.');columns.forEach((c,i)=>c.displayIndex=i);await ctx.api.call('records.columns',{columns,revision:data.revision});await reload();close();}}]);paint();}
 async function viewsDialog(ctx,data,view,reload,search){const views=await ctx.api.call('records.views');const name=input('',{placeholder:'Nom de la vue'});const list=table(views,[{key:'name',label:'Vue'},{key:'search',label:'Recherche'},{label:'Actions',render:v=>toolbar(button('Ouvrir',async()=>{view.search=v.search;search.value=v.search;view.transform=structuredClone(v.transform);view.offset=0;await ctx.api.call('records.columns',{columns:v.columns,revision:data.revision});await reload();modal.close();}),button('Supprimer',async()=>{if(await confirm('Supprimer la vue ?',v.name,'Supprimer')){await ctx.api.call('records.removeView',{id:v.id});modal.close();viewsDialog(ctx,data,view,reload,search);}},{danger:true}))}]);const modal=dialog('Vues mémorisées',el('div',{},list,field('Enregistrer la vue actuelle',name)),[{label:'Enregistrer',primary:true,action:async close=>{if(!name.value.trim())throw new Error('Nommez cette vue.');await ctx.api.call('records.saveView',{revision:data.revision,name:name.value.trim(),search:view.search,transform:view.transform,columns:data.columns});close();ctx.notify('Vue mémorisée pour cette structure de colonnes.');}}]);}
-async function quality(ctx){if(!ctx.state.session.loaded){ctx.root.append(empty('Chargez un relevé pour contrôler sa qualité.'));return;}const report=await ctx.api.call('records.quality',{}, {signal:ctx.signal});const observation=extractionNotice(ctx.state.session);if(observation)ctx.root.append(observation);ctx.root.append(card('Couverture et interprétation',el('p',{text:report.completeness}),el('p',{text:report.coverage}),el('p',{text:report.interpretation}),toolbar(...report.unavailableRoles.map(role=>badge(role,'warning')),button('Correspondances',()=>ctx.navigate('mapping'),{primary:true}))),card('Qualité des colonnes',table(report.columns,[{key:'header',label:'Colonne'},{key:'role',label:'Rôle'},{key:'coverage',label:'Couverture'},{key:'empty',label:'Vides'},{key:'invalid',label:'Non interprétables'},{key:'diversity',label:'Valeurs distinctes'},{key:'example',label:'Exemple'}])),card(`${formatNumber(report.issueCount)} point(s) à vérifier`,table(report.issues,[{key:'kind',label:'Nature'},{key:'field',label:'Champ'},{key:'ticketId',label:'Objet'},{key:'detail',label:'Constat'},{label:'Action',render:r=>button('Voir la ligne',()=>ctx.navigate('records',{indices:[r.row],revision:ctx.state.session.revision}))}])));if(ctx.state.session.warnings?.length)ctx.root.append(card('Réserves du relevé',...ctx.state.session.warnings.map(text=>el('p',{class:'help',text}))));}
+async function quality(ctx) {
+ if(!ctx.state.session.loaded){ctx.root.append(empty('Chargez un relevé pour contrôler sa qualité.'));return;}
+ const report=await ctx.api.call('records.quality',{}, {signal:ctx.signal});
+ if(ctx.signal.aborted)return;
+ const observation=extractionNotice(ctx.state.session,null,{detailed:true});if(observation)ctx.root.append(observation);
+ const optional=report.unavailableRoles.length?el('details',{class:'quality-optional'},
+  el('summary',{text:`${formatNumber(report.unavailableRoles.length)} champs non disponibles dans ce relevé`}),
+  el('p',{class:'help',text:'Les indicateurs qui dépendent de ces champs restent désactivés. Vous pouvez préciser une correspondance si la colonne existe sous un autre nom.'}),
+  el('ul',{},...report.unavailableRoles.map(role=>el('li',{text:role})))):null;
+ ctx.root.append(card('Couverture et interprétation',el('p',{text:report.coverage}),el('p',{text:report.interpretation}),optional,
+  toolbar(button('Correspondances',()=>ctx.navigate('mapping'),{primary:true}))));
+ appendDivergenceDiagnostic(ctx);
+ ctx.root.append(card('Qualité des colonnes',table(report.columns,[{key:'header',label:'Colonne'},
+  {key:'roleLabel',label:'Rôle',render:r=>r.roleLabel||r.role||'Champ libre'},{key:'coverage',label:'Couverture'},
+  {key:'empty',label:'Vides'},{key:'invalid',label:'Non interprétables'},{key:'diversity',label:'Valeurs distinctes'},{key:'example',label:'Exemple'}])));
+ if(report.issueCount)ctx.root.append(card(`${formatNumber(report.issueCount)} point(s) à examiner`,table(report.issues,[
+  {key:'kind',label:'Nature'},{key:'field',label:'Champ'},{key:'ticketId',label:'Objet'},{key:'detail',label:'Constat'},
+  {label:'Action',render:r=>button('Voir la ligne',()=>ctx.navigate('records',{indices:[r.row],revision:ctx.state.session.revision}))}])));
+ if(ctx.state.session.warnings?.length)ctx.root.append(card('Observations de la collecte',
+  ...[...new Set(ctx.state.session.warnings)].map(text=>el('p',{class:'help',text}))));
+}
+
+function appendDivergenceDiagnostic(ctx) {
+ const quality=ctx.state.session.quality;
+ const hasDifferences=quality?.initialSample?.differentCells>0||quality?.finalSample?.differentCells>0;
+ if(!quality?.divergenceReportName&&!hasDifferences)return;
+ const revision=ctx.state.session.revision;
+ const body=el('div',{class:'cell-divergence-content'});
+ const view=button('Voir les cellules divergentes',async()=>{
+  const result=await ctx.api.call('records.divergences',{revision},{signal:ctx.signal});
+  if(ctx.signal.aborted)return;
+  if(!result.available){body.replaceChildren(el('p',{class:'help',text:result.reason}));return;}
+  renderCellDivergences(body,result.document);
+ });
+ const exportReport=button('Exporter le diagnostic des écarts',async()=>{
+  const result=await ctx.api.call('records.divergences.export',{revision},{signal:ctx.signal});
+  if(!result.cancelled)ctx.notify('Diagnostic des écarts enregistré.');
+ },{icon:'download'});
+ ctx.root.append(card('Diagnostic des cellules divergentes',
+  el('p',{class:'help',text:quality?.divergenceReportName
+   ?'Ce diagnostic local contient les valeurs comparées de la liste GLPI et du CSV, leurs colonnes et les caractères différents. Les contrôles initial et final sont distingués.'
+   :'Aucun diagnostic détaillé n’est enregistré pour ce relevé. Les anciennes versions conservaient uniquement des compteurs ; une nouvelle collecte permet de capturer les valeurs comparées.'}),
+  quality?.divergenceReportName?toolbar(view,exportReport):button('Ouvrir la collecte',()=>ctx.navigate('collect')),body));
+}
+
+function renderCellDivergences(body,report) {
+ const visible=value=>String(value??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g,
+  value=>`⟦U+${value.charCodeAt(0).toString(16).toUpperCase().padStart(4,'0')}⟧`);
+ const codes=values=>(values||[]).map(value=>`${value.offset} : ${value.code}`).join(' · ');
+ body.replaceChildren(el('p',{class:'help',text:`${formatNumber(report.count)} / ${formatNumber(report.totalCount)} comparaisons détaillées · ${formatDate(report.startedAt)}. Les positions sont comptées en unités UTF-16, à partir de 0.`}));
+ if(report.totalCount>report.count)body.append(el('p',{class:'help',text:'La capture est limitée aux premiers écarts retenus. Le total inclut aussi les comparaisons non enregistrées.'}));
+ if(report.truncated)body.append(el('p',{class:'help',text:'Certaines valeurs longues ou métadonnées sont présentées sous forme d’extraits bornés. Le fichier CSV natif conserve les valeurs d’origine.'}));
+ for(const entry of report.entries||[]){
+  const side=(label,value,length,truncated,window,start,points)=>el('section',{class:'cell-divergence-side'},
+   el('h4',{text:label}),el('pre',{class:'text-content cell-divergence-value',text:value.length?visible(value):'Cellule vide'}),
+   el('p',{class:'help',text:`${formatNumber(length)} unités UTF-16${truncated?' · extrait initial limité':''}`}),
+   truncated&&start>0?el('div',{},el('strong',{text:`Autour de l’écart · position ${start}`}),el('pre',{class:'text-content cell-divergence-value',text:visible(window)})):null,
+   points?.length?el('p',{class:'help cell-divergence-codes',text:codes(points)}):null);
+  const detail=el('details',{class:'cell-divergence-entry'},
+   el('summary',{text:`Ticket ${entry.ticketId} · ${entry.displayHeader||entry.csvHeader||entry.roleLabel} · ${entry.phaseLabel}`}),
+   el('p',{class:'help',text:`${entry.categoryLabel} · liste : colonne ${entry.displayColumn+1}, ligne de données ${entry.displayRow+1} · CSV : colonne ${entry.csvColumn+1}, ligne de données ${entry.csvRow+1}`}),
+   entry.firstDifferenceOffset!=null?el('p',{class:'help',text:`Premier écart de texte à la position ${entry.firstDifferenceOffset}.`}):null,
+   entry.analysisTruncated?el('p',{class:'help',text:'L’analyse des caractères a atteint sa limite ; le premier écart peut se trouver plus loin.'}):null,
+   el('div',{class:'cell-divergence-pair'},
+    side('Affichage GLPI',entry.rawDisplay,entry.displayLength,entry.displayTruncated,entry.displayWindow,entry.displayWindowStart,entry.displayCodePoints),
+    side('Export CSV',entry.rawCsv,entry.csvLength,entry.csvTruncated,entry.csvWindow,entry.csvWindowStart,entry.csvCodePoints)),
+   ...(entry.hints||[]).map(text=>el('p',{class:'help',text})));
+  body.append(detail);
+ }
+}
 async function mapping(ctx){const data=await ctx.api.call('mapping.get',{}, {signal:ctx.signal});const draft=structuredClone(data.settings);const readOnly=['ArchiveReadOnly','Unavailable'].includes(data.target);const mappings=new Map();const fields=el('div',{class:'form-grid'});for(const role of data.roles){const control=select([{value:'',label:role.header?`Automatique · ${role.header}`:'Automatique'},...data.headers.map(label=>({value:label,label}))],draft.columnMappings[role.role]||'');mappings.set(role.role,control);fields.append(field(role.label||role.role,control,role.header?`Détection actuelle : ${role.header}`:'Aucune colonne détectée'));}
  const conventions=form([{key:'dateCulture',label:'Culture des dates',type:'select',options:['fr-FR','en-GB','en-US','de-DE']},{key:'numberCulture',label:'Culture des nombres',type:'select',options:['fr-FR','en-GB','en-US','de-DE']},{key:'sourceTimeZone',label:'Fuseau de la source',help:'Ex. Europe/Paris ; vide pour conserver le décalage du relevé.'},{key:'multiValueSeparators',label:'Séparateurs des valeurs multiples',help:'Chaque caractère sépare une valeur ; le saut de ligne est conservé.',type:'textarea'},{key:'staleDays',label:'Inactivité à partir de (jours)',type:'number',min:1,max:3650},{key:'oldDays',label:'Ancienneté à partir de (jours)',type:'number',min:1,max:3650},{key:'dueSoonHours',label:'Échéance proche (heures)',type:'number',min:1,max:87600}],draft);
  const dictionaries=el('div');const dictionaryRows=Object.entries(draft.valueDictionaries||{}).flatMap(([role,values])=>Object.entries(values).map(([from,to])=>({role,from,to})));const paintDictionaries=()=>dictionaries.replaceChildren(table(dictionaryRows,[{key:'role',label:'Rôle'},{key:'from',label:'Valeur source'},{key:'to',label:'Valeur utilisée'},{label:'Action',render:r=>button('Retirer',()=>{dictionaryRows.splice(dictionaryRows.indexOf(r),1);paintDictionaries();},{danger:true})}]));

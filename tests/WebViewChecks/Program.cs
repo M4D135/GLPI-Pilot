@@ -8,6 +8,8 @@ internal static class Program
 {
     private static int _passed;
     private static string _root = "";
+    private const string DisplayDifference = "DOM_SYNTHETIQUE <b>123</b>\nDeuxième ligne";
+    private const string CsvDifference = "CSV_SYNTHETIQUE _123_\nDeuxième ligne\u0092";
     private static void Require(bool value, string label) { if (!value) throw new Exception("FAIL: " + label); Console.WriteLine("PASS: " + label); _passed++; }
     private static async Task Main(string[] args)
     {
@@ -18,6 +20,7 @@ internal static class Program
         {
             await CheckBridgeAsync();
             await CheckFoundationAsync();
+            await CheckDivergenceReportAsync();
             if (!args.Contains("--core-only")) await CheckInterfaceAsync(args);
             Console.WriteLine($"{_passed}/{_passed} WebView integration checks passed.");
         }
@@ -78,6 +81,46 @@ internal static class Program
         await Call(app, "app.appearance", new { zoom = 100 });
         try { await Call(app, "configuration.apply", new { token = review.GetProperty("token").GetString(), parts = 255, merge = true }); throw new Exception("Obsolete configuration was accepted."); }
         catch (InvalidOperationException) { Require(true, "A configuration review expires when the underlying settings change."); }
+    }
+    private static async Task CheckDivergenceReportAsync()
+    {
+        var host = new TestHost(_root);
+        await using var app = new PilotApplication(host, (_, _) => { }, new AppSettings { ExportFolder = Path.Combine(_root, "Exports") });
+        var data = QualityFixture(); AttachDivergenceReport(data, "a1b2c3d4"); app.LoadQualityFixture(data); var revision = app.Revision;
+        var report = await Call(app, "records.divergences", new { revision });
+        var entry = report.GetProperty("document").GetProperty("entries")[0];
+        Require(report.GetProperty("available").GetBoolean() && report.GetProperty("document").GetProperty("runId").GetString() == "a1b2c3d4"
+            && entry.GetProperty("rawDisplay").GetString() == DisplayDifference && entry.GetProperty("rawCsv").GetString() == CsvDifference,
+            "The explicit divergence operation returns the exact paired cell values, including markup text, line breaks and a preserved C1, from the report belonging to this collection.");
+        var session = (await Call(app, "app.bootstrap")).GetProperty("session").GetRawText();
+        var diagnostic = (await Call(app, "app.diagnostic")).GetRawText();
+        Require(new[] { "DOM_SYNTHETIQUE", "CSV_SYNTHETIQUE" }.All(marker => !session.Contains(marker) && !diagnostic.Contains(marker)),
+            "Cell values remain absent from the general session and shareable application diagnostic after the detailed report has been read.");
+        host.NextSave = Path.Combine(_root, "divergences-export.json");
+        var export = await Call(app, "records.divergences.export", new { revision });
+        using var written = JsonDocument.Parse(await File.ReadAllTextAsync(host.NextSave));
+        Require(!export.GetProperty("cancelled").GetBoolean() && export.GetProperty("path").GetString() == host.NextSave
+            && written.RootElement.GetProperty("entries")[0].GetProperty("rawDisplay").GetString() == DisplayDifference
+            && written.RootElement.GetProperty("entries")[0].GetProperty("rawCsv").GetString() == CsvDifference,
+            "Explicit export writes a real JSON report containing both original values without silently normalizing their characters.");
+        app.LoadQualityFixture(QualityFixture());
+        var old = await Call(app, "records.divergences", new { revision = app.Revision });
+        Require(!old.GetProperty("available").GetBoolean() && !old.TryGetProperty("document", out _),
+            "A previous collection without a saved difference report is explicitly unavailable rather than borrowing a recent report.");
+        async Task<bool> Refuses<T>(string operation, long requestedRevision) where T : Exception
+        {
+            try { await Call(app, operation, new { revision = requestedRevision }); return false; }
+            catch (T) { return true; }
+        }
+        var otherRun = QualityFixture(); otherRun.Provenance.RunId = "11223344";
+        otherRun.Quality!.DivergenceReportName = data.Quality!.DivergenceReportName;
+        app.LoadQualityFixture(otherRun); host.NextSave = Path.Combine(_root, "forbidden-divergences.json");
+        Require(await Refuses<InvalidDataException>("records.divergences", app.Revision)
+            && await Refuses<InvalidDataException>("records.divergences.export", app.Revision) && !File.Exists(host.NextSave),
+            "Reading and exporting refuse a report from another collection before exposing cell values or creating an output file.");
+        Require(await Refuses<InvalidOperationException>("records.divergences", revision)
+            && await Refuses<InvalidOperationException>("records.divergences.export", revision) && !File.Exists(host.NextSave),
+            "A stale record revision cannot read or export differences after the active collection changes.");
     }
     private static async Task CheckInterfaceAsync(string[] args)
     {
@@ -208,13 +251,36 @@ internal static class Program
             }
             return observations.ToArray();
         }
-        var received = QualityFixture();
+        var received = QualityFixture(); AttachDivergenceReport(received, "d4c3b2a1");
         var receivedScreens = await QualityScreens(received);
-        Require(receivedScreens.All(text => text.Contains("Réception complète") && text.Contains("Concordance à vérifier")
-            && !text.Contains("Réception partielle") && !text.Contains("Complétude à vérifier"))
-            && !received.Complete && await page.Locator(".source-status.warning").CountAsync() == 1
-            && (await page.Locator(".source-status").InnerTextAsync()).Contains("Réception complète · concordance à vérifier"),
-            "All four collection screens separate complete receipt from differing sample values without promoting the result to Complete.");
+        Require(receivedScreens.All(text => text.Contains("Réception complète") && !text.Contains("Réception partielle") && !text.Contains("Complétude à vérifier"))
+            && receivedScreens.Take(3).All(text => !text.Contains("Concordance à vérifier") && !text.Contains(received.Warnings[0]))
+            && receivedScreens[3].Contains("Concordance à vérifier") && receivedScreens[3].Contains(received.Warnings[0])
+            && !received.Complete && await page.Locator(".source-status.warning").CountAsync() == 0
+            && !(await page.Locator(".source-status").InnerTextAsync()).Contains("concordance à vérifier"),
+            "Complete receipt stays unobtrusive across collection screens while the quality page retains sample differences and source warnings without certifying the result.");
+        await page.Locator(".nav-item[data-page='home']").ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='home' && !document.querySelector('#content').hasAttribute('aria-busy')");
+        await page.Locator(".page-content [aria-label='Bilan de la collecte']").GetByRole(AriaRole.Button, new() { Name = "Qualité du relevé", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='quality' && !document.querySelector('#content').hasAttribute('aria-busy')");
+        Require((await page.Locator(".page-content").InnerTextAsync()).Contains(received.Warnings[0])
+            && (await page.Locator(".page-content").InnerTextAsync()).Contains("Concordance à vérifier"),
+            "The compact receipt notice opens the actual quality page with the retained comparison details and warning.");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Voir les cellules divergentes", Exact = true }).ClickAsync();
+        var divergenceEntry = page.Locator(".cell-divergence-entry");
+        await divergenceEntry.Locator("summary").ClickAsync();
+        var pair = divergenceEntry.Locator(".cell-divergence-pair");
+        var pairVisible = await pair.IsVisibleAsync()
+            && (await pair.Locator(".cell-divergence-value").AllTextContentsAsync()).SequenceEqual(new[] { DisplayDifference, CsvDifference.Replace("\u0092", "⟦U+0092⟧", StringComparison.Ordinal) })
+            && await pair.Locator("b").CountAsync() == 0;
+        if (captureArg >= 0 && captureArg + 1 < args.Length)
+            await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetFullPath(args[captureArg + 1]), "quality-cell-differences.png"), FullPage = true });
+        host.NextSave = Path.Combine(_root, "divergences-ui-export.json");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Exporter le diagnostic des écarts", Exact = true }).ClickAsync();
+        await Until(() => File.Exists(host.NextSave));
+        using (var exportedDifference = JsonDocument.Parse(await File.ReadAllTextAsync(host.NextSave)))
+            Require(pairVisible && exportedDifference.RootElement.GetProperty("entries")[0].GetProperty("rawCsv").GetString() == CsvDifference,
+                "The quality page opens readable paired differences with literal markup and explicit C1 notation while exporting their exact original JSON through the real dispatcher.");
         if (captureArg >= 0 && captureArg + 1 < args.Length)
             await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetFullPath(args[captureArg + 1]), "quality-reception.png"), FullPage = true });
         var partial = QualityFixture(); partial.ExpectedTotal = 6; partial.Quality!.ExpectedRows = 6; partial.Quality.RowCountVerified = false;
@@ -228,29 +294,44 @@ internal static class Program
         var undocumentedScreens = await QualityScreens(undocumented);
         var undocumentedPartial = QualityFixture(); undocumentedPartial.Quality = null; undocumentedPartial.ExpectedTotal = 6;
         var undocumentedPartialScreens = await QualityScreens(undocumentedPartial);
-        Require(undocumentedScreens.All(text => text.Contains("Réception non documentée") && text.Contains("Contrôle de concordance indisponible")
-            && !text.Contains("Réception complète") && !text.Contains("0 / 0"))
-            && undocumentedPartialScreens.All(text => text.Contains("Réception partielle") && text.Contains("Contrôle de concordance indisponible") && !text.Contains("Réception complète")),
+        Require(undocumentedScreens.All(text => text.Contains("Réception non documentée") && !text.Contains("Réception complète") && !text.Contains("0 / 0"))
+            && undocumentedScreens[3].Contains("Contrôle de concordance indisponible")
+            && undocumentedPartialScreens.All(text => text.Contains("Réception partielle") && !text.Contains("Réception complète"))
+            && undocumentedPartialScreens[3].Contains("Contrôle de concordance indisponible"),
             "An older result reports unavailable controls without hiding a known short source or inventing success and zero counts.");
         var uncheckedSample = QualityFixture(); uncheckedSample.Quality!.InitialSample = null; uncheckedSample.Quality.FinalSample = null;
         var uncheckedScreens = await QualityScreens(uncheckedSample);
-        Require(uncheckedScreens.All(text => text.Contains("Réception complète") && text.Contains("Contrôle de concordance indisponible")
-            && text.Contains("Contrôle des identifiants indisponible")) && !uncheckedSample.Complete,
+        Require(uncheckedScreens.All(text => text.Contains("Réception complète"))
+            && uncheckedScreens[3].Contains("Contrôle de concordance indisponible") && uncheckedScreens[3].Contains("Contrôle des identifiants indisponible") && !uncheckedSample.Complete,
             "Complete receipt with no sample keeps both identity and value comparisons explicitly unavailable.");
         var paginated = QualityFixture(); paginated.Quality = null; paginated.Complete = true; paginated.Warnings.Clear();
         paginated.Provenance.Method = "pagination"; paginated.Scope = "Recherche rechargée avec start=0, puis pages suivantes";
         paginated.Status = "Total récupéré conforme au total annoncé";
         var paginatedScreens = await QualityScreens(paginated);
-        Require(paginatedScreens.All(text => text.Contains("Relevé complet") && text.Contains("Contrôle de concordance indisponible")
-            && text.Contains("Contrôle des identifiants indisponible") && !text.Contains("Réception non documentée")
+        Require(paginatedScreens.All(text => text.Contains("Relevé complet") && !text.Contains("Réception non documentée")
             && !text.Contains("Réception partielle") && !text.Contains("Réception non confirmée"))
-            && (await page.Locator(".source-status").InnerTextAsync()).Contains("Relevé complet · détail des contrôles indisponible")
+            && paginatedScreens[3].Contains("Contrôle de concordance indisponible") && paginatedScreens[3].Contains("Contrôle des identifiants indisponible")
+            && (await page.Locator(".source-status").InnerTextAsync()).Contains("Relevé complet")
             && await page.Locator(".source-status.warning").CountAsync() == 0 && paginated.Complete,
             "A complete paginated result without native sample metadata remains complete while its detailed controls stay unavailable.");
+        var changedScope = QualityFixture(); changedScope.Quality!.ScopeStable = false;
+        var scopeScreens = await QualityScreens(changedScope);
+        Require(scopeScreens.All(text => text.Contains("La recherche a changé"))
+            && await page.Locator(".source-status.warning").CountAsync() == 1 && !changedScope.Complete,
+            "A documented scope change remains a visible warning despite a complete row count and unobtrusive presentation-only differences.");
         await page.SetViewportSizeAsync(900, 700);
         Require(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth + 1"), "The shell remains within the window at a compact viewport.");
         Require(errors.Count == 0, "All ES modules run without browser errors or CSP violations." + (errors.Count > 0 ? "\n" + string.Join("\n", errors) : ""));
         await delivery;
+    }
+    private static void AttachDivergenceReport(ExtractionResult data, string runId)
+    {
+        data.Provenance.RunId = runId; data.Rows[0][1] = CsvDifference;
+        var report = new NativeCellDivergenceReport(runId, DateTimeOffset.UtcNow);
+        report.Add("initial", new NativeCellDivergence("1", 0, 0, 1, 1, "Titre", "Titre", "title", DisplayDifference, CsvDifference, "controls"));
+        var name = report.Save(AppPaths.CellDivergenceFolder);
+        var document = NativeCellDivergenceReport.Read(AppPaths.CellDivergenceFolder, name);
+        data.Quality!.DivergenceReportName = name; data.Quality.DivergenceReportCount = document.Count; data.Quality.DivergenceTotalCount = document.TotalCount;
     }
     private static ExtractionResult QualityFixture() => new()
     {

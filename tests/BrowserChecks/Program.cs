@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using GlpiPilot.Core;
 using Microsoft.Playwright;
 
@@ -9,8 +11,10 @@ if (string.IsNullOrWhiteSpace(browserPath))
     return 2;
 }
 string basic = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "basic-glpi.html"));
-string temporary = Path.Combine(Path.GetTempPath(), "GlpiPilot-BrowserChecks-" + Guid.NewGuid().ToString("N"));
+string temporary = Path.Combine(Path.GetTempPath(), "GLPI-Pilot-Checks-Browser-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(temporary);
+Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1");
+Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", temporary);
 using var playwright = await Playwright.CreateAsync();
 await using var browser = await playwright.Chromium.LaunchAsync(new()
 {
@@ -56,6 +60,11 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Échantillon : équivalence de date réservée aux colonnes de date", CheckSampleDates),
     ("Échantillon : représentation native des guillemets limitée au format GLPI", CheckSampleCsvQuotes),
     ("Échantillon : en-têtes ambigus et cellules absentes non devinés", CheckSampleAmbiguity),
+    ("Diagnostic local : cellules liées à leurs lignes, colonnes et valeurs originales", CheckDivergenceCoordinates),
+    ("Diagnostic local : équivalences reconnues et identités non rapprochées exclues", CheckDivergenceExclusions),
+    ("Diagnostic local : cellule absente distinguée d’une valeur vide", CheckDivergenceMissingCell),
+    ("Diagnostic local : rapport borné, fenêtre de texte long et codes Unicode exacts", CheckDivergenceBounds),
+    ("Diagnostic local : lecture bornée et noms de fichiers strictement validés", CheckDivergenceReadValidation),
     ("Reprise : pages conservées recontrôlées après annulation", () => CheckCheckpoint(false)),
     ("Reprise : page conservée modifiée, collecte redémarrée", () => CheckCheckpoint(true)),
     ("Reconnexion : expiration SSO puis reprise de la page exacte", () => CheckReconnect(false)),
@@ -95,7 +104,12 @@ try
 }
 finally
 {
-    Directory.Delete(temporary, recursive: true);
+    try { Directory.Delete(temporary, recursive: true); }
+    finally
+    {
+        Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", null);
+        Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", null);
+    }
 }
 return failures == 0 ? 0 : 1;
 
@@ -642,6 +656,141 @@ Task CheckSampleAmbiguity()
     return Task.CompletedTask;
 }
 
+Task CheckDivergenceCoordinates()
+{
+    var shown = new TableSnapshot
+    {
+        Headers = new() { "ID", "Titre", "Date d'ouverture", "Note technique synthétique" },
+        Rows = new() { new[] { "001", "Affichage <alpha>", "22/10/2026 17:20", "" }, new[] { "002", "Titre visible synthétique", "22/10/2026 17:20", "l\u0092intervention" } }
+    };
+    var native = new ExtractionResult
+    {
+        Headers = new() { "Note technique synthétique", "ID", "Date d'ouverture", "Titre" },
+        Rows = new()
+        {
+            new[] { "Hors échantillon", "999", "22/10/2026 17:20", "Hors échantillon" },
+            new[] { "l’intervention", "2", "2026-10-22 17:20:00", "Titre reçu synthétique" },
+            new[] { "Valeur reçue synthétique", "1", "22/10/2026 17:21", "Affichage <beta>" }
+        }
+    };
+    var shownBefore = JsonSerializer.Serialize(shown); var nativeBefore = JsonSerializer.Serialize(native);
+    var differences = new List<NativeCellDivergence>();
+    var check = ExtractionVerificationService.VerifyNativeSample(shown, native, new(), onDifference: differences.Add);
+    Equal(5, check.DifferentCells); Equal(5, differences.Count); True(!check.Matches && check.IdentityVerified == true, "Le rapport ne doit pas modifier la conclusion de comparaison.");
+    var title = differences.Single(cell => cell.TicketId == "1" && cell.Role == "title");
+    Equal(0, title.DisplayRow); Equal(2, title.CsvRow); Equal(1, title.DisplayColumn); Equal(3, title.CsvColumn);
+    Equal("Affichage <alpha>", title.RawDisplay); Equal("Affichage <beta>", title.RawCsv); Equal("Titre", title.DisplayHeader); Equal("Titre", title.CsvHeader);
+    Equal(1, differences.Count(cell => cell.Category == "date")); Equal(1, differences.Count(cell => cell.Category == "empty")); Equal(1, differences.Count(cell => cell.Category == "controls"));
+    Equal("l\u0092intervention", differences.Single(cell => cell.Category == "controls").RawDisplay);
+    Equal(shownBefore, JsonSerializer.Serialize(shown)); Equal(nativeBefore, JsonSerializer.Serialize(native));
+    var safeDiagnostic = JsonSerializer.Serialize(check);
+    foreach (var privateText in new[] { "Affichage <alpha>", "Affichage <beta>", "Titre visible synthétique", "Titre reçu synthétique", "Note technique synthétique" })
+        True(!safeDiagnostic.Contains(privateText, StringComparison.Ordinal), "Les contenus autorisés dans le rapport ne doivent pas rejoindre le diagnostic général.");
+    return Task.CompletedTask;
+}
+
+Task CheckDivergenceExclusions()
+{
+    var differences = new List<NativeCellDivergence>();
+    foreach (var (shown, csv, header) in new[]
+    {
+        ("même\u00a0texte\nfin", "même texte fin", "Titre"),
+        ("Demande \"écran\"", "Demande ''écran''", "Titre"),
+        ("22/10/2026 17:20", "2026-10-22 17:20:00", "Date d'ouverture"),
+        ("Texte long…", "Texte long complet", "Titre")
+    })
+    {
+        var visible = new TableSnapshot { Headers = new() { "ID", header }, Rows = new() { new[] { "123", shown } } };
+        var native = new ExtractionResult { Headers = new() { "ID", header }, Rows = new() { new[] { "123", csv } } };
+        True(ExtractionVerificationService.VerifyNativeSample(visible, native, new(), onDifference: differences.Add).Matches, "Les équivalences déjà reconnues restent inchangées.");
+    }
+    var rich = new TableSnapshot
+    {
+        Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "123", "Écran" } },
+        CsvRepresentations = new() { new CsvCellRepresentation?[] { null, new() { Row = 0, Column = 1, Kind = "glpi10-rich-text-v1", Source = "Écran", Text = "ÉCRAN" } } }
+    };
+    var exported = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "123", "ÉCRAN" } } };
+    True(ExtractionVerificationService.VerifyNativeSample(rich, exported, new(), onDifference: differences.Add).Matches, "La représentation prouvée liée à la cellule ne doit pas être dupliquée comme écart.");
+    exported.Rows[0][0] = "456";
+    Equal(1, ExtractionVerificationService.VerifyNativeSample(rich, exported, new(), onDifference: differences.Add).Missing);
+    Equal(0, differences.Count);
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+    try { ExtractionVerificationService.VerifyNativeSample(rich, exported, new(), cancelled.Token, differences.Add); throw new Exception("Annulation ignorée."); }
+    catch (OperationCanceledException) { }
+    Equal(0, differences.Count);
+    return Task.CompletedTask;
+}
+
+Task CheckDivergenceMissingCell()
+{
+    var shown = new TableSnapshot { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "123", "" } } };
+    var native = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "123" } } };
+    var differences = new List<NativeCellDivergence>();
+    var check = ExtractionVerificationService.VerifyNativeSample(shown, native, new(), onDifference: differences.Add);
+    Equal(1, check.DifferentCells); var cell = differences.Single();
+    True(cell.CsvCellMissing && !cell.DisplayCellMissing && cell.Category == "missing-cell", "Une cellule absente reste distincte de la chaîne vide effectivement lue.");
+    Equal("", cell.RawDisplay); Equal("", cell.RawCsv);
+    native.Headers.Add("Titre (2)"); differences.Clear();
+    True(!ExtractionVerificationService.VerifyNativeSample(shown, native, new(), onDifference: differences.Add).Available, "Une association ambiguë doit rester indisponible.");
+    Equal(0, differences.Count);
+    return Task.CompletedTask;
+}
+
+Task CheckDivergenceBounds()
+{
+    var report = new NativeCellDivergenceReport("abcd1234", new DateTimeOffset(2026, 10, 22, 20, 51, 17, TimeSpan.Zero));
+    var prefix = new string('a', 6000);
+    report.Add("initial", new("123", 2, 17, 4, 9, "Description", "Description", "other", prefix + "😀alpha", prefix + "😁beta", "other"));
+    report.Add("final", new("123", 2, 17, 4, 9, "Description", "Description", "other", "l\u0092intervention", "l’intervention", "controls"));
+    report.Add("final", new(new string('7', 200), 0, 0, 1, 1, new string('H', 700), "Titre", "title", new string('b', 4095) + "😀fin", "autre", "other"));
+    var beyondAnalysis = new string('x', 1024 * 1024 + 1);
+    report.Add("initial", new("123", 0, 0, 1, 1, "Titre", "Titre", "title", beyondAnalysis + "a", beyondAnalysis + "b", "other"));
+    for (var index = 4; index < 83; index++) report.Add("final", new("123", 0, 0, 1, 1, "Titre", "Titre", "title", "a", "b", "other"));
+    Equal(80, report.Count); Equal(83, report.TotalCount);
+    var name = report.Save(Path.Combine(temporary, "report-bounds"));
+    var document = NativeCellDivergenceReport.Read(Path.Combine(temporary, "report-bounds"), name);
+    Equal("abcd1234", document.RunId); Equal(80, document.Count); Equal(83, document.TotalCount); True(document.Truncated, "Le plafond d’entrées et les valeurs coupées doivent être explicitement indiqués.");
+    var longCell = document.Entries[0]; Equal(6001, longCell.FirstDifferenceOffset); Equal(4096, longCell.RawDisplay.Length);
+    True(longCell.DisplayTruncated && longCell.CsvTruncated && !longCell.AnalysisTruncated, "Une fenêtre exacte doit rester disponible après le préfixe conservé.");
+    True(longCell.DisplayWindow.Contains("😀alpha", StringComparison.Ordinal) && longCell.CsvWindow.Contains("😁beta", StringComparison.Ordinal), "La fin divergente du texte doit rester lisible.");
+    True(longCell.DisplayCodePoints.Any(code => code.Offset == 6000 && code.Code == "U+1F600")
+        && longCell.CsvCodePoints.Any(code => code.Offset == 6000 && code.Code == "U+1F601"), "Les paires de substitution doivent être décrites comme des points de code Unicode complets.");
+    var controls = document.Entries[1]; Equal("l\u0092intervention", controls.RawDisplay); Equal("l’intervention", controls.RawCsv);
+    True(controls.DisplayCodePoints.Any(code => code.Code == "U+0092") && controls.Hints.Any(hint => hint.Contains("aucune conversion", StringComparison.Ordinal)), "Le contrôle C1 doit rester exact et aucune correction ne doit être présumée.");
+    True(document.Entries[2].MetadataTruncated && document.Entries[2].RawDisplay.Length == 4095 && !char.IsHighSurrogate(document.Entries[2].RawDisplay[^1]), "Les limites ne doivent couper ni masquer une paire UTF-16 ni un en-tête tronqué.");
+    True(document.Entries[3].AnalysisTruncated && document.Entries[3].FirstDifferenceOffset is null, "La limite d’analyse ne doit pas inventer la première position divergente.");
+    True(new FileInfo(Path.Combine(temporary, "report-bounds", name)).Length <= NativeCellDivergenceReport.MaximumFileBytes, "Le fichier doit rester dans sa limite de lecture.");
+    return Task.CompletedTask;
+}
+
+Task CheckDivergenceReadValidation()
+{
+    var folder = Path.Combine(temporary, "report-read"); var report = new NativeCellDivergenceReport("12ab34cd", DateTimeOffset.UtcNow);
+    report.Add("initial", new("123", 0, 0, 1, 1, "Titre", "Titre", "title", "texte affiché", "texte CSV", "other"));
+    var name = report.Save(folder); var path = Path.Combine(folder, name); var bytes = File.ReadAllBytes(path);
+    void Rejected(string candidate)
+    {
+        try { NativeCellDivergenceReport.Read(folder, candidate); throw new Exception("Diagnostic invalide accepté."); }
+        catch (InvalidDataException) { }
+    }
+    foreach (var candidate in new[] { "../" + name, "..\\" + name, path, name + "\n", "autre.json" }) Rejected(candidate);
+    void Tampered(Action<JsonObject> edit)
+    {
+        var json = JsonNode.Parse(bytes)!.AsObject(); edit(json); File.WriteAllText(path, json.ToJsonString()); Rejected(name);
+    }
+    Tampered(json => json["runId"] = "deadbeef");
+    Tampered(json => json["version"] = 2);
+    Tampered(json => json["totalCount"] = 0);
+    Tampered(json => json["entries"]![0]!["rawDisplay"] = new string('x', 4097));
+    Tampered(json => json["entries"]![0]!["displayWindowStart"] = -1);
+    Tampered(json => json["entries"] = new JsonArray(Enumerable.Range(0, 81).Select(_ => json["entries"]![0]!.DeepClone()).ToArray()));
+    File.WriteAllText(path, "{invalid JSON"); Rejected(name);
+    using (var file = new FileStream(path, FileMode.Create, FileAccess.Write)) file.SetLength(NativeCellDivergenceReport.MaximumFileBytes + 1L);
+    Rejected(name);
+    File.WriteAllBytes(path, bytes); Equal(1, NativeCellDivergenceReport.Read(folder, name).Count);
+    return Task.CompletedTask;
+}
+
 string PagedHtml() => WithCriteria()
     .Replace("<button id=\"next\" aria-label=\"Page suivante\">Suivant</button>", "<a id=\"next\" rel=\"next\" href=\"?start=2\" aria-label=\"Page suivante\">Suivant</a>", StringComparison.Ordinal)
     .Replace("let current=0;", "let current=Math.min(2,Math.floor(Number(new URL(location.href).searchParams.get('start')||'0')/2));", StringComparison.Ordinal)
@@ -760,6 +909,15 @@ async Task CheckNativeReviewableSample(int changedCells)
         Equal(changedCells, sample!.DifferentCells);
     }
     Equal(changedCells == 17 ? 215L : 3L, run.Data.Quality.C1ControlCount);
+    Equal(changedCells * 2, run.Data.Quality.DivergenceReportCount);
+    Equal(changedCells * 2, run.Data.Quality.DivergenceTotalCount);
+    var report = NativeCellDivergenceReport.Read(AppPaths.CellDivergenceFolder, run.Data.Quality.DivergenceReportName);
+    Equal(run.Data.Provenance.RunId, report.RunId); Equal(changedCells * 2, report.Count);
+    Equal(changedCells, report.Entries.Count(entry => entry.Phase == "initial")); Equal(changedCells, report.Entries.Count(entry => entry.Phase == "final"));
+    True(report.Entries.All(entry => entry.Role != "title"), "Les guillemets CSV reconnus comme équivalents ne doivent pas entrer dans le rapport.");
+    True(report.Entries.Any(entry => entry.RawCsv.Contains("\u0092modifié", StringComparison.Ordinal)) && !report.Truncated, "Les valeurs divergentes et leurs contrôles C1 doivent être conservés dans le fichier dédié.");
+    var qualityJson = JsonSerializer.Serialize(run.Data.Quality);
+    True(!qualityJson.Contains("Description Exemple", StringComparison.Ordinal) && !qualityJson.Contains("Demandeur Exemple", StringComparison.Ordinal), "La qualité ne transporte que le nom et les compteurs du fichier dédié.");
     Equal(run.Data.Warnings.Count, run.Data.Warnings.Distinct(StringComparer.Ordinal).Count());
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL ·", StringComparison.Ordinal)) && logs.Any(line => line.Contains("contrôle avant/après=identique", StringComparison.Ordinal)), "Les contrôles finaux doivent être exécutés malgré les écarts d'affichage.");
     True(File.Exists(run.ExcelPath) && Path.GetFileName(run.ExcelPath!).StartsWith("GLPI-a-verifier-", StringComparison.Ordinal), "L'export Excel doit être fourni avec son statut explicite.");

@@ -136,6 +136,19 @@ Check("Quality: duplicate IDs, invalid cells, incoherent dates and source preser
     Assert(report.Columns.Single(column => column.Role == "id").Invalid == 1); Assert(report.Columns.Single(column => column.Role == "created").Invalid == 1);
     Equal(original, JsonSerializer.Serialize(data));
 });
+Check("Quality: unavailable and ambiguous mappings have French explanations without changing source data", () =>
+{
+    var data = Data(0, Row("1")); data.Headers.Add("Status"); data.Rows[0] = data.Rows[0].Append("Nouveau").ToArray();
+    var settings = Settings(); settings.Dashboard.ColumnMappings["due"] = "Échéance configurée absente";
+    var original = JsonSerializer.Serialize(data); var report = DataQualityService.Analyze(data, settings.Dashboard);
+    Assert(report.UnavailableRoles.Contains("Statut : Plusieurs colonnes possibles"));
+    Assert(report.UnavailableRoles.Contains("Priorité : Aucune colonne reconnue"));
+    Assert(report.UnavailableRoles.Contains("Échéance de résolution : Colonne configurée absente"));
+    Assert(!report.UnavailableRoles.Any(value => value.EndsWith(": missing", StringComparison.Ordinal) || value.EndsWith(": ambiguous", StringComparison.Ordinal)));
+    Equal("Identifiant du ticket", report.Columns.Single(column => column.Role == "id").RoleLabel);
+    Equal("Champ libre", report.Columns.Single(column => column.Header == "Status").RoleLabel);
+    Equal(original, JsonSerializer.Serialize(data));
+});
 Check("XLSX: own export imports all adjacent inline rows and literal strings", () =>
 {
     var data = Data(0, Row("0001", title: "A&B\n_x000D_"), Row("2", title: "=1+1"), Row("3", title: "été <ok>"));
@@ -270,12 +283,13 @@ Check("Configuration: new dashboards, parameters and local preferences round-tri
 {
     var current = Settings(); current.Interface.Density = "compact"; current.Automation.IntervalMinutes = 90; current.History.RetentionDays = 120;
     var incoming = Settings(); incoming.Sources.Add(new() { Name = "Tickets", Url = incoming.PortalUrl });
-    var board = incoming.Dashboard.Layout.Boards[0]; board.Filters.Add(new() { Kind = "metric", SourceKey = "active" }); board.ComparisonEnabled = true;
+    var board = incoming.Dashboard.Layout.Boards[0]; board.Filters.Add(new() { Kind = "metric", SourceKey = "active" }); board.ComparisonEnabled = true; board.HideUnavailableWidgets = false;
     board.Widgets[0].Section = "Matin"; board.Widgets[0].Filters.Add(new() { Kind = "distribution", SourceKey = "status", Value = "Nouveau" });
     incoming.Dashboard.AssignmentCountingMode = "fractional"; incoming.Dashboard.Weather.OldWeight = 12;
     incoming.Queries.Queries.Add(new() { Name = "Paramétrée", Conditions = new() { new() { Field = "role:title", Operator = "contains", ValueSource = "parameter", Value = "lieu" } }, Parameters = new() { new() { Key = "lieu", Label = "Ville", DefaultValue = "Marseille" } }, ConditionExpression = "1" });
     var path = FilePath(); ConfigurationTransferService.Export(path, incoming); var imported = ConfigurationTransferService.Import(path, current);
     Equal("Matin", imported.Dashboard.Layout.Boards[0].Widgets[0].Section); Equal("fractional", imported.Dashboard.AssignmentCountingMode);
+    Assert(!imported.Dashboard.Layout.Boards[0].HideUnavailableWidgets, "The explicit unavailable-widget preference must survive configuration export and import.");
     Equal("lieu", imported.Queries.Queries.Last().Parameters[0].Key); Equal("compact", imported.Interface.Density); Equal(90, imported.Automation.IntervalMinutes); Equal(120, imported.History.RetentionDays);
     Assert(!File.ReadAllText(path).Contains("ScheduledExtraction"));
 });

@@ -244,17 +244,76 @@ internal static partial class Program
             FinalSample = new() { IdentityVerified = true, RepresentationVerified = false, SampleSize = 3, ComparedCells = 6, DifferentCells = 1 } };
         receivedWithDifferences.Warnings.Add("Deux contrôles C1 conservés dans le fichier natif synthétique.");
         app.LoadFixture(receivedWithDifferences); await Open("dashboard");
-        await page.GetByLabel("Provenance du tableau de bord").Locator("summary").First.ClickAsync();
-        Check(await page.GetByText("Réception complète", new() { Exact = true }).CountAsync() == 1 && await page.GetByText("1 / 6 à vérifier", new() { Exact = true }).CountAsync() == 1
-            && await page.GetByText("3 / 3 rapprochés", new() { Exact = true }).CountAsync() == 1 && !app.Result!.Complete,
-            "The dashboard separates verified receipt and sample identities from genuine cell differences without certifying the snapshot.");
-        await page.Locator(".analytics-warnings > summary").ClickAsync();
-        Check(await page.GetByText("Deux contrôles C1 conservés dans le fichier natif synthétique.", new() { Exact = true }).CountAsync() == 1,
-            "A source-control warning appears once in the warning disclosure instead of being duplicated in its summary.");
+        var controlsInitiallyQuiet = !(await page.Locator("body").InnerTextAsync()).Contains(receivedWithDifferences.Warnings[0])
+            && await page.Locator(".analytics-reception-issue:visible").CountAsync() == 0;
+        await Button("Détails des contrôles").ClickAsync();
+        Check(controlsInitiallyQuiet && await page.GetByRole(AriaRole.Dialog).GetByText("1 / 6 à vérifier", new() { Exact = true }).CountAsync() == 1
+            && await page.GetByRole(AriaRole.Dialog).GetByText("3 / 3 rapprochés", new() { Exact = true }).CountAsync() == 1 && !app.Result!.Complete,
+            "Dashboard presentation differences stay in an explicit detail dialog while receipt and sample evidence remain intact without certifying the snapshot.");
+        Check(await page.GetByRole(AriaRole.Dialog).GetByText("Deux contrôles C1 conservés dans le fichier natif synthétique.", new() { Exact = true }).CountAsync() == 1,
+            "The control dialog preserves a source warning once instead of repeating it across the dashboard.");
+        await CloseDialogs();
         receivedWithDifferences.Quality.ExpectedRows = 4; receivedWithDifferences.ExpectedTotal = 4; receivedWithDifferences.Quality.RowCountVerified = false;
         app.LoadFixture(receivedWithDifferences); await Open("dashboard");
         Check(await page.GetByText("Réception partielle ou non confirmée", new() { Exact = true }).CountAsync() == 1 && await page.GetByText("Réception complète", new() { Exact = true }).CountAsync() == 0,
             "A real receipt deficit remains visibly partial even when every sampled identifier is present.");
+
+        var limited = Data(1, Row("11", "Résolu"), Row("12", "Résolu"));
+        limited.Headers = limited.Headers.Take(3).ToList(); limited.Rows = limited.Rows.Select(row => row.Take(3).ToArray()).ToList();
+        var availabilityBoard = DashboardLayoutSettings.CreateBoard("Disponibilité synthétique", "empty");
+        availabilityBoard.Widgets.Add(new() { Id = "valid-zero", Kind = "metric", SourceKey = "active", Title = "Actifs observés", ShowMiniHistory = false });
+        availabilityBoard.Widgets.Add(new() { Id = "missing-metric", Kind = "metric", SourceKey = "overdue", Title = "Échéances indisponibles", ShowMiniHistory = false });
+        availabilityBoard.Widgets.Add(new() { Id = "missing-distribution", Kind = "distribution", SourceKey = "priority", Title = "Priorités indisponibles" });
+        availabilityBoard.Widgets.Add(new() { Id = "compact-quality", Kind = "quality", Title = "Qualité du périmètre", Span = 12 });
+        var availabilityLayout = new DashboardLayoutSettings { Boards = new() { availabilityBoard }, ActiveBoardId = availabilityBoard.Id };
+        app.LoadFixture(limited); await Call(app, "dashboard.layout.save", new { personal = false, layout = availabilityLayout });
+        var availability = await Call(app, "dashboard.get"); await Open("dashboard");
+        Check(Widget(availability, "valid-zero").GetProperty("available").GetBoolean()
+            && !Widget(availability, "missing-metric").GetProperty("available").GetBoolean()
+            && !Widget(availability, "missing-distribution").GetProperty("available").GetBoolean()
+            && Str(Widget(availability, "missing-metric"), "unavailableReason").Length > 0
+            && await page.Locator("[data-widget-id=valid-zero] .analytics-metric-value").TextContentAsync() == "0"
+            && await page.Locator("[data-widget-id=missing-metric],[data-widget-id=missing-distribution]").CountAsync() == 0
+            && app.Settings.Dashboard.Layout.Boards[0].HideUnavailableWidgets && app.Settings.Dashboard.Layout.Boards[0].Widgets.All(widget => !widget.Hidden),
+            "Reading hides genuinely unavailable metrics and distributions without hiding a measured zero or mutating saved widget visibility.");
+        var availabilityCapture = Array.IndexOf(args, "--screenshots");
+        if (availabilityCapture >= 0 && availabilityCapture + 1 < args.Length)
+        {
+            var output = Path.GetFullPath(args[availabilityCapture + 1]); Directory.CreateDirectory(output);
+            await page.ScreenshotAsync(new() { Path = Path.Combine(output, "analytics-dashboard-availability.png"), FullPage = true });
+        }
+        var compactQuality = page.Locator("[data-widget-id=compact-quality]");
+        var qualityInitiallyCompact = await compactQuality.Locator(".analytics-quality-overview").IsVisibleAsync()
+            && await compactQuality.Locator(".analytics-quality-optional").CountAsync() > 0
+            && await compactQuality.Locator(".analytics-quality-optional[open]").CountAsync() == 0;
+        await compactQuality.Locator(".analytics-quality-optional > summary").ClickAsync();
+        var missingColumn = Widget(availability, "compact-quality").GetProperty("content").GetProperty("columns").EnumerateArray().Single(column => Str(column, "role") == "priority");
+        Check(qualityInitiallyCompact && Str(missingColumn, "state") == "missing" && Str(missingColumn, "stateLabel") == "Aucune colonne reconnue"
+            && (await compactQuality.InnerTextAsync()).Contains("Aucune colonne reconnue")
+            && !System.Text.RegularExpressions.Regex.IsMatch(await compactQuality.InnerTextAsync(), @"\b(missing|auto|mapped|ignored)\b"),
+            "Quality stays compact until its optional roles are opened and presents French correspondence labels while preserving stable machine states.");
+        await Button("Modifier le dashboard").ClickAsync();
+        Check(await page.Locator("[data-widget-id=missing-metric][data-available=false]").CountAsync() == 1
+            && await page.Locator("[data-widget-id=missing-distribution][data-available=false]").CountAsync() == 1
+            && await page.Locator("[data-widget-id=missing-metric]").GetByRole(AriaRole.Button, new() { Name = "Régler", Exact = true }).IsEnabledAsync(),
+            "Editor mode reveals automatically hidden widgets with their controls so their source can still be corrected.");
+        await Button("Quitter l’édition").ClickAsync();
+        await page.GetByLabel("Afficher les widgets indisponibles", new() { Exact = true }).CheckAsync(); await Ready("dashboard");
+        await Open("dashboard");
+        Check(await page.GetByLabel("Afficher les widgets indisponibles", new() { Exact = true }).IsCheckedAsync()
+            && await page.Locator("[data-widget-id=missing-metric],[data-widget-id=missing-distribution]").CountAsync() == 2
+            && !AppSettings.Load().Dashboard.Layout.Boards[0].HideUnavailableWidgets
+            && await page.Locator("[data-widget-id=valid-zero] .analytics-metric-value").TextContentAsync() == "0",
+            "The explicit show-unavailable option persists through the real settings store and reloading without changing valid zero values.");
+        if (availabilityCapture >= 0 && availabilityCapture + 1 < args.Length)
+            await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetFullPath(args[availabilityCapture + 1]), "analytics-dashboard-show-unavailable.png"), FullPage = true });
+        await page.GetByText("Autres actions", new() { Exact = true }).ClickAsync(); await Button("Annuler la modification").ClickAsync(); await Ready("dashboard");
+        await Until("document.querySelector('main').dataset.ready==='true' && !document.querySelector('[data-widget-id=missing-metric]') && !document.querySelector('[data-widget-id=missing-distribution]')");
+        Check(app.Settings.Dashboard.Layout.Boards[0].HideUnavailableWidgets
+            && await page.Locator("[data-widget-id=missing-metric],[data-widget-id=missing-distribution]").CountAsync() == 0
+            && app.Settings.Dashboard.Layout.Boards[0].Widgets.Count == 4,
+            "Undo restores automatic hiding while preserving all widget definitions for later recovery.");
+        await Call(app, "dashboard.layout.save", new { personal = false, layout = layoutBeforeEditing });
         app.LoadFixture(source, Locations(source, settings));
         await Open("dashboard"); await page.SetViewportSizeAsync(900, 700);
         Check(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth<=innerWidth+1"), "Analytical widgets fit the compact viewport without horizontal page overflow.");

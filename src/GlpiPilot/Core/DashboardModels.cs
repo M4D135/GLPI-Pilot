@@ -1,7 +1,19 @@
 namespace GlpiPilot.Core;
 
 public sealed record DashboardRole(string Key, string Label, string[] Aliases);
-public sealed record DashboardColumn(string Role, string Label, int? Index, string Header, string State);
+public sealed record DashboardColumn(string Role, string Label, int? Index, string Header, string State)
+{
+    // State remains the stable machine-readable value used by mappings and checks.
+    public string StateLabel => State switch
+    {
+        "auto" => "Reconnue automatiquement",
+        "configured" => "Définie manuellement",
+        "ambiguous" => "Plusieurs colonnes possibles",
+        "missing-override" => "Colonne configurée absente",
+        "missing" => "Aucune colonne reconnue",
+        _ => "Correspondance non déterminée"
+    };
+}
 public sealed record DashboardMetric(string Key, string Label, double? Value, string Unit,
     string Explanation, int[] Rows, int? Sample = null, string Tone = "normal");
 public sealed record DashboardBucket(string Label, int Count, int[] Rows,

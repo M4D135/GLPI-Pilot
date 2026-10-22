@@ -192,6 +192,7 @@ public sealed class DashboardBoardSettings
     public string Name { get; set; } = "Mon tableau de bord";
     public string Description { get; set; } = "";
     public string Density { get; set; } = "comfortable";
+    public bool HideUnavailableWidgets { get; set; } = true;
     public List<DashboardSectionSettings> Sections { get; set; } = new();
     public List<DashboardWidgetSettings> Widgets { get; set; } = new();
     public List<DashboardScopeFilter> Filters { get; set; } = new();
@@ -199,7 +200,7 @@ public sealed class DashboardBoardSettings
     public bool ComparisonEnabled { get; set; }
     public List<DashboardScopeFilter> ComparisonFilters { get; set; } = new();
     public List<string> CollapsedSections { get; set; } = new();
-    public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Description = Description, Density = Density,
+    public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Description = Description, Density = Density, HideUnavailableWidgets = HideUnavailableWidgets,
         Sections = Sections?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
         Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
         Filters = DashboardScopeFilter.CopyList(Filters), CrossFilterOnClick = CrossFilterOnClick,

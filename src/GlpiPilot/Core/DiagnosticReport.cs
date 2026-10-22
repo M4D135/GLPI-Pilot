@@ -29,6 +29,8 @@ public static class DiagnosticReport
         if (result != null)
         {
             report.AppendLine($"Résultat : lignes={result.Rows.Count}, colonnes={result.Headers.Count}, pages={result.Pages}, attendu={result.ExpectedTotal?.ToString() ?? "inconnu"}, total vérifié={result.Complete}, avertissements={result.Warnings.Count}");
+            if (result.Quality is { } quality)
+                report.AppendLine($"Diagnostic détaillé des écarts : enregistré={!string.IsNullOrEmpty(quality.DivergenceReportName)}, comparaisons retenues={quality.DivergenceReportCount}, total={quality.DivergenceTotalCount}. Consultation et export dans Qualité du relevé ; aucune valeur recopiée ici.");
             report.AppendLine("--- Intitulés des colonnes du relevé (aucune valeur de cellule) ---");
             foreach (var (header, index) in result.Headers.Take(128).Select((header, index) => (header, index)))
                 report.AppendLine($"COLONNE {index + 1} : {HeaderLabel(header)}");

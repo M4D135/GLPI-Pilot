@@ -66,10 +66,11 @@ public sealed partial class PilotApplication
             var run = await service.RunAsync(settings, Progress(), ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested(); Settings.RememberTable(run.Table); CaptureCurrentSource(); SaveSettings();
             SetResult(run.Data, run.Cities, context: settings); _selectedTable = run.Table; _inspectedPageUrl = run.Table.Page?.Url ?? ""; _collectionRevision++;
-            _health.Record(settings.ActiveSourceId, settings.Sources.FirstOrDefault(s => s.Id == settings.ActiveSourceId)?.Name ?? "Source courante", run.Data.Complete, run.Data.Status, DateTimeOffset.Now);
+            var received = run.Data.Complete || run.Data.Quality is { ReceptionComplete: true, ScopeStable: true, SampleIdentityVerified: not false };
+            _health.Record(settings.ActiveSourceId, settings.Sources.FirstOrDefault(s => s.Id == settings.ActiveSourceId)?.Name ?? "Source courante", received, run.Data.Status, DateTimeOffset.Now);
             if (archive) await ArchiveActiveAsync(ct).ConfigureAwait(false);
             if (archive) EvaluateAlerts(ct);
-            _journal.Finish(entry, run.Data.Complete ? "Terminé" : "À vérifier", "COLLECTED", run.Data.Status);
+            _journal.Finish(entry, received ? "Terminé" : "À vérifier", "COLLECTED", run.Data.Status);
             return new { session = SessionState(), path = run.PrimaryPath, nativePath = run.NativePath, excelPath = run.ExcelPath };
         }
         catch (Exception error)

@@ -45,6 +45,8 @@ public sealed partial class PilotApplication
         Register("mapping.preview", (a, ct) => { CheckRevision(a); var settings = Read<DashboardSettings>(a.GetProperty("settings")); DashboardService.ValidateSettings(settings); return Task.FromResult<object?>(MappingPreview(settings)); });
         Register("mapping.save", (a, ct) => Task.FromResult<object?>(SaveMapping(a)));
         Register("records.quality", (_, ct) => Task.FromResult<object?>(DataQualityService.Analyze(RequireResult(), EffectiveSettings.Dashboard, ct)));
+        Register("records.divergences", ReadCellDivergencesAsync);
+        Register("records.divergences.export", ExportCellDivergencesAsync);
         Register("configuration.export", async (_, _) => { var path = await Host.SaveFileAsync("Exporter la configuration d’équipe", "Configuration JSON|*.json", "GLPI-Pilot-equipe.json"); if (path is not null) ConfigurationTransferService.Export(path, Settings); return new { path }; });
         Register("configuration.preview", ConfigurationPreviewAsync);
         Register("configuration.apply", (a, ct) => { if (_configurationDraft is null || Text(a, "token", 100) != _configurationToken || _configurationBaseline != JsonSerializer.Serialize(Settings, Json)) throw new InvalidOperationException("L’aperçu d’import a expiré."); var parts = (ConfigurationParts)Number(a, "parts", 255, 0, 255); var choices = a.TryGetProperty("choices", out var c) ? Read<Dictionary<string, string>>(c) : new(); var next = ConfigurationReview.Apply(Settings, _configurationDraft, parts, Flag(a, "merge", true), choices); CommitSettings(next); _configurationDraft = null; _configurationToken = ""; return Task.FromResult<object?>(Settings); });

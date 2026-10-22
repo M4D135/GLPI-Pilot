@@ -25,7 +25,7 @@ export async function renderDashboard(ctx) {
   const persist = async (focus = null) => {
     if (saving) throw new Error('L’enregistrement précédent est encore en cours.');
     saving = true; ctx.root.dataset.ready = 'false'; ctx.root.setAttribute('aria-busy', 'true');
-    const lockedUi = [boardHost, editorHost, selectionHost, controls, ...document.querySelectorAll('dialog')].map(node => ({ node, wasInert: node.inert }));
+    const lockedUi = [boardHost, editorHost, selectionHost, controls, visibilityHost, provenanceRow, ...document.querySelectorAll('dialog')].map(node => ({ node, wasInert: node.inert }));
     for (const { node } of lockedUi) node.inert = true;
     const positions = new Map([...boardHost.querySelectorAll('[data-widget-id]')].map(node => [node.dataset.widgetId, node.getBoundingClientRect()]));
     historyController?.abort(); let committed = false;
@@ -38,7 +38,6 @@ export async function renderDashboard(ctx) {
       for (const id of selected) if (!board.widgets.some(widget => widget.id === id && !widget.hidden)) selected.delete(id);
       list.replaceChildren(...layout.boards.map(item => el('option', { value: item.id, text: item.name, selected: item.id === board.id })));
       undoControl.disabled = !fresh.layoutHistory.undo; redoControl.disabled = !fresh.layoutHistory.redo;
-      provenance.querySelector('summary strong').textContent = `${board.name}${personal ? ` · ${model.technicianKey}` : ''}`;
       cross.control.checked = board.crossFilterOnClick; draw(); editStatus.textContent = 'Disposition enregistrée';
       if (document.documentElement.dataset.motion !== 'reduce' && !matchMedia('(prefers-reduced-motion: reduce)').matches) for (const node of boardHost.querySelectorAll('[data-widget-id]')) {
         const before = positions.get(node.dataset.widgetId); if (!before) continue; const after = node.getBoundingClientRect();
@@ -70,39 +69,63 @@ export async function renderDashboard(ctx) {
   const controls = toolbar(field('Disposition', list), field('Périmètre personnel', people), editControl,
     command(ctx, 'Filtres et comparaison', () => filtersDialog()), command(ctx, 'Exporter', () => exportDialog()), organization);
   controls.classList.add('analytics-primary-toolbar', 'no-print');
-  const received = model.snapshot.receptionComplete === true || model.snapshot.complete;
-  const receiptLabel = received ? 'Réception complète' : 'Réception partielle ou non confirmée';
-  const provenance = el('details', { class: 'analytics-provenance print-provenance', 'aria-label': 'Provenance du tableau de bord' },
-    el('summary', {}, el('strong', { text: `${board.name}${personal ? ` · ${model.technicianKey}` : ''}` }),
-      el('span', { text: `${formatNumber(model.snapshot.rowCount)} / ${formatNumber(model.snapshot.sourceRowCount)} lignes · ${formatDate(model.snapshot.extractedAt)}` }),
-      badge(receiptLabel, received ? 'success' : 'warning'),
-      !model.snapshot.complete && received ? badge('Contrôles à vérifier', 'warning') : null,
-      model.historical ? badge('Archive') : ctx.state.session?.demo ? badge('Démonstration', 'warning') : null,
-      model.commonFilters.length ? badge(`${model.commonFilters.length} filtre(s)`) : null),
-    el('strong', { text: 'GLPI Pilot · provenance de ce calcul' }),
-    caption(`Relevé : ${formatDate(model.snapshot.extractedAt)} · calcul : ${formatDate(model.snapshot.calculatedAt)} · ${formatNumber(model.snapshot.rowCount)} / ${formatNumber(model.snapshot.sourceRowCount)} lignes dans ce périmètre · ${receiptLabel.toLocaleLowerCase()}`),
-    caption(`${model.snapshot.scopeLabel} · ${model.snapshot.sourceUrl || 'source locale'}`),
-    caption(`Total annoncé dans la source : ${model.snapshot.sourceExpectedTotal == null ? 'inconnu' : formatNumber(model.snapshot.sourceExpectedTotal)} lignes.`),
-    qualitySummary(model.snapshot.quality),
-    caption(`Filtres communs : ${describeFilters(model.commonFilters) || 'aucun'}`),
-    ...board.widgets.filter(w => !w.hidden && w.filters?.length).map(w => caption(`Widget ${w.title || w.sourceKey} : ${describeFilters(w.filters)}`)),
-    model.historical ? badge('Archive · règles et dénominateurs conservés') : null);
-  const warnings = el('details', { class: 'analytics-warnings no-print', hidden: !model.snapshot.warnings.length },
-    el('summary', {}, el('strong', { text: `${model.snapshot.warnings.length} point(s) à vérifier` }), el('span', { text: 'Afficher le détail des contrôles' })),
-    ...model.snapshot.warnings.map(text => caption(text, 'warning')));
+  const provenance = el('details', { class: 'analytics-provenance print-provenance', 'aria-label': 'Provenance du tableau de bord' });
+  const provenanceRow = el('div', { class: 'analytics-provenance-row' }, provenance,
+    command(ctx, 'Détails des contrôles', () => controlsDialog(), { attributes: { class: 'button analytics-controls-access no-print' } }));
+  const receptionIssue = el('div', { class: 'analytics-reception-issue', role: 'status', hidden: true });
   const boardHost = el('div', { class: 'analytics-board-host' }); const editorHost = el('div', { class: 'analytics-editor-toolbar no-print' });
   const editStatus = el('span', { class: 'analytics-edit-status', role: 'status', 'aria-live': 'polite', text: '' });
   const selectionHost = el('div', { class: 'analytics-selection-toolbar no-print' }); const status = el('div', { class: 'analytics-history-status no-print', role: 'status' });
   const cross = checkbox('Cliquer une catégorie pour filtrer les widgets', board.crossFilterOnClick);
   cross.control.addEventListener('change', () => { board.crossFilterOnClick = cross.control.checked; persist().catch(reason => error(ctx, reason)); });
-  ctx.root.append(controls, provenance, warnings, toolbar(cross.element,
+  const showUnavailable = checkbox('Afficher les widgets indisponibles', board.hideUnavailableWidgets === false);
+  const availabilitySummary = el('span', { class: 'analytics-availability-summary', role: 'status' });
+  const visibilityHost = el('div', { class: 'analytics-visibility no-print' }, showUnavailable.element, availabilitySummary);
+  showUnavailable.control.addEventListener('change', () => {
+    if (saving) { showUnavailable.control.checked = board.hideUnavailableWidgets === false; return; }
+    board.hideUnavailableWidgets = !showUnavailable.control.checked; persist().catch(reason => error(ctx, reason));
+  });
+  ctx.root.append(controls, provenanceRow, receptionIssue, toolbar(cross.element,
     command(ctx, 'Voir les lignes du périmètre', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, kind: 'scope' })),
     command(ctx, 'Effacer les filtres', async () => { if (board.filters.length) { board.filters = []; await call(ctx, 'dashboard.layout.save', { personal, layout }); } go({ crossFilters: [] }); }, { disabled: model.commonFilters.length === 0 }),
     command(ctx, 'Effectifs datés', () => ctx.navigate('populations')), command(ctx, 'Assistant sur ce périmètre', () => ctx.navigate('assistant', runArgs))),
-    editorHost, selectionHost);
+    visibilityHost, editorHost, selectionHost);
   if (model.comparison) ctx.root.append(comparisonCard(model.snapshot, model.comparison));
   ctx.root.append(status, boardHost);
   let historyController = null; let historyData = null;
+
+  function drawOverview() {
+    const snapshot = model.snapshot; const quality = snapshot.quality;
+    const received = snapshot.receptionComplete === true;
+    const receiptLabel = received ? 'Réception complète' : 'Réception partielle ou non confirmée';
+    provenance.replaceChildren(
+      el('summary', {}, el('strong', { text: `${board.name}${personal ? ` · ${model.technicianKey}` : ''}` }),
+        el('span', { text: `${formatNumber(snapshot.rowCount)} / ${formatNumber(snapshot.sourceRowCount)} lignes · ${formatDate(snapshot.extractedAt)}` }),
+        badge(receiptLabel, received ? 'success' : 'warning'),
+        model.historical ? badge('Archive') : ctx.state.session?.demo ? badge('Démonstration', 'warning') : null,
+        model.commonFilters.length ? badge(`${model.commonFilters.length} filtre(s)`) : null),
+      el('strong', { text: 'GLPI Pilot · provenance de ce calcul' }),
+      caption(`Relevé : ${formatDate(snapshot.extractedAt)} · calcul : ${formatDate(snapshot.calculatedAt)} · ${formatNumber(snapshot.rowCount)} / ${formatNumber(snapshot.sourceRowCount)} lignes dans ce périmètre · ${receiptLabel.toLocaleLowerCase()}`),
+      caption(`${snapshot.scopeLabel} · ${snapshot.sourceUrl || 'source locale'}`),
+      caption(`Total annoncé dans la source : ${snapshot.sourceExpectedTotal == null ? 'inconnu' : formatNumber(snapshot.sourceExpectedTotal)} lignes.`),
+      caption(`Filtres communs : ${describeFilters(model.commonFilters) || 'aucun'}`),
+      ...board.widgets.filter(widget => !widget.hidden && widget.filters?.length).map(widget => caption(`Widget ${widget.title || widget.sourceKey} : ${describeFilters(widget.filters)}`)),
+      model.historical ? badge('Archive · règles et dénominateurs conservés') : null);
+    const issues = [snapshot.receptionComplete === false ? 'Réception partielle ou non confirmée.' : '',
+      quality?.scopeStable === false ? 'Le périmètre de la collecte doit être vérifié.' : '',
+      quality?.sampleIdentityVerified === false ? 'Des identifiants de l’échantillon manquent dans le relevé.' : '',
+      quality?.finalTotalVerified === false ? 'Le total GLPI a changé pendant la collecte.' : ''].filter(Boolean);
+    receptionIssue.hidden = issues.length === 0;
+    receptionIssue.replaceChildren(...(issues.length ? [el('strong', { text: 'Collecte à vérifier' }), el('span', { text: issues.join(' ') })] : []));
+  }
+  function controlsDialog(extraWarnings = []) {
+    const warnings = [...new Set([...(model.snapshot.warnings ?? []), ...extraWarnings].filter(text => typeof text === 'string' && text.trim()))];
+    dialog('Détails des contrôles', el('div', { class: 'analytics-controls-detail' },
+      qualitySummary(model.snapshot.quality) ?? caption('Les observations détaillées des contrôles ne sont pas disponibles pour ce relevé.'),
+      caption('La réception porte sur les lignes reçues ; les contrôles d’identifiants et de valeurs portent sur l’échantillon observé.'),
+      warnings.length ? el('div', { class: 'analytics-control-notes' }, el('h3', { text: 'Observations du relevé' }), ...warnings.map(text => caption(text))) : null),
+    model.historical ? [] : [{ label: 'Ouvrir la page Qualité', action: close => { close(); ctx.navigate('quality'); } }]);
+  }
 
   async function activate(widget, selection) {
     if (board.crossFilterOnClick && ['metric', 'distribution', 'map'].includes(selection.kind)) {
@@ -135,6 +158,7 @@ export async function renderDashboard(ctx) {
   function draw() {
     editControl.textContent = editing ? 'Quitter l’édition' : 'Modifier le dashboard';
     editControl.setAttribute('aria-pressed', String(editing));
+    drawOverview(); showUnavailable.control.checked = board.hideUnavailableWidgets === false;
     editorHost.replaceChildren(); selectionHost.replaceChildren(); boardHost.replaceChildren();
     editorHost.hidden = !editing; selectionHost.hidden = !editing;
     boardHost.classList.toggle('is-editing', editing); boardHost.dataset.density = board.density || 'comfortable';
@@ -154,8 +178,21 @@ export async function renderDashboard(ctx) {
     }
     if (board.description) boardHost.append(caption(board.description, 'analytics-board-description'));
     const groups = ensureSections(board).filter(section => editing || !section.hidden);
+    const widgetById = new Map(model.widgets.map(widget => [widget.id, widget]));
+    const visibleSections = new Set(groups.map(section => section.key));
+    const unavailableCount = board.widgets.filter(widget => !widget.hidden && visibleSections.has(widget.section || '') && widgetById.get(widget.id)?.available === false).length;
+    const hideUnavailable = !editing && board.hideUnavailableWidgets !== false;
+    availabilitySummary.hidden = unavailableCount === 0;
+    availabilitySummary.textContent = unavailableCount === 0 ? '' : editing
+      ? `${formatNumber(unavailableCount)} widget(s) indisponible(s) visible(s) pour être réglé(s).`
+      : hideUnavailable ? `${formatNumber(unavailableCount)} widget(s) sans données calculables masqué(s) automatiquement.`
+        : `${formatNumber(unavailableCount)} widget(s) indisponible(s) affiché(s).`;
+    let renderedSections = 0;
     for (const section of groups) {
-      const widgets = board.widgets.filter(widget => !widget.hidden && (widget.section || '') === section.key);
+      const sectionWidgets = board.widgets.filter(widget => !widget.hidden && (widget.section || '') === section.key);
+      const widgets = sectionWidgets.filter(widget => !hideUnavailable || widgetById.get(widget.id)?.available !== false);
+      if (!editing && sectionWidgets.length > 0 && widgets.length === 0) continue;
+      renderedSections++;
       const expanded = !board.collapsedSections.includes(section.key);
       const gridId = `dashboard-section-${uuid()}`;
       const grid = el('div', { class: 'analytics-board', id: gridId, 'aria-label': section.title, hidden: !expanded });
@@ -176,7 +213,7 @@ export async function renderDashboard(ctx) {
       sectionRoot.append(sectionHeader);
       if (section.description && expanded) sectionRoot.append(caption(section.description, 'analytics-section-description'));
       for (const setting of widgets) {
-        const widget = model.widgets.find(item => item.id === setting.id); if (!widget) continue;
+        const widget = widgetById.get(setting.id); if (!widget) continue;
         if (setting.startNewRow) grid.append(el('div', { class: 'analytics-new-row', 'aria-hidden': 'true' }));
         const title = widgetTitle(widget, model.catalog);
         const header = el('div', { class: 'analytics-widget-heading' });
@@ -190,10 +227,12 @@ export async function renderDashboard(ctx) {
           controls.append(check.element, command(ctx, 'Régler', () => widgetDialog(setting)));
         } else controls.append(command(ctx, 'Lignes', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: setting.id, kind: 'scope' }, title)));
         header.append(controls);
-        const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}`,
-          style: { '--span': setting.span, '--widget-height': `${setting.height}px` }, 'data-widget-id': setting.id, 'data-auto-height': setting.autoHeight }, header,
+        const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}${widget.available === false ? ' is-unavailable' : ''}`,
+          style: { '--span': setting.span, '--widget-height': `${setting.height}px` }, 'data-widget-id': setting.id, 'data-widget-kind': setting.kind,
+          'data-available': widget.available ?? 'unknown', 'data-auto-height': setting.autoHeight }, header,
           caption(`${formatNumber(widget.rowCount)} lignes · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
-          widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key)));
+          widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
+            { snapshot: model.snapshot, historical: model.historical, onControls: () => controlsDialog(widget.content?.warnings) }));
         if (editing) article.append(el('div', { class: 'analytics-widget-edit-footer no-print' },
           el('span', { text: setting.locked ? 'Position verrouillée' : `${setting.span} / 12 · ${setting.autoHeight ? 'hauteur auto' : `${setting.height} px`}` }),
           setting.locked ? null : button('↘', () => widgetDialog(setting), { title: 'Étirer pour redimensionner, utiliser les flèches ou ouvrir les dimensions', attributes: {
@@ -207,6 +246,7 @@ export async function renderDashboard(ctx) {
       sectionRoot.append(grid); boardHost.append(sectionRoot);
     }
     if (!groups.length) boardHost.append(empty('Toutes les sections sont masquées', 'Passez en édition pour choisir celles à afficher.'));
+    else if (!renderedSections) boardHost.append(empty('Aucun widget calculable dans ce périmètre', 'Tous les widgets sont conservés. Affichez les indisponibles ou passez en édition pour les régler.'));
     if (historyData) displayHistory(historyData);
   }
   function sectionChoices() { return ensureSections(board).map(section => ({ value: section.key, label: `${section.title}${section.hidden ? ' · masquée' : ''}` })); }

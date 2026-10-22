@@ -25,6 +25,24 @@ Test("Automatic height preserves the manual minimum across copy and JSON", () =>
     Assert(widget.Height == 640 && !layout.Boards[0].Widgets[0].AutoHeight, "Automatic mode changed the remembered minimum or its source");
     Assert(JsonSerializer.Deserialize<DashboardWidgetSettings>("{\"Height\":640}")!.AutoHeight, "Legacy widgets should use their content height by default");
 });
+Test("New and legacy boards hide unavailable widgets without deleting saved widgets", () =>
+{
+    var layout = Layout(); var count = layout.Boards[0].Widgets.Count;
+    Assert(layout.Boards[0].HideUnavailableWidgets);
+    var document = JsonSerializer.SerializeToNode(layout)!;
+    document["Boards"]![0]!.AsObject().Remove("HideUnavailableWidgets");
+    var legacy = document.Deserialize<DashboardLayoutSettings>()!; legacy.Normalize(); legacy.Validate();
+    Assert(legacy.Boards[0].HideUnavailableWidgets && legacy.Boards[0].Widgets.Count == count);
+});
+Test("An explicit show-unavailable preference survives copy normalization and JSON", () =>
+{
+    var layout = Layout(); layout.Boards[0].HideUnavailableWidgets = false;
+    var copy = layout.Copy(); copy.Normalize(); copy.Validate();
+    var roundTrip = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(copy))!; roundTrip.Normalize(); roundTrip.Validate();
+    Assert(!copy.Boards[0].HideUnavailableWidgets && !roundTrip.Boards[0].HideUnavailableWidgets);
+    copy.Boards[0].HideUnavailableWidgets = true;
+    Assert(!layout.Boards[0].HideUnavailableWidgets && !roundTrip.Boards[0].HideUnavailableWidgets);
+});
 Test("Malformed imported dimensions rejected before local normalization", () => { var a = Layout(); a.Boards[0].Widgets[0].Span = 99; Invalid(a.Validate); a.Normalize(); a.Validate(); Assert(a.Boards[0].Widgets[0].Span == 12); });
 Test("Invalid version and active board never pass validation", () => { var a = Layout(); a.Version = 2; Invalid(a.Validate); a.Version = 1; a.ActiveBoardId = "missing"; Invalid(a.Validate); });
 Test("Duplicate widget or board IDs are invalid", () => { var a = Layout(); a.Boards[0].Widgets.Add(a.Boards[0].Widgets[0].Copy()); Invalid(a.Validate); a = Layout(); a.Boards.Add(a.Boards[0].Copy()); Invalid(a.Validate); });

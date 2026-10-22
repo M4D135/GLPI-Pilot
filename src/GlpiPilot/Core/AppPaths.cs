@@ -29,6 +29,7 @@ public static class AppPaths
     public static string Profile(string channel) => Path.Combine(DataRoot, "Browser", channel == "chrome" ? "Chrome" : "Edge");
     public static string Profile(string channel, string portalUrl) => Path.Combine(Profile(channel), ObjectIdentity.InstallationKey(portalUrl));
     public static string LogFile => Path.Combine(DataRoot, "Logs", DateTime.Today.ToString("yyyy-MM-dd") + ".log");
+    public static string CellDivergenceFolder => Path.Combine(DataRoot, "Diagnostics", "Import");
 
     public static string SafeUrl(string value)
     {

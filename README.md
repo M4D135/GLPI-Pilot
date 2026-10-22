@@ -1,4 +1,4 @@
-# GLPI Pilot 3.1.0 — Windows x64
+# GLPI Pilot 3.1.1 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, gestion locale des techniciens, lecture des tickets, requêtes, lieux, tournées, historiques et alertes. Aucun accès API, base de données ou serveur GLPI n’est nécessaire.
 
@@ -35,7 +35,13 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Nouveautés de la version 3.1
+## Nouveautés de la version 3.1.1
+
+Le dashboard masque automatiquement les widgets sans données calculables, tout en conservant leur disposition. Le mode édition les réaffiche ; **Afficher les widgets indisponibles** mémorise le choix par tableau. Le widget Qualité devient un résumé compact et ses libellés sont en français. Les observations de présentation du CSV restent consultables dans **Détails des contrôles** et **Qualité du relevé**, sans bandeau permanent. Une réception réellement partielle, un problème d’identifiants ou de contexte reste signalé.
+
+Les nouvelles collectes enregistrent les cellules divergentes dans un **diagnostic local dédié** : valeurs GLPI et CSV, ticket, colonnes, premier écart et codes Unicode. **Qualité du relevé → Voir les cellules divergentes / Exporter le diagnostic des écarts** permet de l’examiner ou de l’enregistrer en JSON. Ce fichier contient des données métier ; le journal général reste sans contenu de cellule. Les limites de capture et les contrôles conservés sont décrits dans les [notes 3.1.1](docs/RELEASE-3.1.1.md).
+
+### Interface et sections introduites en 3.1.0
 
 La version **3.1.0** réorganise l’interface suivant les principes de Domenia 2 : navigation dépliable ou réduite en rail, thèmes clair/sombre, surfaces mieux hiérarchisées, tableaux lisibles et animations désactivables. Les tickets n’affichent plus de `null` parasite et leurs identifiants restent entiers sur une ligne. Le dashboard dispose de **sections persistantes**, même vides, avec titre, description, couleur et visibilité ; widgets et sections se déplacent à la souris ou au clavier, avec redimensionnement visuel et annulation.
 
@@ -120,7 +126,7 @@ Le constructeur propose expressions imbriquées **ET / OU / NON**, comparaison e
 
 Le mode automatique privilégie le CSV **toutes les pages** proposé par GLPI. S’il est indisponible, il peut utiliser une option d’affichage complet existante puis, si autorisé, parcourir la pagination depuis la première page. **Un fichier corrompu ou un export ambigu n’entraîne pas de repli silencieux.**
 
-Le moteur vérifie la recherche, le contexte observable, les totaux, les colonnes et les doublons de pages. Un échantillon de 25 identifiants au maximum et les valeurs des colonnes comparables sont rapprochés du CSV. Un identifiant attendu absent lors du rapprochement initial fait refuser l’import. Lorsque les identifiants correspondent mais que des valeurs diffèrent, le CSV valide est chargé avec `Complete=false` et l’état **À vérifier** : les données, les exports et les analyses restent utilisables avec cette réserve. Aucun écart ni caractère de contrôle C1 n’est effacé pour obtenir une concordance.
+Le moteur vérifie la recherche, le contexte observable, les totaux, les colonnes et les doublons de pages. Un échantillon de 25 identifiants au maximum et les valeurs des colonnes comparables sont rapprochés du CSV. Un identifiant attendu absent lors du rapprochement initial fait refuser l’import. Lorsque les identifiants correspondent mais que des valeurs diffèrent, le CSV valide est chargé avec `Complete=false` ; les réserves de concordance restent consultables dans **Qualité du relevé**, sans empêcher d’utiliser les données, les exports et les analyses. Aucun écart ni caractère de contrôle C1 n’est effacé pour obtenir une concordance.
 
 Les textes complets présents dans les popups GLPI sont lus seulement lorsque leur structure et leur association au texte visible sont prouvées. Les abréviations non développées ne sont exclues du contrôle de valeur que dans les cas reconnus au préfixe compatible. Le contrôle final du contexte, du total et de l’échantillon reste actif ; une variation ou une vérification devenue indisponible empêche de certifier un relevé complet. Le classeur automatique d’un résultat à contrôler porte `a-verifier` dans son nom ; le CSV natif conserve son nom et ses octets. Un fichier local importé n’est pas certifié comme extraction exhaustive du portail.
 
@@ -139,6 +145,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 ## Documentation
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
+- [Notes de version 3.1.1](docs/RELEASE-3.1.1.md)
 - [Notes de version 3.1.0](docs/RELEASE-3.1.0.md)
 - [Historique — version 3.0.2](docs/RELEASE-3.0.2.md)
 - [Historique — version 3.0.1](docs/RELEASE-3.0.1.md)
@@ -170,7 +177,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.1.0'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.1.1'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -186,7 +193,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.1.0'
+  -OutputDirectory '.\artifacts\release-3.1.1'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

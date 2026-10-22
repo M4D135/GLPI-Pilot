@@ -242,7 +242,31 @@ public sealed partial class PilotApplication
             "history" => s.History.FirstOrDefault(h => h.Key == widget.SourceKey),
             _ => null
         };
-        return new { id = widget.Id, settings = widget, content, rowCount = s.RowCount, s.ScopeLabel, available = content is not null };
+        var available = widget.Kind switch
+        {
+            "metric" => s.Metric(widget.SourceKey)?.Value.HasValue == true,
+            "distribution" => s.Distributions.FirstOrDefault(d => d.Key == widget.SourceKey)?.Available == true,
+            "weather" => (s.WeatherProfiles.GetValueOrDefault(widget.SourceKey) ?? s.Weather).State != "unknown",
+            "timeline" => new[] { "created", "resolved", "closed" }.Any(key =>
+                s.DateValues.GetValueOrDefault(key)?.Count > 0 || s.RowCount == 0 && s.Column(key)?.Index is not null),
+            "attention" => s.Column("status")?.Index is not null,
+            "quality" or "note" or "history" => true,
+            "matrix" => s.Matrices.FirstOrDefault(m => m.Key == widget.SourceKey)?.Available == true,
+            "histogram" => s.NumericSeries.FirstOrDefault(n => n.Key == widget.SourceKey)?.Values.Count > 0,
+            "boxplot" => s.BoxSeries.FirstOrDefault(b => b.Key == widget.SourceKey)?.Available == true,
+            "scatter" => s.Scatters.FirstOrDefault(b => b.Key == widget.SourceKey)?.Points.Count > 0,
+            "map" => s.Geography.Count > 0,
+            _ => content is not null
+        };
+        var unavailableReason = available ? "" : widget.Kind switch
+        {
+            "map" => "Aucun lieu du relevé ne dispose de coordonnées utilisables.",
+            "timeline" => "Aucune date d’ouverture, de résolution ou de clôture exploitable dans ce périmètre.",
+            "weather" => "Les indicateurs disponibles ne permettent pas de calculer cette météo.",
+            "attention" => "Une colonne Statut reconnue est nécessaire pour identifier les tickets actifs.",
+            _ => "Les colonnes ou les valeurs nécessaires à ce widget ne sont pas disponibles dans ce périmètre."
+        };
+        return new { id = widget.Id, settings = widget, content, rowCount = s.RowCount, s.ScopeLabel, available, unavailableReason };
     }
 
     private Task<object?> AnalyticsSaveLayoutAsync(JsonElement args, CancellationToken ct)

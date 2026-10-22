@@ -18,6 +18,8 @@ export const clone = value => structuredClone(value);
 export const number = (value, unit = '') => value == null || !Number.isFinite(value) ? 'Indisponible' : `${formatNumber(value)}${unit ? ` ${unit}` : ''}`;
 export const caption = (text, cls = '') => el('p', { class: `analytics-caption ${cls}`, text });
 export const choices = values => values.map(value => typeof value === 'string' ? { value, label: value } : { value: value.key ?? value.id, label: value.label ?? value.name });
+export const columnStateLabel = column => column.stateLabel || ({ auto: 'Reconnue automatiquement', configured: 'Définie manuellement',
+  ambiguous: 'Plusieurs colonnes possibles', 'missing-override': 'Colonne configurée absente', missing: 'Aucune colonne reconnue' })[column.state] || 'Correspondance non déterminée';
 export const getRevision = ctx => ctx.state.session?.revision ?? 0;
 export function error(ctx, reason) {
   if (ctx.signal.aborted || reason?.name === 'AbortError') return;

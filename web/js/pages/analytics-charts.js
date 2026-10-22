@@ -1,4 +1,4 @@
-import { el, button, card, toolbar, badge, table, empty, caption, command, details, number, formatNumber, formatDate, svg, sparkline } from './analytics-ui.js';
+import { el, button, card, toolbar, badge, table, empty, caption, command, details, columnStateLabel, number, formatNumber, formatDate, svg, sparkline } from './analytics-ui.js';
 
 const palette = ['var(--c1, #066ddb)', 'var(--c2, #8265c9)', 'var(--c3, #20877e)', 'var(--c4, #c45586)', 'var(--c5, #31748b)', 'var(--c6, #bf7334)', 'var(--c7, #9867ac)', 'var(--c8, #667b35)'];
 function valueOf(bucket) { return bucket.isAggregate ? bucket.value : bucket.value ?? bucket.count; }
@@ -8,9 +8,13 @@ function clickable(node, callback, label) {
   return node;
 }
 
-export function widgetContent(ctx, widget, activate, more) {
+export function widgetContent(ctx, widget, activate, more, options = {}) {
   const setting = widget.settings; const data = widget.content;
   if (setting.kind === 'history') return el('div', { class: 'analytics-history-mount' }, sparkline(data));
+  if (widget.available === false) return el('div', { class: 'analytics-widget-unavailable' },
+    el('strong', { text: 'Donnée indisponible' }),
+    caption(widget.unavailableReason || 'Les champs ou les valeurs nécessaires à ce calcul ne sont pas disponibles dans ce périmètre.'),
+    command(ctx, 'Vérifier les correspondances', () => ctx.navigate('mapping')));
   if (!data) return empty('Source indisponible', `La source « ${setting.sourceKey} » n’est pas calculable dans ce relevé. Modifiez le widget ou les correspondances de colonnes.`);
   const body = el('div', { class: `analytics-widget-body kind-${setting.kind}` });
   if (setting.kind === 'metric') {
@@ -36,7 +40,7 @@ export function widgetContent(ctx, widget, activate, more) {
   } else if (setting.kind === 'weather') {
     const states = { sun: 'Situation calme', watch: 'Vigilance', rain: 'Points à traiter', storm: 'Vigilance forte', partial: 'Lecture à compléter', unknown: 'Données insuffisantes' };
     body.append(el('div', { class: 'analytics-weather-state' }, el('span', { text: data.symbol, 'aria-hidden': 'true' }),
-      el('div', {}, el('strong', { text: states[data.state] || data.title }), caption(data.score == null ? 'Couverture insuffisante pour un indice.' : `Indice descriptif ${number(data.score)} / 100`))));
+      el('div', {}, el('strong', { text: states[data.state] || data.title }), caption(data.score == null ? data.title : `Indice descriptif ${number(data.score)} / 100`))));
     if (data.signals?.length) body.append(el('div', { class: 'analytics-weather-signals' }, ...data.signals.map(signal => el('div', {},
       el('strong', { text: formatNumber(signal.count) }), el('span', { text: signal.label }), el('small', { text: `sur ${formatNumber(signal.sample)}` })))));
     if (setting.showDescription) body.append(details('Méthode, échantillons et limites', caption(data.title), caption(data.description),
@@ -48,8 +52,7 @@ export function widgetContent(ctx, widget, activate, more) {
       { key: 'index', maxRows: 30, onSelect: row => ctx.navigate('tickets', { rowIndex: row.index, revision: ctx.analyticsRevision }) }));
     if (data.total > data.rows.length) body.append(command(ctx, `${formatNumber(data.total)} lignes à examiner`, () => more('attention', '')));
   } else if (setting.kind === 'quality') {
-    for (const warning of data.warnings ?? []) body.append(caption(warning, 'warning'));
-    body.append(table(data.columns, [{ key: 'label', label: 'Rôle' }, { key: 'header', label: 'Colonne observée' }, { key: 'state', label: 'Correspondance' }], { maxRows: 100 }));
+    body.append(qualityOverview(ctx, data, options));
   } else if (setting.kind === 'note') {
     body.append(el('p', { class: 'analytics-note', text: data.text }));
   } else if (setting.kind === 'matrix') {
@@ -66,6 +69,39 @@ export function widgetContent(ctx, widget, activate, more) {
     if (data.total > data.points.length) body.append(command(ctx, `Table des ${formatNumber(data.total)} localisations`, () => more('map', '')));
   }
   return body;
+}
+
+function qualityOverview(ctx, data, { snapshot, historical = false, onControls } = {}) {
+  const columns = data.columns ?? [];
+  const recognized = columns.filter(column => Number.isInteger(column.index) && column.index >= 0);
+  const optional = columns.filter(column => column.state === 'missing');
+  const unresolved = columns.filter(column => !recognized.includes(column) && column.state !== 'missing');
+  const received = snapshot?.receptionComplete === true;
+  const receipt = received ? 'Réception complète' : 'Réception à vérifier';
+  const count = snapshot?.sourceRowCount;
+  const total = snapshot?.sourceExpectedTotal;
+  const rows = count == null ? 'Nombre de lignes non documenté' : `${formatNumber(count)}${total == null ? '' : ` / ${formatNumber(total)}`} lignes reçues`;
+  const root = el('div', { class: 'analytics-quality-overview' },
+    el('div', { class: 'analytics-quality-overview-facts' },
+      el('div', { class: 'analytics-quality-coverage' }, el('strong', { text: formatNumber(recognized.length) }),
+        el('span', { text: 'champs reconnus' }), el('small', { text: 'Pour les calculs de ce tableau de bord' })),
+      el('div', { class: 'analytics-quality-source' }, badge(receipt, received ? 'success' : 'warning'),
+        el('span', { text: rows }), el('small', { text: 'Relevé source, avant les filtres du dashboard' }))),
+    unresolved.length ? caption(`${formatNumber(unresolved.length)} correspondance(s) à préciser dans les réglages.`, 'warning') : null);
+  const mappings = [...recognized, ...unresolved];
+  if (mappings.length) root.append(details(`Voir les correspondances (${formatNumber(mappings.length)})`,
+    table(mappings, [{ key: 'label', label: 'Champ' }, { key: 'header', label: 'Colonne du relevé' },
+      { key: 'stateLabel', label: 'Correspondance', render: columnStateLabel }], { maxRows: 100 })));
+  if (optional.length) {
+    const absent = details(`Champs facultatifs non fournis (${formatNumber(optional.length)})`,
+      caption('Ces champs servent uniquement aux indicateurs qui les utilisent. Leur absence n’empêche pas d’exploiter les autres données.'),
+      el('ul', { class: 'analytics-quality-field-list' }, ...optional.map(column => el('li', {},
+        el('strong', { text: column.label }), el('span', { text: columnStateLabel(column) })))));
+    absent.classList.add('analytics-quality-optional'); root.append(absent);
+  }
+  root.append(toolbar(command(ctx, 'Correspondances', () => ctx.navigate('mapping')),
+    command(ctx, 'Qualité du relevé', () => historical && onControls ? onControls() : ctx.navigate('quality'))));
+  return root;
 }
 
 function distribution(ctx, data, setting, selectBucket) {

@@ -14,8 +14,10 @@ if (string.IsNullOrWhiteSpace(browserPath))
     Console.Error.WriteLine("Définir GLPI_TEST_CHROMIUM vers un Chromium de test installé.");
     return 2;
 }
-string temporary = Path.Combine(Path.GetTempPath(), "GlpiPilot-AutomationChecks-" + Guid.NewGuid().ToString("N"));
+string temporary = Path.Combine(Path.GetTempPath(), "GLPI-Pilot-Checks-Automation-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(temporary);
+Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1");
+Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", temporary);
 // The downloaded fixture population and the visible sample describe the same
 // tickets. Adapter-only DOM fixtures use arbitrary IDs and remain unchanged.
 string fixture10 = (await Fixture("native-glpi10.html"))
@@ -93,6 +95,8 @@ try
 finally
 {
     Directory.Delete(temporary, recursive: true);
+    Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", null);
+    Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", null);
 }
 return failures == 0 ? 0 : 1;
 

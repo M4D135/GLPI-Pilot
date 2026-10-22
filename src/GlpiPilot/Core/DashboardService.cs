@@ -641,33 +641,47 @@ public static class DashboardService
             throw new InvalidOperationException("La matrice locale accepte des couples impact:urgence de 1 à 5 et une priorité de 1 à 6.");
     }
 
+    private static string WeatherSourceSuffix(DashboardSnapshot snapshot) => snapshot.Quality is
+        { ScopeStable: false } or { SampleIdentityVerified: false } or { FinalTotalVerified: false } ? " · périmètre à vérifier"
+        : snapshot.Complete || snapshot.ReceptionComplete ? "" : " · collecte non confirmée";
+
+    private static string WeatherSourceDescription(DashboardSnapshot snapshot) => snapshot.Complete ? ""
+        : snapshot.ReceptionComplete ? "Réception des lignes complète ; les contrôles du relevé restent à vérifier. "
+        : "La réception de toutes les lignes n’est pas confirmée. ";
+
     private static DashboardWeather Weather(DashboardSnapshot snapshot, int active, int unknown, List<DashboardSignal> signals, bool hasStatus, bool identityClean, DashboardWeatherSettings formula)
     {
         if (!hasStatus || snapshot.RowCount == 0 || active == 0 && unknown > 0)
             return new("unknown", "Météo indéterminée", "◌", null, 0, "Aucun ensemble d’actifs fiable à évaluer. Vérifiez les colonnes et le périmètre du relevé.", signals);
         if (active == 0)
-            return new(snapshot.Complete && unknown == 0 ? "sun" : "partial", snapshot.Complete && unknown == 0 ? "Aucun actif dans ce relevé" : "Aucun actif identifié · périmètre partiel", "☀", null, 0,
-                "Les statuts reconnus sont résolus ou clos. Cette météo concerne la recherche extraite uniquement.", signals);
+            return new(snapshot.Complete && unknown == 0 ? "sun" : "partial", "Aucun actif dans ce relevé" + WeatherSourceSuffix(snapshot), "☀", null, 0,
+                "Les statuts reconnus sont résolus ou clos. Cette météo concerne la recherche extraite uniquement. " + WeatherSourceDescription(snapshot), signals);
         var weight = signals.Sum(s => s.Weight);
-        if (weight == 0) return new("unknown", "Météo indéterminée", "◌", null, 0, "Les colonnes d’échéance, priorité, affectation ou dates manquent pour évaluer les actifs.", signals);
+        if (weight == 0) return new("unknown", "Météo indéterminée", "◌", null, 0,
+            "Aucun indicateur exploitable avec une pondération active. Vérifiez les correspondances, les valeurs renseignées et les pondérations de la météo. Les données indisponibles ne sont pas assimilées à zéro. " + WeatherSourceDescription(snapshot), signals);
         var score = signals.Sum(s => s.Weight * (100d * s.Count / s.Sample)) / weight;
         var signalsSufficient = identityClean && unknown == 0 && weight >= formula.TotalWeight * formula.MinimumWeightPercent / 100d
             && signals.All(s => s.Sample >= Math.Ceiling(active * formula.MinimumCoveragePercent / 100d));
         var sufficient = snapshot.Complete && signalsSufficient;
         var state = score >= formula.StormThreshold ? "storm" : score >= formula.RainThreshold ? "rain" : score >= formula.WatchThreshold ? "watch" : "sun";
         var title = state switch { "storm" => "Orage · vigilance forte", "rain" => "Pluie · points à traiter", "watch" => "Vigilance · situation à surveiller", _ => "Soleil · peu de signaux détectés" };
-        if (!sufficient)
-        {
-            title = snapshot.ReceptionComplete && signalsSufficient
-                ? title + " · relevé à vérifier"
-                : score < formula.WatchThreshold ? "Météo partielle · données à compléter" : title + " · données partielles";
-            if (score < formula.WatchThreshold) state = "partial";
-        }
+        if (!signalsSufficient)
+            title = score < formula.WatchThreshold ? "Météo des indicateurs disponibles" : title + " · indicateurs disponibles";
+        else title += WeatherSourceSuffix(snapshot);
+        if (!sufficient && score < formula.WatchThreshold) state = "partial";
+        var coverage = new List<string>();
+        if (weight < formula.TotalWeight * formula.MinimumWeightPercent / 100d)
+            coverage.Add($"Le poids des indicateurs disponibles reste inférieur au seuil de couverture de {formula.MinimumWeightPercent} %.");
+        if (signals.Any(s => s.Sample < Math.Ceiling(active * formula.MinimumCoveragePercent / 100d)))
+            coverage.Add($"Au moins un indicateur couvre moins de {formula.MinimumCoveragePercent} % des actifs.");
+        if (!identityClean) coverage.Add("Les identifiants absents ou répétés limitent la fiabilité du comptage.");
+        if (unknown > 0) coverage.Add($"{unknown:N0} statuts non reconnus restent exclus des actifs identifiés.");
         var symbol = state switch { "sun" => "☀", "watch" => "⛅", "rain" => "☂", "storm" => "ϟ", _ => "◌" };
         return new(state, title, symbol, score, weight,
             $"Indice indicatif {score:0.#}/100. Pondérations disponibles : {weight}/{formula.TotalWeight}. Formule locale v{formula.Version} ; seuils {formula.WatchThreshold:0.#}/{formula.RainThreshold:0.#}/{formula.StormThreshold:0.#}. " +
-            "Chaque signal utilise son propre échantillon renseigné. " +
-            (sufficient ? $"Les signaux disponibles couvrent au moins {formula.MinimumCoveragePercent} % des actifs chacun. " : "Les données ne permettent pas une lecture complète. ") +
+            "L’indice utilise seulement les indicateurs disponibles, chacun sur son échantillon renseigné. Les indicateurs indisponibles ne sont pas assimilés à zéro. " +
+            (signalsSufficient ? $"Les indicateurs disponibles couvrent au moins {formula.MinimumCoveragePercent} % des actifs chacun. " : string.Join(" ", coverage) + " ") +
+            WeatherSourceDescription(snapshot) +
             "Ce n’est ni une prévision, ni une mesure de capacité, ni un contrôle contractuel du SLA.", signals);
     }
 
@@ -736,8 +750,8 @@ public static class DashboardService
             var state = score >= settings.Weather.StormThreshold ? "storm" : score >= settings.Weather.RainThreshold ? "rain" : score >= settings.Weather.WatchThreshold ? "watch" : "sun";
             var complete = snapshot.Complete && signals.Count == keys.Length;
             if (!complete && state == "sun") state = "partial";
-            return new(state, title + (complete ? "" : " · partiel"), state switch { "storm" => "ϟ", "rain" => "☂", "watch" => "⛅", "sun" => "☀", _ => "◌" }, score, signals.Count,
-                $"Moyenne des {signals.Count} taux disponibles sur {keys.Length} signaux, pondérés également. Les données absentes restent exclues, pas assimilées à zéro. Seuils locaux {settings.Weather.WatchThreshold:G}/{settings.Weather.RainThreshold:G}/{settings.Weather.StormThreshold:G}. Indice descriptif du relevé.", signals);
+            return new(state, title + (signals.Count < keys.Length ? " · indicateurs disponibles" : WeatherSourceSuffix(snapshot)), state switch { "storm" => "ϟ", "rain" => "☂", "watch" => "⛅", "sun" => "☀", _ => "◌" }, score, signals.Count,
+                $"Moyenne des {signals.Count} taux disponibles sur {keys.Length} signaux, pondérés également. Les données absentes restent exclues, pas assimilées à zéro. Seuils locaux {settings.Weather.WatchThreshold:G}/{settings.Weather.RainThreshold:G}/{settings.Weather.StormThreshold:G}. Indice descriptif du relevé. " + WeatherSourceDescription(snapshot), signals);
         }
         snapshot.WeatherProfiles["deadlines"] = Profile("Météo des échéances", "overdue", "active-no-due");
         snapshot.WeatherProfiles["quality"] = Profile("Météo de qualité", "unknown-status", "missing-id", "invalid-dates", "inconsistent-dates");
@@ -759,8 +773,8 @@ public static class DashboardService
             var score = signals.Average(x => Math.Min(100, 100d * x.Count / x.Sample));
             var state = score >= settings.Weather.StormThreshold ? "storm" : score >= settings.Weather.RainThreshold ? "rain" : score >= settings.Weather.WatchThreshold ? "watch" : "sun";
             if (!snapshot.Complete && state == "sun") state = "partial";
-            snapshot.WeatherProfiles["workload"] = new(state, "Météo de la charge observée" + (snapshot.Complete ? "" : " · partielle"), state switch { "storm" => "ϟ", "rain" => "☂", "watch" => "⛅", "sun" => "☀", _ => "◌" }, score, 2,
-                "Moyenne des parts d’actifs sans technicien et présents dans une affectation supérieure à deux fois la médiane observée. Décrit une concentration ; ne mesure ni productivité, ni capacité, ni surcharge réelle. Les techniciens sans ticket dans ce relevé ne sont pas observés.", signals);
+            snapshot.WeatherProfiles["workload"] = new(state, "Météo de la charge observée" + WeatherSourceSuffix(snapshot), state switch { "storm" => "ϟ", "rain" => "☂", "watch" => "⛅", "sun" => "☀", _ => "◌" }, score, 2,
+                "Moyenne des parts d’actifs sans technicien et présents dans une affectation supérieure à deux fois la médiane observée. Décrit une concentration ; ne mesure ni productivité, ni capacité, ni surcharge réelle. Les techniciens sans ticket dans ce relevé ne sont pas observés. " + WeatherSourceDescription(snapshot), signals);
         }
     }
 
@@ -833,7 +847,7 @@ public static class DashboardService
                 point.Comparable && point.Complete && point.Value.HasValue ? point.Value.Value.ToString("G", CultureInfo.InvariantCulture) : "Non comparable",
                 series.Unit, point.Rows.ToString(), point.Note + " " + series.Explanation);
         }
-        foreach (var col in snapshot.Columns) Add("Correspondances", col.Label, col.Header, "", col.State, col.Index.HasValue ? "Colonne utilisée" : "Indisponible");
+        foreach (var col in snapshot.Columns) Add("Correspondances", col.Label, col.Header, "", col.StateLabel, col.Index.HasValue ? "Colonne utilisée" : "Indisponible");
         foreach (var warning in snapshot.Warnings) Add("Qualité et limites", "Avertissement", "", "", "", warning);
         return data;
     }

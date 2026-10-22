@@ -42,7 +42,8 @@ export function extractionStatus(session={}) {
  const receipt=expected!==null&&session.rows<expected?'Réception partielle':legacyComplete?'Relevé complet':!quality?'Réception non documentée':receptionComplete?'Réception complète':'Réception non confirmée';
  const concordance=quality?.representationVerified===true?'Concordance vérifiée sur l’échantillon':quality?.representationVerified===false?'Concordance à vérifier':'Contrôle de concordance indisponible';
  const identity=quality?.sampleIdentityVerified===true?'Identifiants rapprochés sur l’échantillon':quality?.sampleIdentityVerified===false?'Identifiants à vérifier':'Contrôle des identifiants indisponible';
- const label=legacyComplete?'Relevé complet · détail des contrôles indisponible':!receptionComplete?receipt:quality.representationVerified===false?'Réception complète · concordance à vérifier':quality.representationVerified!==true?'Réception complète · concordance indisponible':session.complete?'Réception complète':'Réception complète · contrôles à vérifier';
+ const attention=quality?.scopeStable===false?'La recherche a changé ou son contexte final n’a pas pu être confirmé.':quality?.sampleIdentityVerified===false?'Des identifiants de l’échantillon manquent dans le relevé.':quality?.finalTotalVerified===false?'Le total GLPI a changé pendant la collecte.':!receptionComplete?'Le nombre de lignes reçues ou la portée de la collecte reste à vérifier.':'';
+ const label=attention&&receptionComplete?'Collecte à vérifier':receipt;
  const details=[
   `Lignes chargées : ${formatNumber(session.rows)}.`,expected===null?'Total attendu indisponible.':`Total attendu : ${formatNumber(expected)}.`,
   ...(!quality?[legacyComplete?'Le relevé est complet ; le détail des contrôles de réception n’est pas disponible.':'Les observations de réception ne sont pas disponibles pour ce relevé.']:[
@@ -53,15 +54,19 @@ export function extractionStatus(session={}) {
   quality.finalTotalVerified==null?'Contrôle du total final indisponible.':quality.finalTotalVerified===false?'Total final à vérifier.':''
   ])
  ].filter(Boolean).join(' ');
- return{label,tone:legacyComplete?'info':receptionComplete&&session.complete&&quality.representationVerified===true&&quality.sampleIdentityVerified===true?'success':'warning',receipt,receptionComplete,concordance,identity,details};
+ return{label,tone:attention?'warning':legacyComplete?'info':'success',receipt,receptionComplete,concordance,identity,details,attention};
 }
-export function extractionNotice(session,onDetails) {
+export function extractionNotice(session,onDetails,{detailed=false}={}) {
  if(!session?.loaded||session.demo)return null;
  const status=extractionStatus(session);
+ if(!detailed)return el('section',{class:status.attention?'notice warning':'receipt-summary','aria-label':'Bilan de la collecte'},
+  toolbar(badge(status.receipt,status.receptionComplete?'success':'warning'),
+   status.attention?el('span',{text:status.attention}):null,onDetails?button('Qualité du relevé',onDetails):null));
  return el('section',{class:`notice ${status.tone==='warning'?'warning':''}`,'aria-label':'Réception et concordance du relevé'},icon('shield'),el('div',{},
   toolbar(badge(status.receipt,status.receptionComplete?'success':'warning'),badge(status.concordance,session.quality?.representationVerified===true?'':'warning'),onDetails?button('Détail des contrôles',onDetails):null),
   el('p',{class:'help',text:status.details}),el('p',{class:'help',text:status.identity}),
-  !session.complete?el('p',{class:'help',text:'Les réserves du relevé restent à vérifier. La réception des lignes ne valide pas les autres contrôles.'}):null));
+  status.attention?el('p',{class:'help',text:status.attention}):null,
+  !session.complete?el('p',{class:'help',text:'Les données sont disponibles. Les comparaisons historiques restent limitées aux relevés dont les contrôles concordent.'}):null));
 }
 export const input=(value='',options={})=>el(options.multiline?'textarea':'input',{type:'text',value:value??'',...options});
 export function select(options,value='') {return el('select',{},...options.map(option=>el('option',{value:typeof option==='object'?option.value:option,selected:String(typeof option==='object'?option.value:option)===String(value),text:typeof option==='object'?option.label:option})));}

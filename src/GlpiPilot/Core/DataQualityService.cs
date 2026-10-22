@@ -5,6 +5,7 @@ namespace GlpiPilot.Core;
 public sealed record ColumnQuality(string Header, string Role, int Present, int Empty, int Invalid, int Distinct,
     bool DistinctLimited, string Example, int Total)
 {
+    public string RoleLabel => DashboardService.Roles.FirstOrDefault(candidate => candidate.Key == Role)?.Label ?? "Champ libre";
     public string Coverage => Total == 0 ? "—" : $"{100.0 * Present / Total:F1} %";
     public string Diversity => DistinctLimited ? $"≥ {Distinct:N0}" : Distinct.ToString("N0");
 }
@@ -32,7 +33,7 @@ public static class DataQualityService
             Completeness = DescribeReception(data, dashboard.ReceptionComplete),
             Coverage = $"Couverture : {dashboard.Columns.Count(column => column.Index.HasValue)} / {dashboard.Columns.Count} rôles reconnus."
         };
-        report.UnavailableRoles.AddRange(dashboard.Columns.Where(column => !column.Index.HasValue).Select(column => column.Label + " : " + column.State));
+        report.UnavailableRoles.AddRange(dashboard.Columns.Where(column => !column.Index.HasValue).Select(column => column.Label + " : " + column.StateLabel));
         int Index(string role) => dashboard.Columns.FirstOrDefault(column => column.Role == role)?.Index ?? -1;
         string Cell(int row, int column) => column >= 0 && column < data.Rows[row].Length ? data.Rows[row][column] ?? "" : "";
         void Issue(string kind, string field, int row, string detail)

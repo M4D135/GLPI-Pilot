@@ -1,4 +1,4 @@
-GLPI Pilot 3.1.0 — protocole et preuves de vérification
+GLPI Pilot 3.1.1 — protocole et preuves de vérification
 Date : 22 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
@@ -11,7 +11,21 @@ https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 Une version déjà publiée pour un autre commit ne peut pas être remplacée.
 La présence des tests ou leur compilation ne constitue pas leur exécution.
 
-PERIMETRE DES VERIFICATIONS 3.1.0
+PERIMETRE DES VERIFICATIONS 3.1.1
+Les tests contrôlent le masquage automatique des widgets indisponibles,
+la visibilité des zéros valides, le retour en édition, la sauvegarde du choix,
+l’annulation et le transfert de la configuration. Les libellés de colonnes
+et la météo séparent les champs disponibles de la réception des lignes.
+Les avertissements de présentation sont consultables sans bandeau répété ;
+les contradictions de réception, de périmètre ou d’identité restent visibles.
+Le rapport local des cellules divergentes est borné, relisible et exportable.
+Ses valeurs ne transitent pas dans le journal général ni dans SessionState.
+Les tests utilisent des valeurs synthétiques et vérifient la liaison au bon
+relevé, les limites de lecture et le refus des chemins étrangers.
+Les résultats définitifs Windows sont ceux du workflow du commit livré :
+voir docs/RELEASE-3.1.1.md, sans assimiler les fixtures au portail privé.
+
+COUVERTURE CONSERVEE DE 3.1.0
 La refonte du shell couvre navigation dépliable/rail/tiroir, focus clavier,
 thèmes clair/sombre et réduction des animations. Les contrôles des tickets
 vérifient les identifiants entiers sur une ligne, la pagination, l’onglet actif

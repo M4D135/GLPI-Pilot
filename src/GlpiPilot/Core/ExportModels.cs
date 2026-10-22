@@ -29,6 +29,12 @@ public sealed class ExtractionQuality
     public bool? AllPagesRequested { get; set; }
     public bool? RowCountVerified { get; set; }
     public bool? FinalTotalVerified { get; set; }
+    public bool? ScopeStable { get; set; }
+    // The local report contains cell values. Archives carry its name/count only;
+    // ordinary diagnostics never include the report's contents.
+    public string DivergenceReportName { get; set; } = "";
+    public int DivergenceReportCount { get; set; }
+    public int DivergenceTotalCount { get; set; }
     public long UnusualControlCount { get; set; }
     public long C1ControlCount { get; set; }
     public ExtractionSampleObservation? InitialSample { get; set; }

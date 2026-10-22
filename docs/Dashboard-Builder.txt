@@ -1,4 +1,4 @@
-GLPI Pilot 3.1.0 — tableaux de bord WebView et atelier de requêtes
+GLPI Pilot 3.1.1 — tableaux de bord WebView et atelier de requêtes
 
 OUVRIR LE BON ESPACE
 La navigation Analyser contient Dashboard, Atelier de requêtes,
@@ -14,8 +14,8 @@ LIRE LE CONTEXTE AVANT LES CHIFFRES
 Le bandeau résume la disposition, la personne éventuelle, le nombre de lignes,
 la date du relevé et la complétude. Archive et Démonstration restent indiqués.
 Déplier ce bandeau affiche la provenance, la date du calcul, le total annoncé,
-les filtres communs et ceux des widgets. Déplier les réserves montre toutes
-les limites du calcul. Une source incomplète ne devient pas complète lorsque
+les filtres communs et ceux des widgets. Détails des contrôles donne accès
+aux observations du relevé. Une source incomplète ne devient pas complète lorsque
 le bandeau est replié.
 Voir les lignes du périmètre ouvre le détail paginé du calcul courant.
 Cliquer une cellule permet d’examiner sa valeur brute et son interprétation.
@@ -38,6 +38,19 @@ certifiée ; le nombre de lignes peut pourtant correspondre au total annoncé.
 Le contrôle final reste actif. Une alerte exigeant un relevé complet ne peut
 pas considérer cette réserve comme résolue. Le CSV natif et ses contrôles C1
 restent intacts ; aucune conversion de ponctuation n’est appliquée aux données.
+
+DISPONIBILITE DES WIDGETS ET DIAGNOSTIC 3.1.1
+Les widgets sans données calculables sont automatiquement masqués en lecture.
+Le mode Modifier le dashboard les réaffiche avec leur motif. Afficher les
+widgets indisponibles mémorise le choix par tableau. Un zéro calculé reste
+visible ; le masquage automatique ne supprime ni widget ni réglage.
+Le widget Qualité présente un résumé ; correspondances et champs absents
+sont repliés. Les champs facultatifs manquants ne font pas échouer l’import.
+Qualité du relevé permet de voir et d’exporter le diagnostic des cellules
+divergentes, enregistré à la prochaine collecte. Ce fichier local contient
+les valeurs comparées et les codes des caractères ; il n’est pas transmis.
+Le journal ordinaire et les archives de configuration n’incluent pas ce
+contenu. Le CSV original et les contrôles historiques restent inchangés.
 
 COMMANDES DU DASHBOARD
 La barre principale propose Modifier le dashboard, Filtres et comparaison

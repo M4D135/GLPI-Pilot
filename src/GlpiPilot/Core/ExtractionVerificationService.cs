@@ -59,7 +59,7 @@ public static class ExtractionVerificationService
     }
 
     public static NativeSampleVerification VerifyNativeSample(TableSnapshot visible, ExtractionResult downloaded,
-        DashboardSettings settings, CancellationToken ct = default)
+        DashboardSettings settings, CancellationToken ct = default, Action<NativeCellDivergence>? onDifference = null)
     {
         var shownRoles = DashboardService.ResolveColumns(visible.Headers, settings);
         var nativeRoles = DashboardService.ResolveColumns(downloaded.Headers, settings);
@@ -79,14 +79,15 @@ public static class ExtractionVerificationService
         if (sample.Count == 0) return new(false, false, 0, 0, "La liste affichée ne fournit aucun identifiant à rapprocher.");
         // Establish the identity first, even if non-ID headers later turn out to
         // be ambiguous. A header ambiguity must never hide a missing sample ID.
-        var found = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        foreach (var row in downloaded.Rows)
+        var found = new Dictionary<string, (string[] Cells, int Index)>(StringComparer.Ordinal);
+        for (var index = 0; index < downloaded.Rows.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
+            var row = downloaded.Rows[index];
             if (right < row.Length)
             {
                 var id = NormalizeId(row[right]);
-                if (sample.Contains(id)) found.TryAdd(id, row);
+                if (sample.Contains(id)) found.TryAdd(id, (row, index));
             }
             if (found.Count == sample.Count) break;
         }
@@ -118,14 +119,22 @@ public static class ExtractionVerificationService
             return new(false, false, sample.Count, 0, "Rapprochement des valeurs indisponible : plusieurs en-têtes se confondent après normalisation. Le diagnostic indique les positions concernées sans recopier les en-têtes.")
             { IdentityVerified = true, Diagnostics = new[] { "Colonnes liste ambiguës (positions à partir de 1) : " + string.Join(", ", ambiguous) + ". Aucun rapprochement par première occurrence." } };
         diagnostics.Add($"Colonnes hors ID : liste={visible.Headers.Count - 1} ; CSV={downloaded.Headers.Count - 1} ; associées sans ambiguïté={comparable.Count}. Positions à partir de 1 ; rôles standard uniquement, aucun en-tête ni contenu recopié.");
-        foreach (var (id, row) in found)
+        foreach (var (id, nativeRow) in found)
         {
             ct.ThrowIfCancellationRequested();
+            var row = nativeRow.Cells;
             var shownRow = shownRows[id];
             foreach (var pair in comparable)
             {
                 if (pair.Left >= shownRow.Cells.Length || pair.Right >= row.Length)
-                { pair.Compared++; pair.Changed++; pair.MissingCells++; continue; }
+                {
+                    pair.Compared++; pair.Changed++; pair.MissingCells++;
+                    onDifference?.Invoke(new(id, shownRow.Index, nativeRow.Index, pair.Left, pair.Right,
+                        visible.Headers[pair.Left], downloaded.Headers[pair.Right], pair.Role,
+                        pair.Left < shownRow.Cells.Length ? shownRow.Cells[pair.Left] : "", pair.Right < row.Length ? row[pair.Right] : "",
+                        "missing-cell", pair.Left >= shownRow.Cells.Length, pair.Right >= row.Length));
+                    continue;
+                }
                 var shown = ComparableText(shownRow.Cells[pair.Left]); var received = ComparableText(row[pair.Right]);
                 if (shown == received) { pair.Compared++; continue; }
                 var controls = HasC1(shown) || HasC1(received);
@@ -151,6 +160,10 @@ public static class ExtractionVerificationService
                 else if (shown.Length == 0 || received.Length == 0) pair.Empty++;
                 else if (dates) pair.Dates++;
                 else pair.Other++;
+                onDifference?.Invoke(new(id, shownRow.Index, nativeRow.Index, pair.Left, pair.Right,
+                    visible.Headers[pair.Left], downloaded.Headers[pair.Right], pair.Role,
+                    shownRow.Cells[pair.Left], row[pair.Right], controls ? "controls"
+                        : shown.Length == 0 || received.Length == 0 ? "empty" : dates ? "date" : "other"));
             }
         }
         var comparedCells = comparable.Sum(column => column.Compared);
