@@ -286,26 +286,58 @@ internal sealed class WindowsUpdateFixture
     }
     private void StopOwnedProcesses()
     {
-        // Kill the helper first so it cannot start a child while cleanup runs.
-        foreach (var process in _started.AsEnumerable().Reverse())
-            if (!process.HasExited) { process.Kill(entireProcessTree: true); Require(process.WaitForExit(5000), "A directly started fixture process did not stop."); }
-        for (var round = 0; round < 3; round++)
+        var watch = Stopwatch.StartNew();
+        var owned = new Dictionary<int, (Process Process, bool Application)>();
+        int Remaining(int maximum) => (int)Math.Clamp(40000 - watch.ElapsedMilliseconds, 0, maximum);
+        void CaptureOwned()
         {
-            var stopped = 0;
             foreach (var name in new[] { "GLPI-Pilot", "msedgewebview2", "node", "notification_helper", "platform_experiences_helper" })
                 foreach (var process in Process.GetProcessesByName(name))
-                    using (process)
+                {
+                    var retained = false;
+                    try
                     {
-                        try
-                        {
-                            if (process.HasExited || !IsOwned(process)) continue;
-                            process.Kill(entireProcessTree: true); Require(process.WaitForExit(5000), "An owned fixture child did not stop."); stopped++;
-                        }
-                        catch (InvalidOperationException) { }
+                        if (!IsOwned(process) || process.HasExited || owned.ContainsKey(process.Id)) continue;
+                        // Retain the process handle before stopping its host: MainModule
+                        // can become inaccessible while a descendant is still exiting.
+                        _ = process.Handle;
+                        owned.Add(process.Id, (process, name == "GLPI-Pilot")); retained = true;
                     }
-            if (stopped == 0) return;
+                    catch (InvalidOperationException) { }
+                    finally { if (!retained) process.Dispose(); }
+                }
         }
-        throw new IOException("Fixture processes remained after three cleanup passes.");
+        void Stop(Process process, bool closeWindow)
+        {
+            if (process.HasExited) return;
+            if (closeWindow)
+            {
+                var requested = false;
+                try { process.Refresh(); requested = process.CloseMainWindow(); }
+                catch (InvalidOperationException) when (process.HasExited) { return; }
+                if (requested && process.WaitForExit(Remaining(25000))) return;
+            }
+            else if (process.WaitForExit(Remaining(5000))) return;
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) when (process.HasExited) { return; }
+            Require(process.WaitForExit(Remaining(5000)), "An owned fixture process did not stop within the cleanup deadline.");
+        }
+        try
+        {
+            CaptureOwned();
+            // Stop a directly started helper first so it cannot launch another app.
+            // A visible app gets its normal close path, which disposes its WebView.
+            foreach (var process in _started.AsEnumerable().Reverse()) Stop(process, closeWindow: true);
+            while (true)
+            {
+                CaptureOwned();
+                var pending = owned.Values.Where(item => !item.Process.HasExited).OrderByDescending(item => item.Application).ToArray();
+                if (pending.Length == 0) return;
+                Require(watch.Elapsed < TimeSpan.FromSeconds(40), "Fixture processes remained after the cleanup deadline.");
+                foreach (var item in pending) Stop(item.Process, item.Application);
+            }
+        }
+        finally { foreach (var item in owned.Values) item.Process.Dispose(); }
     }
 
     private void CleanupCompletedPlans()
@@ -342,17 +374,37 @@ internal sealed class WindowsUpdateFixture
     }
     private void DeleteOwnedDirectory(string root)
     {
+        Require(_createdSandbox && (root == _sandbox || UpdateService.Within(root, _sandbox)), "Cleanup escaped its owned temporary root.");
         UpdateService.EnsureNoLinks(root);
         var marker = Path.Combine(root, "fixture-owner.txt");
         Require(File.Exists(marker) && new FileInfo(marker).Length == _owner.Length && File.ReadAllText(marker) == _owner, "Cleanup ownership marker was changed; the directory was left intact.");
-        var pending = new Stack<string>(); pending.Push(root);
-        while (pending.Count > 0)
-            foreach (var path in Directory.EnumerateFileSystemEntries(pending.Pop()))
+        // Recursive deletion may remove the marker before encountering a locked
+        // runtime DLL. Keep this validated ownership proof for this bounded call.
+        var watch = Stopwatch.StartNew(); var retried = false;
+        while (true)
+        {
+            UpdateService.EnsureNoLinks(root);
+            if (!Directory.Exists(root)) return;
+            var pending = new Stack<string>(); pending.Push(root);
+            while (pending.Count > 0)
+                foreach (var path in Directory.EnumerateFileSystemEntries(pending.Pop()))
+                {
+                    var attributes = File.GetAttributes(path); Require((attributes & FileAttributes.ReparsePoint) == 0, "An unexpected link prevents recursive fixture cleanup.");
+                    if ((attributes & FileAttributes.Directory) != 0) pending.Push(path);
+                }
+            try
             {
-                var attributes = File.GetAttributes(path); Require((attributes & FileAttributes.ReparsePoint) == 0, "An unexpected link prevents recursive fixture cleanup.");
-                if ((attributes & FileAttributes.Directory) != 0) pending.Push(path);
+                Directory.Delete(root, true);
+                if (retried) Log("CLEANUP: owned runtime files released after " + watch.ElapsedMilliseconds + " ms.");
+                return;
             }
-        Directory.Delete(root, true);
+            catch (Exception error) when (OperatingSystem.IsWindows() && (error is IOException or UnauthorizedAccessException)
+                && (error.HResult & 0xffff) is 5 or 32 or 33 && watch.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                if (!retried) Log("CLEANUP: waiting up to 10 seconds for owned runtime files to be released (Windows " + (error.HResult & 0xffff) + ").");
+                retried = true; Thread.Sleep((int)Math.Min(100, Math.Max(1, 10000 - watch.ElapsedMilliseconds)));
+            }
+        }
     }
     private void Pass(string message) { _passed++; Log("PASS: " + message); }
     private void Log(string message) { _messages.Add(message); Console.WriteLine(message); }
