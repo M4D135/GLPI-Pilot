@@ -349,11 +349,31 @@ async Task WrongIdentity()
 {
     await using (var session = await Setup(modern.Replace("name=\"id\" type=\"hidden\" value=\"42\"", "name=\"id\" type=\"hidden\" value=\"99\"", StringComparison.Ordinal)))
         await Reject(async () => await Read(session), "identifiant");
+    var interceptedIds = new ConcurrentQueue<string>();
     await using (var session = await Setup(modern, async (route, uri) =>
     {
-        if (uri.AbsolutePath.EndsWith("ticket.form.php", StringComparison.Ordinal) && uri.Query == "?id=42") { await route.FulfillAsync(new() { Status = 302, Headers = new Dictionary<string, string> { ["location"] = "/glpi/front/ticket.form.php?id=99" } }); return true; }
-        return false;
-    })) await Reject(async () => await Read(session), "autre fiche");
+        if (!uri.AbsolutePath.EndsWith("ticket.form.php", StringComparison.Ordinal)) return false;
+        var id = TicketReferenceResolver.ParseQuery(uri).Single(pair => pair.Key == "id").Value;
+        interceptedIds.Enqueue(id);
+        // Playwright does not route an intercepted HTTP redirect's destination again.
+        // A client navigation keeps both fixture requests intercepted, even offline.
+        if (id == "42")
+            await route.FulfillAsync(new() { ContentType = "text/html", Body = "<!doctype html><script>location.replace('/glpi/front/ticket.form.php?id=99')</script>" });
+        else if (id == "99")
+            await route.FulfillAsync(new() { ContentType = "text/html", Body = modern.Replace("42", "99", StringComparison.Ordinal) });
+        else return false;
+        return true;
+    }))
+    {
+        await session.Context.SetOfflineAsync(true);
+        var searchBefore = await session.Search.ContentAsync();
+        await Reject(async () => await Read(session), "autre fiche");
+        Require(interceptedIds.SequenceEqual(new[] { "42", "99" }), "La destination de redirection n’a pas été servie par les fixtures.");
+        var detail = session.Service.TicketPage;
+        Require(detail is { IsClosed: false } && detail.Url == detailUrl.Replace("id=42", "id=99", StringComparison.Ordinal), "La redirection n’a pas atteint la fiche attendue.");
+        Require(await detail!.Locator("input[name='id']").InputValueAsync() == "99", "La fiche cible synthétique n’a pas été chargée.");
+        Require(session.Search.Url == listUrl && await session.Search.ContentAsync() == searchBefore && ReferenceEquals(session.Service.ActivePage, session.Search), "Le refus d’identité a modifié la recherche.");
+    }
 }
 
 async Task UnsafeReference()
