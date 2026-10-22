@@ -79,8 +79,10 @@ public static class DashboardService
             SourceUrl = data.SourceUrl, Scope = selectedRows is null ? data.Scope : data.Scope + " · " + scopeLabel, Columns = columns,
             IsFiltered = selectedRows is not null, ScopeLabel = scopeLabel,
             SourceRowCount = data.Rows.Count, SourceExpectedTotal = data.ExpectedTotal,
+            ScopeRows = selectedRows ?? Enumerable.Range(0, data.Rows.Count).ToArray(),
             Warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToList()
         };
+        result.RecalculateScope = (rows, label, cancellation) => CalculateSubset(data, settings, rows, label, now, cancellation);
         if (!result.Complete) result.Warnings.Add("Périmètre incomplet ou non confirmé : les statistiques décrivent uniquement les lignes récupérées.");
         if (data.ExpectedTotal.HasValue && data.ExpectedTotal != data.Rows.Count)
             result.Warnings.Add($"Total annoncé {data.ExpectedTotal:N0} ; lignes récupérées {data.Rows.Count:N0}.");
@@ -251,16 +253,17 @@ public static class DashboardService
         }
         var signals = new List<DashboardSignal>();
         void Signal(string label, List<Record> affected, List<Record> sample, int weight, string explanation)
-        { if (activeKnown && sample.Count > 0) signals.Add(new(label, affected.Count, sample.Count, active.Count, weight, Rows(affected), explanation)); }
-        if (Has("due")) Signal("Échéance dépassée", overdue, dueActive, 35, "Sur les actifs ayant une échéance lisible ; comparaison calendaire uniquement.");
-        if (Has("priority")) Signal("Priorité haute à majeure", high, prioritySample, 25, "Sur les actifs dont la priorité est reconnue.");
-        if (Has("assignee") && Has("group")) Signal("Sans affectation", unassigned, active, 15, "Technicien et groupe tous deux absents.");
-        if (Has("updated")) Signal($"Sans modification ≥ {settings.StaleDays} j", stale, updatedActive, 15, "Sur les actifs avec une date de dernière modification lisible.");
-        if (Has("created")) Signal($"Âge ≥ {settings.OldDays} j", old, datedActive, 10, "Sur les actifs avec une date d’ouverture lisible.");
-        result.Weather = Weather(result, active.Count, unknown, signals, Has("status"), duplicateRows.Count == 0 && (!Has("id") || missingIds.Count == 0));
+        { if (activeKnown && sample.Count > 0 && weight > 0) signals.Add(new(label, affected.Count, sample.Count, active.Count, weight, Rows(affected), explanation)); }
+        if (Has("due")) Signal("Échéance dépassée", overdue, dueActive, settings.Weather.OverdueWeight, "Sur les actifs ayant une échéance lisible ; comparaison calendaire uniquement.");
+        if (Has("priority")) Signal("Priorité haute à majeure", high, prioritySample, settings.Weather.PriorityWeight, "Sur les actifs dont la priorité est reconnue.");
+        if (Has("assignee") && Has("group")) Signal("Sans affectation", unassigned, active, settings.Weather.AssignmentWeight, "Technicien et groupe tous deux absents.");
+        if (Has("updated")) Signal($"Sans modification ≥ {settings.StaleDays} j", stale, updatedActive, settings.Weather.StaleWeight, "Sur les actifs avec une date de dernière modification lisible.");
+        if (Has("created")) Signal($"Âge ≥ {settings.OldDays} j", old, datedActive, settings.Weather.OldWeight, "Sur les actifs avec une date d’ouverture lisible.");
+        result.Weather = Weather(result, active.Count, unknown, signals, Has("status"), duplicateRows.Count == 0 && (!Has("id") || missingIds.Count == 0), settings.Weather);
         var overdueSet = Rows(overdue).ToHashSet(); var highSet = Rows(high).ToHashSet(); var unassignedSet = unassignedAvailable ? Rows(unassigned).ToHashSet() : new HashSet<int>();
         var staleSet = Rows(stale).ToHashSet(); var oldSet = Rows(old).ToHashSet();
         AddAdvancedProbes();
+        AddAnalysisSeries();
         foreach (var r in active.OrderByDescending(x => overdueSet.Contains(x.Index)).ThenByDescending(x => x.Priority ?? 0).ThenBy(x => x.Created ?? DateTime.MaxValue))
         {
             if (result.Attention.Count == 50) break;
@@ -275,6 +278,71 @@ public static class DashboardService
         }
         ct.ThrowIfCancellationRequested();
         return result;
+
+        void AddAnalysisSeries()
+        {
+            foreach (var (role, selector) in new (string, Func<Record, DateTime?>)[]
+                { ("created", x => x.Created), ("updated", x => x.Updated), ("resolved", x => x.Resolved), ("closed", x => x.Closed), ("due", x => x.Due) })
+                if (Has(role)) result.DateValues[role] = records.Where(x => selector(x).HasValue).Select(x => new DashboardDateValue(x.Index, selector(x)!.Value)).ToArray();
+            result.NumericSeries.Add(new("age", "Âge des actifs", "j", datedActive.Select(x => new DashboardNumericValue(x.Index, (wallNow - x.Created!.Value).TotalDays, x.Title)).ToArray(), "Jours calendaires depuis l’ouverture, parmi les actifs ayant une date exploitable."));
+            result.NumericSeries.Add(new("inactivity", "Dernière modification des actifs", "j", updatedActive.Select(x => new DashboardNumericValue(x.Index, (wallNow - x.Updated!.Value).TotalDays, x.Title)).ToArray(), "Ancienneté d’une modification visible, sans déduction du travail accompli."));
+            result.NumericSeries.Add(new("resolution", "Ouverture → résolution", "h", resolution.Select(x => new DashboardNumericValue(x.Index, (x.Resolved!.Value - x.Created!.Value).TotalHours, x.Title)).ToArray(), "Durée calendaire des paires de dates valides ; ni temps de travail ni conformité SLA."));
+            result.NumericSeries.Add(new("overdue-delay", "Retard des échéances", "h", overdue.Select(x => new DashboardNumericValue(x.Index, (wallNow - x.Due!.Value).TotalHours, x.Title)).ToArray(), "Heures calendaires après l’échéance visible, parmi les actifs en retard."));
+            var assignmentNote = settings.AssignmentCountingMode switch
+            {
+                "fractional" => "Chaque ticket est réparti à parts égales entre ses techniciens explicitement renseignés.",
+                "cell" => "Chaque cellule d’affectation complète forme une seule catégorie.",
+                _ => "Chaque technicien explicitement renseigné reçoit une participation ; la somme peut dépasser le nombre de tickets distincts."
+            };
+            void Matrix(string key, string title, string rowRole, string colRole, bool activeOnly = false)
+            {
+                var available = Has(rowRole) && Has(colRole) && (!activeOnly || activeKnown);
+                var cells = new Dictionary<(string Row, string Col), (double Value, List<int> Rows)>();
+                foreach (var record in available ? activeOnly ? active : records : Enumerable.Empty<Record>())
+                {
+                    if ((cells.Count & 255) == 0) ct.ThrowIfCancellationRequested();
+                    string Label(string role) => role switch { "status" => StatusLabel(record.Status), "urgency" or "impact" => SeverityLabel(Severity(Cell(data.Rows[record.Index], role)), role == "impact"), _ => IsMissing(Cell(data.Rows[record.Index], role)) ? "Non renseigné" : Cell(data.Rows[record.Index], role) };
+                    var raw = Label(rowRole);
+                    var names = rowRole == "assignee" && settings.AssignmentCountingMode != "cell" ? SplitTechnicianNames(raw) : new[] { raw };
+                    if (names.Count == 0) names = new[] { "Non renseigné" };
+                    var share = rowRole == "assignee" && settings.AssignmentCountingMode == "fractional" ? 1d / names.Count : 1d;
+                    foreach (var name in names)
+                    {
+                        var cellKey = (name, Label(colRole));
+                        if (!cells.TryGetValue(cellKey, out var item)) item = (0, new());
+                        item.Value += share; item.Rows.Add(record.Index); cells[cellKey] = item;
+                    }
+                }
+                result.Matrices.Add(new(key, title, available, rowRole == "assignee" && settings.AssignmentCountingMode == "fractional" ? "parts" : "occurrences",
+                    cells.OrderByDescending(x => x.Value.Value).ThenBy(x => x.Key.Row).ThenBy(x => x.Key.Col).Select(x => new DashboardMatrixCell(x.Key.Row, x.Key.Col, x.Value.Value, x.Value.Rows.ToArray())).ToArray(),
+                    (activeOnly ? "Actifs reconnus. " : "Lignes du périmètre. ") + (rowRole == "assignee" ? assignmentNote : "Les valeurs non reconnues restent visibles.")));
+            }
+            Matrix("technician-city", "Techniciens × villes", "assignee", "city", true);
+            Matrix("city-status", "Villes × statuts", "city", "status");
+            Matrix("category-status", "Catégories × statuts", "category", "status");
+            Matrix("urgency-impact", "Urgence × impact", "urgency", "impact");
+            foreach (var series in result.NumericSeries.Where(x => x.Key is "age" or "resolution"))
+                foreach (var role in new[] { "city", "assignee", "category" })
+                {
+                    var boxes = Has(role) ? series.Values.GroupBy(x => IsMissing(Cell(data.Rows[x.Row], role)) ? "Non renseigné" : Cell(data.Rows[x.Row], role))
+                        .Select(group => { var values = group.Select(x => x.Value).Order().ToArray(); return new DashboardBox(group.Key, values.Length, values[0], Percentile(values, .25)!.Value, Percentile(values, .5)!.Value, Percentile(values, .75)!.Value, values[^1], Percentile(values, .9)!.Value, group.Select(x => x.Row).ToArray()); })
+                        .OrderByDescending(x => x.Median).ThenBy(x => x.Label).ToArray() : Array.Empty<DashboardBox>();
+                    result.BoxSeries.Add(new(series.Key + "-" + role, series.Title + " par " + Roles.Single(x => x.Key == role).Label.ToLowerInvariant(), Has(role), series.Unit, boxes,
+                        series.Explanation + " Quartiles et percentiles par interpolation linéaire ; effectifs affichés. Affectation complète conservée."));
+                }
+            result.Scatters.Add(new("age-deadline", "Âge et échéance des actifs", "Âge · jours", "Avant échéance · heures",
+                active.Where(x => x.Created.HasValue && x.Due.HasValue).Select(x => new DashboardScatterPoint(x.Index, "#" + x.Id + " · " + x.Title,
+                    (wallNow - x.Created!.Value).TotalDays, (x.Due!.Value - wallNow).TotalHours)).ToArray(), "Chaque point est une ligne du relevé. Une ordonnée négative signale une échéance calendaire dépassée."));
+            if (settings.PriorityRules.Count > 0 && Has("priority") && Has("urgency") && Has("impact"))
+            {
+                var valid = records.Where(x => x.Priority.HasValue && Severity(Cell(data.Rows[x.Index], "impact")) is int impact
+                    && Severity(Cell(data.Rows[x.Index], "urgency")) is int urgency && settings.PriorityRules.ContainsKey(impact + ":" + urgency)).ToList();
+                var mismatch = valid.Where(x => settings.PriorityRules[Severity(Cell(data.Rows[x.Index], "impact")) + ":" + Severity(Cell(data.Rows[x.Index], "urgency"))] != x.Priority).ToArray();
+                Count("priority-rule-mismatch", "Écarts à la matrice de priorité locale", mismatch, true, "Comparaison avec les règles configurées localement ; aucune règle GLPI n’est présumée.", valid.Count, "warning");
+            }
+            else Number("priority-rule-mismatch", "Écarts à la matrice de priorité locale", null, "lignes", "Renseignez les règles locales et les colonnes urgence, impact et priorité pour activer cette comparaison.", 0, Array.Empty<int>());
+            RefreshWeatherProfiles(result, settings);
+        }
 
         void AddDurations(string key, string title, double[] values, List<Record> sample, string unit, string explanation)
         {
@@ -514,9 +582,15 @@ public static class DashboardService
             throw new InvalidOperationException("Tableau de bord : format de dates non reconnu.");
         if (settings.ColumnMappings == null || settings.ColumnMappings.Any(x => !Roles.Any(r => string.Equals(r.Key, x.Key, StringComparison.OrdinalIgnoreCase)) || (x.Value?.Length ?? 0) > 512))
             throw new InvalidOperationException("Tableau de bord : correspondances de colonnes invalides.");
+        if (settings.Weather is null) throw new InvalidOperationException("La configuration météo est absente.");
+        settings.Weather.Validate();
+        if (settings.AssignmentCountingMode is not ("participation" or "fractional" or "cell"))
+            throw new InvalidOperationException("Le mode de comptage des affectations est invalide.");
+        if (settings.PriorityRules is null || settings.PriorityRules.Count > 25 || settings.PriorityRules.Any(x => !Regex.IsMatch(x.Key, "^[1-5]:[1-5]$") || x.Value is < 1 or > 6))
+            throw new InvalidOperationException("La matrice locale accepte des couples impact:urgence de 1 à 5 et une priorité de 1 à 6.");
     }
 
-    private static DashboardWeather Weather(DashboardSnapshot snapshot, int active, int unknown, List<DashboardSignal> signals, bool hasStatus, bool identityClean)
+    private static DashboardWeather Weather(DashboardSnapshot snapshot, int active, int unknown, List<DashboardSignal> signals, bool hasStatus, bool identityClean, DashboardWeatherSettings formula)
     {
         if (!hasStatus || snapshot.RowCount == 0 || active == 0 && unknown > 0)
             return new("unknown", "Météo indéterminée", "◌", null, 0, "Aucun ensemble d’actifs fiable à évaluer. Vérifiez les colonnes et le périmètre du relevé.", signals);
@@ -526,25 +600,103 @@ public static class DashboardService
         var weight = signals.Sum(s => s.Weight);
         if (weight == 0) return new("unknown", "Météo indéterminée", "◌", null, 0, "Les colonnes d’échéance, priorité, affectation ou dates manquent pour évaluer les actifs.", signals);
         var score = signals.Sum(s => s.Weight * (100d * s.Count / s.Sample)) / weight;
-        var sufficient = snapshot.Complete && identityClean && unknown == 0 && weight >= 60
-            && signals.All(s => s.Sample >= Math.Ceiling(active * .8));
-        var state = score >= 45 ? "storm" : score >= 25 ? "rain" : score >= 10 ? "watch" : "sun";
+        var sufficient = snapshot.Complete && identityClean && unknown == 0 && weight >= formula.TotalWeight * formula.MinimumWeightPercent / 100d
+            && signals.All(s => s.Sample >= Math.Ceiling(active * formula.MinimumCoveragePercent / 100d));
+        var state = score >= formula.StormThreshold ? "storm" : score >= formula.RainThreshold ? "rain" : score >= formula.WatchThreshold ? "watch" : "sun";
         var title = state switch { "storm" => "Orage · vigilance forte", "rain" => "Pluie · points à traiter", "watch" => "Vigilance · situation à surveiller", _ => "Soleil · peu de signaux détectés" };
         if (!sufficient)
         {
-            title = score < 10 ? "Météo partielle · données à compléter" : title + " · données partielles";
-            if (score < 10) state = "partial";
+            title = score < formula.WatchThreshold ? "Météo partielle · données à compléter" : title + " · données partielles";
+            if (score < formula.WatchThreshold) state = "partial";
         }
         var symbol = state switch { "sun" => "☀", "watch" => "⛅", "rain" => "☂", "storm" => "ϟ", _ => "◌" };
         return new(state, title, symbol, score, weight,
-            $"Indice indicatif {score:0.#}/100. Pondérations disponibles : {weight}/100. " +
+            $"Indice indicatif {score:0.#}/100. Pondérations disponibles : {weight}/{formula.TotalWeight}. Formule locale v{formula.Version} ; seuils {formula.WatchThreshold:0.#}/{formula.RainThreshold:0.#}/{formula.StormThreshold:0.#}. " +
             "Chaque signal utilise son propre échantillon renseigné. " +
-            (sufficient ? "Les signaux disponibles couvrent au moins 80 % des actifs chacun. " : "Les données ne permettent pas une lecture complète. ") +
+            (sufficient ? $"Les signaux disponibles couvrent au moins {formula.MinimumCoveragePercent} % des actifs chacun. " : "Les données ne permettent pas une lecture complète. ") +
             "Ce n’est ni une prévision, ni une mesure de capacité, ni un contrôle contractuel du SLA.", signals);
     }
 
+    public static int[] ResolveScope(DashboardSnapshot snapshot, IReadOnlyList<DashboardScopeFilter> filters, CancellationToken ct = default)
+    {
+        DashboardScopeFilter.ValidateList(filters);
+        var available = snapshot.ScopeRows.Length == snapshot.RowCount ? snapshot.ScopeRows : snapshot.Metric("total")?.Rows ?? Array.Empty<int>();
+        var scope = available.ToHashSet();
+        foreach (var filter in filters)
+        {
+            ct.ThrowIfCancellationRequested();
+            int[] rows;
+            if (filter.Kind == "metric")
+            {
+                var metric = snapshot.Metric(filter.SourceKey);
+                if (metric?.Value is null) throw new System.IO.InvalidDataException("Filtre indisponible : " + filter.SourceKey + ". Vérifiez les colonnes nécessaires ou retirez ce filtre.");
+                rows = metric.Rows;
+            }
+            else if (filter.Kind == "date")
+            {
+                if (!snapshot.DateValues.TryGetValue(filter.SourceKey, out var values))
+                    throw new System.IO.InvalidDataException("Le champ de date du filtre est absent : " + filter.SourceKey);
+                var start = DateTime.ParseExact(filter.Value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                var end = DateTime.ParseExact(filter.Value2, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                rows = values.Where(x => x.Date.Date >= start && x.Date.Date <= end).Select(x => x.Row).ToArray();
+                // Missing dates stay unknown even when an interval is excluded.
+                if (filter.Exclude) scope.IntersectWith(values.Select(x => x.Row));
+            }
+            else
+            {
+                var distribution = snapshot.Distributions.FirstOrDefault(x => x.Key == filter.SourceKey);
+                if (distribution?.Available != true) throw new System.IO.InvalidDataException("Répartition du filtre indisponible : " + filter.SourceKey);
+                rows = distribution.Buckets.Where(x => string.Equals(x.Label, filter.Value, StringComparison.OrdinalIgnoreCase)).SelectMany(x => x.Rows).Distinct().ToArray();
+            }
+            if (filter.Exclude) scope.ExceptWith(rows); else scope.IntersectWith(rows);
+        }
+        return scope.Order().ToArray();
+    }
+
+    public static DashboardDistribution Histogram(DashboardNumericSeries series, IReadOnlyList<double> edges)
+    {
+        if (edges.Count > 30 || edges.Any(x => !double.IsFinite(x))) throw new ArgumentException("Tranches invalides.", nameof(edges));
+        var boundaries = edges.Distinct().Order().ToArray();
+        var values = series.Values.Where(x => double.IsFinite(x.Value)).ToArray();
+        var grouped = values.GroupBy(x => Array.FindIndex(boundaries, edge => x.Value < edge) is var index && index >= 0 ? index : boundaries.Length).ToDictionary(x => x.Key, x => x.ToArray());
+        var buckets = new List<DashboardBucket>();
+        for (var index = 0; index <= boundaries.Length; index++)
+        {
+            var items = grouped.GetValueOrDefault(index) ?? Array.Empty<DashboardNumericValue>();
+            var label = boundaries.Length == 0 ? "Toutes les valeurs" : index == 0 ? $"< {boundaries[0]:G} {series.Unit}"
+                : index == boundaries.Length ? $"≥ {boundaries[^1]:G} {series.Unit}" : $"[{boundaries[index - 1]:G} ; {boundaries[index]:G}[ {series.Unit}";
+            buckets.Add(new(label, items.Length, items.Select(x => x.Row).ToArray()));
+        }
+        return new("histogram:" + series.Key, series.Title, true, values.Length, series.Explanation + " Tranches définies dans le widget ; les valeurs manquantes ou non finies sont exclues.", buckets);
+    }
+
+    public static void RefreshWeatherProfiles(DashboardSnapshot snapshot, DashboardSettings settings)
+    {
+        snapshot.WeatherProfiles["overall"] = snapshot.Weather;
+        DashboardWeather Profile(string title, params string[] keys)
+        {
+            var signals = keys.Select(key => snapshot.Metric(key)).Where(metric => metric?.Value is not null && (metric.Sample ?? snapshot.RowCount) > 0).Select(metric =>
+                new DashboardSignal(metric!.Label, (int)Math.Clamp(metric.Value!.Value, 0, int.MaxValue), metric.Sample ?? snapshot.RowCount, snapshot.RowCount, 1, metric.Rows, metric.Explanation)).ToList();
+            if (signals.Count == 0) return new("unknown", title + " · indisponible", "◌", null, 0, "Aucun échantillon exploitable pour ce profil.", signals);
+            var score = signals.Average(x => Math.Min(100, 100d * x.Count / x.Sample));
+            var state = score >= settings.Weather.StormThreshold ? "storm" : score >= settings.Weather.RainThreshold ? "rain" : score >= settings.Weather.WatchThreshold ? "watch" : "sun";
+            var complete = snapshot.Complete && signals.Count == keys.Length;
+            if (!complete && state == "sun") state = "partial";
+            return new(state, title + (complete ? "" : " · partiel"), state switch { "storm" => "ϟ", "rain" => "☂", "watch" => "⛅", "sun" => "☀", _ => "◌" }, score, signals.Count,
+                $"Moyenne des {signals.Count} taux disponibles sur {keys.Length} signaux, pondérés également. Les données absentes restent exclues, pas assimilées à zéro. Seuils locaux {settings.Weather.WatchThreshold:G}/{settings.Weather.RainThreshold:G}/{settings.Weather.StormThreshold:G}. Indice descriptif du relevé.", signals);
+        }
+        snapshot.WeatherProfiles["deadlines"] = Profile("Météo des échéances", "overdue", "active-no-due");
+        snapshot.WeatherProfiles["quality"] = Profile("Météo de qualité", "unknown-status", "missing-id", "invalid-dates", "inconsistent-dates");
+        snapshot.WeatherProfiles["geography"] = Profile("Météo des lieux", "city-unmatched", "city-ambiguous", "city-no-title");
+    }
+
     public static long EstimatedExportRows(DashboardSnapshot snapshot) => 4L + (snapshot.IsFiltered ? 2 : 0) + snapshot.Weather.Signals.Count + snapshot.Metrics.Count
-        + snapshot.Distributions.Sum(x => (long)x.Buckets.Count + (x.Available ? 0 : 1)) + 3L * snapshot.Timeline.Count + snapshot.Columns.Count + snapshot.Warnings.Count;
+        + snapshot.Distributions.Sum(x => (long)x.Buckets.Count + (x.Available ? 0 : 1)) + 3L * snapshot.Timeline.Count + snapshot.Columns.Count + snapshot.Warnings.Count
+        + snapshot.WeatherProfiles.Where(x => x.Key != "overall").Sum(x => 1L + x.Value.Signals.Count)
+        + snapshot.Matrices.Sum(x => Math.Max(1L, x.Cells.Count))
+        + snapshot.BoxSeries.Sum(x => Math.Max(1L, 6L * x.Boxes.Count))
+        + snapshot.Scatters.Sum(x => Math.Max(1L, 2L * x.Points.Count))
+        + snapshot.History.Sum(x => Math.Max(1L, x.Points.Count));
 
     public static ExtractionResult ToExport(DashboardSnapshot snapshot)
     {
@@ -563,17 +715,50 @@ public static class DashboardService
             Add("Périmètre", "Vue sélectionnée", snapshot.ScopeLabel, "", "", "Toutes les valeurs de ce bilan sont recalculées sur ce périmètre du relevé.");
             Add("Périmètre", "Relevé source", snapshot.SourceRowCount.ToString(CultureInfo.InvariantCulture), "lignes récupérées", snapshot.SourceExpectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "Total GLPI inconnu", "Un ticket affecté à plusieurs techniciens peut figurer dans plusieurs vues individuelles ; ne pas additionner leurs totaux.");
         }
-        Add("Météo", snapshot.Weather.Title, snapshot.Weather.Score?.ToString("0.###", CultureInfo.InvariantCulture) ?? "Non disponible", "/100", snapshot.Weather.MeasuredWeight + "/100 de pondérations", snapshot.Weather.Description);
+        Add("Météo", snapshot.Weather.Title, snapshot.Weather.Score?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", "/100", snapshot.Weather.MeasuredWeight + " de pondérations disponibles", snapshot.Weather.Description);
         foreach (var signal in snapshot.Weather.Signals) Add("Météo", signal.Label, signal.Count.ToString(), snapshot.Grain, $"{signal.Sample} / {signal.Population} actifs", signal.Explanation);
-        foreach (var metric in snapshot.Metrics) Add("Indicateurs", metric.Label, metric.Value?.ToString("0.###", CultureInfo.InvariantCulture) ?? "Non disponible", metric.Unit, metric.Sample?.ToString() ?? "", metric.Explanation);
+        foreach (var metric in snapshot.Metrics) Add("Indicateurs", metric.Label, metric.Value?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", metric.Unit, metric.Sample?.ToString() ?? "", metric.Explanation);
         foreach (var dist in snapshot.Distributions)
         {
             if (!dist.Available) Add("Répartitions", dist.Title, "Non disponible", "", "", "Données nécessaires indisponibles ou sans échantillon exploitable. " + dist.Note);
-            foreach (var bucket in dist.Buckets) Add(dist.Title, bucket.Label, bucket.Count.ToString(), snapshot.Grain, dist.Denominator.ToString(), dist.Note);
+            foreach (var bucket in dist.Buckets) Add(dist.Title, bucket.Label, bucket.IsAggregate ? bucket.Value?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible" : bucket.Count.ToString(), bucket.IsAggregate ? bucket.Unit : snapshot.Grain, bucket.Sample?.ToString() ?? dist.Denominator.ToString(), dist.Note);
         }
         foreach (var day in snapshot.Timeline)
             foreach (var (role, title, values) in new[] { ("created", "Créations", day.Created), ("resolved", "Résolutions", day.Resolved), ("closed", "Clôtures", day.Closed) })
                 Add("Activité datée sur 30 jours", day.Date.ToString("yyyy-MM-dd") + " · " + title, snapshot.Column(role)?.Index.HasValue == true ? values.Length.ToString() : "Non disponible", snapshot.Grain, "", "Événements présents dans le relevé seulement ; pas un historique global.");
+        foreach (var profile in snapshot.WeatherProfiles.Where(x => x.Key != "overall").Select(x => x.Value))
+        {
+            Add("Météo spécialisée", profile.Title, profile.Score?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", "/100", profile.Signals.Count.ToString(), profile.Description);
+            foreach (var signal in profile.Signals) Add(profile.Title, signal.Label, signal.Count.ToString(), snapshot.Grain, signal.Sample.ToString(), signal.Explanation);
+        }
+        foreach (var matrix in snapshot.Matrices)
+        {
+            if (matrix.Cells.Count == 0) Add("Matrice", matrix.Title, matrix.Available ? "Aucune occurrence" : "Non disponible", matrix.Unit, "0", matrix.Explanation);
+            foreach (var cell in matrix.Cells) Add(matrix.Title, cell.RowLabel + " × " + cell.ColumnLabel, cell.Value.ToString("G", CultureInfo.InvariantCulture), matrix.Unit, cell.Rows.Length.ToString(), matrix.Explanation);
+        }
+        foreach (var series in snapshot.BoxSeries)
+        {
+            if (series.Boxes.Count == 0) Add("Dispersion", series.Title, "Non disponible", series.Unit, "0", series.Explanation);
+            foreach (var box in series.Boxes)
+                foreach (var (label, value) in new[] { ("Minimum", box.Minimum), ("Q1", box.FirstQuartile), ("Médiane", box.Median), ("Q3", box.ThirdQuartile), ("P90", box.P90), ("Maximum", box.Maximum) })
+                    Add(series.Title, box.Label + " · " + label, value.ToString("G", CultureInfo.InvariantCulture), series.Unit, box.Sample.ToString(), series.Explanation);
+        }
+        foreach (var series in snapshot.Scatters)
+        {
+            if (series.Points.Count == 0) Add("Nuage de points", series.Title, "Non disponible", "", "0", series.Explanation);
+            foreach (var point in series.Points)
+            {
+                Add(series.Title, point.Label + " · " + series.XLabel, point.X.ToString("G", CultureInfo.InvariantCulture), series.XLabel, "1", series.Explanation);
+                Add(series.Title, point.Label + " · " + series.YLabel, point.Y.ToString("G", CultureInfo.InvariantCulture), series.YLabel, "1", series.Explanation);
+            }
+        }
+        foreach (var series in snapshot.History)
+        {
+            if (series.Points.Count == 0) Add("Historique", series.Title, "Non disponible", series.Unit, "0", series.Explanation);
+            foreach (var point in series.Points) Add(series.Title, point.CapturedAt.ToString("O"),
+                point.Comparable && point.Complete && point.Value.HasValue ? point.Value.Value.ToString("G", CultureInfo.InvariantCulture) : "Non comparable",
+                series.Unit, point.Rows.ToString(), point.Note + " " + series.Explanation);
+        }
         foreach (var col in snapshot.Columns) Add("Correspondances", col.Label, col.Header, "", col.State, col.Index.HasValue ? "Colonne utilisée" : "Indisponible");
         foreach (var warning in snapshot.Warnings) Add("Qualité et limites", "Avertissement", "", "", "", warning);
         return data;

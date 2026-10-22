@@ -192,7 +192,8 @@ public sealed partial class BrowserService
             var stableFor = timer.Elapsed - stableSince;
             var samePath = TargetUrlPolicy.SamePage(page.Url, target);
             var sameOrigin = Origin(page.Url) == Origin(target);
-            var dataReady = probe.Readable && (settings.AutoMode != "native" || probe.Search || probe.Native || probe.ExplicitReady);
+            var dataReady = probe.Readable && (settings.AutoMode != "native" || probe.Search || probe.Native || probe.ExplicitReady
+                || probe.Table && (probe.Authenticated || settings.Automation.AutomaticPaginationFallback));
             if (dataReady && samePath && stableFor.TotalMilliseconds >= 700)
             {
                 if (samePath && !reenteredAfterAuth && !TargetUrlPolicy.IncludesSearch(page.Url, target))
@@ -328,7 +329,16 @@ public sealed partial class BrowserService
                 }
                 // A stable, unsupported toolbar is not a loading screen. Give
                 // late scripts a short grace period without flooding the log.
-                if (timer.Elapsed - unsupportedSince >= TimeSpan.FromSeconds(5)) break;
+                if (timer.Elapsed - unsupportedSince >= TimeSpan.FromSeconds(5))
+                {
+                    if (settings.Automation.AutomaticPaginationFallback && native.Unavailable)
+                    {
+                        LogNativeInspection(native);
+                        Log?.Invoke("EXPORT · aucun export natif identifiable après stabilisation ; la lecture paginée depuis le début est autorisée.");
+                        return table;
+                    }
+                    break;
+                }
             }
             catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException)
             { reason = AppPaths.SafeError(ex); exportState = ""; }

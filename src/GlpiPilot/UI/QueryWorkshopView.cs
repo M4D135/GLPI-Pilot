@@ -78,13 +78,15 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         _optionalFields.Add(new QueryChoice("", "Aucun / non utilisé"));
         foreach (var choice in QueryService.BaseProbes) _bases.Add(choice);
         EnsureFields(Array.Empty<string>());
+        ConfigureAdvanced();
         _baseProbe.ItemsSource = _bases;
         _aggregateField.ItemsSource = _optionalFields; _groupBy.ItemsSource = _optionalFields;
         _match.ItemsSource = new[] { new QueryChoice("all", "Toutes les conditions · ET"), new QueryChoice("any", "Au moins une condition · OU") };
         _aggregate.ItemsSource = new[]
         {
             new QueryChoice("count", "Nombre de lignes"), new QueryChoice("percent", "Pourcentage"), new QueryChoice("distinct", "Valeurs distinctes"),
-            new QueryChoice("sum", "Somme"), new QueryChoice("average", "Moyenne"), new QueryChoice("min", "Minimum"), new QueryChoice("max", "Maximum")
+            new QueryChoice("sum", "Somme"), new QueryChoice("average", "Moyenne"), new QueryChoice("min", "Minimum"), new QueryChoice("max", "Maximum"),
+            new QueryChoice("median", "Médiane"), new QueryChoice("percentile", "Percentile configurable")
         };
         _widgetScope.ItemsSource = new[] { new QueryChoice("global", "Dashboard global"), new QueryChoice("personal", "Dashboard personnel") };
         _widgetScope.SelectedValue = "global";
@@ -108,6 +110,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         _sections.Items.Add(new TabItem { Header = "Bibliothèque", Content = BuildLibrary() });
         _definitionTab.Content = BuildEditor(); _sections.Items.Add(_definitionTab);
         _conditionsTab.Content = BuildConditions(); _sections.Items.Add(_conditionsTab);
+        _advancedTab.Content = BuildAdvanced(); _sections.Items.Add(_advancedTab);
         _resultTab.Content = BuildPreview(); _sections.Items.Add(_resultTab);
         _distributionTab.Content = BuildDistribution(); _sections.Items.Add(_distributionTab);
         Grid.SetRow(_sections, 1); root.Children.Add(_sections);
@@ -138,7 +141,7 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         _keep.Click += (_, _) => HideConfirmation();
         _preview.Click += (_, _) => StartPreview(); _cancelPreview.Click += (_, _) => InvalidatePreview("Calcul annulé. Votre brouillon est conservé.");
         _addMetric.Click += (_, _) => RequestWidget(false); _addDistribution.Click += (_, _) => RequestWidget(true);
-        AttachPreviewHandlers();
+        AttachPreviewHandlers(); AttachAdvancedHandlers();
         LoadEditor(); RebuildLibrary(); UpdateEnabled();
     }
 
@@ -221,7 +224,8 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
         query.Match = Selected(_match); query.Aggregate = Selected(_aggregate);
         query.AggregateField = query.Aggregate is "count" or "percent" ? "" : Selected(_aggregateField);
         query.GroupBy = Selected(_groupBy);
-        query.Conditions = _conditionRows.Select(row => new QueryCondition { Field = row.Field, Operator = row.Operator, Value = row.Value, Value2 = row.Value2 }).ToList();
+        query.Conditions = _conditionRows.Select(row => new QueryCondition { Field = row.Field, Operator = row.Operator, Value = row.Value, Value2 = row.Value2, ValueSource = row.ValueSource, Value2Source = row.Value2Source }).ToList();
+        CaptureAdvancedDraft(query);
     }
 
     private void MarkEdited()
@@ -237,6 +241,9 @@ public sealed partial class QueryWorkshopView : UserControl, IDisposable
     {
         if (!_conditions.CommitEdit(DataGridEditingUnit.Cell, true) || !_conditions.CommitEdit(DataGridEditingUnit.Row, true))
             throw new InvalidDataException("Terminez la condition en cours. Votre saisie reste conservée.");
+        foreach (var grid in new[] { _parameterGrid, _computedGrid })
+            if (!grid.CommitEdit(DataGridEditingUnit.Cell, true) || !grid.CommitEdit(DataGridEditingUnit.Row, true))
+                throw new InvalidDataException("Terminez la saisie du paramètre ou du champ calculé. Votre brouillon est conservé.");
         CaptureDraft();
     }
 

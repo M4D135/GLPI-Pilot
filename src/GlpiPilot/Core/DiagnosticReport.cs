@@ -8,7 +8,7 @@ public static class DiagnosticReport
     public static string Create(AppSettings settings, ExtractionResult? result, string sessionLog)
     {
         var report = new StringBuilder();
-        report.AppendLine("GLPI Pilot 1.4.0 — diagnostic");
+        report.AppendLine($"GLPI Pilot {AppPaths.ApplicationVersion} — diagnostic");
         report.AppendLine("Date : " + DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zzz"));
         report.AppendLine("Système : " + RuntimeInformation.OSDescription + " · " + RuntimeInformation.ProcessArchitecture);
         report.AppendLine("Runtime : " + RuntimeInformation.FrameworkDescription);

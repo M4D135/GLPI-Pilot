@@ -222,7 +222,8 @@ internal static partial class Program
         Require(Queries.Queries.Any(query => query.BaseProbe == "total" && query.GroupBy == "role:city"),
             "Expected the built-in total-by-city query used by the real preview check.");
         Pass($"QueryWorkshopView constructors, empty library and {Queries.Queries.Count} real saved query templates");
-        Require(tabs.Items.Count == 11, "Expected eleven synthetic view tabs.");
+        AddFoundationViews(tabs);
+        Require(tabs.Items.Count == 18, "Expected eighteen synthetic view tabs before workplace interaction checks.");
         return tabs;
     }
 
@@ -278,7 +279,11 @@ internal static partial class Program
         await ExerciseResponsiveViewsAsync(tabs);
         await ExerciseCityEditorAsync(tabs);
         await ExerciseTourAsync(tabs, effective);
+        await ExerciseCityAndScheduledTourAsync(tabs, effective);
         await ExerciseQueryEditorAsync(tabs);
+        await ExerciseAdvancedQueryWorkspaceAsync(tabs);
+        await ExerciseWorkplaceAsync(tabs);
+        await ExerciseFoundationViewsAsync(tabs);
         var dashboardTab = (TabItem)tabs.Items[1];
         var dashboard = (DashboardView)dashboardTab.Tag;
         tabs.SelectedIndex = 1;
@@ -357,7 +362,7 @@ internal static partial class Program
             }
             Require(ThemeService.CurrentTheme == theme, "Theme switch did not apply.");
             Require(Application.Current.Resources["PanelBrush"] is SolidColorBrush, "Theme brush is missing.");
-            Pass("All eleven synthetic views, technician workspaces and tour/query sections rendered in theme: " + theme);
+            Pass("All synthetic views, technician workspaces and tour/query sections rendered in theme: " + theme);
         }
         if (_failed) return;
         _exitCode = 0;
@@ -377,7 +382,7 @@ internal static partial class Program
         Require(edited.Cities.Count == 4 && edited.Cities.Any(city => city.Name == "Nice" && city.Aliases.Contains("NCE")), "Real bulk city command did not add the new dictionary entry.");
         Require(edited.Cities.Single(city => city.Name == "Marseille").Aliases.Contains("Mars"), "Real bulk city command did not merge aliases with the existing entry.");
         Require(Cities.Cities.Count == 3 && !Cities.Cities.Single(city => city.Name == "Marseille").Aliases.Contains("Mars"), "City editing mutated the caller's configuration.");
-        var grid = Descendants<DataGrid>(_cityEditor).Single();
+        var grid = Descendants<DataGrid>(_cityEditor).Single(candidate => AutomationProperties.GetName(candidate) == "Dictionnaire éditable des villes de référence et de leurs alias");
         Require(grid.Items.Count == 4 && !grid.IsReadOnly && grid.EnableRowVirtualization, "City dictionary is not an editable, virtualized real grid.");
         Pass("Real city bulk editor preserves draft isolation and merges aliases without losing existing cities");
     }

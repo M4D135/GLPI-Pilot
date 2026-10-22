@@ -12,7 +12,7 @@ internal static class Program
     [STAThread]
     public static int Main()
     {
-        StartupDiagnostics.Start("1.4.0");
+        StartupDiagnostics.Start(AppPaths.ApplicationVersion);
         try { return RunApplication(); }
         catch (Exception error)
         {
@@ -50,6 +50,7 @@ internal static class Program
             : "Le diagnostic de démarrage est enregistré ici :\n" + path + "\n\nVous pouvez copier le contenu de ce fichier pour identifier le blocage.";
         MessageBox.Show("GLPI Pilot n’a pas pu ouvrir sa fenêtre.\n\nÉtape : "
             + StartupDiagnostics.CurrentStage + "\n" + AppPaths.SafeError(error)
+            + "\n\nÀ essayer :\n" + StartupDiagnostics.RecoveryAdvice(error)
             + "\n\n" + diagnostic, "GLPI Pilot — démarrage interrompu", MessageBoxButton.OK, MessageBoxImage.Error);
     }
 }

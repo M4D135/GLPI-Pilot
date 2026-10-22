@@ -102,6 +102,7 @@
                                     <TextBlock Grid.Column="1" x:Name="StatsText" Text="Aucune donnée" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="14,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </Grid>
                                 <WrapPanel Grid.Column="1" x:Name="PreviewActions" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="610">
+                                    <Button x:Name="PreviewViewsButton" Content="Vues" Click="OpenPreviewViews_Click" MinHeight="32" Padding="10,5" FontSize="12" Margin="0,0,8,0" ToolTip="Filtres de colonnes, tri complet et vues mémorisées."/>
                                     <Button x:Name="PreviewColumnsButton" Content="Colonnes" Click="OpenPreviewColumns_Click" MinHeight="32" Padding="10,5" FontSize="12" Margin="0,0,8,0" IsEnabled="False" ToolTip="Choisir les colonnes visibles et mémoriser leur présentation sur ce poste."/>
                                     <Button x:Name="OpenTicketButton" Content="Détail du ticket" Click="OpenTicket_Click" MinHeight="32" Padding="10,5" FontSize="12" Margin="0,0,14,0" IsEnabled="False"
                                             ToolTip="Lire le détail du ticket sélectionné. Un double-clic sur sa ligne ouvre aussi cet onglet." />
@@ -116,7 +117,7 @@
                             <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,1"
                                     Background="{DynamicResource PanelBrush}" ClipToBounds="True">
                                 <Grid>
-                                    <DataGrid x:Name="ResultGrid" IsReadOnly="True" AutoGenerateColumns="True" ClipboardCopyMode="IncludeHeader"
+                                    <DataGrid x:Name="ResultGrid" SelectionMode="Extended" IsReadOnly="True" AutoGenerateColumns="True" ClipboardCopyMode="IncludeHeader"
                                               Background="{DynamicResource PanelBrush}" Foreground="{DynamicResource TextBrush}"
                                               ToolTip="Sélectionner une ligne pour préparer le détail du ticket ; double-cliquer pour l’ouvrir. Ctrl+C copie la sélection." />
                                     <Border x:Name="EmptyStatePanel" Background="{DynamicResource PanelBrush}" IsHitTestVisible="False">
@@ -145,6 +146,7 @@
                                             Style="{StaticResource QuietButton}" ToolTip="Ouvrir le dossier de destination dans l’Explorateur Windows." />
                                 </WrapPanel>
                                 <WrapPanel Grid.Column="1" x:Name="PreviewExportActions" Orientation="Horizontal">
+                                    <Button Content="Exporter la vue" Click="ExportPreviewView_Click" Style="{StaticResource QuietButton}" Margin="0,0,8,0" ToolTip="Exporter toutes les lignes correspondant aux filtres, dans l’ordre et avec les colonnes visibles de cette vue."/>
                                     <Button x:Name="ExportCsvButton" Content="Exporter en CSV" Click="ExportCsv_Click" Margin="0,0,8,0"
                                             ToolTip="Enregistrer toutes les lignes récupérées dans un CSV." />
                                     <Button x:Name="ExportXlsxButton" Content="Exporter en Excel" Click="ExportXlsx_Click"
@@ -447,7 +449,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Reprendre un fichier" Style="{StaticResource SectionTitle}" />
                                     <TextBlock Text="Ouvre un CSV déjà téléchargé pour retrouver l’aperçu et créer un Excel, sans relancer le SSO." Style="{StaticResource HelpText}" Margin="0,6,0,15" />
-                                    <Button x:Name="ImportCsvButton" Content="Importer un CSV…" Click="ImportCsv_Click" HorizontalAlignment="Left"
+                                    <Button x:Name="ImportCsvButton" Content="Importer CSV / Excel…" Click="ImportCsv_Click" HorizontalAlignment="Left"
                                             ToolTip="Choisir un fichier CSV local et charger ses lignes dans l’aperçu, sans ouvrir le portail." />
                                     <TextBlock Text="Le fichier choisi reste conservé. La portée de la recherche GLPI ne peut pas être confirmée à partir d’un fichier local seul." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
                                 </StackPanel>
@@ -491,9 +493,9 @@
                             <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                                 <StackPanel>
                                     <TextBlock Text="Comprendre le résultat" Style="{StaticResource SectionTitle}" />
-                                    <TextBlock Text="L’export natif de toutes les pages est prioritaire. Si sa commande n’est pas reconnue ou si le CSV reçu est illisible, le logiciel peut demander Afficher tout dans GLPI, puis contrôler la plage et le nombre de lignes." Style="{StaticResource HelpText}" Margin="0,8,0,0" />
+                                    <TextBlock Text="L’export natif de toutes les pages est prioritaire. Si sa commande est indisponible, le logiciel essaie Afficher tout puis, si autorisé, la pagination. Un CSV illisible ou un export ambigu interrompt la collecte avec un diagnostic." Style="{StaticResource HelpText}" Margin="0,8,0,0" />
                                     <TextBlock Text="Le fichier reçu reste conservé. Sans total vérifiable, l’exhaustivité n’est pas confirmée. Les limites de lignes et les listes virtuelles sont signalées." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
-                                    <TextBlock Text="Un CSV déjà présent sur le poste se reprend dans Outils manuels → Importer un CSV. Aucun accès au portail n’est nécessaire pour cet import." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
+                                    <TextBlock Text="Un CSV ou XLSX déjà présent sur le poste se reprend dans Outils manuels → Importer CSV / Excel. Aucun accès au portail n’est nécessaire pour cet import ; son exhaustivité reste non confirmée." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
                                     <TextBlock Text="Dashboard calcule les statistiques sur toutes les lignes récupérées. Ses cartes permettent de retrouver les lignes concernées ; le bilan signale les colonnes absentes et le périmètre connu." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
                                     <TextBlock Text="Sélectionne un ticket extrait de GLPI, puis ouvre Détail du ticket pour lire ses sections. Actualiser relit la fiche ; les repères et la lecture automatique se règlent dans Réglages." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
                                 </StackPanel>
@@ -505,8 +507,8 @@
                                     <TextBlock Text="Le bouton soleil / lune change le thème et mémorise ton choix. Le journal est repliable en bas ; Copier le diagnostic prépare les informations techniques à partager." Style="{StaticResource HelpText}" Margin="0,8,0,0" />
                                     <TextBlock Text="Le navigateur utilise un profil SSO réservé à l’application. Le logiciel ne demande aucun identifiant ni mot de passe." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
                                     <TextBlock Text="Importer / Exporter dans Réglages transfère la configuration de recherche, des sections et du dashboard. Le profil SSO et le dossier d’export restent propres au poste." Style="{StaticResource HelpText}" Margin="0,10,0,0" />
-                                    <TextBlock Text="Version 1.4.0 · Windows x64" FontSize="11.5" Foreground="{DynamicResource MutedBrush}" Margin="0,16,0,0" />
-                                    <TextBlock Text="Le pack contient .NET et Playwright. Edge ou Chrome doit être installé. Le rendu WPF et le SSO du portail réel restent à valider sur ton poste." Style="{StaticResource HelpText}" Margin="0,5,0,0" />
+                                    <TextBlock x:Name="ApplicationVersionText" FontSize="11.5" Foreground="{DynamicResource MutedBrush}" Margin="0,16,0,0" />
+                                    <TextBlock Text="Le pack contient .NET et Playwright. Edge ou Chrome doit être installé. Les packs publiés passent les contrôles Windows ; le portail et le SSO de votre organisation doivent être vérifiés dans votre environnement." Style="{StaticResource HelpText}" Margin="0,5,0,0" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>

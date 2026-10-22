@@ -19,6 +19,13 @@ public sealed partial class DashboardView : UserControl
     private readonly Stack<DashboardLayoutSettings> _undo = new(), _redo = new();
     private DashboardLayoutSettings _layout = new();
     private DashboardSnapshot? _data;
+    private DashboardSnapshot? _baseline, _comparison;
+    private readonly Dictionary<string, DashboardSnapshot> _widgetSnapshots = new(StringComparer.Ordinal);
+    private readonly List<DashboardScopeFilter> _crossFilters = new();
+    private readonly HashSet<string> _selectedWidgets = new(StringComparer.Ordinal);
+    private CancellationTokenSource? _scopeOperation;
+    private string _scopeSignature = "", _analysisMessage = "";
+    private int _sourceGeneration;
     private DashboardBoardPanel? _boardPanel;
     private FrameworkElement? _toolbar, _editor;
     private TextBlock? _saveLabel;
@@ -29,7 +36,7 @@ public sealed partial class DashboardView : UserControl
     private int _libraryPage;
     private readonly HashSet<string> _libraryFavorites = new(StringComparer.Ordinal);
     private bool _libraryAvailableOnly, _libraryFavoritesOnly;
-    private bool _busy, _editing, _saveSuccess = true;
+    private bool _busy, _editing, _scopeCalculating, _saveSuccess = true;
     private string _saveMessage = "Disposition enregistrée sur ce poste";
     private DashboardBoardSettings Board => _layout.Boards.First(x => x.Id == _layout.ActiveBoardId);
     public event Action<int[], string>? RowsRequested;
@@ -37,6 +44,7 @@ public sealed partial class DashboardView : UserControl
     public event Action? ExportRequested;
     public event Action? SettingsRequested;
     public event Action<DashboardLayoutSettings>? LayoutChanged;
+    public event Action<DashboardSnapshot>? SnapshotChanged;
     public DashboardLayoutSettings GetLayout() => _layout.Copy();
 
     public DashboardView()
@@ -48,6 +56,7 @@ public sealed partial class DashboardView : UserControl
     {
         ClearDetailView();
         _layout = layout.Copy(); _layout.Normalize();
+        _libraryFavorites.Clear(); foreach (var favorite in _layout.CatalogFavorites) _libraryFavorites.Add(favorite);
         if (clearHistory) { _undo.Clear(); _redo.Clear(); }
         Render();
     }
@@ -66,8 +75,13 @@ public sealed partial class DashboardView : UserControl
         if (_editor != null) _editor.IsEnabled = !busy;
     }
     public void ShowEmpty(string message = "Lancez Extraire tout. Votre disposition est conservée ; les widgets se rempliront avec le relevé.")
-    { ClearDetailView(); _data = null; _emptyMessage = message; Render(); }
-    public void Show(DashboardSnapshot data) { ClearDetailView(); _data = data; Render(); }
+    { ClearDetailView(); _scopeOperation?.Cancel(); _data = _baseline = _comparison = null; _widgetSnapshots.Clear(); _sourceGeneration++; _scopeCalculating = false; _analysisMessage = ""; _emptyMessage = message; Render(); }
+    public void Show(DashboardSnapshot data)
+    {
+        ClearDetailView(); _scopeOperation?.Cancel(); _sourceGeneration++;
+        _baseline = _data = data; _comparison = null; _widgetSnapshots.Clear(); _scopeSignature = "";
+        Render();
+    }
 
     public bool AddQueryWidget(string sourceKey, string title, bool distribution)
     {
@@ -93,6 +107,8 @@ public sealed partial class DashboardView : UserControl
     private void Render()
     {
         _body.Children.Clear(); _commands.Clear(); _resizers.Clear(); _layout.Normalize();
+        _libraryFavorites.Clear(); foreach (var favorite in _layout.CatalogFavorites) _libraryFavorites.Add(favorite);
+        RecalculateScopes();
         _contextHelp = _saveLabel = null; _toolbar = _editor = null;
         if (_selectedWidget != null && Board.Widgets.All(widget => widget.Id != _selectedWidget)) _selectedWidget = null;
         BuildHeader();
@@ -101,15 +117,14 @@ public sealed partial class DashboardView : UserControl
             BuildDetailView(); SetBusy(_busy); return;
         }
         BuildToolbar();
+        BuildFilterBar();
+        if (_comparison != null && _data != null) _body.Children.Add(ComparisonContent(_data, _comparison));
+        if (_editing) BuildBulkToolbar();
         var workspace = new Grid(); workspace.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); workspace.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         workspace.RowDefinitions.Add(new() { Height = GridLength.Auto }); workspace.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        _boardPanel = new DashboardBoardPanel { Board = Board, AllowDrop = _editing, VerticalAlignment = VerticalAlignment.Top };
-        if (_data != null || _editing)
-            foreach (var widget in Board.Widgets.Where(x => !x.Hidden)) _boardPanel.Children.Add(WidgetCard(widget));
-        _boardPanel.DragOver += (_, e) => { e.Effects = CanDrop(e) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; AutoScroll(e); };
-        _boardPanel.Drop += (_, e) => { if (CanDrop(e)) MoveWidget((string)e.Data.GetData(DragFormat), null); e.Handled = true; };
+        var groupedSurface = BuildSectionedBoard();
         FrameworkElement boardSurface = _data is null && !_editing ? EmptyDataState()
-            : Board.Widgets.All(x => x.Hidden) ? EmptyBoardState() : _boardPanel;
+            : Board.Widgets.All(x => x.Hidden) ? EmptyBoardState() : groupedSurface;
         workspace.Children.Add(boardSurface);
         if (_editing)
         {
@@ -143,6 +158,9 @@ public sealed partial class DashboardView : UserControl
         var top = new DockPanel { Margin = new Thickness(0, 0, 0, 9) };
         if (_editing)
         {
+            var selection = new CheckBox { IsChecked = _selectedWidgets.Contains(widget.Id), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 7, 0), ToolTip = "Sélectionner pour une modification groupée" };
+            selection.Click += (_, _) => { if (selection.IsChecked == true) _selectedWidgets.Add(widget.Id); else _selectedWidgets.Remove(widget.Id); Render(); };
+            DockPanel.SetDock(selection, Dock.Left); top.Children.Add(selection);
             var edit = Mini("Modifier", "Ouvrir les options de ce widget dans le panneau de personnalisation.", () => OpenEditor("widget", widget.Id)); DockPanel.SetDock(edit, Dock.Right); top.Children.Add(edit);
             var handle = new Border { Child = Text(widget.Locked ? "▣" : "⠿", 20, "MutedBrush"), Padding = new Thickness(0, 0, 9, 0), Cursor = widget.Locked ? Cursors.Arrow : Cursors.SizeAll, ToolTip = widget.Locked ? "Position verrouillée" : "Glisser pour déplacer le widget" };
             DockPanel.SetDock(handle, Dock.Left); top.Children.Add(handle);
@@ -161,7 +179,17 @@ public sealed partial class DashboardView : UserControl
         }
         var title = Text(WidgetTitle(widget), 14, weight: FontWeights.SemiBold); title.ToolTip = WidgetTitle(widget); top.Children.Add(title);
         content.Children.Add(top);
-        var inner = WidgetContent(widget); Grid.SetRow(inner, 1); content.Children.Add(inner);
+        FrameworkElement inner;
+        var common = _data;
+        try { if (_widgetSnapshots.TryGetValue(widget.Id, out var scoped)) _data = scoped; inner = WidgetContent(widget); }
+        finally { _data = common; }
+        if (widget.Filters.Count > 0)
+        {
+            var scopedContent = new StackPanel();
+            scopedContent.Children.Add(Text("Filtre du widget · " + DescribeFilters(widget.Filters), 10, "AccentBrush", margin: new Thickness(0, 0, 0, 6)));
+            scopedContent.Children.Add(inner); inner = scopedContent;
+        }
+        Grid.SetRow(inner, 1); content.Children.Add(inner);
         if (_editing)
         {
             var footer = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
@@ -220,7 +248,7 @@ public sealed partial class DashboardView : UserControl
     private void MoveWidget(string id, string? beforeId)
     {
         if (id == beforeId || !Board.Widgets.Any(x => x.Id == id && !x.Locked)) return;
-        Change(() => DashboardLayoutEngine.Move(Board, id, beforeId));
+        Change(() => { var target = Board.Widgets.FirstOrDefault(x => x.Id == beforeId); if (target != null) Board.Widgets.Single(x => x.Id == id).Section = target.Section; DashboardLayoutEngine.Move(Board, id, beforeId); });
     }
     private void MoveBy(DashboardWidgetSettings widget, int delta)
     {
@@ -240,7 +268,8 @@ public sealed partial class DashboardView : UserControl
     {
         "metric" => _data?.Metric(w.SourceKey)?.Label ?? Catalog().FirstOrDefault(x => x.Kind == w.Kind && x.Key == w.SourceKey)?.Label ?? w.SourceKey,
         "distribution" => _data?.Distributions.FirstOrDefault(x => x.Key == w.SourceKey)?.Title ?? Catalog().FirstOrDefault(x => x.Kind == w.Kind && x.Key == w.SourceKey)?.Label ?? w.SourceKey,
-        "weather" => "Météo du relevé", "timeline" => "Activité datée · 30 jours", "attention" => "À regarder en priorité", "quality" => "Qualité et périmètre", "note" => "Note", _ => "Widget"
+        "weather" => Catalog().FirstOrDefault(x => x.Kind == w.Kind && x.Key == w.SourceKey)?.Label ?? "Météo du relevé", "timeline" => "Activité datée · 30 jours", "attention" => "À regarder en priorité", "quality" => "Qualité et périmètre", "note" => "Note",
+        _ => Catalog().FirstOrDefault(x => x.Kind == w.Kind && x.Key == w.SourceKey)?.Label ?? KindLabel(w.Kind)
     };
 
     private Button Command(object content, Action action, bool enabled = true)

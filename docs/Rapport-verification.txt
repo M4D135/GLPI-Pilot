@@ -1,90 +1,90 @@
-GLPI Pilot 1.5.0 — rapport de vérification
-Date : 21 octobre 2026
+GLPI Pilot 2.0.0 — protocole et preuves de vérification
+Date : 22 octobre 2026
 Cible : Windows x64, WPF, .NET 10 autonome
 
-ETAT A LA REDACTION
-L’application et le harnais Windows ont été compilés depuis Linux :
-0 erreur ; avertissement NU1900 lié à l’accès réseau limité au service NuGet
-de données de vulnérabilité. Ce résultat ne vaut ni exécution Windows ni
-audit de vulnérabilité réussi. Le résultat Windows 1.5.0 reste à établir
-par le workflow et ses journaux associés au commit exact de livraison.
+ETAT DU CODE AVANT LA CHAINE WINDOWS
+Application et harnais Windows compilés depuis Linux : 0 erreur, 0 avertissement.
+La restauration locale a utilisé NuGetAudit=false faute d’accès au service
+NuGet d’audit ; ce résultat ne constitue pas un audit de dépendances.
+La compilation croisée ne prouve pas l’exécution Windows.
 
-CONTROLES 1.5.0 EFFECTIVEMENT RELANCES LOCALEMENT
-ConfigurationChecks       39/39
-DashboardChecks           84/84
-DashboardLayoutChecks     25/25
-QueryChecks               69/69
-NativeImportChecks        38/38
-ExportChecks               6/6
-AutomationChecks          33/33 — Chromium synthétique local, hors total CI
-Les autres résultats de versions précédentes ne sont pas ajoutés à ce bilan.
-Les suites métier inchangées prévues par la CI doivent être relancées sur
-Windows ; leur présence dans le dépôt ne constitue pas un résultat réussi.
+PREVERSION LOCALE ET PUBLICATION WINDOWS
+Les premières archives PREVERSION ont été compilées localement alors que
+l’écriture GitHub était refusée avec HTTP 403 : Resource not accessible by
+integration. Elles ne prouvent ni le rendu WPF, ni le démarrage de l’EXE,
+ni la persistance du zoom sous Windows. Leur pack DEV conserve les sources
+et un bundle Git de récupération.
+Le 22 octobre, la réinstallation de la connexion GitHub a rétabli l’écriture.
+Les packs publiés par la chaîne Windows sont distincts de ces préversions :
+ils sont produits et promus seulement après les contrôles décrits ci-dessous.
+Pour connaître le résultat effectif, consulter le workflow du commit inscrit
+dans wad/version.json ; une étape non exécutée n’est jamais un test réussi.
 
-POINTS COUVERTS PAR LES MODIFICATIONS
-- Zoom local mémorisé, borné de 75 à 150 %, indépendant du partage de config.
-- Hauteur automatique des widgets ; hauteur manuelle conservée comme minimum.
-  Les contrôles de disposition couvrent aussi des contenus de 1 450 et
-  1 830 pixels, sans plafonnement ni chevauchement à quatre largeurs.
-- Listes complètes du dashboard paginées et recherchables ; méthodes et
-  explications repliables, indices source conservés pour retrouver les lignes.
-- Cohortes de suivi et durées supplémentaires ; 64 modèles de requêtes.
-  L’ajout des modèles manquants conserve les requêtes existantes et demande
-  un enregistrement explicite du brouillon.
-- Annulation de l’import et de la fin d’export : aucun résultat de réussite
-  n’est publié après une annulation reconnue ; les fichiers déjà terminés
-  sont conservés. Aucune cellule n’est recodée ou nettoyée par ce correctif.
+CONTROLES LOCAUX EXECUTES SUR DONNEES SYNTHETIQUES
+StartupDiagnosticsChecks    14/14
+StartupResilienceChecks     23/23
+FoundationChecks            26/26
+WorkplaceChecks             82/82
+ConfigurationChecks         39/39
+DashboardChecks            102/102
+DashboardLayoutChecks       29/29
+PreviewQueryChecks          44/44
+TechnicianWorkloadChecks    33/33
+CityDetectionChecks         75/75
+TourPlanningChecks          59/59
+QueryChecks                 92/92
+BrowserChecks               28/28
+AutomationChecks            33/33
+NativeDomChecks             82 controles
+NativeImportChecks          38/38
+ExportChecks                 6/6
+TicketDetailChecks          27/27
+Total : 832 contrôles locaux réussis (662 métier, 170 navigateur/DOM/détails).
+Chromium a été lancé dans un contexte de test autorisé après le refus de
+démarrage par le confinement initial. Aucun portail ni profil réel utilisé.
+Les résultats exacts de la livraison restent ceux du workflow associé au
+commit source inscrit dans wad/version.json, avec ses journaux.
 
-VALIDATION WINDOWS EXIGEE AVANT LA LIVRAISON
-Le script build-tools/Invoke-WindowsCi.ps1 sépare quatre étapes obligatoires.
-Chaque processus a un délai maximal, un code de sortie contrôlé et, pour
-les suites de tests, un résumé de réussite attendu. Un échec bloque la suite.
+ETAPES OBLIGATOIRES AVANT PUBLICATION
+1. BclChecks : 14 suites, 662 contrôles attendus. Chaque processus est borné,
+   son code de sortie et son résumé de réussite sont contrôlés. Moteurs réels,
+   données et fichiers temporaires synthétiques, aucune session d’entreprise.
+2. BrowserChecks : navigateur installé sur le runner, contextes éphémères,
+   routes interceptées et fichiers synthétiques. Navigation, filtres et portée,
+   SSO simulé, export natif, pagination, corruption, annulation et conservation
+   des résultats partiels ; DOM historique/GLPI 10/11. Aucun portail réel ouvert.
+3. WpfChecks : contrôles de production sur bureau Windows interactif, thèmes
+   clair/sombre, tailles et zooms variés, tableaux de bord et vues personnelles,
+   requêtes avancées, lieux/tournées, travail personnel, historique/qualité,
+   alertes, vues nommées et calendriers. Captures et diagnostic en cas d’échec.
+4. BuildPack : construction des archives PROD et DEV avec exactement EXE + wad
+   à la racine ; sources incluses seulement dans DEV, même EXE dans les deux,
+   toutes les empreintes vérifiées et rattachement au commit contrôlé.
+5. PackStartup : extraction et lancement réel du pack PROD dans un espace
+   temporaire isolé. Fenêtre visible, ContentRendered, arrêt normal et code 0.
+   Un deuxième lancement doit rappeler l’instance minimisée puis se terminer.
+   Les vrais boutons de zoom sont exercés ; bornes 75/150 %, reprise à 110 %
+   après redémarrage puis remise à 100 %. Les préférences synthétiques
+   étrangères à l’action restent préservées.
+6. Release : promotion des artefacts exacts du job Windows réussi. Vérification
+   version, commit, empreinte EXE et identité des deux exécutables. Une version
+   déjà publiée pour un autre commit n’est jamais remplacée silencieusement.
 
-1. BclChecks relance onze suites (453 contrôles attendus) sur données synthétiques :
-   démarrage, configuration, dashboard, dispositions, aperçu, techniciens,
-   villes, tournées, requêtes, import et export. Le code de production est utilisé.
-2. WpfChecks publie puis exécute WindowsStartupChecks sur un bureau Windows.
-   Il construit les vues réelles et vérifie leur rendu dans les deux thèmes.
-   Les scénarios demandent 1440 × 900 à 100 % en clair, 960 × 720 à 150 %
-   en clair et 1280 × 850 à 125 % en sombre. Windows peut borner la fenêtre
-   à son bureau disponible ; les dimensions effectives sont journalisées.
-   Ils contrôlent le défilement du dashboard personnel, les cartes sans
-   ascenseur interne actif, l’expansion météo et l’absence de recouvrement.
-   Une liste de 43 catégories doit rester accessible sur toutes ses pages,
-   avec recherche hors première page, indices corrects et retour au dashboard.
-3. BuildPack fabrique les ZIP PROD et DEV ; contrôle leur contenu, toutes les
-   empreintes SHA-256, le commit source et l’identité de leur exécutable.
-4. PackStartup extrait PROD dans un espace temporaire isolé et lance son EXE.
-   Le premier lancement exige le marqueur [PRÊT], une fenêtre principale
-   visible, une fermeture normale, le code 0 et les réglages synthétiques
-   strictement inchangés. Un état GLPI Pilot déjà présent entraîne un refus.
-   Deux redémarrages supplémentaires exercent les vrais boutons par Windows
-   UI Automation : −, +, retour à 100 %, limites 75/150 %, commandes dans
-   une fenêtre 960 × 720 à 150 %. Le zoom laissé à 110 % doit être retrouvé
-   au redémarrage suivant puis remis à 100 % par le bouton réel.
-   Source, thème, dossier d’export et identité synthétiques restent préservés.
+PREUVES
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+Journaux du run : windows-checks-<run_id>-<tentative>.
+- suites métier et navigateur ; compilation WPF et processus du harnais
+- ui-previews/*.png : vues synthétiques des deux thèmes et plusieurs tailles
+- pack-build.log, pack-sha256.txt et executable-sha256.txt
+- pack-startup.log et diagnostics réels de l’EXE extrait
+- pack-zoom-exercise.log et pack-zoom-verify-restore.log
+Chaque ZIP contient wad/version.json et wad/SHA256SUMS.txt.
+Les ZIP PROD et DEV finalisés sont publiés dans la Release de leur version.
 
-JOURNAUX ET PREUVES PRODUITS PAR LA CI
-Répertoire par défaut : artifacts/windows-ci/logs/.
-- startup-diagnostics-checks.log ; configuration-checks.log
-- dashboard-checks.log ; dashboard-layout-checks.log
-- preview-query-checks.log ; technician-workload-checks.log
-- city-detection-checks.log ; tour-planning-checks.log ; query-checks.log
-- native-import-checks.log ; export-checks.log
-- windows-startup-build.log ; windows-startup-checks.log
-- ui-previews/*.png : captures synthétiques ; capture de l’échec si possible
-- pack-build.log ; pack-sha256.txt ; executable-sha256.txt
-- pack-startup.log ; pack-startup/*.log : diagnostics réels de l’EXE extrait
-- pack-zoom-exercise.log ; pack-zoom-verify-restore.log : actions UIA et reprise
-Les journaux locaux d’import, d’export et de dispositions portent le suffixe
-1.5.0 dans artifacts ; ils ne remplacent pas ces preuves d’exécution Windows.
-
-PORTEE ET LIMITES
-Les contrôles utilisent exclusivement des données et préférences synthétiques.
-Ils n’ouvrent pas le navigateur métier, n’authentifient aucun compte SSO et
-ne se connectent pas au portail réel de l’utilisateur. Les captures ne
-contiennent donc pas ses tickets. Le SSO, les droits, la version du portail
-et le maintien au premier plan sur le poste restent à confirmer sur ce poste.
-Une absence de bureau Windows interactif est signalée comme non-exécution,
-jamais comme réussite. Les résultats définitifs sont ceux du run du commit
-livré, avec ses journaux, ses captures et les empreintes des deux ZIP.
+PORTEE DES RESULTATS
+Aucun accès au portail privé ni au SSO du poste utilisateur. Le comportement
+exact des règles d’entreprise, des extensions GLPI, des droits et du premier
+plan sur ce poste n’est pas attesté par les fixtures. Une absence de bureau
+interactif ou une suite non exécutée n’est pas présentée comme une réussite.
+Les dates et durées sont calendaires. Les tableaux de bord n’inventent pas les
+champs absents et ne déduisent pas une résolution d’une ligne disparue.

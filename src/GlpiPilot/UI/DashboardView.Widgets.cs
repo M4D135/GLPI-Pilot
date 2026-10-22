@@ -39,6 +39,8 @@ public sealed partial class DashboardView
             "metric" => MetricContent(widget), "distribution" => DistributionContent(widget),
             "weather" => WeatherContent(widget), "timeline" => TimelineContent(widget),
             "attention" => AttentionContent(widget), "quality" => QualityContent(widget),
+            "matrix" => MatrixContent(widget), "histogram" => HistogramContent(widget), "boxplot" => BoxContent(widget),
+            "scatter" => ScatterContent(widget), "history" => HistoryContent(widget),
             _ => Text("Type de widget non disponible.", 13, "MutedBrush")
         };
     }
@@ -56,7 +58,7 @@ public sealed partial class DashboardView
         else value.Foreground = Accent(widget.Accent);
         panel.Children.Add(value);
         panel.Children.Add(Text(metric.Value.HasValue ? metric.Sample.HasValue ? $"Échantillon : {metric.Sample:N0}" : metric.Unit : "Données indisponibles", 11, "MutedBrush", margin: new Thickness(0, 5, 0, 0)));
-        var action = Command(panel, () => RowsRequested?.Invoke(metric.Rows, WidgetTitle(widget)), metric.Value.HasValue && (metric.Rows.Length > 0 || metric.Value == 0));
+        var action = Command(panel, () => ActivateRows(metric.Rows, WidgetTitle(widget), metricKey: metric.Key), metric.Value.HasValue && (metric.Rows.Length > 0 || metric.Value == 0));
         action.Background = Brushes.Transparent; action.BorderThickness = new Thickness(0); action.Padding = new Thickness(0); action.Margin = new Thickness(0); action.HorizontalContentAlignment = HorizontalAlignment.Stretch; action.VerticalContentAlignment = VerticalAlignment.Top; action.ToolTip = metric.Explanation;
         var content = new StackPanel(); content.Children.Add(action);
         if (widget.ShowDescription && widget.Presentation != "compact") content.Children.Add(Details("Comprendre cet indicateur", Text(metric.Explanation, 11, "MutedBrush")));
@@ -157,8 +159,10 @@ public sealed partial class DashboardView
         if (dist is null) return Missing("Cette répartition n’existe pas dans le relevé. Choisissez une autre source du widget.");
         if (!dist.Available) return Missing("Colonne absente ou ambiguë. Réglez sa correspondance pour activer ce graphique.");
         if (dist.Buckets.Count == 0) return Text("Aucune ligne dans ce périmètre.", 13, "MutedBrush");
-        if (widget.Presentation == "donut") return DonutContent(widget, dist);
-        var panel = new StackPanel(); var maximum = Math.Max(1, dist.Buckets.Max(x => x.Count));
+        if (widget.Presentation == "donut" && !dist.Buckets.Any(x => x.IsAggregate)) return DonutContent(widget, dist);
+        if (widget.Presentation is "pareto" or "columns" && !dist.Buckets.Any(x => x.IsAggregate)) return ColumnsContent(widget, dist, widget.Presentation == "pareto");
+        var panel = new StackPanel(); var maximum = Math.Max(1, dist.Buckets.Max(BucketMagnitude));
+        if (dist.Buckets.Any(x => x.IsAggregate)) panel.Children.Add(Text("Valeurs agrégées par groupe · échantillons distincts. Les moyennes et percentiles ne sont pas additionnés ni transformés en parts de cercle.", 10, "MutedBrush", margin: new Thickness(0, 0, 0, 8)));
         panel.Children.Add(Text($"Base : {dist.Denominator:N0} lignes · {Math.Min(widget.TopCount, dist.Buckets.Count):N0} / {dist.Buckets.Count:N0} catégories affichées", 11, "MutedBrush", margin: new Thickness(0, 0, 0, 7)));
         foreach (var bucket in dist.Buckets.Take(widget.TopCount))
             panel.Children.Add(DistributionRow(dist, bucket, widget, widget.Presentation is not ("compact" or "list"), maximum));
@@ -177,17 +181,19 @@ public sealed partial class DashboardView
         heading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var label = Text(fullLabel ? bucket.Label : PreviewText(bucket.Label, 100), 12);
         label.ToolTip = bucket.Label; heading.Children.Add(label);
-        var percentage = distribution.Denominator > 0 ? $" · {100d * bucket.Count / distribution.Denominator:0.#} %" : "";
-        var count = Text($"{bucket.Count:N0}" + percentage, 11, "MutedBrush", margin: new Thickness(12, 0, 0, 0));
+        var percentage = !bucket.IsAggregate && distribution.Denominator > 0 ? $" · {100d * bucket.Count / distribution.Denominator:0.#} %" : "";
+        var count = Text(bucket.IsAggregate ? (bucket.Value is double value ? MetricNumber(value, bucket.Unit) : "Indisponible") + " · n=" + (bucket.Sample ?? bucket.Count).ToString("N0") : $"{bucket.Count:N0}" + percentage, 11, "MutedBrush", margin: new Thickness(12, 0, 0, 0));
         Grid.SetColumn(count, 1); heading.Children.Add(count); row.Children.Add(heading);
-        if (showBar) row.Children.Add(new ProgressBar { Maximum = Math.Max(1, maximum), Value = bucket.Count, Height = 5, Margin = new Thickness(0, 7, 0, 0), Foreground = Accent(widget.Accent) });
-        var button = Command(row, () => RowsRequested?.Invoke(bucket.Rows, distribution.Title + " · " + bucket.Label));
+        if (showBar && (!bucket.IsAggregate || bucket.Value.HasValue)) row.Children.Add(new ProgressBar { Maximum = Math.Max(1, maximum), Value = BucketMagnitude(bucket), Height = 5, Margin = new Thickness(0, 7, 0, 0), Foreground = Accent(bucket.Value < 0 ? "orange" : widget.Accent), ToolTip = bucket.IsAggregate ? "Longueur proportionnelle à la valeur absolue ; valeur signée affichée." : null });
+        var button = Command(row, () => ActivateRows(bucket.Rows, distribution.Title + " · " + bucket.Label,
+            _baseline?.Distributions.Any(x => x.Key == distribution.Key) == true ? distribution.Key : null, bucket.Label));
         button.Background = Brushes.Transparent; button.BorderThickness = new Thickness(0);
         button.Padding = new Thickness(0, 5, 0, 7); button.Margin = new Thickness(0, 0, 0, 3);
         Help(button, bucket.Label + $" : {bucket.Count:N0}", bucket.Label + $" · {bucket.Count:N0} lignes. Afficher les lignes correspondantes.");
         return button;
     }
 
+    private static double BucketMagnitude(DashboardBucket bucket) => bucket.IsAggregate ? Math.Abs(bucket.Value ?? 0) : bucket.Count;
     private sealed record DonutPart(string Label, long Count, Func<int[]> Rows, bool Others = false);
 
     private FrameworkElement DonutContent(DashboardWidgetSettings widget, DashboardDistribution distribution)
@@ -230,7 +236,8 @@ public sealed partial class DashboardView
             var swatch = new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = Accent(part.Others ? "slate" : palette[index % palette.Length]), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 4, 8, 0) }; content.Children.Add(swatch);
             var label = Text(part.Label, 12); Grid.SetColumn(label, 1); content.Children.Add(label);
             var numbers = Text($"{part.Count:N0} · {100d * part.Count / total:0.#} %", 11, "MutedBrush", margin: new Thickness(8, 0, 0, 0)); Grid.SetColumn(numbers, 2); content.Children.Add(numbers);
-            var button = Command(content, () => RowsRequested?.Invoke(part.Rows(), distribution.Title + " · " + part.Label));
+            var button = Command(content, () => ActivateRows(part.Rows(), distribution.Title + " · " + part.Label,
+                !part.Others && _baseline?.Distributions.Any(x => x.Key == distribution.Key) == true ? distribution.Key : null, part.Label));
             button.Padding = new Thickness(5, 7, 5, 7); button.Margin = new Thickness(0, 0, 0, 2); button.Background = Brushes.Transparent; button.BorderThickness = new Thickness(0);
             Help(button, part.Label + $" : {part.Count:N0} occurrences", part.Others
                 ? $"{part.Count:N0} occurrences regroupées. Afficher l’union des lignes des catégories Autres ; une ligne commune n’est ouverte qu’une fois. Le tableau complet détaille les catégories."
@@ -261,12 +268,12 @@ public sealed partial class DashboardView
 
     private FrameworkElement WeatherContent(DashboardWidgetSettings widget)
     {
-        var weather = _data!.Weather; var tone = weather.State switch { "sun" => "SuccessBrush", "storm" => "ErrorBrush", "unknown" or "partial" => "MutedBrush", _ => "WarningBrush" };
+        var weather = _data!.WeatherProfiles.GetValueOrDefault(string.IsNullOrEmpty(widget.SourceKey) ? "overall" : widget.SourceKey) ?? _data.Weather; var tone = weather.State switch { "sun" => "SuccessBrush", "storm" => "ErrorBrush", "unknown" or "partial" => "MutedBrush", _ => "WarningBrush" };
         var panel = new StackPanel(); var heading = new DockPanel();
         var icon = Text(weather.Symbol, 36, tone, margin: new Thickness(0, 0, 13, 0)); icon.FontFamily = new FontFamily("Segoe UI Symbol"); DockPanel.SetDock(icon, Dock.Left); heading.Children.Add(icon);
         var title = new StackPanel(); title.Children.Add(Text(weather.Title, 20, tone, FontWeights.SemiBold));
         title.Children.Add(Text((weather.Score.HasValue ? $"Indice {weather.Score:0.#}/100" : "Indice indisponible")
-            + $" · poids disponibles {weather.MeasuredWeight}/100", 11, "MutedBrush", margin: new Thickness(0, 5, 0, 0)));
+            + $" · poids disponibles {weather.MeasuredWeight}", 11, "MutedBrush", margin: new Thickness(0, 5, 0, 0)));
         heading.Children.Add(title); panel.Children.Add(heading);
         if (weather.Score.HasValue)
         {
@@ -280,7 +287,7 @@ public sealed partial class DashboardView
                 var signalPanel = new StackPanel();
                 signalPanel.Children.Add(Text(signal.Label, 11, "MutedBrush"));
                 signalPanel.Children.Add(Text(signal.Sample > 0 ? $"{signal.Count:N0} / {signal.Sample:N0} · {100d * signal.Count / signal.Sample:0.#} %" : "— · aucun échantillon", 17, weight: FontWeights.SemiBold, margin: new Thickness(0, 5, 0, 4)));
-                signalPanel.Children.Add(Text($"Champ exploitable : {signal.Sample:N0} / {signal.Population:N0} actifs", 10, "MutedBrush"));
+                signalPanel.Children.Add(Text($"Échantillon du signal : {signal.Sample:N0} · population : {signal.Population:N0}", 10, "MutedBrush"));
                 var button = Command(signalPanel, () => RowsRequested?.Invoke(signal.Rows, signal.Label), signal.Sample > 0);
                 button.Padding = new Thickness(9); button.Margin = new Thickness(0, 3, 7, 4);
                 Help(button, signal.Label, signal.Explanation); signals.Children.Add(button);
@@ -290,7 +297,7 @@ public sealed partial class DashboardView
         if (widget.ShowDescription)
         {
             var explanation = new StackPanel(); explanation.Children.Add(Text(weather.Description, 12, "MutedBrush"));
-            explanation.Children.Add(Text("Météo indicative du relevé : échéances 35 %, priorités hautes 25 %, affectation 15 %, dernière modification 15 %, âge 10 %. Les poids disponibles sont renormalisés, avec un dénominateur propre à chaque signal. Soleil < 10 ; vigilance de 10 à < 25 ; pluie de 25 à < 45 ; orage ≥ 45. Les données insuffisantes restent indiquées comme partielles.", 11, "MutedBrush", margin: new Thickness(0, 8, 0, 0)));
+            explanation.Children.Add(Text("La formule locale, ses seuils et la couverture nécessaire sont configurables dans Colonnes et seuils. Chaque signal garde son propre échantillon. Les données absentes ne deviennent pas des zéros favorables.", 11, "MutedBrush", margin: new Thickness(0, 8, 0, 0)));
             var details = Details("Comprendre la météo et ses signaux", explanation);
             AutomationProperties.SetAutomationId(details, "Dashboard.Weather.Details"); panel.Children.Add(details);
         }

@@ -93,10 +93,10 @@ public sealed class TourPlan
 
 public sealed class TourPlanningContext
 {
-    internal TourPlanningContext(TourSource source, TourRow[] rows, Dictionary<string, CityDefinition> cities,
+    internal TourPlanningContext(TourSource source, TourRow[] rows, Dictionary<string, CityDefinition> cities, Dictionary<string, SiteDefinition> sites,
         TechnicianRoster roster, DashboardSnapshot dashboard, bool applied, string message)
     {
-        Source = source; Rows = rows; Cities = cities; Roster = roster; Grain = dashboard.Grain;
+        Source = source; Rows = rows; Cities = cities; Sites = sites; Roster = roster; Grain = dashboard.Grain;
         CalculatedAt = dashboard.CalculatedAt; HasStatus = dashboard.Column("status")!.Index.HasValue;
         HasPriority = dashboard.Column("priority")!.Index.HasValue; HasDue = dashboard.Column("due")!.Index.HasValue;
         Applied = applied; Message = message;
@@ -106,6 +106,7 @@ public sealed class TourPlanningContext
     internal TourSource Source { get; }
     internal TourRow[] Rows { get; }
     internal Dictionary<string, CityDefinition> Cities { get; }
+    internal Dictionary<string, SiteDefinition> Sites { get; }
     internal TechnicianRoster Roster { get; }
     internal Dictionary<string, int?> Columns { get; }
     internal bool HasStatus { get; }
@@ -120,7 +121,7 @@ public sealed class TourPlanningContext
 }
 
 internal sealed record TourRow(int Index, int Status, int? Priority, DateTime? Due, bool Active, bool High, bool Overdue,
-    string? CityId, CityMatchState CityState);
+    string? CityId, CityMatchState CityState, string? SiteId = null);
 
 internal sealed record TourSource(string[] Headers, string[][] Rows, string SourceUrl, string Title,
     DateTimeOffset ExtractedAt, int Pages, int? ExpectedTotal, bool Complete, string Scope, string[] Warnings);
@@ -150,6 +151,8 @@ public static class TourPlanningService
                     throw new InvalidDataException("Les indices de localisation ne correspondent pas au relevé.");
                 if (match.State == CityMatchState.Matched && (match.CityId == null || !cityById.ContainsKey(match.CityId)))
                     throw new InvalidDataException("Une ville détectée n’appartient pas au référentiel associé à ce relevé.");
+                if (match.SiteId != null && (match.State != CityMatchState.Matched || !cities.Sites.Any(site => site.Id == match.SiteId && site.CityId == match.CityId)))
+                    throw new InvalidDataException("Le site détecté n’appartient pas à la ville du référentiel associé au relevé.");
             }
             if (matches.Count != data.Rows.Count)
                 throw new InvalidDataException("La localisation ne couvre pas chaque ligne du relevé.");
@@ -171,12 +174,12 @@ public static class TourPlanningService
             matches.TryGetValue(i, out var match);
             rows[i] = new(i, DashboardService.Status(Cell("status")), DashboardService.Priority(Cell("priority")), due,
                 active.Contains(i), high.Contains(i), overdue.Contains(i), match?.State == CityMatchState.Matched ? match.CityId : null,
-                match?.State ?? CityMatchState.Unmatched);
+                match?.State ?? CityMatchState.Unmatched, match?.SiteId);
         }
         var source = new TourSource(data.Headers.ToArray(), sourceRows, data.SourceUrl, data.Title, data.ExtractedAt, data.Pages,
             data.ExpectedTotal, dashboard.Complete, data.Scope, dashboard.Warnings.ToArray());
         ct.ThrowIfCancellationRequested();
-        return new(source, rows, cityById, roster, dashboard, report.Applied, report.Message);
+        return new(source, rows, cityById, cities.Sites.ToDictionary(site => site.Id, site => site.Copy(), StringComparer.Ordinal), roster, dashboard, report.Applied, report.Message);
     }
 
     public static TourPlan Create(TourPlanningContext context, string? technicianKey = null, bool allStatuses = false,

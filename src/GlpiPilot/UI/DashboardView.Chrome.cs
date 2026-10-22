@@ -11,7 +11,7 @@ public sealed partial class DashboardView
     {
         var header = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
         var titles = new StackPanel { Margin = new Thickness(0, 0, 20, 8), MaxWidth = 680 };
-        titles.Children.Add(Text(_data?.IsFiltered == true ? "VUE TECHNICIEN" : "VUE D’ÉQUIPE", 10, "MutedBrush", FontWeights.SemiBold));
+        titles.Children.Add(Text(_data?.IsFiltered == true ? "PÉRIMÈTRE SÉLECTIONNÉ" : "VUE D’ÉQUIPE", 10, "MutedBrush", FontWeights.SemiBold));
         titles.Children.Add(Text(_data?.IsFiltered == true ? _data.ScopeLabel : "Tableau de bord", 24, weight: FontWeights.SemiBold, margin: new Thickness(0, 3, 0, 0)));
         titles.Children.Add(Text(_data is null ? "Votre espace de suivi, composé à votre façon."
             : $"{_data.RowCount:N0} {_data.Grain} · relevé du {_data.ExtractedAt:dd/MM/yyyy à HH:mm} · calcul à {_data.CalculatedAt:HH:mm}",
@@ -19,6 +19,7 @@ public sealed partial class DashboardView
         header.Children.Add(titles);
         var actions = new WrapPanel { Margin = new Thickness(0, 11, 0, 0) };
         actions.Children.Add(DescribedCommand("Bilan Excel", "Exporter les indicateurs du périmètre actuellement affiché, y compris les avertissements.", () => ExportRequested?.Invoke(), _data != null));
+        actions.Children.Add(DescribedCommand("Image PNG", "Enregistrer une image du dashboard avec son contexte et ses filtres.", ExportDashboardImage, _data != null, true));
         actions.Children.Add(DescribedCommand("Recalculer", "Recalculer les indicateurs avec les données déjà chargées et les réglages actuels.", () => RefreshRequested?.Invoke(), _data != null));
         actions.Children.Add(DescribedCommand("Colonnes et seuils", "Associer les colonnes du relevé et régler les seuils des indicateurs.", () => SettingsRequested?.Invoke(), quiet: true));
         header.Children.Add(actions); _body.Children.Add(header);
@@ -26,6 +27,8 @@ public sealed partial class DashboardView
 
         var metadata = new WrapPanel { Margin = new Thickness(0, 0, 0, 7) };
         metadata.Children.Add(Chip(_data.Complete ? "Complet confirmé" : "Périmètre à confirmer", _data.Complete ? "SuccessBrush" : "WarningBrush"));
+        var age = DateTimeOffset.Now - _data.ExtractedAt;
+        metadata.Children.Add(Chip(age.TotalHours >= 24 ? $"Relevé âgé de {age.TotalDays:0.#} jours" : $"Relevé âgé de {Math.Max(0, age.TotalMinutes):0} min", age.TotalHours >= 24 ? "WarningBrush" : "MutedBrush"));
         if (_data.IsFiltered)
             metadata.Children.Add(Chip($"Vue filtrée · {_data.RowCount:N0} / {_data.SourceRowCount:N0} lignes du relevé"));
         else if (_data.ExpectedTotal.HasValue)
@@ -52,7 +55,7 @@ public sealed partial class DashboardView
         boards.SelectionChanged += (_, _) =>
         {
             if (!_busy && boards.SelectedItem is DashboardBoardSettings selected && selected.Id != _layout.ActiveBoardId)
-                Change(() => { _layout.ActiveBoardId = selected.Id; _selectedWidget = null; });
+                Change(() => { _layout.ActiveBoardId = selected.Id; _selectedWidget = null; _selectedWidgets.Clear(); _crossFilters.Clear(); });
         };
         bar.Children.Add(boards);
         var mode = DescribedCommand(_editing ? "Terminer" : "Personnaliser",
@@ -143,6 +146,7 @@ public sealed partial class DashboardView
     private static string KindLabel(string kind) => kind switch
     {
         "metric" => "Indicateur", "distribution" => "Répartition", "weather" => "Météo",
-        "timeline" => "Activité", "attention" => "Priorités", "quality" => "Qualité", "note" => "Note", _ => "Widget"
+        "timeline" => "Activité", "attention" => "Priorités", "quality" => "Qualité", "note" => "Note",
+        "matrix" => "Matrice", "histogram" => "Histogramme", "boxplot" => "Dispersion", "scatter" => "Nuage de points", "history" => "Historique", _ => "Widget"
     };
 }

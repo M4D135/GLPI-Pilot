@@ -13,7 +13,7 @@ This script does not imply that Windows checks passed until each executable succ
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('BclChecks', 'WpfChecks', 'BuildPack', 'PackStartup')]
+    [ValidateSet('BclChecks', 'BrowserChecks', 'WpfChecks', 'BuildPack', 'PackStartup')]
     [string]$Stage,
     [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/windows-ci')
 )
@@ -33,7 +33,8 @@ function Invoke-CheckedProcess {
         [string[]]$Arguments = @(),
         [Parameter(Mandatory)][string]$LogName,
         [int]$TimeoutSeconds = 300,
-        [string]$ExpectedSummary = ''
+        [string]$ExpectedSummary = '',
+        [string]$ExpectedPattern = ''
     )
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = $Executable
@@ -65,6 +66,9 @@ function Invoke-CheckedProcess {
         if ($process.ExitCode -ne 0) { throw "$LogName failed with exit code $($process.ExitCode)." }
         if ($ExpectedSummary -and -not $report.Contains($ExpectedSummary, [StringComparison]::Ordinal)) {
             throw "$LogName exited without the expected successful test summary."
+        }
+        if ($ExpectedPattern -and $report -notmatch $ExpectedPattern) {
+            throw "$LogName exited without the expected successful test summary pattern."
         }
     }
     finally {
@@ -100,7 +104,7 @@ function Assert-PackContents {
         $required = @(
             'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
-            'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
+            'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
             'wad/version.json', 'wad/SHA256SUMS.txt'
         )
         if ($Edition -eq 'DEV') {
@@ -166,7 +170,7 @@ function Test-PackStartup {
     $packLogs = Join-Path $logs 'pack-startup'
     New-Item -ItemType Directory -Path $state, $temporary, $extract, $packLogs -Force | Out-Null
     $messages = [Collections.Generic.List[string]]::new()
-    $process = $null; $linkCreated = $false; $passed = $false
+    $process = $null; $secondary = $null; $linkCreated = $false; $passed = $false
     try {
         $pack = Get-Pack
         [void](Assert-PackContents $pack -Edition PROD)
@@ -195,6 +199,8 @@ public static class GlpiPilotCiWindow {
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ShowWindow(IntPtr window, int command);
 }
 '@
         $start = [Diagnostics.ProcessStartInfo]::new()
@@ -234,6 +240,20 @@ public static class GlpiPilotCiWindow {
         }
         if (-not $ready) { throw 'Pack startup exceeded 90 seconds without both ContentRendered evidence and a visible main window.' }
         $messages.Add('PASS: the extracted standalone executable reached ContentRendered and owns a visible nonzero main window.')
+        [void][GlpiPilotCiWindow]::ShowWindow($process.MainWindowHandle, 6)
+        if (-not [GlpiPilotCiWindow]::IsIconic($process.MainWindowHandle)) { throw 'The primary window could not be minimized for the second-launch check.' }
+        $secondary = [Diagnostics.Process]::new(); $secondary.StartInfo = $start
+        if (-not $secondary.Start() -or -not $secondary.WaitForExit(10000) -or $secondary.ExitCode -ne 0) {
+            throw 'A second launch did not signal the primary instance and close normally within ten seconds.'
+        }
+        $secondary.Dispose(); $secondary = $null
+        $activationClock = [Diagnostics.Stopwatch]::StartNew()
+        while ([GlpiPilotCiWindow]::IsIconic($process.MainWindowHandle) -and $activationClock.Elapsed.TotalSeconds -lt 5) { Start-Sleep -Milliseconds 100 }
+        $process.Refresh()
+        if ($process.HasExited -or [GlpiPilotCiWindow]::IsIconic($process.MainWindowHandle) -or -not [GlpiPilotCiWindow]::IsWindowVisible($process.MainWindowHandle)) {
+            throw 'The first instance did not restore its visible window after the explicit second launch.'
+        }
+        $messages.Add('PASS: a second launch exits normally and restores the existing minimized window through same-user IPC.')
         if (-not $process.CloseMainWindow()) { throw 'The visible main window did not accept a normal close request.' }
         $remaining = [Math]::Min(10000, [Math]::Max(0, [int](90000 - $clock.Elapsed.TotalMilliseconds)))
         if (-not $process.WaitForExit($remaining)) { throw 'The packaged app did not close within the startup-test deadline.' }
@@ -292,6 +312,10 @@ public static class GlpiPilotCiWindow {
     }
     finally {
         try {
+            if ($secondary) {
+                try { if (-not $secondary.HasExited) { $secondary.Kill($true); [void]$secondary.WaitForExit(5000) } }
+                finally { $secondary.Dispose() }
+            }
             if ($process) {
                 try { if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) } }
                 finally { $process.Dispose() }
@@ -323,22 +347,45 @@ try {
         'BclChecks' {
             $suites = @(
                 @{ Project = 'StartupDiagnosticsChecks'; Log = 'startup-diagnostics-checks.log'; Summary = 'Startup diagnostics: 14 passed, 0 failed.' },
+                @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
+                @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '\d+/\d+ Foundation checks passed\.' },
+                @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '39/39 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '84/84' },
-                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '25/25 checks passed.' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '102/102' },
+                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '29/29 checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
                 @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '33/33' },
-                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '60/60' },
-                @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '41/41' },
-                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '69/69 vérifications réussies.' },
+                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '75/75' },
+                @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '59/59' },
+                @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '92/92 vérifications réussies.' },
                 @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '38/38' },
                 @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' }
             )
             foreach ($suite in $suites) {
                 $project = 'tests/' + $suite.Project + '/' + $suite.Project + '.csproj'
+                $pattern = if ($suite.ContainsKey('Pattern')) { $suite.Pattern } else { '' }
                 Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', $project, '-c', 'Release', '-p:PlaywrightPlatform=win') `
-                    -LogName $suite.Log -TimeoutSeconds 180 -ExpectedSummary $suite.Summary
+                    -LogName $suite.Log -TimeoutSeconds 180 -ExpectedSummary $suite.Summary -ExpectedPattern $pattern
             }
+        }
+        'BrowserChecks' {
+            $browserCandidates = @(
+                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe'),
+                (Join-Path $env:ProgramFiles 'Microsoft/Edge/Application/msedge.exe'),
+                (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe')
+            )
+            $browser = $browserCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+            if (-not $browser) { throw 'No supported Chromium browser is available for the isolated synthetic checks.' }
+            $env:GLPI_TEST_CHROMIUM = $browser
+            foreach ($suite in @('BrowserChecks', 'AutomationChecks')) {
+                Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', "tests/$suite/$suite.csproj", '-c', 'Release') `
+                    -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 180 -ExpectedPattern '\d+/\d+ vérifications.*réussies\.'
+            }
+            $driver = Join-Path $repository 'tests/AutomationChecks/bin/Release/net10.0/.playwright'
+            $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+            Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
+                -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
+                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '82 native export DOM checks passed.'
         }
         'WpfChecks' {
             $harness = Join-Path $OutputDirectory 'wpf-harness'

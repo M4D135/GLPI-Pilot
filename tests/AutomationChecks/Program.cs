@@ -16,8 +16,13 @@ if (string.IsNullOrWhiteSpace(browserPath))
 }
 string temporary = Path.Combine(Path.GetTempPath(), "GlpiPilot-AutomationChecks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(temporary);
-string fixture10 = await Fixture("native-glpi10.html");
-string fixture11 = await Fixture("native-glpi11.html");
+// The downloaded fixture population and the visible sample describe the same
+// tickets. Adapter-only DOM fixtures use arbitrary IDs and remain unchanged.
+string fixture10 = (await Fixture("native-glpi10.html"))
+    .Replace("<td>42</td>", "<td>0003</td>", StringComparison.Ordinal)
+    .Replace("item[Ticket][42]", "item[Ticket][3]", StringComparison.Ordinal);
+string fixture11 = (await Fixture("native-glpi11.html"))
+    .Replace("<td>7</td>", "<td>0003</td>", StringComparison.Ordinal);
 string fixtureLegacy = await Fixture("native-legacy.html");
 string fixtureLegacyRealistic = await Fixture("native-legacy-realistic.html");
 string basic = await Fixture("basic-glpi.html");
@@ -61,9 +66,9 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Legacy réel : six tableaux, export adjacent CSV -3 et 828 lignes", () => CheckRealisticLegacy(false)),
     ("Legacy ancien : Select2 masqué, disquette input image et 828 lignes natives", () => CheckRealisticLegacy(true)),
     ("CSV natif 831 lignes : contrôles C0/C1 conservés, fichier intact et Excel valide", CheckNativeTextControls),
-    ("CSV reçu HTML : fichier intact et repli automatique sur 831 lignes affichées", () => CheckUnreadableNativeFallback(false)),
-    ("CSV reçu binaire : fichier intact et repli automatique sur 831 lignes affichées", () => CheckUnreadableNativeFallback(true)),
-    ("Repli après CSV illisible : affichage incomplet ou absent refusé sans faux Excel", CheckUnreadableNativeRejected),
+    ("CSV reçu HTML : fichier intact, échec explicite et aucun repli silencieux", () => CheckUnreadableNativePreserved(false)),
+    ("CSV reçu binaire : fichier intact, échec explicite et aucun repli silencieux", () => CheckUnreadableNativePreserved(true)),
+    ("CSV illisible : même avec un contrôle d’affichage, aucun faux Excel", CheckUnreadableNativeRejected),
     ("Export indisponible stable : arrêt rapide et diagnostic sans valeurs privées", CheckUnsupportedNative),
     ("Afficher tout : option native existante, 828 lignes vérifiées puis Excel", CheckDisplayAll),
     ("Afficher tout incomplet ou au-delà de la limite : aucun fichier complet", CheckDisplayAllRejected),
@@ -502,6 +507,7 @@ async Task CheckCustomSafety()
     await using (var h = await Create(route => Html(route, menuHtml), target))
     {
         var settings = Settings();
+        settings.MaxRows = 2000;
         settings.NativeSelectorOrigin = "http://glpi.test";
         settings.NativeMenuSelector = "#dropdown-export";
         settings.NativeSubmitSelector = "#all-csv";
@@ -719,7 +725,7 @@ string NativeCsv828()
 {
     var lines = new List<string> { "ID;" + string.Join(';', Enumerable.Range(2, 15).Select(column => "Champ " + column)) };
     for (int row = 1; row <= 828; row++)
-        lines.Add(row.ToString("D6") + ";" + string.Join(';', Enumerable.Range(2, 15).Select(column => row == 828 && column == 16 ? "=1+1" : $"Fixture {row} / {column}")));
+        lines.Add((6000000 + row).ToString() + ";" + string.Join(';', Enumerable.Range(2, 15).Select(column => row == 828 && column == 16 ? "=1+1" : $"Fixture {row} / {column}")));
     return "\uFEFF" + string.Join("\r\n", lines) + "\r\n";
 }
 
@@ -764,13 +770,13 @@ async Task CheckRealisticLegacy(bool imageSubmit)
     Equal("#legacy-results", run.Table.Selector);
     Equal(828, run.Data.Rows.Count); Equal(828, run.Data.ExpectedTotal); Equal(16, run.Data.Headers.Count);
     True(run.Data.Complete, string.Join(" | ", run.Data.Warnings));
-    Equal("000001", run.Data.Rows[0][0]); Equal("000828", run.Data.Rows[^1][0]);
+    Equal("6000001", run.Data.Rows[0][0]); Equal("6000828", run.Data.Rows[^1][0]);
     Equal(1, downloads.Count);
     string query = Uri.UnescapeDataString(new Uri(downloads.Single()).Query);
     True(query.Contains("display_type=-3", StringComparison.Ordinal), "Le code CSV réel du GLPI legacy est -3 ; -4 désigne ici un PDF.");
     True(query.Contains("criteria[0][value]=notold", StringComparison.Ordinal), "Le filtre du formulaire d’export doit être préservé.");
     Equal(csv, Encoding.UTF8.GetString(await File.ReadAllBytesAsync(run.NativePath!)));
-    AssertWorkbook(run.ExcelPath!, 828, "000001", "000828", "=1+1");
+    AssertWorkbook(run.ExcelPath!, 828, "6000001", "6000828", "=1+1");
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
 }
 
@@ -796,7 +802,7 @@ async Task CheckNativeTextControls()
     for (int row = 1; row <= 831; row++)
     {
         var values = new string[16];
-        values[0] = row.ToString("D6");
+        values[0] = (6000000 + row).ToString();
         values[1] = (row <= special.Length ? special[row - 1] : $"Description synthétique {row}") + " " + new string('z', 1280);
         for (int column = 2; column < values.Length; column++) values[column] = $"Fixture {row} / {column + 1}";
         expectedRows.Add(values);
@@ -838,7 +844,7 @@ async Task CheckNativeTextControls()
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
 }
 
-async Task CheckUnreadableNativeFallback(bool binary)
+async Task CheckUnreadableNativePreserved(bool binary)
 {
     const string privateSentinel = "PRIVATE-UNREADABLE-DOWNLOAD-CONTENT";
     string received = binary ? "%PDF-1.7\n\0" + privateSentinel : "<!doctype html><html><body>" + privateSentinel + "</body></html>";
@@ -859,22 +865,20 @@ async Task CheckUnreadableNativeFallback(bool binary)
     var settings = Settings(legacyTarget); settings.MaxRows = 1000;
     var automatic = new AutomaticExtractionService(h.Service);
     automatic.Log += h.Logs.Enqueue;
-    var run = await automatic.RunAsync(settings, null, CancellationToken.None);
-    Equal(831, run.Data.Rows.Count); Equal(831, run.Data.ExpectedTotal);
-    True(run.Data.Complete, "Le repli doit certifier le compteur complet et les 831 lignes réellement affichées.");
-    Equal("Toute la recherche affichée dans GLPI, de 1 au total annoncé", run.Data.Scope);
-    Equal(1, downloads); Equal(1, displayRequests);
-    True(run.NativePath != null && run.ExcelPath != null, "Le reçu natif illisible doit être conservé à côté du classeur de repli.");
-    byte[] downloadedBytes = await File.ReadAllBytesAsync(run.NativePath!);
+    var phases = new List<AutomaticRunPhase>(); automatic.PhaseChanged += phases.Add;
+    string? nativePath = null; automatic.NativeFileSaved += path => nativePath = path;
+    InvalidDataException? failure = null;
+    try { await automatic.RunAsync(settings, null, CancellationToken.None); }
+    catch (InvalidDataException error) { failure = error; }
+    True(failure != null, "Un reçu HTML ou binaire doit produire un échec explicite.");
+    Equal(1, downloads); Equal(0, displayRequests);
+    True(nativePath != null && !phases.Contains(AutomaticRunPhase.Ready), "Le reçu doit être conservé sans annoncer un résultat prêt.");
+    byte[] downloadedBytes = await File.ReadAllBytesAsync(nativePath!);
     True(Encoding.UTF8.GetBytes(received).SequenceEqual(downloadedBytes), "Le reçu natif illisible ne doit être modifié ni remplacé par le CSV local.");
     var csvPaths = Directory.GetFiles(settings.ExportFolder, "*.csv");
-    Equal(2, csvPaths.Length);
-    string local = csvPaths.Single(path => !string.Equals(path, run.NativePath, StringComparison.Ordinal));
-    var localData = NativeCsvImportService.Read(local, legacyTarget, 831, 1000);
-    Equal(831, localData.Rows.Count); True(localData.Complete, "Le CSV local de repli doit contenir les 831 lignes vérifiées.");
-    True(run.Data.Warnings.Count > 0 && run.Data.Warnings.Any(warning => warning.Contains("conserv", StringComparison.OrdinalIgnoreCase)), "Le résultat doit expliquer le repli et la conservation du reçu natif.");
-    AssertWorkbook(run.ExcelPath!, 831);
-    string diagnostic = DiagnosticReport.Create(settings, run.Data, string.Join('\n', h.Logs));
+    Equal(1, csvPaths.Length); Equal(nativePath, csvPaths[0]);
+    Equal(0, Directory.GetFiles(settings.ExportFolder, "*.xlsx").Length);
+    string diagnostic = DiagnosticReport.Create(settings, null, string.Join('\n', h.Logs) + "\n" + failure!.Message);
     True(!diagnostic.Contains(privateSentinel, StringComparison.Ordinal), "Le diagnostic du reçu illisible doit exclure son contenu.");
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
 }
@@ -892,7 +896,7 @@ async Task CheckUnreadableNativeRejected()
             if (new Uri(route.Request.Url).AbsolutePath.EndsWith("/report.dynamic.php", StringComparison.Ordinal))
             { downloads++; return Download(route, received); }
             if (route.Request.Method == "POST") displayRequests++;
-            // Even after the accepted POST, the server still exposes only 20 of 831 rows.
+            // The server exposes only 20 of 831 rows. No POST should occur.
             return Html(route, html);
         }, legacyTarget);
         var settings = Settings(legacyTarget); settings.MaxRows = 1000; settings.TimeoutSeconds = 2;
@@ -900,7 +904,7 @@ async Task CheckUnreadableNativeRejected()
         try { await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None); }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException) { failure = ex; }
         True(failure != null, "Un reçu illisible sans affichage complet vérifié doit rester un échec explicite.");
-        Equal(1, downloads); Equal(hasDisplayControl ? 1 : 0, displayRequests);
+        Equal(1, downloads); Equal(0, displayRequests);
         Equal(0, Directory.GetFiles(settings.ExportFolder, "*.xlsx").Length);
         var remaining = Directory.GetFiles(settings.ExportFolder);
         Equal(1, remaining.Length);
@@ -919,6 +923,7 @@ async Task CheckUnsupportedNative()
         """);
     await using var h = await Create(route => Html(route, html), legacyTarget);
     var settings = Settings(legacyTarget + "?filter=URL-PRIVATE-SENTINEL");
+    settings.Automation.AutomaticPaginationFallback = false;
     settings.TimeoutSeconds = 60; settings.MaxRows = 1000;
     using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(9));
     var elapsed = Stopwatch.StartNew();

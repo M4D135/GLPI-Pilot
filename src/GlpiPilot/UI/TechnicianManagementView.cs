@@ -35,6 +35,14 @@ public sealed class TechnicianManagementView : UserControl
         AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 76, MaxLength = TechnicianPreferences.MaximumNotesLength,
         VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(0, 6, 0, 10)
     };
+    private readonly TextBox _skills = new() { MaxLength = 8050, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBox _primaryTerritories = new() { MaxLength = 8050, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBox _backupTerritories = new() { MaxLength = 8050, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBox _capacityMinutes = new() { Width = 110, MaxLength = 4 };
+    private readonly TextBox _estimatedMinutes = new() { Width = 110, MaxLength = 5 };
+    private readonly DatePicker _unavailableFrom = new() { Width = 150 };
+    private readonly DatePicker _unavailableUntil = new() { Width = 150 };
+    private readonly TextBox _availabilityNote = new() { MaxLength = 1200, TextWrapping = TextWrapping.Wrap };
     private readonly WrapPanel _metricActions = new() { Margin = new Thickness(0, 12, 0, 12) };
     private readonly List<Button> _metricButtons = new();
     private readonly Button _refresh, _dashboard, _save, _unassigned, _multiple;
@@ -114,6 +122,10 @@ public sealed class TechnicianManagementView : UserControl
         AddColumn("Objectif local", nameof(ComparisonRow.ActiveTarget), 120, format: "N0");
         AddColumn("Actifs / objectif", nameof(ComparisonRow.LoadLabel), 145, nameof(ComparisonRow.LoadPercent),
             "Actifs reconnus / objectif choisi sur ce poste. Un astérisque signale une source partielle ou des statuts inconnus. Ce ratio n’est pas une mesure de performance.");
+        AddColumn("Compétences déclarées", nameof(ComparisonRow.Skills), 200);
+        AddColumn("Secteurs déclarés", nameof(ComparisonRow.Territories), 210);
+        AddColumn("Capacité · min/j", nameof(ComparisonRow.CapacityMinutes), 130, format: "N0");
+        AddColumn("Charge estimée · min", nameof(ComparisonRow.EstimatedLoadMinutes), 160, format: "N0", tooltip: "Estimation locale uniforme : actifs reconnus × estimation par ticket. Aucun temps de travail réel n’est déduit.");
         VirtualizingPanel.SetIsVirtualizing(_grid, true);
         VirtualizingPanel.SetVirtualizationMode(_grid, VirtualizationMode.Recycling);
         ScrollViewer.SetCanContentScroll(_grid, true);
@@ -149,6 +161,19 @@ public sealed class TechnicianManagementView : UserControl
         selected.Children.Add(preferenceRow); selected.Children.Add(_loadNote);
         selected.Children.Add(Label($"Note locale facultative · {TechnicianPreferences.MaximumNotesLength:N0} caractères maximum", 12, "MutedBrush", margin: new Thickness(0, 12, 0, 0)));
         AutomationProperties.SetName(_notes, "Note locale du technicien sélectionné"); selected.Children.Add(_notes);
+        selected.Children.Add(Label("COMPÉTENCES ET COUVERTURE DÉCLARÉES", 11, "MutedBrush", FontWeights.SemiBold, new Thickness(0, 16, 0, 4)));
+        selected.Children.Add(Label("Compétences / habilitations · séparer par un point-virgule", 12, "MutedBrush")); selected.Children.Add(_skills);
+        selected.Children.Add(Label("Secteurs principaux · noms de villes ou de sites", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 4))); selected.Children.Add(_primaryTerritories);
+        selected.Children.Add(Label("Secteurs de remplacement", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 4))); selected.Children.Add(_backupTerritories);
+        var capacity = new WrapPanel { Margin = new Thickness(0, 12, 0, 8) };
+        capacity.Children.Add(Label("Capacité déclarée · min/jour", 12, "MutedBrush")); capacity.Children.Add(_capacityMinutes);
+        capacity.Children.Add(Label("Estimation par ticket actif · min", 12, "MutedBrush", margin: new Thickness(12, 0, 6, 0))); capacity.Children.Add(_estimatedMinutes); selected.Children.Add(capacity);
+        var absence = new WrapPanel { Margin = new Thickness(0, 4, 0, 8) };
+        absence.Children.Add(Label("Indisponibilité du", 12, "MutedBrush")); absence.Children.Add(_unavailableFrom);
+        absence.Children.Add(Label("au", 12, "MutedBrush", margin: new Thickness(8, 0, 8, 0))); absence.Children.Add(_unavailableUntil);
+        absence.Children.Add(Command("Effacer l’indisponibilité", () => _unavailableFrom.SelectedDate = _unavailableUntil.SelectedDate = null)); selected.Children.Add(absence);
+        selected.Children.Add(Label("Précisions de disponibilité / horaires", 12, "MutedBrush")); selected.Children.Add(_availabilityNote);
+        selected.Children.Add(Label("Ces déclarations servent uniquement à la simulation. Une absence non renseignée ne confirme pas la présence ; la charge en minutes est une estimation choisie.", 12, "MutedBrush", margin: new Thickness(0, 8, 0, 12)));
         _save = Command("Enregistrer les repères", SaveSelectedPreference);
         selected.Children.Add(_save);
         selected.Children.Add(Label("Ces réglages restent dans GLPI Pilot sur ce poste. Le ratio décrit le stock présent dans le relevé ; il ne décrit ni présence, ni capacité disponible, ni productivité.", 12, "MutedBrush", margin: new Thickness(0, 10, 0, 0)));
@@ -252,7 +277,7 @@ public sealed class TechnicianManagementView : UserControl
         var query = _search.Text.Trim();
         return (_filter.SelectedIndex != 1 || row.ActiveCount > 0)
             && (_filter.SelectedIndex != 2 || row.Favorite)
-            && (query.Length == 0 || CultureInfo.CurrentCulture.CompareInfo.IndexOf(row.Name, query,
+            && (query.Length == 0 || CultureInfo.CurrentCulture.CompareInfo.IndexOf(row.Name + " " + row.Skills + " " + row.Territories, query,
                 CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0);
     }
 
@@ -303,6 +328,13 @@ public sealed class TechnicianManagementView : UserControl
             _favorite.IsChecked = row.Favorite;
             _target.Text = row.ActiveTarget?.ToString(CultureInfo.InvariantCulture) ?? "";
             _notes.Text = row.Preference.Notes;
+            _skills.Text = string.Join(" ; ", row.Preference.Skills);
+            _primaryTerritories.Text = string.Join(" ; ", row.Preference.PrimaryTerritories);
+            _backupTerritories.Text = string.Join(" ; ", row.Preference.BackupTerritories);
+            _capacityMinutes.Text = row.Preference.DailyCapacityMinutes?.ToString(CultureInfo.InvariantCulture) ?? "";
+            _estimatedMinutes.Text = row.Preference.EstimatedTicketMinutes?.ToString(CultureInfo.InvariantCulture) ?? "";
+            _unavailableFrom.SelectedDate = row.Preference.UnavailableFrom; _unavailableUntil.SelectedDate = row.Preference.UnavailableUntil;
+            _availabilityNote.Text = row.Preference.AvailabilityNote;
         }
         _loadNote.Text = row.LoadExplanation;
         UpdateEnabled();
@@ -319,7 +351,28 @@ public sealed class TechnicianManagementView : UserControl
             { SetMessage($"Indiquez un objectif de 1 à {TechnicianPreferences.MaximumActiveTarget:N0} actifs, ou laissez le champ vide.", true); return; }
             target = value;
         }
-        PreferenceSaveRequested?.Invoke(row.Key, new() { Favorite = _favorite.IsChecked == true, ActiveTarget = target, Notes = _notes.Text });
+        try
+        {
+            int? Minutes(TextBox field, int maximum, bool allowZero)
+            {
+                if (string.IsNullOrWhiteSpace(field.Text)) return null;
+                if (!int.TryParse(field.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var value) || value < (allowZero ? 0 : 1) || value > maximum)
+                    throw new InvalidOperationException($"Indiquez un nombre de minutes compris entre {(allowZero ? 0 : 1)} et {maximum:N0}, ou laissez vide.");
+                return value;
+            }
+            var preference = new TechnicianPreference
+            {
+                Favorite = _favorite.IsChecked == true, ActiveTarget = target, Notes = _notes.Text,
+                Skills = _skills.Text.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
+                PrimaryTerritories = _primaryTerritories.Text.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
+                BackupTerritories = _backupTerritories.Text.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
+                DailyCapacityMinutes = Minutes(_capacityMinutes, 1440, true), EstimatedTicketMinutes = Minutes(_estimatedMinutes, 10080, false),
+                UnavailableFrom = _unavailableFrom.SelectedDate, UnavailableUntil = _unavailableUntil.SelectedDate, AvailabilityNote = _availabilityNote.Text
+            };
+            _ = _preferences.With(row.Key, preference);
+            PreferenceSaveRequested?.Invoke(row.Key, preference);
+        }
+        catch (Exception error) { SetMessage(error.Message, true); }
     }
 
     private void OpenSelectedDashboard()
@@ -342,6 +395,8 @@ public sealed class TechnicianManagementView : UserControl
         _refresh.IsEnabled = !_busy;
         var selected = available && _grid.SelectedItem is ComparisonRow;
         _dashboard.IsEnabled = _save.IsEnabled = _favorite.IsEnabled = _target.IsEnabled = _notes.IsEnabled = selected;
+        _skills.IsEnabled = _primaryTerritories.IsEnabled = _backupTerritories.IsEnabled = _capacityMinutes.IsEnabled = _estimatedMinutes.IsEnabled
+            = _unavailableFrom.IsEnabled = _unavailableUntil.IsEnabled = _availabilityNote.IsEnabled = selected;
         _unassigned.IsEnabled = available && _snapshot!.UnassignedRows.Length > 0;
         _multiple.IsEnabled = available && _snapshot!.MultipleAssignmentRows.Length > 0;
         foreach (var button in _metricButtons) button.IsEnabled = selected && button.Tag is true;
@@ -405,6 +460,10 @@ public sealed class TechnicianManagementView : UserControl
         public int UnknownStatusCount => Entry.UnknownStatusCount;
         public int MultipleAssignmentCount => Entry.MultipleAssignmentCount;
         public int? ActiveTarget => Preference.ActiveTarget;
+        public string Skills => string.Join(" ; ", Preference.Skills);
+        public string Territories => string.Join(" ; ", Preference.PrimaryTerritories) + (Preference.BackupTerritories.Count > 0 ? " · relais : " + string.Join(" ; ", Preference.BackupTerritories) : "");
+        public int? CapacityMinutes => Preference.DailyCapacityMinutes;
+        public double? EstimatedLoadMinutes => ActiveCount.HasValue && Preference.EstimatedTicketMinutes.HasValue ? ActiveCount.Value * (double)Preference.EstimatedTicketMinutes.Value : null;
         public double? LoadPercent => TechnicianWorkloadService.LoadPercentage(Entry, ActiveTarget);
         public string LoadLabel => LoadPercent.HasValue ? LoadPercent.Value.ToString("N0") + " %" + (PartialSource || UnknownStatusCount > 0 ? " *" : "") : "—";
         public string LoadExplanation => !ActiveTarget.HasValue ? "Aucun objectif local défini : aucun taux de charge n’est calculé."

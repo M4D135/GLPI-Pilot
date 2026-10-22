@@ -8,16 +8,23 @@ public sealed class DashboardLayoutSettings
     public int Version { get; set; } = 1;
     public string ActiveBoardId { get; set; } = "";
     public List<DashboardBoardSettings> Boards { get; set; } = new();
+    public List<string> CatalogFavorites { get; set; } = new();
+    public List<DashboardFilterPreset> FilterPresets { get; set; } = new();
 
     public DashboardLayoutSettings Copy() => new()
     {
         Version = Version, ActiveBoardId = ActiveBoardId,
-        Boards = Boards?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new()
+        Boards = Boards?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
+        CatalogFavorites = new(CatalogFavorites ?? new()),
+        FilterPresets = FilterPresets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new()
     };
 
     public void Normalize()
     {
         Version = 1;
+        CatalogFavorites = (CatalogFavorites ?? new()).Where(x => x is not null && x.Length <= 240).Distinct(StringComparer.Ordinal).Take(512).ToList();
+        FilterPresets = (FilterPresets ?? new()).Where(x => x is not null).Take(30).ToList();
+        foreach (var preset in FilterPresets) preset.Normalize();
         Boards ??= new();
         Boards = Boards.Where(x => x is not null).Take(12).ToList();
         if (Boards.Count == 0) Boards.Add(CreateBoard("Pilotage", "overview"));
@@ -34,12 +41,20 @@ public sealed class DashboardLayoutSettings
     {
         if (Version != 1 || Boards is null || Boards.Count is < 1 or > 12)
             throw new InvalidDataException("La disposition doit contenir de 1 à 12 tableaux de bord, au format 1.");
+        if (CatalogFavorites is null || CatalogFavorites.Count > 512 || CatalogFavorites.Any(x => x is null || x.Length > 240)
+            || FilterPresets is null || FilterPresets.Count > 30)
+            throw new InvalidDataException("Les favoris et contextes du dashboard dépassent les limites autorisées.");
+        foreach (var preset in FilterPresets) preset.Validate();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var board in Boards)
         {
             if (board is null || !ValidText(board.Id, 96) || !ids.Add(board.Id) || !ValidText(board.Name, 120)
                 || board.Widgets is null || board.Widgets.Count > 60)
                 throw new InvalidDataException("Un tableau de bord possède un nom, un identifiant ou une liste de widgets incorrects.");
+            DashboardScopeFilter.ValidateList(board.Filters);
+            DashboardScopeFilter.ValidateList(board.ComparisonFilters);
+            if (board.CollapsedSections is null || board.CollapsedSections.Count > 60 || board.CollapsedSections.Any(x => x is null || x.Length > 80))
+                throw new InvalidDataException("Les sections du dashboard sont invalides.");
             var widgetIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var widget in board.Widgets)
             {
@@ -53,6 +68,10 @@ public sealed class DashboardLayoutSettings
                     || widget.Note is null || widget.Note.Length > 4000)
                     throw new InvalidDataException("Un widget possède une présentation ou une taille incorrecte.");
                 widget.ValidateThresholds();
+                DashboardScopeFilter.ValidateList(widget.Filters);
+                if (widget.Section is null || widget.Section.Length > 80 || widget.HistogramBreaks is null
+                    || widget.HistogramBreaks.Count > 30 || widget.HistogramBreaks.Any(x => !double.IsFinite(x) || Math.Abs(x) > 1e9))
+                    throw new InvalidDataException("Les filtres, sections ou tranches du widget sont invalides.");
             }
         }
         if (!ids.Contains(ActiveBoardId)) throw new InvalidDataException("Le tableau de bord actif est absent de la disposition.");
@@ -156,12 +175,22 @@ public sealed class DashboardBoardSettings
     public string Id { get; set; } = DashboardLayoutSettings.NewId();
     public string Name { get; set; } = "Mon tableau de bord";
     public List<DashboardWidgetSettings> Widgets { get; set; } = new();
-    public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new() };
+    public List<DashboardScopeFilter> Filters { get; set; } = new();
+    public bool CrossFilterOnClick { get; set; }
+    public bool ComparisonEnabled { get; set; }
+    public List<DashboardScopeFilter> ComparisonFilters { get; set; } = new();
+    public List<string> CollapsedSections { get; set; } = new();
+    public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
+        Filters = DashboardScopeFilter.CopyList(Filters), CrossFilterOnClick = CrossFilterOnClick,
+        ComparisonEnabled = ComparisonEnabled, ComparisonFilters = DashboardScopeFilter.CopyList(ComparisonFilters),
+        CollapsedSections = new(CollapsedSections ?? new()) };
     internal void Normalize()
     {
         if (string.IsNullOrWhiteSpace(Id) || Id.Length > 96) Id = DashboardLayoutSettings.NewId();
         Name = string.IsNullOrWhiteSpace(Name) ? "Mon tableau de bord" : Name[..Math.Min(Name.Length, 120)];
         Widgets = Widgets?.Where(x => x is not null).Take(60).ToList() ?? new();
+        Filters ??= new(); ComparisonFilters ??= new();
+        CollapsedSections = (CollapsedSections ?? new()).Where(x => x is not null && x.Length <= 80).Distinct(StringComparer.Ordinal).Take(60).ToList();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var widget in Widgets)
         {
@@ -173,10 +202,10 @@ public sealed class DashboardBoardSettings
 
 public sealed class DashboardWidgetSettings
 {
-    public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note" };
+    public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note", "matrix", "histogram", "boxplot", "scatter", "history" };
     public static readonly string[] Styles = { "surface", "outline", "accent", "minimal" };
     public static readonly string[] Accents = { "blue", "teal", "green", "orange", "red", "purple", "slate" };
-    public static readonly string[] Presentations = { "bars", "list", "compact", "donut", "gauge" };
+    public static readonly string[] Presentations = { "bars", "list", "compact", "donut", "gauge", "pareto", "columns", "heatmap", "stacked" };
     public string Id { get; set; } = DashboardLayoutSettings.NewId();
     public string Kind { get; set; } = "metric";
     public string SourceKey { get; set; } = "total";
@@ -196,7 +225,16 @@ public sealed class DashboardWidgetSettings
     public double? WarningValue { get; set; }
     public double? CriticalValue { get; set; }
     public bool LowerIsBetter { get; set; } = true;
-    public DashboardWidgetSettings Copy() => (DashboardWidgetSettings)MemberwiseClone();
+    public string Section { get; set; } = "";
+    public List<DashboardScopeFilter> Filters { get; set; } = new();
+    public List<double> HistogramBreaks { get; set; } = new() { 1, 7, 14, 30, 90 };
+    public DashboardWidgetSettings Copy()
+    {
+        var copy = (DashboardWidgetSettings)MemberwiseClone();
+        copy.Filters = DashboardScopeFilter.CopyList(Filters);
+        copy.HistogramBreaks = new(HistogramBreaks ?? new());
+        return copy;
+    }
     public void ValidateThresholds()
     {
         if (!ValidNumber(TargetValue, positive: true) || !ValidNumber(WarningValue) || !ValidNumber(CriticalValue))
@@ -214,6 +252,9 @@ public sealed class DashboardWidgetSettings
         SourceKey = (SourceKey ?? "")[..Math.Min(SourceKey?.Length ?? 0, 120)];
         Title = (Title ?? "")[..Math.Min(Title?.Length ?? 0, 180)];
         Note = (Note ?? "")[..Math.Min(Note?.Length ?? 0, 4000)];
+        Section = (Section ?? "")[..Math.Min(Section?.Length ?? 0, 80)];
+        Filters ??= new();
+        HistogramBreaks = (HistogramBreaks ?? new()).Where(double.IsFinite).Where(x => Math.Abs(x) <= 1e9).Distinct().Order().Take(30).ToList();
         Span = Math.Clamp(Span, 3, 12); Height = Math.Clamp(Height, 160, 960); TopCount = Math.Clamp(TopCount, 3, 30);
         if (!Styles.Contains(Style)) Style = "surface";
         if (!Accents.Contains(Accent)) Accent = "blue";
@@ -223,6 +264,46 @@ public sealed class DashboardWidgetSettings
         if (!ValidNumber(CriticalValue)) CriticalValue = null;
         if (WarningValue.HasValue && CriticalValue.HasValue && (LowerIsBetter ? CriticalValue < WarningValue : CriticalValue > WarningValue))
             WarningValue = CriticalValue = null;
+    }
+}
+
+/// <summary>Portable, bounded filters referencing real snapshot cohorts; missing sources fail closed.</summary>
+public sealed class DashboardScopeFilter
+{
+    public string Kind { get; set; } = "distribution";
+    public string SourceKey { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Value2 { get; set; } = "";
+    public bool Exclude { get; set; }
+    public DashboardScopeFilter Copy() => (DashboardScopeFilter)MemberwiseClone();
+    public static List<DashboardScopeFilter> CopyList(IEnumerable<DashboardScopeFilter>? values) => values?.Select(x => x?.Copy()!).ToList() ?? new();
+    public static void ValidateList(IReadOnlyList<DashboardScopeFilter>? values)
+    {
+        if (values is null || values.Count > 12) throw new InvalidDataException("Un périmètre accepte au maximum 12 filtres.");
+        foreach (var value in values)
+        {
+            if (value is null || value.Kind is not ("distribution" or "metric" or "date")
+                || string.IsNullOrWhiteSpace(value.SourceKey) || value.SourceKey.Length > 120
+                || value.Value is null || value.Value.Length > 2000 || value.Value2 is null || value.Value2.Length > 2000)
+                throw new InvalidDataException("Un filtre du dashboard est invalide.");
+            if (value.Kind == "date" && (value.SourceKey is not ("created" or "updated" or "resolved" or "closed" or "due")
+                || !DateTime.TryParseExact(value.Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)
+                || !DateTime.TryParseExact(value.Value2, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var end) || start > end))
+                throw new InvalidDataException("Un filtre de dates demande deux dates ISO valides, dans l’ordre chronologique.");
+        }
+    }
+}
+
+public sealed class DashboardFilterPreset
+{
+    public string Name { get; set; } = "Mon contexte";
+    public List<DashboardScopeFilter> Filters { get; set; } = new();
+    public DashboardFilterPreset Copy() => new() { Name = Name, Filters = DashboardScopeFilter.CopyList(Filters) };
+    public void Normalize() { Name = string.IsNullOrWhiteSpace(Name) ? "Mon contexte" : Name[..Math.Min(Name.Length, 120)]; Filters ??= new(); }
+    public void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(Name) || Name.Length > 120) throw new InvalidDataException("Un contexte de dashboard demande un nom de 1 à 120 caractères.");
+        DashboardScopeFilter.ValidateList(Filters);
     }
 }
 

@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="CitySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CityReferenceService.cs" Link="CityReferenceService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="CityDetectionService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="ExportModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="DashboardService.cs" />

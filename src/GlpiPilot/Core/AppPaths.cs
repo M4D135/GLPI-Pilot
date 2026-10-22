@@ -5,6 +5,7 @@ namespace GlpiPilot.Core;
 
 public static class AppPaths
 {
+    public static string ApplicationVersion => typeof(AppPaths).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     public static string DataRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GLPI-Pilot");
     public static string SettingsFile => Path.Combine(DataRoot, "settings.json");
     public static string DefaultExports => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GLPI-Pilot", "Exports");

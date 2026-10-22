@@ -146,6 +146,47 @@ public sealed class QueryLibrarySettings
             ("overdue-without-technician", "Retards sans technicien"), ("old-without-technician", "Anciens sans technicien"),
             ("resolved-aging", "Résolus · clôture à suivre")
         }) Add("operations-group-" + basis, label + " par groupe", "Suivi des groupes", basis, "role:group");
+        foreach (var (role, label) in new[] { ("city", "ville"), ("assignee", "technicien") })
+        {
+            foreach (var (aggregate, title) in new[] { ("median", "Ancienneté médiane"), ("percentile", "P90 d’ancienneté") })
+            {
+                Add("advanced-age-" + aggregate + "-" + role, title + " des actifs par " + label, "Délais avancés", "active", "role:" + role,
+                    "Âge calendaire au moment du calcul, en jours. Échantillons numériques valides uniquement ; aucune durée SLA ou de travail n’est reconstituée.");
+                var query = result.Queries[^1]; query.Aggregate = aggregate; query.AggregateField = "calc:age";
+                query.ComputedFields.Add(new() { Key = "age", Label = "Âge calendaire", Function = "age-days", Field = "role:created", Unit = "jours" });
+            }
+            foreach (var (aggregate, title) in new[] { ("average", "Délai moyen"), ("median", "Délai médian") })
+            {
+                Add("advanced-resolution-" + aggregate + "-" + role, title + " création–résolution par " + label, "Délais avancés", "total", "role:" + role,
+                    "Différence calendaire des dates de création et résolution présentes. Les durées négatives sont exclues. Ce délai ne représente pas le temps travaillé ni un engagement SLA.");
+                var query = result.Queries[^1]; query.Aggregate = aggregate; query.AggregateField = "calc:resolution";
+                query.ComputedFields.Add(new() { Key = "resolution", Label = "Création à résolution", Function = "days-between", Field = "role:created", OtherField = "role:resolved", Unit = "jours" });
+                query.Conditions.Add(new() { Field = "calc:resolution", Operator = "number-gte", Value = "0" });
+            }
+        }
+        foreach (var (first, second, title) in new[]
+        {
+            ("city", "assignee", "Actifs · ville puis technicien"), ("city", "category", "Actifs · ville puis catégorie"),
+            ("group", "priority", "Actifs · groupe puis priorité"), ("created", "city", "Créations du relevé · mois puis ville")
+        })
+        {
+            Add("advanced-hierarchy-" + first + "-" + second, title, "Analyses croisées", first == "created" ? "total" : "active", "role:" + first);
+            var query = result.Queries[^1]; query.GroupBySecondary = "role:" + second;
+            if (first == "created") { query.GroupDateBucket = "month"; query.Description = "Dates de création des tickets présents dans le relevé, regroupées par mois. Les tickets absents ne sont pas reconstitués."; }
+        }
+        foreach (var (role, title, op, type, initial) in new[]
+        {
+            ("city", "Actifs d’une ville choisie", "equals", "text", ""),
+            ("assignee", "Actifs d’un technicien choisi", "equals", "text", ""),
+            ("title", "Tickets contenant un terme choisi", "contains", "text", ""),
+            ("created", "Tickets créés dans les N derniers jours", "last-days", "number", "7")
+        })
+        {
+            Add("advanced-parameter-" + role, title, "Requêtes à paramètres", role is "city" or "assignee" ? "active" : "total", "role:category",
+                "Renseignez le paramètre dans l’atelier. Un widget utilise la valeur par défaut enregistrée ; un paramètre vide reste indisponible.");
+            var query = result.Queries[^1]; query.Parameters.Add(new() { Key = "choix", Label = role == "created" ? "Nombre de jours" : "Valeur recherchée", Type = type, DefaultValue = initial });
+            query.Conditions.Add(new() { Field = "role:" + role, Operator = op, ValueSource = "parameter", Value = "choix" });
+        }
         result.Validate();
         return result;
     }
@@ -170,13 +211,27 @@ public sealed class SavedQuery
     public string AggregateField { get; set; } = "";
     public string GroupBy { get; set; } = "";
     public bool Favorite { get; set; }
+    public string ConditionExpression { get; set; } = "";
+    public List<QueryParameter> Parameters { get; set; } = new();
+    public List<QueryComputedField> ComputedFields { get; set; } = new();
+    public string GroupBySecondary { get; set; } = "";
+    public string GroupByTertiary { get; set; } = "";
+    public string GroupDateBucket { get; set; } = "none";
+    public string SecondaryDateBucket { get; set; } = "none";
+    public string TertiaryDateBucket { get; set; } = "none";
+    public double Percentile { get; set; } = 90;
     public List<QueryCondition> Conditions { get; set; } = new();
 
     public SavedQuery Copy() => new()
     {
         Id = Id, Name = Name, Description = Description, Category = Category,
         BaseProbe = BaseProbe, Match = Match, Aggregate = Aggregate, AggregateField = AggregateField,
-        GroupBy = GroupBy, Favorite = Favorite,
+        GroupBy = GroupBy, Favorite = Favorite, ConditionExpression = ConditionExpression,
+        Parameters = Parameters?.Select(parameter => parameter?.Copy()!).ToList()!,
+        ComputedFields = ComputedFields?.Select(field => field?.Copy()!).ToList()!,
+        GroupBySecondary = GroupBySecondary, GroupByTertiary = GroupByTertiary,
+        GroupDateBucket = GroupDateBucket, SecondaryDateBucket = SecondaryDateBucket, TertiaryDateBucket = TertiaryDateBucket,
+        Percentile = Percentile,
         Conditions = Conditions?.Select(condition => condition?.Copy()!).ToList()!
     };
 
@@ -189,10 +244,68 @@ public sealed class SavedQuery
             throw new InvalidDataException($"La requête doit avoir un nom de {MaximumNameLength} caractères au maximum, une description de {MaximumDescriptionLength} et une catégorie de {MaximumCategoryLength}.");
         if (!QueryCatalog.BaseProbes.Any(choice => choice.Key == BaseProbe))
             throw new InvalidDataException("La base de la requête doit être une cohorte native de lignes, jamais une autre requête.");
-        if (Match is not ("all" or "any") || Aggregate is not ("count" or "percent" or "distinct" or "sum" or "average" or "min" or "max"))
+        if (Match is not ("all" or "any") || !QueryCatalog.Aggregates.Contains(Aggregate))
             throw new InvalidDataException("Le mode de combinaison ou l’agrégat de la requête n’est pas reconnu.");
-        if (!QueryText.ValidField(AggregateField, Aggregate is "count" or "percent") || !QueryText.ValidField(GroupBy, true))
-            throw new InvalidDataException("Le champ d’agrégat et le regroupement doivent désigner un rôle connu ou un en-tête exact.");
+        if (!double.IsFinite(Percentile) || Percentile is < 0 or > 100)
+            throw new InvalidDataException("Le percentile doit être compris entre 0 et 100.");
+        if (!QueryText.ValidField(AggregateField, Aggregate is "count" or "percent")
+            || !QueryText.ValidField(GroupBy, true) || !QueryText.ValidField(GroupBySecondary, true) || !QueryText.ValidField(GroupByTertiary, true))
+            throw new InvalidDataException("Les champs de calcul et regroupement doivent désigner un rôle, une colonne exacte ou un champ calculé.");
+        if (GroupBy.Length == 0 && (GroupBySecondary.Length > 0 || GroupByTertiary.Length > 0)
+            || GroupBySecondary.Length == 0 && GroupByTertiary.Length > 0)
+            throw new InvalidDataException("Les regroupements doivent être renseignés dans l’ordre : premier, deuxième, troisième.");
+        if (new[] { GroupDateBucket, SecondaryDateBucket, TertiaryDateBucket }.Any(bucket => !QueryCatalog.DateBuckets.Contains(bucket)))
+            throw new InvalidDataException("Une période de regroupement n’est pas reconnue.");
+        var groupFields = new[] { GroupBy, GroupBySecondary, GroupByTertiary }.Where(field => field.Length > 0).ToArray();
+        if (groupFields.Distinct(StringComparer.Ordinal).Count() != groupFields.Length)
+            throw new InvalidDataException("Un champ ne peut apparaître qu’une fois dans les niveaux de regroupement.");
+        if (Parameters == null || Parameters.Count > 12 || ComputedFields == null || ComputedFields.Count > 12)
+            throw new InvalidDataException("Une requête accepte au maximum 12 paramètres et 12 champs calculés.");
+        var parameterKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var parameter in Parameters)
+        {
+            if (parameter == null || !QueryText.Identifier(parameter.Key) || !parameterKeys.Add(parameter.Key)
+                || !QueryText.Valid(parameter.Label, 120, true) || !QueryText.Valid(parameter.DefaultValue, MaximumValueLength, true, true)
+                || parameter.Type is not ("text" or "number" or "date"))
+                throw new InvalidDataException("Paramètre invalide : identifiant unique, libellé et type texte/nombre/date requis.");
+            if (parameter.DefaultValue.Length > 0 && parameter.Type == "number" && !QueryText.TryNumber(parameter.DefaultValue, out _))
+                throw new InvalidDataException("La valeur par défaut du paramètre « " + parameter.Key + " » doit être un nombre fini.");
+        }
+        var computedKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var field in ComputedFields)
+        {
+            if (field == null || !QueryText.Identifier(field.Key) || !computedKeys.Add(field.Key)
+                || !QueryText.Valid(field.Label, 120, false) || !QueryText.Valid(field.Constant, MaximumValueLength, true, true)
+                || !QueryText.Valid(field.Unit, 40, true) || !QueryCatalog.Functions.Contains(field.Function)
+                || !QueryText.ValidField(field.Field, false) || !QueryText.ValidField(field.OtherField, true))
+                throw new InvalidDataException("Champ calculé invalide : nom unique, fonction autorisée et champs d’entrée requis.");
+            if (field.Function is "days-between" or "concat" && field.OtherField.Length == 0)
+                throw new InvalidDataException("La fonction « " + field.Function + " » exige deux champs.");
+            if (field.Function is "add" or "subtract" or "multiply" or "divide" && field.OtherField.Length == 0
+                && !QueryText.TryNumber(field.Constant, out _))
+                throw new InvalidDataException("Un calcul numérique exige un second champ ou une constante numérique finie.");
+        }
+        void RequireComputed(string field)
+        {
+            if (field.StartsWith("calc:", StringComparison.Ordinal) && !computedKeys.Contains(field[5..]))
+                throw new InvalidDataException("Le champ calculé « " + field[5..] + " » n’est pas défini dans cette requête.");
+        }
+        foreach (var field in new[] { AggregateField, GroupBy, GroupBySecondary, GroupByTertiary }) RequireComputed(field);
+        var checking = new HashSet<string>(StringComparer.Ordinal); var dependencyDepths = new Dictionary<string, int>(StringComparer.Ordinal);
+        int CheckDependencies(string key)
+        {
+            if (dependencyDepths.TryGetValue(key, out var knownDepth)) return knownDepth;
+            if (!checking.Add(key)) throw new InvalidDataException("Les champs calculés contiennent un cycle ou plus de 8 niveaux de dépendances.");
+            var field = ComputedFields.First(value => value.Key == key); var depth = 1;
+            foreach (var input in new[] { field.Field, field.OtherField })
+            {
+                RequireComputed(input);
+                if (input.StartsWith("calc:", StringComparison.Ordinal)) depth = Math.Max(depth, 1 + CheckDependencies(input[5..]));
+            }
+            if (depth > 8) throw new InvalidDataException("Les champs calculés contiennent un cycle ou plus de 8 niveaux de dépendances.");
+            checking.Remove(key); dependencyDepths.Add(key, depth); return depth;
+        }
+        foreach (var key in computedKeys) CheckDependencies(key);
         if (Conditions is null || Conditions.Count > MaximumConditions)
             throw new InvalidDataException($"Une requête contient au maximum {MaximumConditions} conditions.");
         for (var index = 0; index < Conditions.Count; index++)
@@ -201,17 +314,38 @@ public sealed class SavedQuery
             if (condition is null || !QueryText.ValidField(condition.Field, false)
                 || !QueryCatalog.Operators.Contains(condition.Operator)
                 || !QueryText.Valid(condition.Value, MaximumValueLength, true, true)
-                || !QueryText.Valid(condition.Value2, MaximumValueLength, true, true))
-                throw new InvalidDataException($"Condition {index + 1} : champ, opérateur ou valeur invalide.");
-            if (condition.Operator is not ("empty" or "not-empty") && string.IsNullOrWhiteSpace(condition.Value))
-                throw new InvalidDataException($"Condition {index + 1} : une valeur est nécessaire pour cet opérateur.");
-            if (condition.Operator.StartsWith("number-", StringComparison.Ordinal)
-                && !QueryText.TryNumber(condition.Value, out _))
-                throw new InvalidDataException($"Condition {index + 1} : utilisez un nombre fini, avec virgule ou point décimal et espaces éventuels de groupement.");
+                || !QueryText.Valid(condition.Value2, MaximumValueLength, true, true)
+                || condition.ValueSource is not ("literal" or "field" or "parameter")
+                || condition.Value2Source is not ("literal" or "field" or "parameter"))
+                throw new InvalidDataException($"Condition {index + 1} : champ, opérateur, source ou valeur invalide.");
+            RequireComputed(condition.Field);
+            if (condition.Operator is "empty" or "not-empty") continue;
+            void ValidateOperand(string source, string value)
+            {
+                if (string.IsNullOrWhiteSpace(value)) throw new InvalidDataException($"Condition {index + 1} : une valeur est nécessaire.");
+                if (source == "field")
+                {
+                    if (!QueryText.ValidField(value, false)) throw new InvalidDataException($"Condition {index + 1} : le champ de comparaison est invalide.");
+                    RequireComputed(value);
+                }
+                if (source == "parameter" && !parameterKeys.Contains(value))
+                    throw new InvalidDataException($"Condition {index + 1} : paramètre « {value} » non défini.");
+            }
+            ValidateOperand(condition.ValueSource, condition.Value);
+            var range = condition.Operator is "number-between" or "number-outside" or "date-between" or "date-outside";
+            if (range) ValidateOperand(condition.Value2Source, condition.Value2);
+            if (condition.Operator.StartsWith("number-", StringComparison.Ordinal))
+            {
+                if (condition.ValueSource == "literal" && !QueryText.TryNumber(condition.Value, out _)
+                    || range && condition.Value2Source == "literal" && !QueryText.TryNumber(condition.Value2, out _))
+                    throw new InvalidDataException($"Condition {index + 1} : utilisez un nombre fini, avec virgule ou point décimal.");
+            }
             if (condition.Operator is "last-days" or "next-days" or "age-at-least"
-                && (!QueryText.TryNumber(condition.Value, out var days) || days is < 0 or > 36500))
+                && condition.ValueSource == "literal" && (!QueryText.TryNumber(condition.Value, out var days) || days is < 0 or > 36500))
                 throw new InvalidDataException($"Condition {index + 1} : le nombre de jours doit être compris entre 0 et 36 500.");
         }
+        _ = QueryLogic.Parse(ConditionExpression, Conditions.Count, Match);
+
     }
 }
 
@@ -221,7 +355,10 @@ public sealed class QueryCondition
     public string Operator { get; set; } = "contains";
     public string Value { get; set; } = "";
     public string Value2 { get; set; } = "";
-    public QueryCondition Copy() => new() { Field = Field, Operator = Operator, Value = Value, Value2 = Value2 };
+    public string ValueSource { get; set; } = "literal";
+    public string Value2Source { get; set; } = "literal";
+    public QueryCondition Copy() => new() { Field = Field, Operator = Operator, Value = Value, Value2 = Value2,
+        ValueSource = ValueSource, Value2Source = Value2Source };
 }
 
 public sealed class QueryResult
@@ -232,10 +369,15 @@ public sealed class QueryResult
     public int[] Rows { get; init; } = Array.Empty<int>();
     public DashboardMetric Metric { get; init; } = new("", "", null, "", "", Array.Empty<int>());
     public DashboardDistribution? Distribution { get; init; }
+    public IReadOnlyList<QueryGroupResult> Groups { get; init; } = Array.Empty<QueryGroupResult>();
+    public int UnknownRows { get; init; }
 }
 
 internal static class QueryCatalog
 {
+    public static readonly HashSet<string> Aggregates = new(StringComparer.Ordinal) { "count", "percent", "distinct", "sum", "average", "min", "max", "median", "percentile" };
+    public static readonly HashSet<string> DateBuckets = new(StringComparer.Ordinal) { "none", "day", "week", "month", "quarter", "year" };
+    public static readonly HashSet<string> Functions = new(StringComparer.Ordinal) { "add", "subtract", "multiply", "divide", "days-between", "age-days", "length", "lower", "concat", "coalesce" };
     public static readonly IReadOnlyList<QueryChoice> BaseProbes = new QueryChoice[]
     {
         new("total", "Toutes les lignes du périmètre"), new("active", "Actifs reconnus"),
@@ -268,13 +410,16 @@ internal static class QueryCatalog
     public static readonly HashSet<string> Operators = new(StringComparer.Ordinal)
     {
         "contains", "not-contains", "equals", "not-equals", "starts-with", "empty", "not-empty",
-        "number-eq", "number-gt", "number-gte", "number-lt", "number-lte",
-        "date-before", "date-after", "last-days", "next-days", "age-at-least"
+        "number-eq", "number-gt", "number-gte", "number-lt", "number-lte", "number-between", "number-outside",
+        "date-before", "date-after", "date-between", "date-outside", "last-days", "next-days", "age-at-least", "in", "not-in", "ends-with"
     };
 }
 
 internal static class QueryText
 {
+    public static bool Identifier(string? value) => value is { Length: > 0 and <= 40 }
+        && (char.IsAsciiLetter(value[0]) || value[0] == '_')
+        && value.All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
     public static bool Valid(string? value, int maximum, bool allowEmpty, bool allowLines = false)
     {
         if (value is null || value.Length > maximum || !allowEmpty && string.IsNullOrWhiteSpace(value)) return false;
@@ -295,6 +440,7 @@ internal static class QueryText
         if (field!.Length == 0) return allowEmpty;
         return field.StartsWith("role:", StringComparison.Ordinal)
             ? DashboardService.Roles.Any(role => role.Key == field[5..])
+            : field.StartsWith("calc:", StringComparison.Ordinal) ? Identifier(field[5..])
             : field.StartsWith("column:", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(field[7..]);
     }
 
@@ -335,5 +481,151 @@ internal static class QueryText
         var normalized = sign + string.Concat(groups) + (decimalAt >= 0 ? "." + fraction : "");
         return double.TryParse(normalized, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
             CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
+    }
+}
+
+public sealed class QueryParameter
+{
+    public string Key { get; set; } = "parametre";
+    public string Label { get; set; } = "Paramètre";
+    public string Type { get; set; } = "text";
+    public string DefaultValue { get; set; } = "";
+    public QueryParameter Copy() => (QueryParameter)MemberwiseClone();
+}
+
+public sealed class QueryComputedField
+{
+    public string Key { get; set; } = "calcul";
+    public string Label { get; set; } = "Champ calculé";
+    public string Function { get; set; } = "age-days";
+    public string Field { get; set; } = "role:created";
+    public string OtherField { get; set; } = "";
+    public string Constant { get; set; } = "";
+    public string Unit { get; set; } = "";
+    public QueryComputedField Copy() => (QueryComputedField)MemberwiseClone();
+}
+
+public sealed record QueryGroupResult(string Label, string[] Path, int Count, double? Value, string Unit,
+    int Sample, int[] Rows, int[] ContributionRows, int Denominator);
+public sealed record QueryConditionExplanation(int Number, string Field, string Operator, string Value,
+    string Comparison, string Decision, string Explanation);
+public sealed class QueryRowExplanation
+{
+    public int Row { get; init; }
+    public bool WithinBase { get; init; }
+    public string Decision { get; init; } = "unknown";
+    public string Logic { get; init; } = "";
+    public string Message { get; init; } = "";
+    public IReadOnlyList<QueryConditionExplanation> Conditions { get; init; } = Array.Empty<QueryConditionExplanation>();
+}
+
+/// <summary>A bounded boolean grammar over numbered conditions, never executable code.</summary>
+public static class QueryLogic
+{
+    public sealed record Node(string Kind, int Index, IReadOnlyList<Node> Children)
+    {
+        public bool? Evaluate(IReadOnlyList<bool?> values)
+        {
+            if (Kind == "leaf") return values[Index];
+            if (Kind == "not") { var value = Children[0].Evaluate(values); return value.HasValue ? !value.Value : null; }
+            if (Children.Count == 0) return true;
+            var unknown = false;
+            foreach (var child in Children)
+            {
+                var value = child.Evaluate(values);
+                if (!value.HasValue) unknown = true;
+                else if (Kind == "all" && !value.Value) return false;
+                else if (Kind == "any" && value.Value) return true;
+            }
+            return unknown ? null : Kind == "all";
+        }
+        public string Describe() => Kind switch
+        {
+            "leaf" => (Index + 1).ToString(CultureInfo.InvariantCulture),
+            "not" => "NON (" + Children[0].Describe() + ")",
+            _ => Children.Count == 0 ? "Toutes les lignes" : "(" + string.Join(Kind == "all" ? " ET " : " OU ", Children.Select(child => child.Describe())) + ")"
+        };
+    }
+
+    public static Node Parse(string? expression, int conditionCount, string fallbackMatch = "all")
+    {
+        if (conditionCount is < 0 or > SavedQuery.MaximumConditions || fallbackMatch is not ("all" or "any"))
+            throw new InvalidDataException("La combinaison des conditions est invalide.");
+        if (expression is null || expression.Length > 1024 || expression.Any(character => char.IsControl(character) && !char.IsWhiteSpace(character)))
+            throw new InvalidDataException("L’expression logique doit contenir au maximum 1 024 caractères.");
+        if (string.IsNullOrWhiteSpace(expression))
+            return new(fallbackMatch, -1, Enumerable.Range(0, conditionCount).Select(index => new Node("leaf", index, Array.Empty<Node>())).ToArray());
+        var parser = new Parser(expression, conditionCount);
+        return parser.Parse();
+    }
+
+    private sealed class Parser
+    {
+        private readonly List<string> _tokens = new();
+        private readonly int _conditionCount;
+        private readonly HashSet<int> _used = new();
+        private int _position, _nodes;
+        public Parser(string expression, int count)
+        {
+            _conditionCount = count;
+            for (var index = 0; index < expression.Length;)
+            {
+                if (char.IsWhiteSpace(expression[index])) { index++; continue; }
+                var start = index;
+                if (expression[index] is '(' or ')') index++;
+                else if (char.IsAsciiDigit(expression[index])) { while (index < expression.Length && char.IsAsciiDigit(expression[index])) index++; }
+                else if (char.IsAsciiLetter(expression[index])) { while (index < expression.Length && char.IsAsciiLetter(expression[index])) index++; }
+                else throw new InvalidDataException("L’expression accepte les numéros de conditions, ET, OU, NON et les parenthèses uniquement.");
+                var token = expression[start..index].ToUpperInvariant();
+                _tokens.Add(token switch { "AND" => "ET", "OR" => "OU", "NOT" => "NON", _ => token });
+                if (_tokens.Count > 192) throw new InvalidDataException("L’expression logique contient trop d’éléments.");
+            }
+        }
+        public Node Parse()
+        {
+            var result = Or(0);
+            if (_position != _tokens.Count) throw Error("Élément inattendu");
+            var missing = Enumerable.Range(0, _conditionCount).Where(index => !_used.Contains(index)).ToArray();
+            if (missing.Length > 0) throw new InvalidDataException("L’expression n’utilise pas les conditions " + string.Join(", ", missing.Select(index => index + 1)) + ". Ajoutez-les à l’expression ou retirez-les de la liste.");
+            return result;
+        }
+        private Node Or(int depth)
+        {
+            var nodes = new List<Node> { And(depth) };
+            while (Take("OU")) nodes.Add(And(depth));
+            return nodes.Count == 1 ? nodes[0] : Make("any", -1, nodes);
+        }
+        private Node And(int depth)
+        {
+            var nodes = new List<Node> { Unary(depth) };
+            while (Take("ET")) nodes.Add(Unary(depth));
+            return nodes.Count == 1 ? nodes[0] : Make("all", -1, nodes);
+        }
+        private Node Unary(int depth)
+        {
+            if (depth > 8) throw new InvalidDataException("L’expression logique est limitée à huit niveaux de parenthèses ou de négations.");
+            if (Take("NON")) return Make("not", -1, new[] { Unary(depth + 1) });
+            if (Take("("))
+            {
+                var node = Or(depth + 1);
+                if (!Take(")")) throw Error("Parenthèse fermante attendue");
+                return node;
+            }
+            if (_position >= _tokens.Count || !int.TryParse(_tokens[_position++], NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+                || number < 1 || number > _conditionCount)
+                throw Error("Numéro de condition absent ou hors limites");
+            _used.Add(number - 1); return Make("leaf", number - 1, Array.Empty<Node>());
+        }
+        private bool Take(string token)
+        {
+            if (_position >= _tokens.Count || _tokens[_position] != token) return false;
+            _position++; return true;
+        }
+        private Node Make(string kind, int index, IReadOnlyList<Node> children)
+        {
+            if (++_nodes > 128) throw new InvalidDataException("L’expression logique contient trop de branches.");
+            return new(kind, index, children);
+        }
+        private InvalidDataException Error(string message) => new(message + $" dans l’expression logique (élément {_position + 1}).");
     }
 }

@@ -28,7 +28,7 @@ foreach ($folder in @('src', 'tests', 'docs', 'support', 'licenses', '.github', 
 foreach ($name in @(
     'README.md', 'docs/Guide-GLPI-Pilot.html', 'docs/Rapport-verification.txt',
     'docs/Dashboard-Builder.txt', 'docs/GitHub-et-compilation.txt',
-    'support/DIAGNOSTIC_DEMARRAGE.cmd', 'support/Diagnostic-Demarrage.ps1', 'support/LIRE-LE-DIAGNOSTIC.txt',
+    'support/DEBLOQUER_TOUT.cmd', 'support/DIAGNOSTIC_DEMARRAGE.cmd', 'support/Diagnostic-Demarrage.ps1', 'support/LIRE-LE-DIAGNOSTIC.txt',
     'licenses/COMPOSANTS.txt', 'licenses/DotNet-ThirdPartyNotices.txt', 'licenses/Playwright-DotNet-MIT.txt',
     'licenses/microsoft.netcore.app.runtime.win-x64-LICENSE.TXT', 'licenses/microsoft.windowsdesktop.app.runtime.win-x64-LICENSE',
     '.github/workflows/windows.yml', 'build-tools/Invoke-WindowsCi.ps1'
@@ -74,7 +74,7 @@ foreach ($name in @($rootFiles | Select-Object -Unique)) {
 $toolsDestination = Join-Path $sources 'build-tools'
 New-Item -ItemType Directory -Path $toolsDestination -Force | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'build-tools') -File |
-    Where-Object { $_.Extension -in @('.py', '.ps1') } | Copy-Item -Destination $toolsDestination
+    Where-Object { $_.Extension -in @('.py', '.ps1', '.sh') } | Copy-Item -Destination $toolsDestination
 if ($ValidationDirectory) {
     $validation = Join-Path $devWad 'validation'
     New-Item -ItemType Directory -Path $validation -Force | Out-Null

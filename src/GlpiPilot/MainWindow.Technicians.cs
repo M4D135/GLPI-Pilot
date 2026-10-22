@@ -53,9 +53,11 @@ public partial class MainWindow
         dashboard.SettingsRequested += () => { MainTabs.SelectedItem = SettingsTab; SettingsDashboardHost.BringIntoView(); };
         dashboard.ExportRequested += async () => await ExportTechnicianDashboardAsync();
         dashboard.LayoutChanged += layout => SaveDashboardLayout(layout, dashboard);
+        dashboard.SnapshotChanged += snapshot => { if (!_closing && TechnicianSourceIsCurrent()) _technicianDashboard = snapshot; };
         dashboard.SetLayout(_settings.Dashboard.PersonalLayout);
         _techniciansView.SetIdentity(_settings.Dashboard.PersonalTechnician);
         _techniciansView.SetOpenPersonalAfterExtraction(_settings.Dashboard.OpenPersonalAfterExtraction);
+        InitializePersonalDayWorkspace();
     }
 
     private void LoadTechnicianSettingsFields(AppSettings settings)
@@ -129,7 +131,8 @@ public partial class MainWindow
         {
             var allSettings = _settings.Copy(); ApplyDashboardSettingsFields(allSettings);
             allSettings.Dashboard = EffectiveDashboardSettings(allSettings.Dashboard);
-            var workload = await Task.Run(() => TechnicianWorkloadService.Calculate(source, allSettings.Dashboard, ct: operation.Token), operation.Token);
+            var referenceTime = IsHistoricalResult ? source.ExtractedAt : DateTimeOffset.Now;
+            var workload = await Task.Run(() => TechnicianWorkloadService.Calculate(source, allSettings.Dashboard, referenceTime: referenceTime, ct: operation.Token), operation.Token);
             if (operation.IsCancellationRequested || _closing || generation != _technicianGeneration || !ReferenceEquals(source, _result)) return;
             var roster = workload.Roster;
             _technicianRoster = roster;
@@ -141,6 +144,8 @@ public partial class MainWindow
             if (_selectedTechnicianKey.Length == 0) _selectedTechnicianKey = _settings.Dashboard.PersonalTechnician;
             _techniciansView.ShowRoster(roster, _settings.Dashboard.PersonalTechnician, _selectedTechnicianKey);
             _techniciansView.Management.Show(workload, _technicianPreferences);
+            _personalWorkload = workload;
+            RefreshPersonalDay();
             AddLog($"TECHNICIENS · {roster.Technicians.Count:N0} identité(s) détectée(s) ; colonne d’affectation={(roster.Available ? "reconnue" : "indisponible")}.");
             if (roster.Available)
                 AddLog($"TECHNICIENS · gestion de charge : {workload.AssignedRows.Length:N0} lignes affectées au moins une fois, {workload.MultipleAssignmentRows.Length:N0} multi-affectées ; synthèse par union d’indices source.");
@@ -188,6 +193,7 @@ public partial class MainWindow
         var settings = _technicianRosterSettings!.Copy();
         var cities = CitySourceIsCurrent() ? _cityEnrichment : null;
         var queries = _settings.Queries.Copy();
+        var referenceTime = IsHistoricalResult ? source.ExtractedAt : DateTimeOffset.Now;
         _selectedTechnicianKey = TechnicianDashboardService.IdentityKey(key);
         var selectedKey = _selectedTechnicianKey;
         _techniciansView.SetSelectedKey(selectedKey);
@@ -199,8 +205,9 @@ public partial class MainWindow
         {
             var snapshot = await Task.Run(() =>
             {
-                var calculated = TechnicianDashboardService.CalculateForKnownTechnician(source, settings, roster, selectedKey, ct: operation.Token);
+                var calculated = TechnicianDashboardService.CalculateForKnownTechnician(source, settings, roster, selectedKey, referenceTime, operation.Token);
                 AppendLocalDashboardProbes(calculated, source, settings, cities, queries, operation.Token);
+                AttachDashboardScope(calculated, source, settings, cities, queries);
                 return calculated;
             }, operation.Token);
             if (operation.IsCancellationRequested || _closing || generation != _technicianGeneration || !ReferenceEquals(source, _result) || _selectedTechnicianKey != selectedKey) return;
@@ -242,6 +249,7 @@ public partial class MainWindow
             _settings.Dashboard.PersonalTechnician = entry.Key;
             _settings.Save();
             _techniciansView?.SetIdentity(entry.Key);
+            RefreshPersonalDay();
             SetStatus("Identité mémorisée. Votre tableau de bord personnel sera repris avec les prochains relevés.");
             AddLog("TECHNICIENS · identité personnelle mémorisée sur ce poste.");
             SelectTechnician(entry.Key);
@@ -262,6 +270,7 @@ public partial class MainWindow
             var updated = _technicianPreferences.With(key, preference);
             updated.Save(TechnicianPreferencesPath);
             _technicianPreferences = updated;
+            RefreshPersonalDay();
             _techniciansView?.Management.SetPreferences(updated, "Favori, objectif et note enregistrés sur ce poste.");
             SetStatus("Repères du technicien enregistrés localement.");
             AddLog("TECHNICIENS · repères locaux enregistrés ; aucune modification de GLPI.");
@@ -306,6 +315,7 @@ public partial class MainWindow
         _technicianRosterSource = _technicianDashboardSource = _personalWorkspaceRequestedSource = null;
         _technicianRosterCancellation?.Cancel(); _technicianCalculationCancellation?.Cancel();
         _technicianRoster = null; _technicianRosterSettings = null; _technicianDashboard = null; _technicianDashboardKey = "";
+        _personalWorkload = null; RefreshPersonalDay(); _techniciansView?.Planning.Clear();
         _selectedTechnicianKey = _settings.Dashboard.PersonalTechnician;
         _techniciansView?.SetIdentity(_settings.Dashboard.PersonalTechnician);
         _techniciansView?.SetOpenPersonalAfterExtraction(_settings.Dashboard.OpenPersonalAfterExtraction);

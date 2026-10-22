@@ -13,6 +13,7 @@ on:
       - 'README.md'
       - 'build.ps1'
       - 'build-tools/Invoke-WindowsCi.ps1'
+      - 'build-tools/publish-release.sh'
       - '.github/workflows/windows.yml'
       - 'global.json'
       - 'NuGet.Config'
@@ -20,7 +21,7 @@ on:
       - 'Directory.Build.*'
       - 'Directory.Packages.props'
 
-# No release, repository write, package publishing or external secret is needed.
+# Tests run with read-only repository access. Only the final release job may publish validated packs.
 permissions:
   contents: read
 
@@ -33,6 +34,9 @@ jobs:
     name: Windows x64 · contrôles réels et publication
     runs-on: windows-2025
     timeout-minutes: 45
+    outputs:
+      prod-artifact-id: ${{ steps.upload_prod.outputs.artifact-id }}
+      dev-artifact-id: ${{ steps.upload_dev.outputs.artifact-id }}
     defaults:
       run:
         shell: pwsh
@@ -74,6 +78,10 @@ jobs:
       - name: Diagnostics, configurations et moteurs de pilotage
         timeout-minutes: 12
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
+
+      - name: Vérifier le navigateur et les exports sur des pages synthétiques
+        timeout-minutes: 8
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
 
       - name: Construire et exécuter les contrôles WPF réels
         timeout-minutes: 10
@@ -125,7 +133,8 @@ jobs:
           - Chaque ZIP contient uniquement GLPI-Pilot.exe et wad à sa racine ; DEV inclut les sources dépliées.
           - Les deux packs utilisent le même exécutable vérifié ; empreintes de chaque fichier contrôlées.
           - Artefacts conservés 30 jours, connexion GitHub requise.
-          - Les journaux et le SHA-256 sont joints séparément. Aucun portail GLPI, SSO ou navigateur métier n’a été testé.
+          - Navigation, portée et exports : contrôlés dans un navigateur isolé sur des pages synthétiques.
+          - Les journaux et le SHA-256 sont joints séparément. Le portail GLPI et le SSO de l’entreprise n’ont pas été testés.
           "@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
       - name: Conserver les journaux, même en cas d’échec
@@ -137,3 +146,24 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+
+  release:
+    name: Publier les deux packs Windows validés
+    needs: windows
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Récupérer les notes correspondant au commit testé
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Publier les packs exacts après leurs contrôles de démarrage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROD_ARTIFACT_ID: ${{ needs.windows.outputs.prod-artifact-id }}
+          DEV_ARTIFACT_ID: ${{ needs.windows.outputs.dev-artifact-id }}
+        run: bash build-tools/publish-release.sh

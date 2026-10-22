@@ -10,7 +10,7 @@ using GlpiPilot.Core;
 namespace GlpiPilot.UI;
 
 /// <summary>An isolated working copy: cancelling never changes the extraction view or local preferences.</summary>
-public sealed class PreviewColumnsDialog : Window
+public sealed class PreviewColumnsDialog : UserControl
 {
     private readonly string[] _headers;
     private readonly ObservableCollection<ColumnChoice> _choices = new();
@@ -23,20 +23,11 @@ public sealed class PreviewColumnsDialog : Window
     private bool _updating;
 
     public PreviewColumnPreference[]? Preferences { get; private set; }
+    public event Action<bool>? Completed;
 
     public PreviewColumnsDialog(IReadOnlyList<string> headers, IEnumerable<PreviewColumnPreference> current)
     {
         _headers = headers.ToArray();
-        Title = "Colonnes de l’aperçu";
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        ShowInTaskbar = false;
-        var area = SystemParameters.WorkArea;
-        Width = Math.Min(760, Math.Max(420, area.Width - 48));
-        Height = Math.Min(740, Math.Max(350, area.Height - 64));
-        MinWidth = Math.Min(480, Width);
-        MinHeight = Math.Min(420, Height);
-        SetResourceReference(StyleProperty, "AppWindowStyle");
-
         var root = new Grid { Margin = new Thickness(24) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -94,8 +85,8 @@ public sealed class PreviewColumnsDialog : Window
         var note = Label("Au moins une colonne reste visible. La recherche et les exports continuent de prendre en compte toutes les colonnes.", 12, "MutedBrush", margin: new Thickness(0, 0, 16, 0));
         footer.Children.Add(note);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var cancel = Command("Annuler", () => DialogResult = false, "Fermer sans modifier la vue.");
-        cancel.IsCancel = true; actions.Children.Add(cancel);
+        var cancel = Command("Annuler", () => Completed?.Invoke(false), "Fermer sans modifier la vue.");
+        actions.Children.Add(cancel);
         _apply = Command("Appliquer", Apply, "Appliquer et mémoriser les colonnes pour les relevés ayant les mêmes en-têtes.");
         _apply.IsDefault = true;
         _apply.SetResourceReference(BackgroundProperty, "ActionBrush");
@@ -114,7 +105,6 @@ public sealed class PreviewColumnsDialog : Window
             if (e.OriginalSource is DependencyObject origin && ItemsControl.ContainerFromElement(_list, origin) is ListBoxItem item) item.IsSelected = true;
         };
         Loaded += (_, _) => _search.Focus();
-        ThemeService.Attach(this);
         LoadChoices(PreviewViewPreferences.Normalize(current, _headers.Length));
     }
 
@@ -206,7 +196,7 @@ public sealed class PreviewColumnsDialog : Window
         if (!_choices.Any(choice => choice.Visible)) return;
         for (var index = 0; index < _choices.Count; index++) _choices[index].Preference.DisplayIndex = index;
         Preferences = PreviewViewPreferences.Normalize(_choices.Select(choice => choice.Preference), _headers.Length);
-        DialogResult = true;
+        Completed?.Invoke(true);
     }
 
     private static DataTemplate MakeColumnTemplate()

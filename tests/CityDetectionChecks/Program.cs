@@ -428,6 +428,122 @@ Test("Previously cancelled dashboard probe calculation leaves snapshot unchanged
     Assert(snapshot.Metric("city-matched") is null);
 });
 
+
+Test("Contextual abbreviation requires every word and does not fall back to the simple alias", () =>
+{
+    var city = City("Marseille", "MA"); city.Rules.Add(new() { Term = "MA", RequiredTerms = new() { "Agence", "Sud" }, ExcludedTerms = new() { "formation" } });
+    var settings = Settings(city); var report = Detect(Source("MA agence Sud panne", "MA ordinateur", "MA agence sud formation"), settings);
+    Assert(report.Matches.Select(match => match.State).SequenceEqual(new[] { CityMatchState.Matched, CityMatchState.Unmatched, CityMatchState.Unmatched }));
+    Assert(report.Matches[0].Confidence == "contexte" && report.Matches[1].Evidence.Single().Decision == "Écartée");
+});
+Test("A missing or ambiguous contextual column never confirms an abbreviation", () =>
+{
+    var city = City("Marseille", "MA"); city.Rules.Add(new() { Term = "MA", ContextColumn = "Entité", RequiredTerms = new() { "Provence" } });
+    var settings = Settings(city); Assert(Detect(Source("MA"), settings).Matches[0].State == CityMatchState.Ambiguous);
+    var source = Source("MA", "MA"); source.Headers.Add("Entité"); source.Rows[0] = new[] { "1", "MA", "Nouveau", "PROVENCE" }; source.Rows[1] = new[] { "2", "MA", "Nouveau", "Paris" };
+    var report = Detect(source, settings); Assert(report.Matches[0].CityId == city.Id && report.Matches[1].State == CityMatchState.Unmatched);
+});
+Test("Explicit priorities resolve competing city rules while ties stay ambiguous", () =>
+{
+    var a = City("Alpha"); var b = City("Beta"); a.Rules.Add(new() { Term = "Centre", Priority = 10 }); b.Rules.Add(new() { Term = "Centre", Priority = 20 });
+    var report = Detect(Source("Centre"), Settings(a, b)); Assert(report.Matches[0].CityId == b.Id);
+    b.Rules[0].Priority = 10; Assert(Detect(Source("Centre"), Settings(a, b)).AmbiguousCount == 1);
+    a.ExcludedTerms.Add("exercice"); b.ExcludedTerms.Add("exercice"); Assert(Detect(Source("Centre exercice"), Settings(a, b)).UnmatchedCount == 1);
+});
+Test("A refused long contextual match cannot suppress a shorter approved city", () =>
+{
+    var a = City("Malo"); var b = City("Saint Malo"); b.Rules.Add(new() { Term = "Saint Malo", RequiredTerms = new() { "Agence" } });
+    Assert(Detect(Source("Saint Malo"), Settings(a, b)).Matches[0].CityId == a.Id);
+});
+Test("A unique site infers its city and conflicts with a different named city", () =>
+{
+    var a = City("Lyon"); var b = City("Marseille"); var settings = Settings(a, b);
+    settings.Sites.Add(new() { CityId = a.Id, Name = "Agence Centrale", Aliases = new() { "LYC" }, Latitude = 45.7, Longitude = 4.8 });
+    var report = Detect(Source("LYC imprimante", "LYC Marseille"), settings);
+    Assert(report.Matches[0].CityId == a.Id && report.Matches[0].SiteId == settings.Sites[0].Id && report.Matches[0].Confidence == "site");
+    Assert(report.Matches[1].State == CityMatchState.Ambiguous && report.Matches[1].SiteId == null);
+});
+Test("Two sites in one city retain the known city but leave the precise site ambiguous", () =>
+{
+    var city = City("Lyon"); var settings = Settings(city); settings.Sites.Add(new() { CityId = city.Id, Name = "Bâtiment A" }); settings.Sites.Add(new() { CityId = city.Id, Name = "Bâtiment B" });
+    var match = Detect(Source("Bâtiment A et bâtiment B"), settings).Matches[0];
+    Assert(match.CityId == city.Id && match.SiteId == null && match.SiteState == "ambiguous");
+});
+Test("Hierarchy columns are explicit and preserve every original cell", () =>
+{
+    var city = City("Lyon"); city.Region = "Auvergne Rhône Alpes"; city.Department = "69"; city.Sector = "Est";
+    var source = Source("Lyon", "Paris"); var report = Detect(source, Settings(city));
+    Assert(report.Data.Rows[0][report.Data.Headers.IndexOf(report.RegionColumnName)] == city.Region && report.Data.Rows[1][report.Data.Headers.IndexOf(report.SectorColumnName)] == "");
+    Assert(report.Data.Rows[0].Take(3).SequenceEqual(source.Rows[0]));
+    var snapshot = Probes(report, 0, 1); Assert(snapshot.Distributions.Single(item => item.Key == "sector-reference").Buckets.Sum(bucket => bucket.Count) == 2);
+});
+Test("Simulation and production use identical contexts and explain the retained rule", () =>
+{
+    var city = City("Marseille"); city.Rules.Add(new() { Term = "MA", ContextColumn = "Entité", RequiredTerms = new() { "PACA" } }); var settings = Settings(city);
+    var match = CityDetectionService.ExplainTitle("MA panne", settings, new Dictionary<string, string> { ["Entité"] = "PACA" });
+    Assert(match.CityId == city.Id && match.Evidence.Single().RuleId == city.Rules[0].Id);
+    Assert(CityDetectionService.InspectDictionary(settings).Any(warning => warning.Contains("court")));
+});
+Test("Manual corrections are installation scoped and keyed by unique ticket ID", () =>
+{
+    var a = City("Lyon"); var b = City("Marseille"); var settings = Settings(a, b); var source = Source("Lyon", "Lyon");
+    var correction = new CityTicketOverride { SourceKey = CityOverrideStore.SourceKey(source.SourceUrl), TicketId = "1", CityId = b.Id };
+    var report = CityDetectionService.Enrich(source, settings, new(), overrides: new[] { correction });
+    Assert(report.Matches[0].CityId == b.Id && report.Matches[0].IsOverride && report.Matches[1].CityId == a.Id);
+    source.Rows[1][0] = "1"; Assert(CityDetectionService.Enrich(source, settings, new(), overrides: new[] { correction }).Matches.All(match => !match.IsOverride));
+    source.SourceUrl = "https://other.invalid/front/ticket.php"; Assert(CityDetectionService.Enrich(source, settings, new(), overrides: new[] { correction }).Matches.All(match => !match.IsOverride));
+});
+Test("A correction referencing a removed place cannot silently fall back to inference", () =>
+{
+    var city = City("Lyon"); var source = Source("Lyon"); var correction = new CityTicketOverride { SourceKey = CityOverrideStore.SourceKey(source.SourceUrl), TicketId = "1", CityId = Guid.NewGuid().ToString("N") };
+    var match = CityDetectionService.Enrich(source, Settings(city), new(), overrides: new[] { correction }).Matches[0];
+    Assert(match.IsOverride && match.CityId == null && match.State == CityMatchState.Ambiguous);
+});
+Test("Correction files contain no URL credentials or search arguments and persist atomically", () =>
+{
+    var source = CityOverrideStore.SourceKey("https://user:secret@example.invalid/glpi/front/ticket.php?token=secret#fragment"); Assert(source == "https://example.invalid/glpi");
+    var path = Path.Combine(Path.GetTempPath(), "glpi-city-" + Guid.NewGuid().ToString("N") + ".json");
+    try
+    {
+        var store = new CityOverrideStore().With(new() { CityId = Guid.NewGuid().ToString("N") }, source, "23"); store.Save(path);
+        var read = CityOverrideStore.Load(path); Assert(read.Overrides.Single().TicketId == "23"); Assert(read.With(null, source, "23").Overrides.Count == 0);
+        read.Overrides[0].SourceKey = null!; Throws<InvalidDataException>(read.Validate);
+    }
+    finally { File.Delete(path); }
+});
+Test("Reference CSV merges preserve identities, absent fields, rules and unrelated cities", () =>
+{
+    var a = City("Lyon", "LY"); a.Rules.Add(new() { Term = "LY", RequiredTerms = new() { "Agence" } }); a.Region = "Est";
+    var b = City("Marseille"); var settings = Settings(a, b);
+    var csv = new ExtractionResult { Headers = new() { "Nom", "Alias" }, Rows = new() { new[] { "Lyon", "LY ; LYO" }, new[] { "Paris", "PA" } } };
+    var preview = CityReferenceService.Preview(csv, settings); var changed = preview.Settings.Cities.Single(city => city.Id == a.Id);
+    Assert(preview.Settings.Cities.Count == 3 && changed.Aliases.Count == 2 && changed.Region == "Est" && changed.Rules.Count == 1);
+    Assert(settings.Cities.Count == 2 && a.Aliases.Count == 1 && preview.Changes.Count(item => item.Kind == "Ajout") == 1);
+});
+Test("Reference CSV round trip retains sites, coordinates, rules and hierarchy", () =>
+{
+    var city = City("Lyon"); city.Sector = "Nord"; city.Rules.Add(new() { Term = "LY", ContextColumn = "Entité", RequiredTerms = new() { "France" } });
+    var settings = Settings(city); settings.Sites.Add(new() { CityId = city.Id, Name = "Agence", Address = "1 rue locale", Latitude = 45, Longitude = -4 });
+    var imported = CityReferenceService.Preview(CityReferenceService.Export(settings), new()).Settings;
+    Assert(imported.Cities.Single().Id == city.Id && imported.Cities[0].Rules[0].ContextColumn == "Entité" && imported.Sites.Single().Latitude == 45);
+    Assert(CityReferenceService.Preview(CityReferenceService.Export(settings), settings).Changes.All(change => change.Kind == "Identique"));
+    var protectedCsv = CityReferenceService.Export(settings); protectedCsv.Rows[1][protectedCsv.Headers.IndexOf("Longitude")] = "'-4";
+    Assert(CityReferenceService.Preview(protectedCsv, settings).Settings.Sites.Single().Longitude == -4);
+});
+Test("Invalid references or malformed context definitions fail before mutation", () =>
+{
+    var city = City("Lyon"); var settings = Settings(city); var csv = new ExtractionResult { Headers = new() { "Type", "VilleId", "Nom" }, Rows = new() { new[] { "Site", "Absente", "Agence" } } };
+    Throws<InvalidDataException>(() => CityReferenceService.Preview(csv, settings)); Assert(settings.Sites.Count == 0);
+    city.Rules.Add(new() { Term = "LY", Priority = -1 }); Throws<InvalidDataException>(settings.Validate);
+    settings.Normalize(); Assert(settings.Cities.Count == 0);
+});
+Test("Advanced city copies keep independent rules and site aliases", () =>
+{
+    var city = City("Lyon"); city.Rules.Add(new() { Term = "LY", RequiredTerms = new() { "Agence" } }); var settings = Settings(city); settings.Sites.Add(new() { CityId = city.Id, Name = "Centre", Aliases = new() { "CTR" } });
+    var copy = settings.Copy(); copy.Cities[0].Rules[0].RequiredTerms[0] = "Autre"; copy.Sites[0].Aliases[0] = "AUT";
+    Assert(city.Rules[0].RequiredTerms[0] == "Agence" && settings.Sites[0].Aliases[0] == "CTR");
+});
+
 var passed = 0;
 foreach (var (name, run) in checks)
     try { run(); passed++; Console.WriteLine("PASS  " + name); }

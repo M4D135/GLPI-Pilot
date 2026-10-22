@@ -9,7 +9,7 @@ et les coordonnées servent uniquement aux fixtures de calcul.
 dotnet run --project tests/TourPlanningChecks/TourPlanningChecks.csproj -c Release
 ```
 
-Les **41 contrôles** vérifient les périmètres actifs/tous statuts, les affectations
+Les **59 contrôles** vérifient les périmètres actifs/tous statuts, les affectations
 multiples sans double comptage de l’équipe, les villes inconnues/ambiguës et les
 titres indisponibles, les indices source, les compteurs et échantillons canoniques,
 les ordres de visite indépendants et la proximité indicative à vol d’oiseau.
@@ -24,3 +24,10 @@ temporaire propre au test, supprimé à la fin.
 
 Une réussite de ce projet ne constitue pas une exécution des contrôles WPF sous
 Windows. Cette validation est distincte dans `tests/WindowsStartupChecks`.
+
+Les 18 scénarios supplémentaires vérifient les tournées datées : paniers d’ID
+uniques, regroupement par site, fenêtres et attentes, départ/retour, distribution
+par durées saisies, verrouillages, scénarios indépendants, rapprochement de
+relevés réordonnés ou partiels, reconstruction explicite, calendrier UTC avec
+échappement et pliage UTF-8, changement d’heure, briefing encodé et persistance.
+Aucune route réelle, compétence ou disponibilité n’est inférée.

@@ -96,6 +96,46 @@ Test("New chart options and thresholds round trip without aliasing", () =>
     var b = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(a))!; b.Validate();
     Assert(b.Boards[0].Widgets[0].TargetValue == 42.75 && !b.Boards[0].Widgets[0].LowerIsBetter && b.Boards[0].Widgets[1].Presentation == "donut");
 });
+Test("Dashboard scopes sections favourites and presets round trip without aliasing", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0];
+    board.Filters.Add(new() { SourceKey = "city", Value = "Marseille" });
+    board.ComparisonFilters.Add(new() { Kind = "metric", SourceKey = "active", Exclude = true });
+    board.ComparisonEnabled = board.CrossFilterOnClick = true; board.CollapsedSections.Add("Délais");
+    board.Widgets.Add(new() { Kind = "histogram", SourceKey = "age", Section = "Délais", HistogramBreaks = new() { 2, 8, 15 }, Filters = new() { new() { Kind = "metric", SourceKey = "high" } } });
+    layout.CatalogFavorites.Add("metric\nactive"); layout.FilterPresets.Add(new() { Name = "Marseille", Filters = DashboardScopeFilter.CopyList(board.Filters) });
+    var copy = layout.Copy(); var imported = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(copy))!; imported.Validate();
+    Assert(imported.Boards[0].ComparisonEnabled && imported.Boards[0].CrossFilterOnClick && imported.Boards[0].CollapsedSections.Single() == "Délais");
+    Assert(imported.CatalogFavorites.Single() == "metric\nactive" && imported.FilterPresets.Single().Filters.Single().Value == "Marseille");
+    copy.Boards[0].Widgets[0].Filters[0].SourceKey = "old"; copy.Boards[0].Widgets[0].HistogramBreaks[0] = 4;
+    copy.Boards[0].Filters[0].Value = "Paris"; copy.FilterPresets[0].Filters[0].Value = "Paris"; copy.CatalogFavorites.Clear();
+    Assert(board.Filters[0].Value == "Marseille" && board.Widgets[0].Filters[0].SourceKey == "high" && board.Widgets[0].HistogramBreaks[0] == 2);
+    Assert(layout.FilterPresets[0].Filters[0].Value == "Marseille" && layout.CatalogFavorites.Count == 1);
+});
+Test("Imported filters reject invalid kinds dates and excess conditions", () =>
+{
+    var layout = Layout(); var board = layout.Boards[0];
+    board.Filters.Add(new() { Kind = "execute", SourceKey = "active" }); Invalid(layout.Validate);
+    board.Filters[0] = new() { Kind = "date", SourceKey = "created", Value = "2026-02-30", Value2 = "2026-03-01" }; Invalid(layout.Validate);
+    board.Filters[0] = new() { Kind = "date", SourceKey = "created", Value = "2026-03-02", Value2 = "2026-03-01" }; Invalid(layout.Validate);
+    board.Filters[0].Value = "2026-03-01"; layout.Validate();
+    board.Filters = Enumerable.Range(0, 13).Select(_ => new DashboardScopeFilter { Kind = "metric", SourceKey = "active" }).ToList(); Invalid(layout.Validate);
+});
+Test("Analytical chart kinds persist and nonfinite histogram boundaries are rejected", () =>
+{
+    var layout = Layout("empty");
+    foreach (var kind in new[] { "matrix", "histogram", "boxplot", "scatter", "history" }) layout.Boards[0].Widgets.Add(new() { Kind = kind, SourceKey = "source" });
+    layout.Validate(); layout.Boards[0].Widgets[0].HistogramBreaks.Add(double.NaN); Invalid(layout.Validate);
+    layout.Boards[0].Widgets[0].HistogramBreaks = Enumerable.Range(0, 31).Select(x => (double)x).ToList(); Invalid(layout.Validate);
+});
+Test("Weather formula and priority matrix copy independently from presentation", () =>
+{
+    var settings = new DashboardSettings { Weather = new() { PriorityWeight = 90 }, PriorityRules = new() { ["4:4"] = 4 }, AssignmentCountingMode = "fractional" };
+    var copy = settings.Copy(); copy.Weather.PriorityWeight = 10; copy.PriorityRules["4:4"] = 6;
+    Assert(settings.Weather.PriorityWeight == 90 && settings.PriorityRules["4:4"] == 4 && copy.AssignmentCountingMode == "fractional");
+    var invalid = new DashboardWeatherSettings { WatchThreshold = 60, RainThreshold = 40 }; Invalid(invalid.Validate);
+    invalid.Normalize(); invalid.Validate(); Assert(invalid.WatchThreshold == 10);
+});
 var failures = 0;
 foreach (var (name, run) in checks) { try { run(); Console.WriteLine("PASS " + name); } catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex.Message); } }
 Console.WriteLine($"{checks.Count - failures}/{checks.Count} checks passed.");

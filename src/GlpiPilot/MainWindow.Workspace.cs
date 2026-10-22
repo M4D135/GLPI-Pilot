@@ -232,7 +232,7 @@ public partial class MainWindow
     private void CommandPalette_Click(object sender, RoutedEventArgs e)
     {
         if (_closing) return;
-        if (_commandPalette != null) { _commandPalette.Activate(); return; }
+        if (_commandPalette != null) { _commandPalette.Focus(); return; }
         var commands = new List<WorkspaceCommand>();
         void Go(string title, string description, TabItem tab, string shortcut) => commands.Add(new(title, description, shortcut, () => MainTabs.SelectedItem = tab));
         void Click(string title, string description, Button button, string shortcut = "") => commands.Add(new(title, description, shortcut,
@@ -254,7 +254,7 @@ public partial class MainWindow
         Click("Exporter en CSV", "Enregistrer toutes les lignes récupérées en CSV.", ExportCsvButton);
         Click("Ouvrir le dernier fichier", "Accéder directement au fichier produit pendant cette session.", OpenLastExportButton);
         Click("Voir le navigateur", "Accéder à GLPI ou terminer une étape du SSO.", ShowBrowserButton);
-        Click("Importer un CSV", "Reprendre un relevé local sans ouvrir GLPI.", ImportCsvButton);
+        Click("Importer un CSV ou Excel", "Reprendre un relevé local sans ouvrir GLPI.", ImportCsvButton);
         Click("Importer une configuration", "Reprendre les réglages et les dispositions d’un collègue.", ImportConfigButton);
         Click("Exporter la configuration", "Partager les réglages et les widgets sans transférer le SSO.", ExportConfigButton);
         Click("Changer de thème", "Basculer entre le thème clair et le thème sombre.", ThemeToggleButton);
@@ -262,10 +262,14 @@ public partial class MainWindow
         Click("Réduire l’interface", "Réduire le zoom de 5 % et mémoriser cette taille.", ZoomOutButton, "Ctrl −");
         Click("Zoom 100 %", "Revenir à la taille normale de l’interface.", ZoomResetButton, "Ctrl 0");
         Click("Copier le diagnostic", "Préparer les étapes techniques à partager en cas d’erreur.", CopyDiagnosticButton);
-        var dialog = new CommandPaletteWindow(commands) { Owner = this };
+        if (_alertsTab != null) Go("Alertes", "Règles sur les indicateurs, prise en compte et rappels.", _alertsTab, "");
+        if (_historyTab != null) Go("Historique", "Revoir et comparer les relevés datés de même périmètre.", _historyTab, "");
+        if (_qualityTab != null) Go("Qualité des données", "Examiner les colonnes, anomalies et données manquantes.", _qualityTab, "");
+        if (_controlCenterTab != null) Go("Sources et organisation", "Campagnes, planification, historique et présentation.", _controlCenterTab, "");
+        var dialog = new CommandPaletteWindow(commands);
+        dialog.Completed += command => { CloseInlinePanel(); command?.Execute(); };
+        ShowInlinePanel(dialog);
         _commandPalette = dialog;
-        try { if (dialog.ShowDialog() == true) dialog.SelectedCommand?.Execute(); }
-        finally { _commandPalette = null; }
     }
 
     private void Workspace_KeyDown(object sender, KeyEventArgs e)
@@ -273,6 +277,7 @@ public partial class MainWindow
         if (_closing || e.Handled) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (HandleInterfaceZoomKey(key, Keyboard.Modifiers)) { e.Handled = true; return; }
+        if (_inlineOverlay != null) return;
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
             if (key >= Key.D1 && key <= Key.D9) { MainTabs.SelectedIndex = key - Key.D1; e.Handled = true; return; }

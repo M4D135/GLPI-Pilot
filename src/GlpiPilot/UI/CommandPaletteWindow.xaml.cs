@@ -8,16 +8,15 @@ namespace GlpiPilot.UI;
 
 public sealed record WorkspaceCommand(string Title, string Description, string Shortcut, Action Execute, bool Available = true);
 
-public partial class CommandPaletteWindow : Window
+public partial class CommandPaletteWindow : UserControl
 {
     private readonly IReadOnlyList<WorkspaceCommand> _commands;
-    public WorkspaceCommand? SelectedCommand { get; private set; }
+    public event Action<WorkspaceCommand?>? Completed;
 
     public CommandPaletteWindow(IEnumerable<WorkspaceCommand> commands)
     {
         InitializeComponent();
         _commands = commands.ToArray();
-        ThemeService.Attach(this);
         QueryBox.TextChanged += (_, _) => Filter();
         ActionsList.MouseDoubleClick += (_, e) =>
         {
@@ -64,10 +63,11 @@ public partial class CommandPaletteWindow : Window
         e.Handled = true;
     }
 
+    private void Close_Click(object sender, RoutedEventArgs e) => Completed?.Invoke(null);
+
     private void Choose()
     {
         if (ActionsList.SelectedItem is not WorkspaceCommand { Available: true } command) return;
-        SelectedCommand = command;
-        DialogResult = true;
+        Completed?.Invoke(command);
     }
 }

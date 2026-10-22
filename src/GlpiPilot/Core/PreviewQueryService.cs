@@ -58,9 +58,9 @@ public sealed class PreviewQueryView : IDisposable
 public static class PreviewQueryService
 {
     public static PreviewQueryView CreateView(ExtractionResult source, string? search, int displayLimit = 10000,
-        IReadOnlyList<int>? sourceIndices = null, CultureInfo? culture = null, CancellationToken ct = default)
+        IReadOnlyList<int>? sourceIndices = null, CultureInfo? culture = null, CancellationToken ct = default, PreviewTransform? transform = null)
     {
-        var query = Query(source, search, displayLimit, sourceIndices, ct);
+        var query = Query(source, search, displayLimit, sourceIndices, ct, transform, culture);
         var table = new DataTable { Locale = culture ?? CultureInfo.CurrentCulture };
         var indices = new Dictionary<DataRow, (int Index, string[]? Values)>(query.DisplayedCount);
         try
@@ -93,12 +93,15 @@ public static class PreviewQueryService
     }
 
     public static PreviewQueryResult Query(ExtractionResult source, string? search, int displayLimit = 10000,
-        IReadOnlyList<int>? sourceIndices = null, CancellationToken ct = default)
+        IReadOnlyList<int>? sourceIndices = null, CancellationToken ct = default, PreviewTransform? transform = null, CultureInfo? culture = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentOutOfRangeException.ThrowIfNegative(displayLimit);
         ct.ThrowIfCancellationRequested();
 
+        transform ??= new(); transform.Validate(source.Headers.Count);
+        culture ??= CultureInfo.CurrentCulture;
+        var orderedMatches = transform.Sorts.Count > 0 ? new List<int>() : null;
         var term = (search ?? "").Trim();
         var sourceCount = source.Rows.Count;
         var displayed = new List<int>(Math.Min(displayLimit, sourceCount));
@@ -113,9 +116,16 @@ public static class PreviewQueryService
             // A dashboard can contain an empty scope; invalid or repeated indices never inflate counts.
             if (index < 0 || index >= sourceCount || (visited != null && !visited.Add(index))) continue;
             scopeCount++;
-            if (!Matches(source.Rows[index], term, ct)) continue;
+            if (!Matches(source.Rows[index], term, ct) || !transform.Matches(source.Rows[index], culture)) continue;
             matches++;
-            if (displayed.Count < displayLimit) displayed.Add(index);
+            if (orderedMatches != null) orderedMatches.Add(index);
+            else if (displayed.Count < displayLimit) displayed.Add(index);
+        }
+        ct.ThrowIfCancellationRequested();
+        if (orderedMatches != null)
+        {
+            transform.Sort(orderedMatches, source, culture, ct);
+            displayed.AddRange(orderedMatches.Take(displayLimit));
         }
         ct.ThrowIfCancellationRequested();
         return new(displayed.ToArray(), matches, scopeCount, sourceCount);
@@ -133,4 +143,91 @@ public static class PreviewQueryService
         }
         return false;
     }
+}
+
+
+/// <summary>Literal, bounded transforms over source indices. No DataView expression or arbitrary code.</summary>
+public sealed class PreviewTransform
+{
+    public List<PreviewColumnFilter> Filters { get; set; } = new();
+    public List<PreviewSortRule> Sorts { get; set; } = new();
+    public PreviewTransform Copy() => new() { Filters = Filters.Select(rule => rule.Copy()).ToList(), Sorts = Sorts.Select(rule => rule.Copy()).ToList() };
+    public void Validate(int columns)
+    {
+        if (Filters is null || Sorts is null || Filters.Count > 12 || Sorts.Count > 4) throw new System.IO.InvalidDataException("La vue accepte 12 filtres et 4 niveaux de tri.");
+        if (Filters.Any(rule => rule == null || rule.Column < 0 || rule.Column >= columns || rule.Value is null || rule.Value.Length > 2000
+            || rule.Operator is not ("contains" or "not-contains" or "eq" or "ne" or "empty" or "not-empty" or "gt" or "lt" or "before" or "after")))
+            throw new System.IO.InvalidDataException("Un filtre de colonne est invalide.");
+        if (Sorts.Any(rule => rule == null || rule.Column < 0 || rule.Column >= columns || rule.Type is not ("text" or "number" or "date")) || Sorts.Select(rule => rule.Column).Distinct().Count() != Sorts.Count)
+            throw new System.IO.InvalidDataException("Un niveau de tri est invalide ou répété.");
+    }
+    internal bool Matches(string[]? row, CultureInfo culture)
+    {
+        foreach (var filter in Filters)
+        {
+            var value = Cell(row, filter.Column); var expected = filter.Value;
+            var match = filter.Operator switch
+            {
+                "contains" => culture.CompareInfo.IndexOf(value, expected, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0,
+                "not-contains" => culture.CompareInfo.IndexOf(value, expected, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) < 0,
+                "eq" => culture.CompareInfo.Compare(value.Trim(), expected.Trim(), CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) == 0,
+                "ne" => culture.CompareInfo.Compare(value.Trim(), expected.Trim(), CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) != 0,
+                "empty" => string.IsNullOrWhiteSpace(value), "not-empty" => !string.IsNullOrWhiteSpace(value),
+                "gt" => Numeric(value, culture, out var a) && Numeric(expected, culture, out var b) && a > b,
+                "lt" => Numeric(value, culture, out var a) && Numeric(expected, culture, out var b) && a < b,
+                "before" => DateTime.TryParse(value, culture, DateTimeStyles.AllowWhiteSpaces, out var a) && DateTime.TryParse(expected, culture, DateTimeStyles.AllowWhiteSpaces, out var b) && a < b,
+                "after" => DateTime.TryParse(value, culture, DateTimeStyles.AllowWhiteSpaces, out var a) && DateTime.TryParse(expected, culture, DateTimeStyles.AllowWhiteSpaces, out var b) && a > b,
+                _ => false
+            };
+            if (!match) return false;
+        }
+        return true;
+    }
+    internal void Sort(List<int> indices, ExtractionResult source, CultureInfo culture, CancellationToken ct)
+    {
+        int comparisons = 0;
+        try
+        {
+            indices.Sort((left, right) =>
+            {
+                if ((comparisons++ & 1023) == 0) ct.ThrowIfCancellationRequested();
+                foreach (var sort in Sorts)
+                {
+                    var a = Cell(source.Rows[left], sort.Column); var b = Cell(source.Rows[right], sort.Column);
+                    bool aValid = !string.IsNullOrWhiteSpace(a), bValid = !string.IsNullOrWhiteSpace(b); int compared;
+                    if (sort.Type == "number")
+                    {
+                        aValid = Numeric(a, culture, out var aNumber); bValid = Numeric(b, culture, out var bNumber);
+                        compared = aNumber.CompareTo(bNumber);
+                    }
+                    else if (sort.Type == "date")
+                    {
+                        aValid = DateTime.TryParse(a, culture, DateTimeStyles.AllowWhiteSpaces, out var aDate); bValid = DateTime.TryParse(b, culture, DateTimeStyles.AllowWhiteSpaces, out var bDate);
+                        compared = aDate.CompareTo(bDate);
+                    }
+                    else compared = culture.CompareInfo.Compare(a, b, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace);
+                    if (aValid != bValid) return aValid ? -1 : 1; // Missing / invalid always last, in either direction.
+                    if (aValid && compared != 0) return sort.Descending ? -compared : compared;
+                }
+                return left.CompareTo(right); // Stable ties retain original row identity.
+            });
+        }
+        catch (InvalidOperationException) when (ct.IsCancellationRequested) { throw new OperationCanceledException(ct); }
+    }
+    private static string Cell(string[]? row, int column) => row != null && column < row.Length ? row[column] ?? "" : "";
+    private static bool Numeric(string value, CultureInfo culture, out decimal number) => decimal.TryParse(value, NumberStyles.Number, culture, out number);
+}
+public sealed class PreviewColumnFilter
+{
+    public int Column { get; set; }
+    public string Operator { get; set; } = "contains";
+    public string Value { get; set; } = "";
+    public PreviewColumnFilter Copy() => (PreviewColumnFilter)MemberwiseClone();
+}
+public sealed class PreviewSortRule
+{
+    public int Column { get; set; }
+    public bool Descending { get; set; }
+    public string Type { get; set; } = "text";
+    public PreviewSortRule Copy() => (PreviewSortRule)MemberwiseClone();
 }

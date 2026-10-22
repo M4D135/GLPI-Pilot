@@ -54,6 +54,7 @@ public partial class MainWindow
         TicketSearchBox.TextChanged += (_, _) => { if (!_ticketNavigationUpdating) BuildTicketSectionPreview(); };
         TicketViewModeBox.SelectionChanged += (_, _) => { if (!_ticketNavigationUpdating) BuildTicketSectionPreview(); };
         _ticketReader = new TicketReaderView(); TicketReaderHost.Content = _ticketReader;
+        InitializePersonalTicketWorkspace();
         TicketAutoLoadCheckBox.Checked += TicketAutoLoad_Changed;
         TicketAutoLoadCheckBox.Unchecked += TicketAutoLoad_Changed;
         UpdateTicketControls();
@@ -137,6 +138,10 @@ public partial class MainWindow
 
     private void DisposeTicketWorkspace()
     {
+        _personalReminderTimer?.Stop();
+        _desktopReminderNotifier?.Dispose();
+        _personalDayCancellation?.Cancel();
+        _ticketIntelligenceCancellation?.Cancel();
         InvalidateTicketRequest();
         _ticketDebounceTimer?.Stop();
         _ticketCache.Clear();
@@ -185,6 +190,12 @@ public partial class MainWindow
     {
         if (_ticketSuppressSelection || _ticketLoadingFields || _closing) return;
         if (_busy && !_ticketLoading) return;
+        if (ResultGrid.SelectedItems.Count > 1)
+        {
+            InvalidateTicketRequest();
+            TicketStateText.Text = "Sélection multiple : utilisez Dans ma journée pour ajouter ces tickets à votre file personnelle.";
+            UpdateTicketControls(); return;
+        }
         if (ResultGrid.SelectedItem is not DataRowView || _result == null)
         {
             InvalidateTicketRequest();
@@ -229,7 +240,11 @@ public partial class MainWindow
 
     private void OpenTicket_Click(object sender, RoutedEventArgs e) => QueueSelectedTicket(showTab: true, force: false);
 
-    private void RefreshTicket_Click(object sender, RoutedEventArgs e) => QueueSelectedTicket(showTab: true, force: true);
+    private void RefreshTicket_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket != null) QueuePersonalTicketReference(_selectedTicket, true);
+        else QueueSelectedTicket(showTab: true, force: true);
+    }
 
     private void QueueSelectedTicket(bool showTab, bool force)
     {
@@ -371,6 +386,7 @@ public partial class MainWindow
         TicketEmptyPanel.Visibility = Visibility.Visible;
         TicketEmptyTitleText.Text = "Détail du ticket";
         TicketEmptyHintText.Text = message;
+        RefreshPersonalTicketPresentation();
     }
 
     private void PresentTicketResult(TicketDetailResult result, bool fromCache, string cacheKey)
@@ -381,7 +397,9 @@ public partial class MainWindow
         TicketTitleText.Text = "Ticket " + result.Ticket.Id + (string.IsNullOrWhiteSpace(result.Title) ? "" : " · " + result.Title);
         TicketMetaText.Text = $"{result.Sections.Count} section(s) · Lu le {result.ReadAt.LocalDateTime:dd/MM/yyyy à HH:mm:ss}";
         TicketStateText.Text = fromCache ? "Données conservées en mémoire. Actualiser relit le portail." : "Lecture terminée. Aucune modification apportée au ticket.";
+        RememberPersonalTicketRead(result, !fromCache);
         BuildTicketNavigation();
+        RefreshPersonalTicketPresentation();
         UpdateTicketControls();
     }
 
@@ -453,6 +471,10 @@ public partial class MainWindow
         }
         if (items.Count == 0)
             foreach (var section in result.Sections) items.Add(new("section:" + items.Count, section.Name, $"{section.Data.Rows.Count:N0} lignes", section));
+        items = items.OrderBy(item => _workplace.FavoriteSections.Contains(item.Key) ? 0 : 1)
+            .Select(item => _workplace.FavoriteSections.Contains(item.Key) ? item with { Label = "★ " + item.Label } : item).ToList();
+        selectedKey ??= _workplace.Tickets.FirstOrDefault(item => item.Key == WorkplaceStore.TicketKey(result.Ticket))?.PreferredSection;
+        if (string.IsNullOrEmpty(selectedKey)) selectedKey = _workplace.DefaultSection;
         _ticketNavigationUpdating = true;
         try
         {
@@ -512,7 +534,9 @@ public partial class MainWindow
                     displayed.Warnings = displayed.Warnings.Concat(additional.Warnings).Distinct().ToList();
                     displayed.ReadAt = additional.ReadAt;
                     if (_ticketDisplayedCacheKey != null) CacheTicket(_ticketDisplayedCacheKey, displayed);
+                    RememberPersonalTicketRead(displayed, true);
                     BuildTicketNavigation(entry.Key);
+                    RefreshPersonalTicketPresentation();
                     TicketMetaText.Text = $"{displayed.Sections.Count} sections lues · {displayed.ReadAt.LocalDateTime:dd/MM/yyyy à HH:mm:ss}";
                     var loaded = additional.Tabs.Any(tab => tab.Key == entry.Tab.Key && tab.Loaded);
                     TicketStateText.Text = loaded
@@ -583,7 +607,9 @@ public partial class MainWindow
         var data = section.Data;
         TicketSectionTitleText.Text = section.Name;
         var search = TicketSearchBox.Text.Trim();
-        var matching = data.Rows.Where(row => search.Length == 0 || row.Any(value =>
+        var timelineSelection = section.Kind == "timeline" && _ticketWorkplaceView != null
+            ? TicketReadingService.Filter(data.Rows, _ticketWorkplaceView.TimelineFilter) : null;
+        var matching = (timelineSelection?.Rows ?? data.Rows).Where(row => search.Length == 0 || row.Any(value =>
             CultureInfo.CurrentCulture.CompareInfo.IndexOf(value ?? "", search, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0)).ToList();
         var displayed = matching.Take(PreviewLimit).ToList();
         _ticketPreview = new DataTable { Locale = CultureInfo.CurrentCulture };
@@ -600,7 +626,7 @@ public partial class MainWindow
         var reader = TicketViewModeBox.SelectedIndex == 0 && section.Kind is "fields" or "text" or "timeline";
         TicketReaderHost.Visibility = reader ? Visibility.Visible : Visibility.Collapsed;
         TicketGrid.Visibility = reader ? Visibility.Collapsed : Visibility.Visible;
-        if (reader) _ticketReader?.Show(section, displayed);
+        if (reader) _ticketReader?.Show(section, displayed, _ticketWorkplaceView?.GroupByDay == true);
         TicketCellExpander.Visibility = reader ? Visibility.Collapsed : Visibility.Visible;
         TicketEmptyPanel.Visibility = data.Headers.Count > 0 && matching.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
         TicketEmptyTitleText.Text = search.Length > 0 ? "Aucun résultat dans cette rubrique" : "Section sans données";
@@ -609,6 +635,7 @@ public partial class MainWindow
         TicketSummaryText.Text = data.Status + (warnings.Count > 0 ? " · " + string.Join(" · ", warnings) : "")
             + (data.Rows.Count > PreviewLimit ? $" · Aperçu limité à {PreviewLimit:N0} lignes ; l’Excel contient toutes les lignes lues." : "")
             + " · La lecture des sections ne confirme pas l’exhaustivité globale du ticket.";
+        if (timelineSelection?.UnreadableDates > 0) TicketSummaryText.Text += $" · {timelineSelection.UnreadableDates:N0} date(s) illisible(s) exclue(s) du filtre de période.";
         UpdateTicketControls();
     }
 

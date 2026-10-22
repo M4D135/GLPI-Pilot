@@ -4,7 +4,8 @@ public sealed record DashboardRole(string Key, string Label, string[] Aliases);
 public sealed record DashboardColumn(string Role, string Label, int? Index, string Header, string State);
 public sealed record DashboardMetric(string Key, string Label, double? Value, string Unit,
     string Explanation, int[] Rows, int? Sample = null, string Tone = "normal");
-public sealed record DashboardBucket(string Label, int Count, int[] Rows);
+public sealed record DashboardBucket(string Label, int Count, int[] Rows,
+    double? Value = null, string Unit = "", int? Sample = null, bool IsAggregate = false);
 public sealed record DashboardDistribution(string Key, string Title, bool Available, int Denominator,
     string Note, IReadOnlyList<DashboardBucket> Buckets);
 public sealed record DashboardDay(DateTime Date, int[] Created, int[] Resolved, int[] Closed);
@@ -14,6 +15,24 @@ public sealed record DashboardWeather(string State, string Title, string Symbol,
     int MeasuredWeight, string Description, IReadOnlyList<DashboardSignal> Signals);
 public sealed record DashboardFocusRow(int Index, string Id, string Title, string Status,
     string Priority, string Group, double? AgeDays, string Reasons);
+public sealed record DashboardDateValue(int Row, DateTime Date);
+public sealed record DashboardNumericValue(int Row, double Value, string Label = "");
+public sealed record DashboardNumericSeries(string Key, string Title, string Unit,
+    IReadOnlyList<DashboardNumericValue> Values, string Explanation);
+public sealed record DashboardMatrixCell(string RowLabel, string ColumnLabel, double Value, int[] Rows);
+public sealed record DashboardMatrix(string Key, string Title, bool Available, string Unit,
+    IReadOnlyList<DashboardMatrixCell> Cells, string Explanation);
+public sealed record DashboardScatterPoint(int Row, string Label, double X, double Y);
+public sealed record DashboardScatter(string Key, string Title, string XLabel, string YLabel,
+    IReadOnlyList<DashboardScatterPoint> Points, string Explanation);
+public sealed record DashboardBox(string Label, int Sample, double Minimum, double FirstQuartile,
+    double Median, double ThirdQuartile, double Maximum, double P90, int[] Rows);
+public sealed record DashboardBoxSeries(string Key, string Title, bool Available, string Unit,
+    IReadOnlyList<DashboardBox> Boxes, string Explanation);
+public sealed record DashboardHistoryPoint(DateTimeOffset CapturedAt, double? Value, int Rows,
+    bool Complete, bool Comparable, string SnapshotId, string Note = "");
+public sealed record DashboardHistorySeries(string Key, string Title, string Unit,
+    IReadOnlyList<DashboardHistoryPoint> Points, string Explanation);
 
 public sealed class DashboardSnapshot
 {
@@ -35,6 +54,16 @@ public sealed class DashboardSnapshot
     public List<DashboardDay> Timeline { get; init; } = new();
     public List<DashboardFocusRow> Attention { get; init; } = new();
     public List<string> Warnings { get; init; } = new();
+    public int[] ScopeRows { get; init; } = Array.Empty<int>();
+    public Dictionary<string, IReadOnlyList<DashboardDateValue>> DateValues { get; init; } = new(StringComparer.Ordinal);
+    public List<DashboardNumericSeries> NumericSeries { get; init; } = new();
+    public List<DashboardMatrix> Matrices { get; init; } = new();
+    public List<DashboardScatter> Scatters { get; init; } = new();
+    public List<DashboardBoxSeries> BoxSeries { get; init; } = new();
+    public List<DashboardHistorySeries> History { get; init; } = new();
+    public Dictionary<string, DashboardWeather> WeatherProfiles { get; init; } = new(StringComparer.Ordinal);
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Func<int[], string, CancellationToken, DashboardSnapshot>? RecalculateScope { get; set; }
     public DashboardWeather Weather { get; set; } = new("unknown", "Météo indéterminée", "◌", null, 0,
         "Importez ou extrayez un relevé pour calculer sa météo.", Array.Empty<DashboardSignal>());
     public DashboardMetric? Metric(string key) => Metrics.FirstOrDefault(x => x.Key == key);

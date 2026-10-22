@@ -29,19 +29,19 @@ QueryResult Run(ExtractionResult source, SavedQuery query, DashboardSettings? se
     return QueryService.Evaluate(source, settings, snapshot, query);
 }
 
-Test("Sixty-four stable validated templates leave room for personal queries", () =>
+Test("Eighty stable validated templates leave room for personal queries", () =>
 {
     var library = QueryLibrarySettings.CreateDefault(); library.Validate();
-    Assert(library.Queries.Count == 64 && library.Queries.Select(query => query.Id).Distinct().Count() == 64);
+    Assert(library.Queries.Count == 80 && library.Queries.Select(query => query.Id).Distinct().Count() == 80);
     Assert(library.Queries.Select(query => query.Id).SequenceEqual(QueryLibrarySettings.CreateDefault().Queries.Select(query => query.Id)));
-    Assert(library.Queries.Count(query => query.GroupBy == "role:city") >= 20 && library.Queries.All(query => query.Aggregate == "count"));
+    Assert(library.Queries.Count(query => query.GroupBy == "role:city") >= 20 && library.Queries.Count(query => query.Aggregate == "count") == 72);
 });
 Test("Missing templates are added once and preserve edited templates and custom queries", () =>
 {
     var library = QueryLibrarySettings.CreateDefault(); library.Queries = library.Queries.Take(40).ToList();
     var existing = library.Queries[0]; existing.Name = "Mon modèle adapté"; existing.Favorite = true;
     var custom = Query("role:title", "contains", "perso"); library.Queries.Add(custom);
-    Assert(library.AddMissingTemplates() == 24 && library.Queries.Count == 65);
+    Assert(library.AddMissingTemplates() == 40 && library.Queries.Count == 81);
     Assert(ReferenceEquals(existing, library.Queries[0]) && existing.Name == "Mon modèle adapté" && existing.Favorite);
     Assert(library.Queries.Contains(custom) && library.AddMissingTemplates() == 0);
     library.Validate();
@@ -308,7 +308,7 @@ Test("Technician grouping deduplicates a person within a row and keeps commas in
     var distinct = Run(source, Query(aggregate: "distinct", aggregateField: "role:assignee"));
     Assert(distinct.Metric.Value == 4 && distinct.Metric.Rows.SequenceEqual(new[] { 0, 1, 2 }));
 });
-Test("Grouping always counts filtered rows, independently of numeric contributions", () =>
+Test("Grouping retains filtered row counts alongside numeric contributions", () =>
 {
     var source = Table(new[] { "Ville", "Montant" }, new[] { "Lyon", "10" }, new[] { "Lyon", "?" }, new[] { "", "20" });
     var result = Run(source, Query(aggregate: "average", aggregateField: "column:Montant", groupBy: "role:city"));
@@ -398,11 +398,11 @@ Test("Appending a library twice replaces only its own metrics and groups", () =>
     QueryService.AppendDashboardQueries(snapshot, source, new(), new());
     Assert(snapshot.Metrics.All(metric => !metric.Key.StartsWith("query:", StringComparison.Ordinal)) && snapshot.Metric("total") == total);
 });
-Test("The sixty-four-template library evaluates through available and unavailable data honestly", () =>
+Test("The eighty-template library evaluates through available and unavailable data honestly", () =>
 {
     var source = Simple("A", "B"); var snapshot = DashboardService.Calculate(source, new(), now);
     QueryService.AppendDashboardQueries(snapshot, source, new(), QueryLibrarySettings.CreateDefault());
-    Assert(snapshot.Metrics.Count(metric => metric.Key.StartsWith("query:", StringComparison.Ordinal)) == 64);
+    Assert(snapshot.Metrics.Count(metric => metric.Key.StartsWith("query:", StringComparison.Ordinal)) == 80);
     Assert(snapshot.Metrics.Where(metric => metric.Key.StartsWith("query:", StringComparison.Ordinal)).Any(metric => metric.Value is null));
 });
 Test("Every documented configuration size limit is checked on raw values", () =>
@@ -497,6 +497,190 @@ Test("Large running evaluation can be cancelled without publishing a result", ()
     cancellation.CancelAfter(1);
     Throws<OperationCanceledException>(() => QueryService.Evaluate(source, new(), snapshot, query, cancellation.Token));
     Assert(snapshot.Metric(QueryService.MetricKey(query.Id)) is null);
+});
+
+Test("Nested logic uses AND precedence and explicit parentheses without widening", () =>
+{
+    var source = Table(new[] { "ID", "Titre", "Ville", "Montant" },
+        new[] { "1", "urgent", "Marseille", "1" }, new[] { "2", "normal", "Marseille", "8" },
+        new[] { "3", "normal", "Lyon", "9" }, new[] { "4", "urgent", "Lyon", "1" });
+    var query = Query("role:city", "equals", "Marseille");
+    query.Conditions.Add(new() { Field = "role:title", Operator = "equals", Value = "urgent" });
+    query.Conditions.Add(new() { Field = "column:Montant", Operator = "number-gt", Value = "5" });
+    query.ConditionExpression = "1 ET (2 OU 3)";
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 0, 1 }));
+    query.ConditionExpression = "1 OR 2 AND 3";
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 0, 1 }));
+});
+Test("NOT preserves unknown numeric data and a true OR branch may still decide", () =>
+{
+    var source = Table(new[] { "Titre", "Montant" }, new[] { "urgent", "?" }, new[] { "normal", "?" }, new[] { "normal", "2" });
+    var query = Query("role:title", "equals", "urgent"); query.Conditions.Add(new() { Field = "column:Montant", Operator = "number-gt", Value = "5" });
+    query.ConditionExpression = "1 OU NON 2"; var result = Run(source, query);
+    Assert(result.Rows.SequenceEqual(new[] { 0, 2 }) && result.UnknownRows == 1);
+});
+Test("Logic rejects omitted conditions, invalid indices, code and excessive nesting", () =>
+{
+    var query = Query("role:title", "contains", "A"); query.Conditions.Add(new() { Field = "role:title", Operator = "not-empty" });
+    foreach (var expression in new[] { "1", "1 ET 3", "1 OU", "1;system()", "1 ET ()", new string('(', 10) + "1 ET 2" + new string(')', 10) })
+    { query.ConditionExpression = expression; Throws<InvalidDataException>(query.Validate); }
+});
+Test("Field to field comparisons use numbers and dates rather than lexical ordering", () =>
+{
+    var source = Table(new[] { "A", "B", "Début", "Fin" }, new[] { "10", "2", "2026-01-01", "2026-02-01" },
+        new[] { "2", "10", "2026-03-01", "2026-02-01" }, new[] { "?", "2", "?", "2026-02-01" });
+    var query = Query("column:A", "number-gt", "column:B"); query.Conditions[0].ValueSource = "field";
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 0 }));
+    query.Conditions[0] = new() { Field = "column:Début", Operator = "date-after", ValueSource = "field", Value = "column:Fin" };
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 1 }));
+});
+Test("IN separates semicolons and newlines while preserving commas in names", () =>
+{
+    var source = Simple("Dupont, Jean", "Marseille", "Lyon", "");
+    var query = Query("role:title", "in", "Dupont, Jean; Marseille\nParis");
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 0, 1 }));
+    query.Conditions[0].Operator = "not-in"; Assert(Run(source, query).Rows.SequenceEqual(new[] { 2, 3 }));
+});
+Test("Numeric and date ranges include both bounds and leave missing data unknown", () =>
+{
+    var source = Table(new[] { "N", "Date" }, new[] { "2", "2026-01-01" }, new[] { "4", "2026-01-03" }, new[] { "5", "2026-01-04" }, new[] { "?", "?" });
+    var query = Query("column:N", "number-between", "2"); query.Conditions[0].Value2 = "4";
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 0, 1 }));
+    query.Conditions[0].Operator = "number-outside"; Assert(Run(source, query).Rows.SequenceEqual(new[] { 2 }));
+    query.Conditions[0] = new() { Field = "column:Date", Operator = "date-between", Value = "2026-01-01", Value2 = "2026-01-03" };
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 0, 1 }));
+    query.Conditions[0].Value2 = "2025-01-01"; Assert(!Run(source, query).Available);
+});
+Test("Parameters are required and runtime values do not mutate saved defaults", () =>
+{
+    var source = Simple("A", "B", "C"); var query = Query("role:city", "equals", "ville"); query.Conditions[0].ValueSource = "parameter";
+    query.Parameters.Add(new() { Key = "ville", Label = "Ville" });
+    Assert(!Run(source, query).Available);
+    query.Parameters[0].DefaultValue = "Lyon"; Assert(Run(source, query).Rows.SequenceEqual(new[] { 0, 2 }));
+    var snapshot = DashboardService.Calculate(source, new(), now);
+    var result = QueryService.Evaluate(source, new(), snapshot, query, parameters: new Dictionary<string, string> { ["ville"] = "Marseille" });
+    Assert(result.Rows.SequenceEqual(new[] { 1 }) && query.Parameters[0].DefaultValue == "Lyon");
+});
+Test("Parameter types and relative-day bounds are validated before evaluation", () =>
+{
+    var source = Table(new[] { "Date de création" }, new[] { "2026-10-20" });
+    var query = Query("role:created", "last-days", "jours"); query.Conditions[0].ValueSource = "parameter";
+    query.Parameters.Add(new() { Key = "jours", Type = "number", DefaultValue = "7" });
+    var snapshot = DashboardService.Calculate(source, new(), now);
+    Assert(!QueryService.Evaluate(source, new(), snapshot, query, parameters: new Dictionary<string, string> { ["jours"] = "-1" }).Available);
+    Assert(!QueryService.Evaluate(source, new(), snapshot, query, parameters: new Dictionary<string, string> { ["jours"] = "abc" }).Available);
+    query.Conditions[0].Value = "absent"; Throws<InvalidDataException>(query.Validate);
+});
+Test("Grouped numeric results preserve row counts and exact contributors", () =>
+{
+    var source = Table(new[] { "Ville", "N" }, new[] { "Lyon", "2" }, new[] { "Lyon", "8" }, new[] { "Marseille", "?" });
+    var query = Query(aggregate: "average", aggregateField: "column:N", groupBy: "role:city"); var result = Run(source, query);
+    var lyon = result.Groups.Single(group => group.Label == "Lyon"); var marseille = result.Distribution!.Buckets.Single(group => group.Label == "Marseille");
+    Assert(lyon.Value == 5 && lyon.Count == 2 && lyon.Sample == 2 && lyon.ContributionRows.SequenceEqual(new[] { 0, 1 }));
+    Assert(marseille.IsAggregate && marseille.Value == null && marseille.Count == 1 && marseille.Sample == 0);
+});
+Test("Grouped percentages use each group's base before conditions including zero matches", () =>
+{
+    var source = Table(new[] { "Ville", "Titre" }, new[] { "Lyon", "oui" }, new[] { "Lyon", "non" }, new[] { "Marseille", "non" });
+    var query = Query("role:title", "equals", "oui", aggregate: "percent", groupBy: "role:city"); var result = Run(source, query);
+    Assert(result.Groups.Single(group => group.Label == "Lyon").Value == 50);
+    var empty = result.Groups.Single(group => group.Label == "Marseille"); Assert(empty.Value == 0 && empty.Count == 0 && empty.Denominator == 1);
+});
+Test("Three grouping levels retain source indices and explicit hierarchical paths", () =>
+{
+    var source = Table(new[] { "Ville", "Catégorie", "Attribué à - Technicien" },
+        new[] { "Lyon", "Réseau", "Alice ; Bob ; Alice" }, new[] { "Marseille", "Poste", "Alice" });
+    var query = Query(groupBy: "role:city"); query.GroupBySecondary = "role:category"; query.GroupByTertiary = "role:assignee";
+    var result = Run(source, query); Assert(result.Groups.Count == 3);
+    var bob = result.Groups.Single(group => group.Path.Last() == "Bob"); Assert(bob.Path.SequenceEqual(new[] { "Lyon", "Réseau", "Bob" }) && bob.Rows.SequenceEqual(new[] { 0 }));
+});
+Test("Date buckets use ISO week years and separate missing or invalid dates", () =>
+{
+    var source = Table(new[] { "Date" }, new[] { "2021-01-01" }, new[] { "2021-01-04" }, new[] { "?" }, new[] { "" });
+    var query = Query(groupBy: "column:Date"); query.GroupDateBucket = "week"; var result = Run(source, query);
+    Assert(result.Groups.Any(group => group.Label == "2020-S53") && result.Groups.Any(group => group.Label == "2021-S01"));
+    Assert(result.Groups.Any(group => group.Label == "Date illisible") && result.Groups.Any(group => group.Label.Contains("cellule vide")));
+});
+Test("Median and configurable percentiles interpolate only finite numeric contributors", () =>
+{
+    var source = Table(new[] { "N" }, new[] { "1" }, new[] { "3" }, new[] { "5" }, new[] { "9" }, new[] { "?" });
+    var query = Query(aggregate: "median", aggregateField: "column:N"); Assert(Run(source, query).Metric.Value == 4);
+    query.Aggregate = "percentile"; query.Percentile = 90; var result = Run(source, query);
+    Assert(Math.Abs(result.Metric.Value!.Value - 7.8) < 1e-10 && result.Metric.Sample == 4 && result.Metric.Rows.SequenceEqual(new[] { 0, 1, 2, 3 }));
+    query.Percentile = 0; Assert(Run(source, query).Metric.Value == 1); query.Percentile = 100; Assert(Run(source, query).Metric.Value == 9);
+});
+Test("Calculated date intervals are calendar days and can filter inconsistent dates", () =>
+{
+    var source = Table(new[] { "Début", "Fin" }, new[] { "2026-01-01", "2026-01-03" }, new[] { "2026-01-03", "2026-01-01" }, new[] { "?", "2026-01-03" });
+    var query = Query("calc:delai", "number-gte", "0", aggregate: "average", aggregateField: "calc:delai");
+    query.ComputedFields.Add(new() { Key = "delai", Label = "Délai", Function = "days-between", Field = "column:Début", OtherField = "column:Fin" });
+    var result = Run(source, query); Assert(result.Rows.SequenceEqual(new[] { 0 }) && result.Metric.Value == 2 && result.Metric.Unit == "jours");
+});
+Test("Calculated numeric dependencies reject division by zero and keep exact arithmetic", () =>
+{
+    var source = Table(new[] { "A", "B" }, new[] { "4", "2" }, new[] { "4", "0" }, new[] { "?", "2" });
+    var query = Query(aggregate: "sum", aggregateField: "calc:double");
+    query.ComputedFields.Add(new() { Key = "ratio", Label = "Ratio", Function = "divide", Field = "column:A", OtherField = "column:B" });
+    query.ComputedFields.Add(new() { Key = "double", Label = "Double", Function = "multiply", Field = "calc:ratio", Constant = "2" });
+    var result = Run(source, query); Assert(result.Metric.Value == 4 && result.Metric.Sample == 1 && result.Metric.Rows.SequenceEqual(new[] { 0 }));
+});
+Test("Calculated Unicode text length counts scalar characters and coalesce remains literal", () =>
+{
+    var source = Simple("🙂A", "", "Été"); var query = Query(aggregate: "sum", aggregateField: "calc:length");
+    query.ComputedFields.Add(new() { Key = "length", Label = "Longueur", Function = "length", Field = "role:title" });
+    Assert(Run(source, query).Metric.Value == 5);
+    query.Aggregate = "count"; query.AggregateField = ""; query.ComputedFields.Add(new() { Key = "fallback", Label = "Titre local", Function = "coalesce", Field = "role:title", Constant = "absent" });
+    query.Conditions.Add(new() { Field = "calc:fallback", Operator = "equals", Value = "absent" });
+    Assert(Run(source, query).Rows.SequenceEqual(new[] { 1 }));
+});
+Test("Calculated cycles, undefined fields and unknown functions fail strict validation", () =>
+{
+    var query = Query(); query.ComputedFields.Add(new() { Key = "a", Label = "A", Field = "calc:a" });
+    Throws<InvalidDataException>(query.Validate); query.ComputedFields[0].Field = "calc:absent"; Throws<InvalidDataException>(query.Validate);
+    query.ComputedFields[0].Field = "role:created"; query.ComputedFields[0].Function = "execute"; Throws<InvalidDataException>(query.Validate);
+});
+Test("Calculated concatenation is bounded and oversized output never becomes an empty match", () =>
+{
+    var source = Simple(new string('A', 50_001)); var query = Query("calc:joined", "empty");
+    query.ComputedFields.Add(new() { Key = "joined", Label = "Titre doublé", Function = "concat", Field = "role:title", OtherField = "role:title" });
+    var result = Run(source, query); Assert(!result.Available && result.Metric.Value == null && result.Rows.Length == 0);
+});
+Test("Calculated dependency depth is bounded independently of definition order", () =>
+{
+    var query = Query();
+    for (var index = 0; index < 8; index++)
+        query.ComputedFields.Add(new() { Key = "level" + index, Label = "Niveau " + index, Function = "lower", Field = index == 0 ? "role:title" : "calc:level" + (index - 1) });
+    query.Validate();
+    query.ComputedFields.Add(new() { Key = "level8", Label = "Niveau 8", Function = "lower", Field = "calc:level7" });
+    Throws<InvalidDataException>(query.Validate);
+    query.ComputedFields.Reverse(); Throws<InvalidDataException>(query.Validate);
+});
+Test("Query advanced copies preserve independent parameter and calculation definitions", () =>
+{
+    var query = Query(); query.Parameters.Add(new() { Key = "choix", DefaultValue = "Lyon" }); query.ComputedFields.Add(new() { Key = "age", Label = "Âge" });
+    var copy = query.Copy(); copy.Parameters[0].DefaultValue = "Paris"; copy.ComputedFields[0].Label = "Autre";
+    Assert(query.Parameters[0].DefaultValue == "Lyon" && query.ComputedFields[0].Label == "Âge");
+    var restored = JsonSerializer.Deserialize<SavedQuery>(JsonSerializer.Serialize(query))!; restored.Validate(); Assert(restored.ComputedFields[0].Key == "age");
+});
+Test("Ticket explanation distinguishes true false unknown and out-of-base tickets", () =>
+{
+    var source = Table(new[] { "ID", "Statut", "N" }, new[] { "1", "Nouveau", "2" }, new[] { "2", "Nouveau", "?" }, new[] { "3", "Clos", "2" });
+    var query = Query("column:N", "number-gt", "1", basis: "active"); var snapshot = DashboardService.Calculate(source, new(), now);
+    var yes = QueryService.Explain(source, new(), snapshot, query, 0); var unknown = QueryService.Explain(source, new(), snapshot, query, 1); var outside = QueryService.Explain(source, new(), snapshot, query, 2);
+    Assert(yes.Decision == "true" && yes.Conditions[0].Decision == "Vrai");
+    Assert(unknown.Decision == "unknown" && unknown.Conditions[0].Decision == "Indéterminé");
+    Assert(!outside.WithinBase && outside.Decision == "false" && outside.Conditions[0].Decision == "Vrai");
+});
+Test("Invalid advanced logic is discarded on local recovery rather than broadened", () =>
+{
+    var query = Query("role:title", "contains", "A"); query.ConditionExpression = "2";
+    var library = new QueryLibrarySettings { Queries = new() { query } }; library.Normalize(); Assert(library.Queries.Count == 0);
+});
+Test("Snapshot scope and cancellation also apply to per-ticket explanations", () =>
+{
+    var source = Simple("A", "B"); var snapshot = DashboardService.CalculateSubset(source, new(), new[] { 1 }, "Local", now);
+    var query = Query(); Assert(!QueryService.Explain(source, new(), snapshot, query, 0).WithinBase);
+    using var cts = new CancellationTokenSource(); cts.Cancel(); Throws<OperationCanceledException>(() => QueryService.Explain(source, new(), snapshot, query, 1, cts.Token));
 });
 
 var passed = 0;

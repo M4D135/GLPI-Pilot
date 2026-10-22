@@ -30,6 +30,8 @@ public sealed class NativeExportInspection
     [JsonPropertyName("plans")] public List<NativeExportPlan> Plans { get; set; } = new();
     [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = new();
     [JsonPropertyName("displayPlan")] public NativeDisplayPlan? DisplayPlan { get; set; }
+    [JsonIgnore] public bool Unavailable => !Supported && Plans.Count == 0
+        && Reason.StartsWith("Aucune commande native CSV", StringComparison.Ordinal);
 }
 
 public sealed class NativeDisplayPlan
@@ -46,4 +48,5 @@ public sealed class NativeDisplayPlan
 }
 
 public sealed record NativeDownloadResult(string Path, int? ExpectedTotal, string PlanKind);
+public sealed class NativeExportUnavailableException(string message) : InvalidOperationException(message) { }
 public sealed record AutomaticRunResult(ExtractionResult Data, TableChoice Table, string PrimaryPath, string? NativePath, string? ExcelPath, CityEnrichmentResult? Cities = null);

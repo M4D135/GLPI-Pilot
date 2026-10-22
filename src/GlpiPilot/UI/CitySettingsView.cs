@@ -12,7 +12,7 @@ using GlpiPilot.Core;
 namespace GlpiPilot.UI;
 
 /// <summary>Edits an isolated city dictionary. The owner handles persistence and enrichment.</summary>
-public sealed class CitySettingsView : UserControl
+public sealed partial class CitySettingsView : UserControl
 {
     private const int MaximumCities = CitySettings.MaximumCities;
     private readonly ObservableCollection<CityRow> _rows = new();
@@ -106,6 +106,8 @@ public sealed class CitySettingsView : UserControl
         var bulkExpander = new Expander { Header = "Ajouter plusieurs correspondances", Content = bulkContent, Padding = new Thickness(0, 10, 0, 0) };
         var bulkCard = Card(bulkExpander); bulkCard.Margin = new Thickness(0, 14, 0, 0); root.Children.Add(bulkCard);
 
+        root.Children.Add(BuildAdvancedReference());
+
         var footer = new WrapPanel { Margin = new Thickness(0, 16, 0, 16), VerticalAlignment = VerticalAlignment.Center };
         _save = Command("Enregistrer et appliquer au relevé"); _save.SetResourceReference(Button.StyleProperty, "PrimaryButton");
         footer.Children.Add(_save); _status.Margin = new Thickness(8, 0, 0, 6); _status.MaxWidth = 610; footer.Children.Add(_status); root.Children.Add(footer);
@@ -120,7 +122,7 @@ public sealed class CitySettingsView : UserControl
         _titleColumn.TextChanged += (_, _) => MarkDirty();
         _search.TextChanged += (_, _) => ApplySearch();
         _bulk.TextChanged += (_, _) => { if (!_loading) MarkDirty(); UpdateEnabled(); };
-        _grid.SelectionChanged += (_, _) => UpdateEnabled();
+        _grid.SelectionChanged += (_, _) => { LoadSelectedCityAdvanced(); UpdateEnabled(); };
         _add.Click += (_, _) => RunEdit(AddCity);
         _remove.Click += (_, _) => RunEdit(RemoveSelected);
         _bulkAdd.Click += (_, _) => RunEdit(AddBulkCities);
@@ -132,13 +134,14 @@ public sealed class CitySettingsView : UserControl
     {
         try
         {
-            CommitGrid();
+            CommitGrid(); CommitAdvanced();
             if (!string.IsNullOrWhiteSpace(_bulk.Text)) AddBulkCities();
             var settings = new CitySettings
             {
                 Enabled = _enabled.IsChecked == true,
                 TitleColumn = string.IsNullOrWhiteSpace(_titleColumn.Text) ? "" : _titleColumn.Text,
-                Cities = _rows.Select((row, index) => ReadCity(row, index + 1)).ToList()
+                Cities = _rows.Select((row, index) => ReadCity(row, index + 1)).ToList(),
+                Sites = ReadSites()
             };
             // Validate the raw draft before Copy/Normalize can repair or bound it.
             settings.Validate();
@@ -163,7 +166,9 @@ public sealed class CitySettingsView : UserControl
             _enabled.IsChecked = copy.Enabled; _titleColumn.Text = copy.TitleColumn;
             foreach (var city in copy.Cities)
                 AddRow(new CityRow(city.Id, city.Name, string.Join(" ; ", city.Aliases), city.PostalCode,
-                    FormatCoordinate(city.Latitude), FormatCoordinate(city.Longitude)));
+                    FormatCoordinate(city.Latitude), FormatCoordinate(city.Longitude)) { Advanced = city.Copy() });
+            LoadAdvancedReference(copy);
+            _grid.SelectedItem = _rows.FirstOrDefault();
             _view.Refresh(); _dirty = false;
             SetStatus("Configuration chargée.", "MutedBrush");
         }
@@ -178,6 +183,7 @@ public sealed class CitySettingsView : UserControl
 
     public void ShowSummary(CityEnrichmentResult? report)
     {
+        _advancedReport = report; RefreshUnlocatedQueue();
         _summaryCounts.Children.Clear();
         if (report == null)
         {
@@ -206,7 +212,9 @@ public sealed class CitySettingsView : UserControl
         {
             Id = row.Id, Name = row.Name.Trim(), Aliases = ParseAliases(row.Aliases), PostalCode = row.PostalCode.Trim(),
             Latitude = ReadCoordinate(latitudeText, 90, "latitude", row.Name, number),
-            Longitude = ReadCoordinate(longitudeText, 180, "longitude", row.Name, number)
+            Longitude = ReadCoordinate(longitudeText, 180, "longitude", row.Name, number),
+            Region = row.Advanced.Region, Department = row.Advanced.Department, Sector = row.Advanced.Sector,
+            ExcludedTerms = row.Advanced.ExcludedTerms.ToList(), Rules = row.Advanced.Rules.Select(rule => rule.Copy()).ToList()
         };
     }
 
@@ -333,6 +341,12 @@ public sealed class CitySettingsView : UserControl
     private void MarkDirty()
     {
         if (_loading) return;
+        if (_csvPreview != null)
+        {
+            _csvPreview = null; _importGrid.ItemsSource = null;
+            _importNote.Text = "Le brouillon a changé. Rechargez le CSV pour comparer avec les valeurs actuelles.";
+            UpdateAdvancedReferenceEnabled();
+        }
         _dirty = true; SetStatus("Modifications non enregistrées.", "WarningBrush");
     }
 
@@ -367,7 +381,7 @@ public sealed class CitySettingsView : UserControl
         _add.IsEnabled = !_busy && _rows.Count < MaximumCities;
         _remove.IsEnabled = !_busy && _grid.SelectedItems.Count > 0;
         _bulkAdd.IsEnabled = !_busy && !string.IsNullOrWhiteSpace(_bulk.Text);
-        _save.IsEnabled = !_busy;
+        _save.IsEnabled = !_busy; UpdateAdvancedReferenceEnabled();
     }
 
     private void SetStatus(string message, string brush)
@@ -423,6 +437,7 @@ public sealed class CitySettingsView : UserControl
     private sealed class CityRow : INotifyPropertyChanged
     {
         private string _name, _aliases, _postalCode, _latitude, _longitude;
+        public CityDefinition Advanced { get; set; } = new();
         public string Id { get; }
         public string Name { get => _name; set => Set(ref _name, value); }
         public string Aliases { get => _aliases; set => Set(ref _aliases, value); }

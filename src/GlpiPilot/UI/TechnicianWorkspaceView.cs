@@ -26,6 +26,7 @@ public sealed class TechnicianWorkspaceView : UserControl
     private readonly Button _previous, _next;
     private readonly TabControl _workspaces;
     private readonly TabItem _managementTab, _dashboardTab;
+    private readonly TabItem _dayTab, _planningTab;
     private readonly List<Button> _tabButtons = new();
     private TechnicianEntry[] _filteredEntries = Array.Empty<TechnicianEntry>();
     private TechnicianRoster? _roster;
@@ -35,11 +36,14 @@ public sealed class TechnicianWorkspaceView : UserControl
 
     public DashboardView Dashboard { get; } = new();
     public TechnicianManagementView Management { get; } = new();
+    public PersonalDayView Day { get; } = new();
+    public TechnicianPlanningView Planning { get; } = new();
     public event Action<string>? TechnicianRequested;
     public event Action<string>? PersonalTechnicianRequested;
     public event Action<bool>? OpenPersonalAfterExtractionRequested;
     public event Action? PersonalRequested;
     public event Action? TeamRequested;
+    public event Action<string>? WorkspaceChanged;
 
     public TechnicianWorkspaceView()
     {
@@ -92,6 +96,10 @@ public sealed class TechnicianWorkspaceView : UserControl
         // The dashboard owns content height; this is its only vertical viewport.
         _dashboardTab = new TabItem { Header = "Dashboard", ToolTip = "Dashboard du technicien sélectionné", Content = Viewport(dashboardContent) };
         _workspaces.Items.Insert(1, _dashboardTab);
+        _dayTab = new TabItem { Header = "Ma journée", Content = Day, Tag = "day" };
+        _planningTab = new TabItem { Header = "Organisation", Content = Planning, Tag = "planning" };
+        _workspaces.Items.Insert(1, _dayTab); _workspaces.Items.Insert(3, _planningTab);
+        _managementTab.Tag = "team"; _dashboardTab.Tag = "dashboard";
         _workspaces.Items.Insert(_workspaces.Items.Count - 1, new TabItem { Header = "Mon identité", Content = Viewport(Card(identityContent)) });
         _workspaces.SelectedItem = _managementTab;
 
@@ -116,6 +124,10 @@ public sealed class TechnicianWorkspaceView : UserControl
         _filter.TextChanged += (_, _) => { _tabPage = 0; RenderTabs(resetScroll: true); };
         _openPersonalAfterExtraction.Checked += PersonalPreference_Changed;
         _openPersonalAfterExtraction.Unchecked += PersonalPreference_Changed;
+        _workspaces.SelectionChanged += (_, args) =>
+        {
+            if (ReferenceEquals(args.OriginalSource, _workspaces) && _workspaces.SelectedItem is TabItem { Tag: string key }) WorkspaceChanged?.Invoke(key);
+        };
         Dashboard.ShowEmpty("Lancez Extraire tout, puis choisissez votre nom dans Mon espace. Les widgets seront calculés sur les tickets qui vous sont attribués dans le relevé.");
         UpdateEnabled();
     }
@@ -147,6 +159,8 @@ public sealed class TechnicianWorkspaceView : UserControl
     }
 
     public void ShowTechnicianDashboard() => _workspaces.SelectedItem = _dashboardTab;
+    public void ShowPersonalDay() => _workspaces.SelectedItem = _dayTab;
+    public void RestoreWorkspace(string key) => _workspaces.SelectedItem = key switch { "day" => _dayTab, "planning" => _planningTab, "dashboard" => _dashboardTab, _ => _managementTab };
 
     public void ShowEmpty(string message)
     {
@@ -207,7 +221,7 @@ public sealed class TechnicianWorkspaceView : UserControl
         UpdateEnabled();
     }
 
-    public void SetBusy(bool busy) { _busy = busy; UpdateEnabled(); }
+    public void SetBusy(bool busy) { _busy = busy; Day.SetBusy(busy); Planning.SetBusy(busy); UpdateEnabled(); }
     public void SetCalculationBusy(bool calculating) { _calculating = calculating; UpdateEnabled(); }
 
     private void UpdateIdentityNote()

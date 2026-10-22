@@ -688,6 +688,172 @@ Test("Operational drill-downs remain within the personal source subset", () =>
     Check(d.Metric("overdue-without-technician")!.Value is null, "The scoped active ticket has no readable deadline; it must not become a zero-risk sample.");
 });
 
+Test("Common filters intersect populations and preserve original indices", () =>
+{
+    var baseline = Calc();
+    var rows = DashboardService.ResolveScope(baseline, new DashboardScopeFilter[]
+    {
+        new() { Kind = "metric", SourceKey = "active" },
+        new() { Kind = "distribution", SourceKey = "priority", Value = "Haute" }
+    });
+    Check(rows.SequenceEqual(new[] { 0 }));
+    var scoped = baseline.RecalculateScope!(rows, "Ma sélection", CancellationToken.None);
+    Check(scoped.RowCount == 1 && scoped.ScopeRows.SequenceEqual(new[] { 0 }) && scoped.Metric("high")!.Rows.SequenceEqual(new[] { 0 }));
+});
+Test("Filters on personal snapshots cannot escape their initial scope", () =>
+{
+    var personal = DashboardService.CalculateSubset(Sample(), new(), new[] { 2, 5 }, "Personnel", clock);
+    Check(DashboardService.ResolveScope(personal, Array.Empty<DashboardScopeFilter>()).SequenceEqual(new[] { 2, 5 }));
+    Check(DashboardService.ResolveScope(personal, new[] { new DashboardScopeFilter { Kind = "metric", SourceKey = "active" } }).SequenceEqual(new[] { 5 }));
+});
+Test("Date exclusions keep missing and invalid dates unknown", () =>
+{
+    var baseline = Calc();
+    var filter = new DashboardScopeFilter { Kind = "date", SourceKey = "created", Value = "2026-10-01", Value2 = "2026-10-20", Exclude = true };
+    Check(DashboardService.ResolveScope(baseline, new[] { filter }).SequenceEqual(new[] { 5 }));
+    filter.Exclude = false;
+    Check(DashboardService.ResolveScope(baseline, new[] { filter }).SequenceEqual(new[] { 0, 1, 2, 3 }));
+});
+Test("Unavailable filter sources fail closed instead of showing all tickets", () =>
+{
+    foreach (var filter in new[]
+    {
+        new DashboardScopeFilter { Kind = "distribution", SourceKey = "does-not-exist", Value = "Paris" },
+        new DashboardScopeFilter { Kind = "metric", SourceKey = "does-not-exist" },
+        new DashboardScopeFilter { Kind = "date", SourceKey = "due", Value = "2026-01-01", Value2 = "2026-12-31" }
+    })
+    {
+        var noDates = Calc(new() { Headers = new() { "ID" }, Rows = new() { new[] { "1" } } });
+        try { DashboardService.ResolveScope(noDates, new[] { filter }); throw new Exception("Unavailable filter accepted"); }
+        catch (InvalidDataException) { }
+    }
+});
+Test("A genuine no-match category has an empty result while excluded populations stay scoped", () =>
+{
+    Check(DashboardService.ResolveScope(Calc(), new[] { new DashboardScopeFilter { Kind = "distribution", SourceKey = "status", Value = "No match" } }).Length == 0);
+    var rows = DashboardService.ResolveScope(Calc(), new[] { new DashboardScopeFilter { Kind = "metric", SourceKey = "active", Exclude = true } });
+    Check(rows.SequenceEqual(new[] { 2, 3, 4 }), "Unknown statuses remain outside the known active population");
+});
+Test("Histogram bins include their lower edge and conserve finite observations", () =>
+{
+    var series = new DashboardNumericSeries("age", "Âge", "j", new[]
+    {
+        new DashboardNumericValue(8, 0), new DashboardNumericValue(3, 1), new DashboardNumericValue(7, 7),
+        new DashboardNumericValue(12, 30), new DashboardNumericValue(15, double.NaN)
+    }, "Test");
+    var histogram = DashboardService.Histogram(series, new[] { 7d, 1d, 7d, 30d });
+    Check(histogram.Denominator == 4 && histogram.Buckets.Count == 4);
+    Check(histogram.Buckets.Select(x => x.Rows.Single()).SequenceEqual(new[] { 8, 3, 7, 12 }));
+    Check(DashboardService.Histogram(series, Array.Empty<double>()).Buckets.Single().Count == 4);
+});
+Test("Histogram rejects invalid boundaries and keeps honest empty bins", () =>
+{
+    var series = new DashboardNumericSeries("age", "Âge", "j", Array.Empty<DashboardNumericValue>(), "Test");
+    Check(DashboardService.Histogram(series, new[] { 1d, 7d }).Buckets.All(x => x.Count == 0));
+    try { DashboardService.Histogram(series, new[] { double.PositiveInfinity }); throw new Exception("Invalid bin accepted"); }
+    catch (ArgumentException) { }
+});
+Test("Fractional technician matrices conserve tickets while participation counts names", () =>
+{
+    var source = Sample(); source.Rows = source.Rows.Take(2).ToList(); source.ExpectedTotal = 2; source.Rows[0][10] = "Sam;Alex";
+    var settings = new DashboardSettings { ColumnMappings = new() { ["city"] = "Lieu" }, AssignmentCountingMode = "fractional" };
+    var matrix = Calc(source, settings).Matrices.Single(x => x.Key == "technician-city");
+    Equal(matrix.Cells.Sum(x => x.Value), 2, "fractional total");
+    Equal(matrix.Cells.Single(x => x.RowLabel == "Sam" && x.ColumnLabel == "Site 1").Value, .5, "first participant share");
+    Check(matrix.Cells.SelectMany(x => x.Rows).Distinct().Order().SequenceEqual(new[] { 0, 1 }));
+    settings.AssignmentCountingMode = "participation";
+    Equal(Calc(source, settings).Matrices.Single(x => x.Key == "technician-city").Cells.Sum(x => x.Value), 3, "participation total");
+    settings.AssignmentCountingMode = "cell";
+    var cells = Calc(source, settings).Matrices.Single(x => x.Key == "technician-city").Cells;
+    Check(cells.Count == 2 && cells.Any(x => x.RowLabel == "Sam;Alex"));
+});
+Test("Unavailable matrix dimensions are never replaced with guessed locations", () =>
+{
+    var matrix = Calc().Matrices.Single(x => x.Key == "technician-city");
+    Check(!matrix.Available && matrix.Cells.Count == 0);
+    var scoped = DashboardService.CalculateSubset(Sample(), new() { ColumnMappings = new() { ["city"] = "Lieu" } }, new[] { 5 }, "Un seul ticket", clock);
+    Check(scoped.Matrices.SelectMany(x => x.Cells).SelectMany(x => x.Rows).All(x => x == 5));
+});
+Test("Box plots expose linear quartiles and all contributing original rows", () =>
+{
+    var source = Sample(); foreach (var row in source.Rows) row[15] = "Marseille";
+    var series = Calc(source, new() { ColumnMappings = new() { ["city"] = "Lieu" } }).BoxSeries.Single(x => x.Key == "age-city");
+    var box = series.Boxes.Single();
+    Check(box.Sample == 3 && box.Rows.SequenceEqual(new[] { 0, 1, 5 }));
+    Equal(box.Minimum, 1, "minimum"); Equal(box.FirstQuartile, 10.5, "Q1"); Equal(box.Median, 20, "median");
+    Equal(box.ThirdQuartile, 35, "Q3"); Equal(box.P90, 44, "P90"); Equal(box.Maximum, 50, "maximum");
+});
+Test("Scatter axes use calendar age and signed deadline horizon on valid active pairs", () =>
+{
+    var scatter = Calc().Scatters.Single(x => x.Key == "age-deadline");
+    Check(scatter.Points.Select(x => x.Row).SequenceEqual(new[] { 0, 1 }));
+    Equal(scatter.Points[0].X, 20, "age"); Equal(scatter.Points[0].Y, -24, "overdue horizon"); Equal(scatter.Points[1].Y, 24, "future horizon");
+});
+Test("Local priority matrix is optional and never invents GLPI priority policy", () =>
+{
+    var source = new ExtractionResult { Headers = new() { "ID", "Statut", "Priorité", "Impact", "Urgence" }, Rows = new() { new[] { "1", "Nouveau", "Haute", "Haut", "Haute" }, new[] { "2", "Nouveau", "Très haute", "Haut", "Haute" } } };
+    Check(Calc(source).Metric("priority-rule-mismatch")!.Value == null);
+    var metric = Calc(source, new() { PriorityRules = new() { ["4:4"] = 4 } }).Metric("priority-rule-mismatch")!;
+    Equal(metric.Value, 1, "mismatch"); Check(metric.Sample == 2 && metric.Rows.SequenceEqual(new[] { 1 }));
+});
+Test("Weather supports an explicit zero-weight configuration without false sunshine", () =>
+{
+    var settings = new DashboardSettings { Weather = new() { OverdueWeight = 0, PriorityWeight = 0, AssignmentWeight = 0, StaleWeight = 0, OldWeight = 0 } };
+    var weather = Calc(settings: settings).Weather;
+    Check(weather.Score == null && weather.State == "unknown" && weather.Signals.Count == 0);
+});
+Test("Configured weather weights and thresholds are applied to the actual sample", () =>
+{
+    var source = Sample(); source.Rows = new() { source.Rows[0], source.Rows[1] }; source.ExpectedTotal = 2;
+    var settings = new DashboardSettings { Weather = new() { OverdueWeight = 0, PriorityWeight = 100, AssignmentWeight = 0, StaleWeight = 0, OldWeight = 0, WatchThreshold = 60, RainThreshold = 70, StormThreshold = 90 } };
+    var weather = Calc(source, settings).Weather;
+    Equal(weather.Score, 50, "weighted priority-only score"); Check(weather.State == "sun" && weather.MeasuredWeight == 100 && weather.Signals.Single().Sample == 2);
+});
+Test("Weather minimum coverage remains explicit when priorities are missing", () =>
+{
+    var source = Sample(); source.Rows = new() { source.Rows[0], source.Rows[1] }; source.ExpectedTotal = 2; source.Rows[0][3] = "";
+    var settings = new DashboardSettings { Weather = new() { OverdueWeight = 0, PriorityWeight = 25, AssignmentWeight = 0, StaleWeight = 0, OldWeight = 0 } };
+    Check(Calc(source, settings).Weather.State == "partial");
+    settings.Weather.MinimumCoveragePercent = 50;
+    Check(Calc(source, settings).Weather.State == "sun");
+});
+Test("Specialised geography weather stays unavailable without city evidence", () =>
+{
+    var snapshot = Calc(); Check(snapshot.WeatherProfiles["geography"].State == "unknown");
+    snapshot.Metrics.Add(new("city-unmatched", "Sans correspondance", 1, "lignes", "", new[] { 0 }, 6));
+    DashboardService.RefreshWeatherProfiles(snapshot, new());
+    var profile = snapshot.WeatherProfiles["geography"];
+    Equal(profile.Score, 100d / 6, "specialised denominator"); Check(profile.Title.Contains("partiel") && profile.Signals.Single().Sample == 6);
+});
+Test("Numeric aggregates export actual values and preserve unavailable instead of count fallback", () =>
+{
+    var snapshot = Calc();
+    snapshot.Distributions.Add(new("query-group:test", "Moyennes locales", true, 6, "Une moyenne par groupe, pas une part du total", new[]
+    {
+        new DashboardBucket("Mesuré", 4, new[] { 0, 1, 2, 3 }, 3.75, "h", 2, true),
+        new DashboardBucket("Absent", 2, new[] { 4, 5 }, null, "h", 0, true)
+    }));
+    var exported = DashboardService.ToExport(snapshot);
+    var rows = exported.Rows.Where(x => x[0] == "Moyennes locales").ToArray();
+    Check(rows[0][2] == "3.75" && rows[0][3] == "h" && rows[0][4] == "2");
+    Check(rows[1][2] == "Non disponible" && rows[1][4] == "0");
+    Check(exported.Rows.Count == DashboardService.EstimatedExportRows(snapshot));
+});
+Test("Expanded export includes analytical sources and never exports incompatible history as a valid value", () =>
+{
+    var snapshot = Calc();
+    snapshot.History.Add(new("total", "Stock observé", "tickets", new[]
+    {
+        new DashboardHistoryPoint(clock.AddDays(-1), 12, 12, true, true, "a", "Comparable"),
+        new DashboardHistoryPoint(clock, 99, 99, false, false, "b", "Relevé incomplet")
+    }, "Archives"));
+    var exported = DashboardService.ToExport(snapshot);
+    Check(exported.Rows.Count == DashboardService.EstimatedExportRows(snapshot));
+    Check(exported.Rows.Single(x => x[0] == "Stock observé" && x[1] == clock.ToString("O"))[2] == "Non comparable");
+    Check(exported.Rows.Any(x => x[0].Contains("Âge des actifs par") && x[1].Contains("Q1")));
+    Check(exported.Rows.Any(x => x[0] == "Âge et échéance des actifs"));
+});
+
 int failures = 0;
 foreach (var (name, run) in tests)
 {

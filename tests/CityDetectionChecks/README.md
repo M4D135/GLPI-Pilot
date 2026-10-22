@@ -9,3 +9,10 @@ dotnet run --project tests/CityDetectionChecks/CityDetectionChecks.csproj
 ```
 
 La ville détectée reste une inférence depuis le titre. Aucun géocodage, rapprochement approximatif ni adresse réelle n’est inventé. Un alias court peut aussi être un mot courant : il doit être choisi en tenant compte des titres utilisés.
+
+La suite comporte 75 contrôles, dont 15 consacrés aux règles contextuelles,
+exclusions/priorités, colonnes de contexte absentes, sites et conflits de villes,
+hiérarchie, simulation identique au moteur, corrections par installation et ID
+unique, corrections devenues invalides, comparatifs CSV et copies indépendantes.
+Le CSV reconnaît la protection des coordonnées négatives du moteur d’export.
+Les corrections et tournées locales restent séparées de la configuration partagée.

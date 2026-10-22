@@ -128,7 +128,7 @@ void CheckPortableExport()
         True(!json.Contains(forbidden, StringComparison.OrdinalIgnoreCase), "La configuration exportée ne doit pas contenir les données de session ni le dossier local.");
     using var document = JsonDocument.Parse(json);
     Equal("glpi-pilot.configuration", document.RootElement.GetProperty("Schema").GetString());
-    Equal(1, document.RootElement.GetProperty("SchemaVersion").GetInt32()); Equal("1.5.0", document.RootElement.GetProperty("AppVersion").GetString());
+    Equal(1, document.RootElement.GetProperty("SchemaVersion").GetInt32()); Equal(AppPaths.ApplicationVersion, document.RootElement.GetProperty("AppVersion").GetString());
     string exportedUrl = document.RootElement.GetProperty("Settings").GetProperty("PortalUrl").GetString()!;
     True(exportedUrl.Contains("criteria%5B0%5D%5Bvalue%5D=notold", StringComparison.Ordinal) && exportedUrl.Contains("start=20", StringComparison.Ordinal), "Les critères et la position ne doivent pas être perdus.");
     Equal(originalUrl, settings.PortalUrl); True(settings.TicketDetails.UrlTemplate.Contains("PRIVATE-ID-TOKEN", StringComparison.Ordinal), "L’export ne doit pas modifier l’objet courant.");
@@ -203,7 +203,7 @@ void CheckEnvelope()
     {
         "{\"Schema\":\"wrong\",\"SchemaVersion\":1,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":2,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
-        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"2.0.0\",\"Settings\":{}}",
+        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.0.0\",\"Settings\":{}}",
         "{\"PortalUrl\":\"https://glpi.test/front/ticket.php\",\"portalurl\":\"https://other.test\"}",
         "{\"Dashboard\":{\"ColumnMappings\":{\"id\":\"ID\",\"ID\":\"Autre\"}}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));

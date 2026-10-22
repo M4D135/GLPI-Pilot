@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     {
         StartupDiagnostics.Step("Fenêtre · chargement XAML");
         InitializeComponent();
+        ApplicationVersionText.Text = $"Version {AppPaths.ApplicationVersion} · Windows x64";
         StartupDiagnostics.Step("Fenêtre · dimensions et services locaux");
         var work = SystemParameters.WorkArea;
         MinWidth = Math.Min(MinWidth, work.Width - 24);
@@ -92,6 +93,7 @@ public partial class MainWindow : Window
         SearchBox.TextChanged += (_, _) => { _filterTimer.Stop(); _filterTimer.Start(); };
         InitializePreviewWorkspace();
         InitializeWorkspace();
+        InitializeControlCenter();
         _monitor = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _monitor.Tick += Monitor_Tick;
         _monitor.Start();
@@ -99,13 +101,14 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => UpdateWindowPriority();
         UpdateControls();
         StartupDiagnostics.Step("Fenêtre construite · attente du premier rendu");
-        AddLog("GLPI Pilot 1.5.0 prêt. Zoom mémorisé, dashboards adaptatifs, 64 modèles de requêtes et suivi opérationnel des tickets.");
+        AddLog($"GLPI Pilot {AppPaths.ApplicationVersion} prêt. Historique, qualité, sources, dashboards et espace technicien disponibles.");
     }
 
     public void ShowError(Exception error)
     {
         _operationFailed = true;
         var message = AppPaths.SafeError(error);
+        if (_currentOperationEntry != null) { _currentOperationEntry.Code = OperationJournal.ErrorCode(error); _currentOperationEntry.Detail = message; }
         if (error is PlaywrightException && message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
             message = "Le navigateur choisi est introuvable. Choisis Edge ou Chrome déjà installé sur ce poste.";
         StatusText.Text = message;
@@ -149,9 +152,11 @@ public partial class MainWindow : Window
 
     private void ThemeToggle_Click(object sender, RoutedEventArgs e)
     {
+        _settings.Interface.FollowWindowsTheme = false;
         ThemeService.Apply(ThemeService.IsDark ? "light" : "dark");
         UpdateThemeButton();
         _settings.Theme = ThemeService.CurrentTheme;
+        ApplyInterfacePreferences();
         try { _settings.Save(); }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -228,11 +233,13 @@ public partial class MainWindow : Window
         ResultSummaryText.Text = text;
     }
 
-    private async void RunAuto_Click(object sender, RoutedEventArgs e)
+    private async void RunAuto_Click(object sender, RoutedEventArgs e) => await RunAutomaticAsync();
+
+    private async Task RunAutomaticAsync(AppSettings? rememberedSettings = null)
     {
         await RunAsync("Démarrage de l’extraction automatique…", async ct =>
         {
-            var settings = ReadSettings();
+            var settings = rememberedSettings?.Copy() ?? ReadSettings();
             _ = TargetUrlPolicy.Validate(settings.PortalUrl);
             _settings = settings; _settings.Save();
             BeginAutomaticPresentation();
@@ -246,6 +253,7 @@ public partial class MainWindow : Window
             });
             var run = await _automatic.RunAsync(settings, progress, ct);
             PublishCityResult(run.Cities ?? await EnrichCitiesAsync(run.Data, settings, ct), settings);
+            await ArchiveResultAsync(settings, ct);
             BuildPreview();
             RememberExport(run.PrimaryPath);
             RequestPersonalWorkspaceAfterExtraction();
@@ -350,7 +358,9 @@ public partial class MainWindow : Window
             NativeFormatValue = NativeFormatValueBox.Text.Trim(), NativeScopeSelector = NativeScopeSelectorBox.Text.Trim(),
             NativeScopeValue = NativeScopeValueBox.Text.Trim(), NativeSubmitSelector = NativeSubmitSelectorBox.Text.Trim(),
             Cities = _citySettingsView?.ReadSettings() ?? _settings.Cities.Copy(),
-            Queries = _settings.Queries.Copy()
+            Queries = _settings.Queries.Copy(),
+            Sources = _settings.Sources.Select(source => source.Copy()).ToList(), ActiveSourceId = _settings.ActiveSourceId,
+            History = _settings.History.Copy(), Automation = _settings.Automation.Copy(), Interface = _settings.Interface.Copy()
         };
         ApplyTicketSettingsFields(settings);
         ApplyDashboardSettingsFields(settings);
@@ -403,6 +413,8 @@ public partial class MainWindow : Window
         if (_busy || _closing) return;
         _busy = true;
         _operation = new();
+        _currentOperationEntry = _operationJournal.Start(status, _settings.PortalUrl);
+        _controlCenter?.ShowOperations(_operationJournal.Entries);
         BeginOperationPresentation(status);
         SetStatus(status);
         UpdateControls();
@@ -419,12 +431,23 @@ public partial class MainWindow : Window
                 if (_nativeReceiptPath != null) ResultSummaryText.Text = "Le fichier déjà reçu est conservé : " + _nativeReceiptPath;
             }
         }
-        catch (Exception ex) { ShowError(ex); }
+        catch (Exception ex)
+        {
+            if (_currentOperationEntry != null) { _currentOperationEntry.Code = OperationJournal.ErrorCode(ex); _currentOperationEntry.Detail = AppPaths.SafeError(ex); }
+            ShowError(ex);
+        }
         finally
         {
             _operation.Dispose(); _operation = null;
             _busy = false; _capturing = false;
             FinishOperationPresentation();
+            if (_currentOperationEntry != null)
+            {
+                _operationJournal.Finish(_currentOperationEntry, _operationCancelled ? "Annulé" : _operationFailed ? "Échec" : "Terminé",
+                    _operationCancelled ? "CANCELLED" : _operationFailed ? _currentOperationEntry.Code : "OK",
+                    _operationFailed ? _currentOperationEntry.Detail : StatusText.Text);
+                _currentOperationEntry = null; _controlCenter?.ShowOperations(_operationJournal.Entries);
+            }
             if (!_closing) UpdateControls();
         }
     }
@@ -512,6 +535,7 @@ public partial class MainWindow : Window
             var extracted = await _browser.ExtractAsync(table, following, settings, progress, ct);
             _settings = settings;
             PublishCityResult(await EnrichCitiesAsync(extracted, settings, ct), settings);
+            await ArchiveResultAsync(settings, ct);
             BuildPreview();
             SetStatus(extracted.Status + $" · {extracted.Rows.Count:N0} lignes.");
             foreach (var warning in extracted.Warnings) AddLog(warning);
@@ -578,6 +602,7 @@ public partial class MainWindow : Window
                 _settings = settings;
                 var enrichment = await EnrichCitiesAsync(imported, settings, ct);
                 PublishCityResult(enrichment, settings);
+                await ArchiveResultAsync(settings, ct);
                 BuildPreview();
                 foreach (var warning in enrichment.Data.Warnings) AddLog(warning);
             }
@@ -591,25 +616,30 @@ public partial class MainWindow : Window
 
     private async void ImportCsv_Click(object sender, RoutedEventArgs e)
     {
-        await RunAsync("Ouverture d’un CSV déjà reçu…", async ct =>
+        await RunAsync("Ouverture d’un fichier déjà reçu…", async ct =>
         {
             var settings = ReadSettings();
             var dialog = new OpenFileDialog
             {
-                Title = "Importer un CSV déjà téléchargé",
-                Filter = "Fichier CSV ou texte (*.csv;*.txt)|*.csv;*.txt",
+                Title = "Importer un relevé CSV ou Excel",
+                Filter = "Relevés CSV et Excel (*.csv;*.txt;*.xlsx)|*.csv;*.txt;*.xlsx|CSV ou texte|*.csv;*.txt|Classeur Excel|*.xlsx",
                 Multiselect = false, CheckFileExists = true,
                 InitialDirectory = Directory.Exists(settings.ExportFolder) ? settings.ExportFolder : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
             };
             if (dialog.ShowDialog(this) != true) { SetStatus("Import annulé."); return; }
-            ClearResult("Lecture du CSV local, sans nouvelle connexion au portail…");
+            ClearResult("Lecture du fichier local, sans nouvelle connexion au portail…");
             _nativeReceiptPath = dialog.FileName;
             // A local file alone cannot prove which GLPI search/export option produced it.
-            var imported = await Task.Run(() => NativeCsvImportService.Read(dialog.FileName, "", null, settings.MaxRows, false, ct,
-                diagnostics: message => Dispatcher.InvokeAsync(() => AddLog(message))), ct);
+            var imported = await Task.Run(() => Path.GetExtension(dialog.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
+                ? XlsxImportService.Read(dialog.FileName, settings.MaxRows, ct)
+                : NativeCsvImportService.Read(dialog.FileName, "", null, settings.MaxRows, false, ct,
+                    diagnostics: message => Dispatcher.InvokeAsync(() => AddLog(message))), ct);
+            imported.Provenance.SourceKind = "file";
+            imported.Provenance.OriginalFileName = Path.GetFileName(dialog.FileName);
             _settings = settings;
             var enrichment = await EnrichCitiesAsync(imported, settings, ct);
             PublishCityResult(enrichment, settings);
+            await ArchiveResultAsync(settings, ct);
             BuildPreview();
             foreach (var warning in enrichment.Data.Warnings) AddLog("CONTRÔLE · " + warning);
             var savedPath = dialog.FileName;
@@ -621,7 +651,7 @@ public partial class MainWindow : Window
                 var exported = await Task.Run(() => ExportService.WriteXlsx(enrichment.Data, savedPath));
                 if (exported.TruncatedCells > 0) AddLog($"EXCEL · {exported.TruncatedCells} cellules trop longues pour Excel ; CSV original conservé.");
             }
-            SetStatus($"CSV importé : {enrichment.Data.Rows.Count:N0} lignes. Périmètre GLPI non confirmé · Fichier : {savedPath}");
+            SetStatus($"Fichier importé : {enrichment.Data.Rows.Count:N0} lignes. Périmètre GLPI non confirmé · Fichier : {savedPath}");
             RememberExport(savedPath);
             _settings = settings; _settings.Save();
         });
@@ -713,6 +743,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closing) return;
         _closing = true; _monitor.Stop(); _filterTimer.Stop(); _operation?.Cancel();
+        DisposeControlCenter();
         DisposeWorkspace();
         DisposeTicketWorkspace();
         DisposeDashboardWorkspace();

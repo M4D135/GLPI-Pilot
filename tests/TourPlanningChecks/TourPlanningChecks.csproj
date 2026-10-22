@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/GlpiPilot/Core/ScheduledTourService.cs" Link="Core/ScheduledTourService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TourPlanningService.cs" Link="Core/TourPlanningService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="Core/CitySettings.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="Core/CityDetectionService.cs" />

@@ -2,7 +2,10 @@
 
 // Every HTTP request is intercepted and fulfilled from a synthetic local fixture.
 // These checks do not contact a GLPI server, a user account, or an SSO provider.
-const { chromium } = require('playwright');
+// CI may reuse the exact driver package already restored by Microsoft.Playwright,
+// avoiding a second dependency/runtime version just for the DOM fixtures.
+const playwrightModule = process.env.GLPI_TEST_PLAYWRIGHT_MODULE || 'playwright';
+const { chromium } = require(playwrightModule);
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -18,7 +21,7 @@ function ok(value, label) { assert.ok(value, label); log('PASS ' + (++checks).to
 async function run() {
   log('GLPI Pilot native export DOM checks');
   log('Started UTC: ' + new Date().toISOString());
-  log('Node: ' + process.version + ' | Playwright: ' + require('playwright/package.json').version);
+  log('Node: ' + process.version + ' | Playwright: ' + require(playwrightModule + '/package.json').version);
   const options = { headless: true, args: process.platform === 'linux' ? ['--no-sandbox', '--disable-gpu'] : ['--disable-gpu'] };
   if (process.env.GLPI_TEST_CHROMIUM) options.executablePath = process.env.GLPI_TEST_CHROMIUM;
   else if (process.env.GLPI_TEST_CHANNEL) options.channel = process.env.GLPI_TEST_CHANNEL;

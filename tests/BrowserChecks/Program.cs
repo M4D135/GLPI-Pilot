@@ -30,7 +30,24 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Bouton métier hors pagination : aucun clic", CheckBusinessButton),
     ("Sélecteur personnalisé dangereux : action refusée", CheckCustomBusinessButton),
     ("Authentification : tableau refusé en présence d’un mot de passe", CheckLogin),
-    ("Export natif : téléchargement CSV reçu et enregistré", CheckDownload)
+    ("Export natif : téléchargement CSV reçu et enregistré", CheckDownload),
+    ("Prévol : configuration et dossier d’export contrôlés avant le navigateur", CheckPreflight),
+    ("Profil navigateur : verrou exclusif et reprise après libération", CheckProfileLease),
+    ("Pagination : changement de critères interrompu sans mélanger les pages", CheckScopeChange),
+    ("Pagination : changement d’entité interrompu sans mélanger les pages", CheckEntityChange),
+    ("Pagination : un total configuré ne masque pas un total GLPI modifié", CheckConfiguredTotalChange),
+    ("Empreinte : ordre des paramètres et taille des pages ignorés, critères conservés", CheckScopeCanonicalization),
+    ("Périmètre : critères DOM recopiés dans l’URL acceptés, valeur divergente refusée", CheckScopeUrlMaterialization),
+    ("Automatique : export absent, première page puis pagination complète", CheckAutomaticFallback),
+    ("Automatique : repli désactivé respecté", CheckFallbackDisabled),
+    ("Automatique : tableau disparu, pages déjà lues enregistrées comme partielles", CheckAutomaticLostTable),
+    ("Automatique : export natif rapproché des identifiants visibles", CheckAutomaticNative),
+    ("Automatique : mauvais échantillon natif refusé sans repli", CheckNativeWrongSample),
+    ("Automatique : CSV corrompu conservé et refusé sans repli", CheckNativeCorrupt),
+    ("Automatique : export ambigu refusé sans lancer un repli", CheckAmbiguousNativeNoFallback),
+    ("Automatique : export incomplet signalé et jamais remplacé silencieusement", CheckNativeIncomplete),
+    ("Automatique : changement de contexte après le téléchargement signalé", CheckNativeScopeChange),
+    ("Échantillon : identifiants groupés normalisés, colonnes absentes non devinées", CheckSampleNormalization)
 };
 int failures = 0;
 try
@@ -48,21 +65,21 @@ finally
 }
 return failures == 0 ? 0 : 1;
 
-async Task<Harness> Open()
+async Task<Harness> Open(string? html = null, string? csv = null)
 {
     var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
     await context.RouteAsync("http://glpi.test/**", async route =>
     {
         var uri = new Uri(route.Request.Url);
-        if (uri.AbsolutePath == "/export.csv")
+        if (uri.AbsolutePath is "/export.csv" or "/front/report.dynamic.php")
             await route.FulfillAsync(new()
             {
                 Status = 200,
                 ContentType = "text/csv; charset=utf-8",
                 Headers = new Dictionary<string, string> { ["Content-Disposition"] = "attachment; filename=\"tickets.csv\"" },
-                Body = "ID;Titre\r\n001;Écran cassé\r\n"
+                Body = csv ?? "ID;Titre\r\n001;Écran cassé\r\n"
             });
-        else await route.FulfillAsync(new() { Status = 200, ContentType = "text/html; charset=utf-8", Body = basic });
+        else await route.FulfillAsync(new() { Status = 200, ContentType = "text/html; charset=utf-8", Body = html ?? basic });
     });
     var page = await context.NewPageAsync();
     await page.GotoAsync("http://glpi.test/front/computer.php");
@@ -241,6 +258,213 @@ async Task CheckDownload()
     True(path.EndsWith("tickets.csv", StringComparison.Ordinal), "Le nom natif doit être conservé avec un préfixe unique.");
     Equal("ID;Titre\r\n001;Écran cassé\r\n", await File.ReadAllTextAsync(path, Encoding.UTF8));
     Equal(0, Directory.GetFiles(temporary, "*.part").Length);
+}
+
+Task CheckPreflight()
+{
+    var settings = Settings(); settings.ExportFolder = Path.Combine(temporary, "preflight");
+    ExtractionVerificationService.Preflight(settings);
+    Equal(0, Directory.GetFiles(settings.ExportFolder).Length);
+    settings.MaxRows = 0;
+    try { ExtractionVerificationService.Preflight(settings); throw new Exception("Limite nulle acceptée"); }
+    catch (InvalidOperationException) { }
+    settings.MaxRows = 100; settings.ExpectedTotal = 101;
+    try { ExtractionVerificationService.Preflight(settings); throw new Exception("Total supérieur à la limite accepté"); }
+    catch (InvalidOperationException) { }
+    settings.ExpectedTotal = null; settings.PortalUrl = "file:///tmp/test";
+    try { ExtractionVerificationService.Preflight(settings); throw new Exception("Cible locale acceptée"); }
+    catch (InvalidOperationException) { }
+    settings.PortalUrl = Settings().PortalUrl; settings.ExportFolder = Path.Combine(temporary, "not-a-folder");
+    File.WriteAllText(settings.ExportFolder, "preserve");
+    try { ExtractionVerificationService.Preflight(settings); throw new Exception("Chemin non répertoire accepté"); }
+    catch (InvalidOperationException) { }
+    Equal("preserve", File.ReadAllText(settings.ExportFolder));
+    return Task.CompletedTask;
+}
+
+Task CheckProfileLease()
+{
+    var profile = Path.Combine(temporary, "profile");
+    using (var first = BrowserProfileLease.Acquire(profile))
+    {
+        try { using var second = BrowserProfileLease.Acquire(profile); throw new Exception("Profil partagé entre deux instances"); }
+        catch (InvalidOperationException) { }
+    }
+    using var reopened = BrowserProfileLease.Acquire(profile);
+    return Task.CompletedTask;
+}
+
+string WithCriteria() => basic.Replace("<main>", "<main><input type='hidden' id='criteria-value' name='criteria[0][value]' value='origin'>", StringComparison.Ordinal);
+
+async Task CheckScopeChange()
+{
+    await using var h = await Open(WithCriteria());
+    await h.Page.EvaluateAsync("() => document.querySelector('#next').addEventListener('click', () => document.querySelector('#criteria-value').value = 'other')");
+    var result = await h.Service.ExtractAsync(await Table(h), true, Settings(), null, CancellationToken.None);
+    Equal(2, result.Rows.Count); True(!result.Complete, "Les critères modifiés ne doivent pas créer une extraction complète.");
+    True(result.Warnings.Any(x => x.Contains("profil GLPI a changé", StringComparison.Ordinal)), "Le changement de périmètre doit être expliqué.");
+}
+
+async Task CheckEntityChange()
+{
+    await using var h = await Open(basic.Replace("<main>", "<main><select name='entities_id' id='entity'><option value='1'>A</option><option value='2'>B</option></select>", StringComparison.Ordinal));
+    await h.Page.EvaluateAsync("() => document.querySelector('#next').addEventListener('click', () => document.querySelector('#entity').value = '2')");
+    var result = await h.Service.ExtractAsync(await Table(h), true, Settings(), null, CancellationToken.None);
+    Equal(2, result.Rows.Count); True(!result.Complete, "Les entités ne doivent pas être mélangées.");
+}
+
+async Task CheckConfiguredTotalChange()
+{
+    await using var h = await Open();
+    await h.Page.EvaluateAsync("() => document.querySelector('#next').addEventListener('click', () => document.querySelector('#page-summary').textContent = 'Affichage de 3 à 4 sur 6 éléments')");
+    var settings = Settings(); settings.ExpectedTotal = 5;
+    var result = await h.Service.ExtractAsync(await Table(h), true, settings, null, CancellationToken.None);
+    Equal(2, result.Rows.Count); True(!result.Complete && result.Warnings.Any(x => x.Contains("nombre de résultats", StringComparison.Ordinal)), "Le total configuré ne doit pas masquer le changement de total source.");
+}
+
+Task CheckScopeCanonicalization()
+{
+    var one = BrowserService.ScopeLocation("http://glpi.test/front/ticket.php?start=0&criteria%5B0%5D%5Bvalue%5D=A&sort=1&list_limit=20");
+    var two = BrowserService.ScopeLocation("http://glpi.test/front/ticket.php?sort=1&criteria%5B0%5D%5Bvalue%5D=A&start=20&list_limit=100");
+    Equal(one, two);
+    True(one != BrowserService.ScopeLocation("http://glpi.test/front/ticket.php?sort=1&criteria%5B0%5D%5Bvalue%5D=B"), "Une autre valeur de filtre doit changer l’empreinte.");
+    Equal(BrowserService.ScopeLocation("http://glpi.test/front/ticket.php?filter=Paris+Centre&order=ASC"),
+        BrowserService.ScopeLocation("http://glpi.test/front/ticket.php?order=DESC&filter=Paris%20Centre"));
+    True(one != BrowserService.ScopeLocation("http://glpi.test/front/ticket.php?criteria%5B0%5D%5Bvalue%5D=A&is_deleted=1"),
+        "Un filtre non représenté dans le DOM ne doit pas disparaître de l’empreinte.");
+    return Task.CompletedTask;
+}
+
+async Task CheckScopeUrlMaterialization()
+{
+    await using var h = await Open(WithCriteria());
+    var table = await Table(h);
+    var original = await h.Service.CaptureScopeEvidenceAsync(table, Settings().PortalUrl, CancellationToken.None);
+    await h.Page.EvaluateAsync("() => history.replaceState({},'', '?criteria%5B0%5D%5Bvalue%5D=origin&sort=1&order=DESC&start=20&glpilist_limit=9999999')");
+    var materialized = await h.Service.CaptureScopeEvidenceAsync(table, Settings().PortalUrl, CancellationToken.None);
+    True(original.Known && materialized.Known, "Les critères sont explicitement observés dans le formulaire.");
+    Equal(original.Fingerprint, materialized.Fingerprint);
+    await h.Page.EvaluateAsync("() => history.replaceState({},'', '?criteria%5B0%5D%5Bvalue%5D=other&start=20')");
+    var divergent = await h.Service.CaptureScopeEvidenceAsync(table, Settings().PortalUrl, CancellationToken.None);
+    True(divergent.Fingerprint != original.Fingerprint, "Un critère URL divergent ne doit jamais être masqué par un ancien contrôle DOM.");
+}
+
+AppSettings AutomaticSettings()
+{
+    var settings = Settings(); settings.TimeoutSeconds = 10; settings.DownloadTimeoutSeconds = 10;
+    settings.AutoSaveXlsx = false; settings.Cities.Enabled = false;
+    return settings;
+}
+
+async Task CheckAutomaticLostTable()
+{
+    var html = WithCriteria().Replace("</body>", "<script>document.querySelector('#next').addEventListener('click',()=>document.querySelector('#search-results').remove());</script></body>", StringComparison.Ordinal);
+    await using var h = await Open(html);
+    var settings = AutomaticSettings(); settings.AutoMode = "pagination"; settings.TimeoutSeconds = 2;
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    Equal(2, run.Data.Rows.Count);
+    True(!run.Data.Complete && !run.Data.Provenance.ScopeVerified, "La perte du tableau interdit la certification du résultat.");
+    True(run.Data.Warnings.Any(x => x.Contains("contrôle final", StringComparison.OrdinalIgnoreCase)), "L’arrêt du contrôle final doit être expliqué.");
+    True(File.Exists(run.PrimaryPath) && Path.GetFileName(run.PrimaryPath).StartsWith("GLPI-a-verifier-", StringComparison.Ordinal), "Le fichier partiel doit conserver les lignes lues sous un nom explicite.");
+    var saved = NativeCsvImportService.Read(run.PrimaryPath, settings.PortalUrl, 5, 100);
+    Equal(2, saved.Rows.Count); True(!saved.Complete, "Le fichier conservé ne doit pas inventer les pages manquantes.");
+}
+
+async Task CheckAutomaticFallback()
+{
+    var html = WithCriteria().Replace("let current=0;", "let current=Math.min(2,Math.floor(Number(new URL(location.href).searchParams.get('start') || '0') / 2));", StringComparison.Ordinal);
+    await using var h = await Open(html);
+    var settings = AutomaticSettings(); settings.PortalUrl += "?start=2";
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    Equal(5, run.Data.Rows.Count); Equal(3, run.Data.Pages); True(run.Data.Complete, string.Join(" | ", run.Data.Warnings));
+    Equal("pagination-fallback", run.Data.Provenance.Method);
+    True(run.Data.Provenance.ScopeVerified && run.Data.Provenance.SearchVerified && File.Exists(run.PrimaryPath), "Le repli doit conserver un périmètre contrôlé et un export réel.");
+    Equal("Aucune action métier déclenchée", await h.Page.Locator("#business-action").InnerTextAsync());
+}
+
+async Task CheckFallbackDisabled()
+{
+    await using var h = await Open(WithCriteria());
+    var settings = AutomaticSettings(); settings.Automation.AutomaticPaginationFallback = false;
+    try { await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None); throw new Exception("Repli malgré l’option désactivée"); }
+    catch (InvalidOperationException error) { True(error.Message.Contains("export", StringComparison.OrdinalIgnoreCase), "L’absence de commande d’export doit être expliquée."); }
+    Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
+}
+
+string NativeHtml(bool changeScope = false) => WithCriteria().Replace("</main>",
+    "<a id='native-csv-all' href='/front/report.dynamic.php?item_type=Computer&amp;display_type=-4'>Toutes les pages en CSV</a>"
+    + (changeScope ? "<script>document.querySelector('#native-csv-all').addEventListener('click',()=>document.querySelector('#criteria-value').value='other');</script>" : "") + "</main>", StringComparison.Ordinal);
+string NativeCsv() => "ID;Nom\r\n101;P-MA-001\r\n102;P-MA-002\r\n103;P-MA-003\r\n104;P-MA-004\r\n105;P-MA-005\r\n";
+AppSettings NativeSettings()
+{
+    var settings = AutomaticSettings(); settings.ExpectedTotal = 5;
+    return settings;
+}
+
+async Task CheckAutomaticNative()
+{
+    await using var h = await Open(NativeHtml(), NativeCsv());
+    var logs = new List<string>(); var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add;
+    var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+    Equal(5, run.Data.Rows.Count); True(run.Data.Complete && run.Data.Provenance.ScopeVerified, string.Join(" | ", run.Data.Warnings));
+    Equal("native-csv", run.Data.Provenance.Method); True(File.Exists(run.NativePath), "Le fichier natif doit être conservé.");
+    True(logs.Any(x => x.StartsWith("ÉCHANTILLON · Les 2", StringComparison.Ordinal)), "Les ID affichés doivent être rapprochés avant de publier le résultat.");
+}
+
+async Task CheckNativeWrongSample()
+{
+    await using var h = await Open(NativeHtml(), NativeCsv().Replace("101;", "201;", StringComparison.Ordinal));
+    var service = new AutomaticExtractionService(h.Service); string? retained = null; service.NativeFileSaved += path => retained = path;
+    try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Mauvais fichier publié"); }
+    catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.Ordinal), "Le mauvais échantillon doit être expliqué."); }
+    True(File.Exists(retained), "Le mauvais fichier doit rester disponible pour diagnostic.");
+    Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
+}
+
+async Task CheckNativeCorrupt()
+{
+    await using var h = await Open(NativeHtml(), "ID;Nom\r\n101;\"champ non terminé");
+    var service = new AutomaticExtractionService(h.Service); string? retained = null; service.NativeFileSaved += path => retained = path;
+    try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("CSV corrompu publié"); }
+    catch (InvalidDataException) { }
+    True(File.Exists(retained), "Le CSV corrompu doit rester disponible pour diagnostic.");
+    Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
+}
+
+async Task CheckAmbiguousNativeNoFallback()
+{
+    var html = NativeHtml().Replace("</main>", "<a href='/front/report.dynamic.php?item_type=Ticket&amp;display_type=-4'>Toutes les pages en CSV</a></main>", StringComparison.Ordinal);
+    await using var h = await Open(html, NativeCsv());
+    try { await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Export ambigu accepté"); }
+    catch (InvalidOperationException error) { True(error.Message.Contains("Plusieurs exports", StringComparison.Ordinal), "L’ambiguïté doit être distinguée de l’absence de commande."); }
+    Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
+}
+
+async Task CheckNativeIncomplete()
+{
+    await using var h = await Open(NativeHtml(), NativeCsv().Replace("105;P-MA-005\r\n", "", StringComparison.Ordinal));
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
+    Equal(4, run.Data.Rows.Count); True(!run.Data.Complete && run.Data.Warnings.Any(x => x.Contains("4 lignes pour 5", StringComparison.Ordinal)), "Le fichier tronqué reste identifié comme incomplet.");
+    Equal("native-csv", run.Data.Provenance.Method); Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
+}
+
+async Task CheckNativeScopeChange()
+{
+    await using var h = await Open(NativeHtml(true), NativeCsv());
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
+    True(!run.Data.Complete && !run.Data.Provenance.ScopeVerified, "Une recherche modifiée pendant le transfert ne peut pas devenir comparable.");
+    True(run.Data.Warnings.Any(x => x.Contains("contexte de recherche", StringComparison.Ordinal)), "L’écart de contexte doit être visible.");
+}
+
+Task CheckSampleNormalization()
+{
+    var visible = new TableSnapshot { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "001 001", "A" }, new[] { "1\u202F002", "B" } } };
+    var native = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "1002", "B" }, new[] { "1001", "A" } } };
+    var check = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    True(check.Available && check.Matches && check.Sample == 2, "Les séparateurs de milliers doivent être reconnus sans modifier les cellules.");
+    native.Headers[0] = "Sans identité";
+    True(!ExtractionVerificationService.VerifyNativeSample(visible, native, new()).Available, "Aucun numéro ne doit être déduit d’une autre colonne.");
+    return Task.CompletedTask;
 }
 
 static void Equal<T>(T expected, T actual)

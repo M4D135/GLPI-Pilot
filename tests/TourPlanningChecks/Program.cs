@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using GlpiPilot.Core;
 
 var clock = new DateTimeOffset(2026, 10, 21, 12, 0, 0, TimeSpan.FromHours(2));
@@ -362,6 +363,138 @@ Test("Failed local preference write leaves the existing document and no temporar
     var preferences = new TourOrderPreferences().With("team:|active", new[] { paris });
     Throws<IOException>(() => preferences.Save(Path.Combine(blocked, "orders.json")));
     Check(File.ReadAllText(blocked) == "existing-content" && !Directory.EnumerateFiles(directory, "*.tmp").Any());
+});
+
+
+Test("Dated basket uses explicit unique IDs and groups exact sites before cities", () =>
+{
+    var cities = Cities(true); cities.Sites.Add(new() { CityId = paris, Name = "Agence Est", Latitude = 48.8, Longitude = 2.4 });
+    var source = Sample(); source.Rows[0][1] = "Agence Est routeur";
+    var context = Context(source, cities); var tour = ScheduledTourService.Create(context, new[] { 0, 1, 6 }, "Terrain", new(2026, 10, 22));
+    Check(tour.Tickets.Select(ticket => ticket.TicketId).SequenceEqual(new[] { "100", "101", "106" }) && tour.Stops.Count == 2);
+    Check(tour.Stops[0].SiteId == cities.Sites[0].Id && tour.Tickets[2].PlaceKey == "");
+    var schedule = ScheduledTourService.Calculate(tour, context); Check(!schedule.CanExportCalendar && schedule.Warnings.Any(warning => warning.Contains("n’ont pas d’étape")));
+});
+Test("Dated creation rejects duplicate or missing IDs rather than saving row positions", () =>
+{
+    var source = Sample(); source.Rows[1][0] = "100"; var context = Context(source);
+    Throws<InvalidDataException>(() => ScheduledTourService.Create(context, new[] { 0 }, "Terrain", new(2026, 10, 22)));
+    source.Rows[0][0] = ""; Throws<InvalidDataException>(() => ScheduledTourService.Create(Context(source), new[] { 0 }, "Terrain", new(2026, 10, 22)));
+});
+Test("Dated schedule accounts for travel waiting windows return and day overflow", () =>
+{
+    var context = Context(cities: Cities(true)); var tour = ScheduledTourService.Create(context, new[] { 0, 1 }, "Terrain", new(2026, 10, 22));
+    tour.StartTime = "08:00"; tour.EndTime = "10:00"; tour.ReturnMinutes = 25; tour.Start = ScheduledTourService.PointFor(context, "city:" + paris); tour.End = tour.Start.Copy();
+    tour.Stops[0].TravelMinutes = 10; tour.Stops[0].Earliest = "09:00"; tour.Stops[0].Latest = "09:20"; tour.Stops[0].DurationMinutes = 30;
+    tour.Stops[1].TravelMinutes = 15; tour.Stops[1].DurationMinutes = 45;
+    var schedule = ScheduledTourService.Calculate(tour, context); var first = schedule.Visits[0];
+    Check(first.Arrival.Hour == 8 && first.Arrival.Minute == 10 && first.Start.Hour == 9 && first.WaitMinutes == 50 && first.Late);
+    var technician = schedule.Technicians.Single(); Check(technician.InterventionMinutes == 75 && technician.TravelMinutes == 50 && technician.Finish.Hour == 10 && technician.Finish.Minute == 55 && technician.OutsideDay);
+    Check(technician.StraightLineKm > 700 && technician.StraightLineKm < 850);
+});
+Test("Missing coordinates leave total distance unknown while entered minutes remain usable", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1 }, "Terrain", new(2026, 10, 22)); var schedule = ScheduledTourService.Calculate(tour, context);
+    Check(schedule.Technicians.Single().StraightLineKm == null && schedule.Technicians.Single().TravelMinutes == 30);
+    Throws<InvalidDataException>(() => ScheduledTourService.OrderByProximity(tour, context));
+});
+Test("Local distribution balances durations without changing GLPI and preserves locked assignments", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1, 2 }, "Équipe", new(2026, 10, 22)); var keys = context.Technicians.Select(item => item.Key).ToArray();
+    tour.Stops[0].Locked = true; tour.Stops[0].TechnicianKey = keys[0]; tour.Stops[0].DurationMinutes = 120;
+    var split = ScheduledTourService.Distribute(tour, keys); Check(split.Stops[0].TechnicianKey == keys[0] && split.Stops.Skip(1).All(stop => stop.TechnicianKey == keys[1]));
+    Check(tour.Stops.Skip(1).All(stop => stop.TechnicianKey == "") && ScheduledTourService.Calculate(split, context).Technicians.Count == 2);
+    Throws<InvalidDataException>(() => ScheduledTourService.Distribute(tour, new[] { keys[1] }));
+});
+Test("Manual and proximity reordering preserve locked stop positions and independent drafts", () =>
+{
+    var context = Context(cities: Cities(true)); var tour = ScheduledTourService.Create(context, new[] { 0, 1, 2 }, "Terrain", new(2026, 10, 22)); tour.Stops[1].Locked = true;
+    Throws<InvalidDataException>(() => ScheduledTourService.Move(tour, tour.Stops[0].Id, 1)); var ordered = ScheduledTourService.OrderByProximity(tour, context);
+    Check(ordered.Stops[1].Id == tour.Stops[1].Id && !ReferenceEquals(ordered.Stops[0], tour.Stops[0]));
+    ordered.Stops[0].Notes = "Modifié"; Check(tour.Stops[0].Notes == "");
+});
+Test("Scenarios receive new stable calendar identities and independent ticket lists", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1 }, "A", new(2026, 10, 22));
+    var scenario = ScheduledTourService.Duplicate(tour, "B"); Check(scenario.Id != tour.Id && scenario.Stops[0].Id != tour.Stops[0].Id);
+    scenario.Stops[0].TicketIds.Clear(); Check(tour.Stops[0].TicketIds.Count == 1);
+});
+Test("New extractions reconcile by ID after sorting and detect resolved moved and changed tickets", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1, 2 }, "Terrain", new(2026, 10, 22)); var source = Sample();
+    source.Rows[0][2] = "Résolu"; source.Rows[1][1] = "Marseille imprimante"; source.Rows[2][5] = "Alice"; source.Rows.Reverse();
+    var changes = ScheduledTourService.Reconcile(tour, Context(source));
+    Check(changes[0].State == "Terminé depuis" && changes[0].SourceIndex == 9 && changes[1].State == "Lieu modifié" && changes[2].State == "Ticket modifié");
+    Check(!ScheduledTourService.Calculate(tour, Context(source)).CanExportCalendar);
+});
+Test("Absent partial tickets and duplicate IDs cannot masquerade as completed or deleted", () =>
+{
+    var tour = ScheduledTourService.Create(Context(), new[] { 0, 1 }, "Terrain", new(2026, 10, 22)); var source = Sample(); source.Rows.RemoveAt(0); source.Complete = false;
+    var missing = ScheduledTourService.Reconcile(tour, Context(source))[0]; Check(missing.SourceIndex == null && !missing.Completed && missing.Detail.Contains("partielle"));
+    source.Rows.Add(source.Rows[0].ToArray()); Check(ScheduledTourService.Reconcile(tour, Context(source))[1].State == "ID ambigu");
+});
+Test("Another installation with the same IDs never supplies titles or calendar entries", () =>
+{
+    var tour = ScheduledTourService.Create(Context(), new[] { 0 }, "Terrain", new(2026, 10, 22)); var source = Sample(); source.SourceUrl = "https://other.invalid/front/ticket.php"; source.Rows[0][1] = "SECRET OTHER";
+    var context = Context(source); var schedule = ScheduledTourService.Calculate(tour, context);
+    Check(!schedule.CanExportCalendar && schedule.Reconciliation.Single().State == "Source différente");
+    Check(!ScheduledTourService.ToBriefingHtml(schedule, context).Contains("SECRET OTHER"));
+    Throws<InvalidDataException>(() => ScheduledTourService.ToCalendar(schedule));
+});
+Test("Explicit reconciliation removes completed tickets and preserves unchanged stop settings", () =>
+{
+    var tour = ScheduledTourService.Create(Context(), new[] { 0, 1, 2 }, "Terrain", new(2026, 10, 22)); tour.Stops[1].DurationMinutes = 97; tour.Stops[1].Earliest = "10:00";
+    var source = Sample(); source.Rows[0][2] = "Clos"; var rebuilt = ScheduledTourService.RebuildUnlocked(tour, Context(source), true);
+    Check(rebuilt.Tickets.Count == 2 && rebuilt.Stops.Count == 2 && rebuilt.Stops[0].DurationMinutes == 97 && rebuilt.Stops[0].Earliest == "10:00");
+    Check(tour.Tickets.Count == 3 && ScheduledTourService.Reconcile(rebuilt, Context(source)).All(change => change.State == "Inchangé"));
+});
+Test("Reconciliation refuses to move resize or shift a locked stop automatically", () =>
+{
+    var tour = ScheduledTourService.Create(Context(), new[] { 0, 1, 2 }, "Terrain", new(2026, 10, 22)); tour.Stops[1].Locked = true;
+    var source = Sample(); source.Rows[0][2] = "Clos"; Throws<InvalidDataException>(() => ScheduledTourService.RebuildUnlocked(tour, Context(source), true));
+    source = Sample(); source.Rows[1][1] = "Paris imprimante"; Throws<InvalidDataException>(() => ScheduledTourService.RebuildUnlocked(tour, Context(source), false));
+});
+Test("Calendar uses UTC dates stable UIDs escaped text CRLF and 75 byte Unicode lines", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0 }, "Équipe, test; " + new string('é', 70), new(2026, 10, 22)); tour.TimeZoneId = "UTC"; tour.Stops[0].Notes = "Ligne 1\nLigne 2; test, \\ fin"; tour.Stops[0].TravelMinutes = 15;
+    var schedule = ScheduledTourService.Calculate(tour, context); var calendar = ScheduledTourService.ToCalendar(schedule, clock); var unfolded = calendar.Replace("\r\n ", "");
+    Check(unfolded.Contains("DTSTART:20261022T084500Z") && unfolded.Contains("DTEND:20261022T091500Z") && unfolded.Contains("UID:" + tour.Id + "-" + tour.Stops[0].Id));
+    Check(unfolded.Contains(@"Ligne 1\nLigne 2\; test\, \\ fin") && calendar.Split("\r\n").All(line => Encoding.UTF8.GetByteCount(line) <= 75));
+    Check(ScheduledTourService.ToCalendar(schedule, clock) == calendar && calendar.EndsWith("END:VCALENDAR\r\n"));
+});
+Test("Calendar rejects invalid daylight saving local appointments", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0 }, "Heure locale", new(2026, 3, 29)); tour.TimeZoneId = OperatingSystem.IsWindows() ? "Romance Standard Time" : "Europe/Paris"; tour.StartTime = "02:00"; tour.EndTime = "04:00"; tour.Stops[0].TravelMinutes = 0;
+    Throws<InvalidDataException>(() => ScheduledTourService.ToCalendar(ScheduledTourService.Calculate(tour, context)));
+});
+Test("Printable briefing encodes source HTML and retains ticket identifiers and local notes", () =>
+{
+    var source = Sample(); source.Rows[0][1] = "Paris <script>alert('x')</script>"; var context = Context(source); var tour = ScheduledTourService.Create(context, new[] { 0 }, "Terrain", new(2026, 10, 22)); tour.Stops[0].Notes = "<img src=x onerror=alert(1)>";
+    var html = ScheduledTourService.ToBriefingHtml(ScheduledTourService.Calculate(tour, context), context);
+    Check(!html.Contains("<script>") && !html.Contains("<img") && html.Contains("&lt;script&gt;") && html.Contains("100") && html.Contains("window.print()"));
+});
+Test("Saved tour documents round trip without credentials or source ticket text", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1 }, "Terrain", new(2026, 10, 22)); var store = new ScheduledTourStore().With(tour); var path = PathFor("scheduled.json"); store.Save(path);
+    var read = ScheduledTourStore.Load(path); Check(read.Tours.Single().Tickets[0].TicketId == "100" && read.Tours[0].Stops.Count == 2);
+    Check(!File.ReadAllText(path).Contains("routeur") && !File.ReadAllText(path).Contains("criteria")); Check(read.Without(tour.Id).Tours.Count == 0);
+    Check(read.Tours[0].Stops[0].TicketIds.SequenceEqual(tour.Stops[0].TicketIds));
+});
+Test("Dated validation rejects duplicate membership malformed times coordinates and unknown fields", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1 }, "Terrain", new(2026, 10, 22));
+    var copy = tour.Copy(); copy.Stops[1].TicketIds.Add("100"); Throws<InvalidDataException>(copy.Validate);
+    copy = tour.Copy(); copy.Stops[0].Earliest = "25:00"; Throws<InvalidDataException>(copy.Validate);
+    copy = tour.Copy(); copy.Start.Latitude = 30; Throws<InvalidDataException>(copy.Validate);
+    var path = PathFor("unknown-scheduled.json"); File.WriteAllText(path, "{\"Version\":1,\"Tours\":[],\"Execute\":\"bad\"}"); Throws<JsonException>(() => ScheduledTourStore.Load(path));
+});
+Test("Scheduled cancellation is honored before creating exporting or reconciling partial plans", () =>
+{
+    var context = Context(); var tour = ScheduledTourService.Create(context, new[] { 0, 1 }, "Terrain", new(2026, 10, 22)); using var cts = new CancellationTokenSource(); cts.Cancel();
+    Throws<OperationCanceledException>(() => ScheduledTourService.Create(context, new[] { 0 }, "Terrain", new(2026, 10, 22), ct: cts.Token));
+    Throws<OperationCanceledException>(() => ScheduledTourService.Reconcile(tour, context, cts.Token));
+    Throws<OperationCanceledException>(() => ScheduledTourService.Calculate(tour, context, cts.Token));
+    Throws<OperationCanceledException>(() => ScheduledTourService.OrderByProximity(tour, context, cts.Token));
 });
 
 var passed = 0;

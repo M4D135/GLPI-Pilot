@@ -49,6 +49,17 @@ public sealed partial class DashboardView
         yield return new("timeline", "", "Activité datée sur 30 jours", "Synthèse", "Créations, résolutions et clôtures observées dans le relevé.");
         yield return new("quality", "", "Qualité, avertissements et colonnes", "Synthèse", "Périmètre, champs reconnus, doublons et données manquantes.");
         yield return new("note", "", "Note et consigne personnelle", "Texte", "Une consigne, un contexte ou un repère de lecture écrit par vous.");
+        foreach (var (key, title) in new[] { ("deadlines", "Météo des échéances"), ("quality", "Météo de qualité"), ("geography", "Météo des lieux") })
+            yield return new("weather", key, title, "Synthèse", "Indice descriptif spécialisé, avec couverture et méthode visibles.");
+        foreach (var (key, title) in new[] { ("technician-city", "Techniciens × villes"), ("city-status", "Villes × statuts"), ("category-status", "Catégories × statuts"), ("urgency-impact", "Urgence × impact") })
+            yield return new("matrix", key, title, "Analyses croisées", "Matrice chiffrée et sélection de ses lignes ; peut aussi être affichée en barres empilées.");
+        foreach (var (key, title) in new[] { ("age", "Histogramme d’ancienneté"), ("inactivity", "Histogramme des modifications"), ("resolution", "Histogramme des délais de résolution"), ("overdue-delay", "Histogramme des retards") })
+            yield return new("histogram", key, title, "Analyses croisées", "Tranches réglables dans les options du widget ; valeurs absentes exclues.");
+        foreach (var key in new[] { "age", "resolution" }) foreach (var role in new[] { "city", "assignee", "category" })
+            yield return new("boxplot", key + "-" + role, (key == "age" ? "Âge" : "Résolution") + " · dispersion par " + (role == "city" ? "ville" : role == "assignee" ? "technicien" : "catégorie"), "Analyses croisées", "Médiane, quartiles, minimum, maximum et P90, avec l’effectif de chaque segment.");
+        yield return new("scatter", "age-deadline", "Âge × échéance", "Analyses croisées", "Chaque point correspond à un ticket actif avec deux dates exploitables.");
+        foreach (var (key, title) in new[] { ("total", "Stock observé"), ("active", "Actifs observés"), ("overdue", "Échéances dépassées observées"), ("high", "Priorités hautes observées") })
+            yield return new("history", key, title, "Historique", "Relevés comparables conservés localement. Les périodes manquantes et incompatibles restent signalées.");
         if (_data != null)
         {
             foreach (var metric in _data.Metrics) yield return new("metric", metric.Key, metric.Label, CatalogCategory("metric", metric.Key), metric.Explanation);
@@ -121,7 +132,12 @@ public sealed partial class DashboardView
         "metric" => _data.Metric(item.Key)?.Value is double value && double.IsFinite(value),
         "distribution" => _data.Distributions.FirstOrDefault(distribution => distribution.Key == item.Key)?.Available == true,
         "timeline" => _data.Columns.Any(column => column.Index.HasValue && column.Role is "created" or "resolved" or "closed"),
-        "weather" => _data.Weather.State != "unknown",
+        "weather" => (item.Key.Length == 0 || item.Key == "overall" ? _data.Weather : _data.WeatherProfiles.GetValueOrDefault(item.Key))?.State is { } state && state != "unknown",
+        "matrix" => _data.Matrices.Any(x => x.Key == item.Key && x.Available),
+        "histogram" => _data.NumericSeries.Any(x => x.Key == item.Key && x.Values.Count > 0),
+        "boxplot" => _data.BoxSeries.Any(x => x.Key == item.Key && x.Available && x.Boxes.Count > 0),
+        "scatter" => _data.Scatters.Any(x => x.Key == item.Key && x.Points.Count > 0),
+        "history" => _data.History.Any(x => x.Key == item.Key && x.Points.Any(p => p.Comparable && p.Value.HasValue)),
         _ => true
     }));
 
@@ -136,8 +152,8 @@ public sealed partial class DashboardView
         var category = Select(body, "Catégorie", categories, _libraryCategory);
         var available = Check(body, "Disponibles seulement", _libraryAvailableOnly);
         Help(available, "Disponibles seulement", "Afficher les sources calculables avec le relevé chargé et les notes. Une valeur zéro calculée reste disponible ; une colonne absente ne l’est pas.");
-        var favorites = Check(body, "Mes favoris · cette session", _libraryFavoritesOnly);
-        Help(favorites, "Filtrer mes widgets favoris", "Retrouver les widgets marqués d’une étoile pendant cette session. Les favoris du catalogue ne modifient pas les dispositions enregistrées.");
+        var favorites = Check(body, "Mes favoris mémorisés", _libraryFavoritesOnly);
+        Help(favorites, "Filtrer mes widgets favoris", "Retrouver les widgets marqués d’une étoile entre les sessions. Les favoris font partie de cette configuration de dashboards.");
         var count = Text("", 11, "MutedBrush", margin: new Thickness(0, 12, 0, 2)); body.Children.Add(count);
         var list = new StackPanel(); body.Children.Add(list);
         var libraryButtons = new HashSet<Button>();
@@ -194,8 +210,8 @@ public sealed partial class DashboardView
                     row.Children.Add(button); Track(button);
                     var favorite = _libraryFavorites.Contains(FavoriteKey(item));
                     var star = DescribedCommand(favorite ? "★" : "☆", (favorite ? "Retirer des favoris · " : "Ajouter aux favoris · ") + item.Label,
-                        () => { if (!_libraryFavorites.Add(FavoriteKey(item))) _libraryFavorites.Remove(FavoriteKey(item)); Fill(); }, quiet: true);
-                    Help(star, (favorite ? "Retirer des favoris · " : "Ajouter aux favoris · ") + item.Label, "Mémoriser ce favori dans le catalogue pour cette session, sans changer les widgets de la disposition.");
+                        () => { if (!_libraryFavorites.Add(FavoriteKey(item))) _libraryFavorites.Remove(FavoriteKey(item)); _layout.CatalogFavorites = _libraryFavorites.Order(StringComparer.Ordinal).ToList(); Persist(); Fill(); }, quiet: true);
+                    Help(star, (favorite ? "Retirer des favoris · " : "Ajouter aux favoris · ") + item.Label, "Mémoriser ce favori dans le catalogue pour les prochaines sessions.");
                     star.FontFamily = new System.Windows.Media.FontFamily("Segoe UI Symbol"); star.FontSize = 19; star.Padding = new Thickness(7); star.MinWidth = 32; star.Margin = new Thickness(4, 2, 0, 0); star.VerticalAlignment = VerticalAlignment.Top;
                     if (favorite) star.SetResourceReference(Button.ForegroundProperty, "AccentBrush");
                     Grid.SetColumn(star, 1); row.Children.Add(star); Track(star); list.Children.Add(row);
@@ -241,14 +257,14 @@ public sealed partial class DashboardView
         var data = Section(body, "Contenu", "Choisir ce que le widget doit afficher.", true);
         var title = Input(data, "Titre personnalisé", widget.Title, 180);
         Help(title, "Titre personnalisé", "Donner un titre au widget. Un titre vide reprend le nom de sa source.");
-        var kinds = new[] { new Choice("metric", "Indicateur"), new Choice("distribution", "Répartition"), new Choice("weather", "Météo"), new Choice("timeline", "Activité datée"), new Choice("attention", "Tickets prioritaires"), new Choice("quality", "Qualité du relevé"), new Choice("note", "Note") };
+        var kinds = DashboardWidgetSettings.Kinds.Select(key => new Choice(key, KindLabel(key))).ToArray();
         var kind = Select(data, "Type de contenu", kinds, widget.Kind);
         var sourcePanel = new StackPanel(); data.Children.Add(sourcePanel); ComboBox? source = null;
         Action refreshPreview = () => { }, updateOptions = () => { };
         void FillSources()
         {
             sourcePanel.Children.Clear(); var currentKind = Selected(kind);
-            if (currentKind is not ("metric" or "distribution")) { source = null; return; }
+            if (currentKind is not ("metric" or "distribution" or "weather" or "matrix" or "histogram" or "boxplot" or "scatter" or "history")) { source = null; return; }
             var choices = Catalog().Where(item => item.Kind == currentKind).Select(item => new Choice(item.Key, item.Label)).ToList();
             if (currentKind == widget.Kind && !choices.Any(choice => choice.Key == widget.SourceKey)) choices.Add(new(widget.SourceKey, widget.SourceKey));
             source = Select(sourcePanel, "Source de données", choices, currentKind == widget.Kind ? widget.SourceKey : choices.FirstOrDefault()?.Key ?? "");
@@ -258,6 +274,11 @@ public sealed partial class DashboardView
         var notePanel = new StackPanel(); data.Children.Add(notePanel);
         var note = Input(notePanel, "Texte de la note", widget.Note, 4000); note.AcceptsReturn = true; note.TextWrapping = TextWrapping.Wrap; note.Height = 115; note.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         Help(note, "Texte de la note", "Écrire une consigne ou un repère. Cette note fait partie de la disposition et sera incluse dans sa configuration partagée.");
+        var sectionName = Input(data, "Section du dashboard · facultative", widget.Section, 80);
+        var hist = Input(data, "Bornes d’histogramme · séparées par ;", string.Join(" ; ", widget.HistogramBreaks.Select(x => x.ToString("G", CultureInfo.CurrentCulture))), 500);
+        Help(hist, "Tranches de l’histogramme", "Exemple : 1 ; 7 ; 14 ; 30 ; 90. Les valeurs sont exprimées dans l’unité de la série, et la borne supérieure est exclue.");
+        var filterPanel = Section(body, "Filtres de ce widget", "Ces conditions s’ajoutent au périmètre commun du dashboard.", false);
+        var readFilters = ScopeEditor(filterPanel, widget.Filters);
 
         var appearance = Section(body, "Apparence", "Prévisualiser les bordures, la couleur et la présentation avant d’appliquer.", true);
         var styles = Select(appearance, "Style de carte", new[] { new Choice("surface", "Surface sobre"), new Choice("outline", "Contour coloré"), new Choice("accent", "Accent latéral"), new Choice("minimal", "Minimal") }, widget.Style);
@@ -272,17 +293,19 @@ public sealed partial class DashboardView
         }
         appearance.Children.Add(swatches);
         var presentationPanel = new StackPanel(); appearance.Children.Add(presentationPanel);
-        var presentation = Select(presentationPanel, "Présentation", new[] { new Choice("bars", "Barres / détaillée"), new Choice("list", "Liste chiffrée"), new Choice("compact", "Compacte"), new Choice("donut", "Anneau"), new Choice("gauge", "Jauge avec objectif") }, widget.Presentation);
+        var presentation = Select(presentationPanel, "Présentation", new[] { new Choice("bars", "Barres / détaillée"), new Choice("list", "Liste chiffrée"), new Choice("compact", "Compacte"), new Choice("donut", "Anneau"), new Choice("gauge", "Jauge avec objectif"), new Choice("pareto", "Pareto"), new Choice("columns", "Colonnes"), new Choice("heatmap", "Matrice"), new Choice("stacked", "Barres empilées") }, widget.Presentation);
         void ConfigurePresentation()
         {
             var selected = Selected(presentation);
             var choices = Selected(kind) switch
             {
-                "distribution" => new[] { new Choice("bars", "Barres"), new Choice("donut", "Anneau"), new Choice("list", "Liste chiffrée"), new Choice("compact", "Liste compacte") },
+                "distribution" => new[] { new Choice("bars", "Barres"), new Choice("donut", "Anneau"), new Choice("pareto", "Pareto"), new Choice("columns", "Colonnes"), new Choice("list", "Liste chiffrée"), new Choice("compact", "Liste compacte") },
+                "matrix" => new[] { new Choice("heatmap", "Matrice colorée"), new Choice("stacked", "Barres empilées"), new Choice("list", "Liste chiffrée") },
+                "histogram" => new[] { new Choice("columns", "Colonnes"), new Choice("bars", "Barres"), new Choice("list", "Liste chiffrée") },
                 "metric" => new[] { new Choice("bars", "Détaillée"), new Choice("gauge", "Jauge avec objectif"), new Choice("compact", "Compacte") },
                 _ => new[] { new Choice("bars", "Détaillée"), new Choice("compact", "Compacte") }
             };
-            presentation.ItemsSource = choices; presentation.SelectedValue = choices.Any(choice => choice.Key == selected) ? selected : "bars";
+            presentation.ItemsSource = choices; presentation.SelectedValue = choices.Any(choice => choice.Key == selected) ? selected : choices[0].Key;
         }
         ConfigurePresentation();
         var topPanel = new StackPanel(); appearance.Children.Add(topPanel);
@@ -347,8 +370,9 @@ public sealed partial class DashboardView
         {
             var selectedKind = Selected(kind);
             notePanel.Visibility = selectedKind == "note" ? Visibility.Visible : Visibility.Collapsed;
-            presentationPanel.Visibility = selectedKind is "distribution" or "metric" or "weather" ? Visibility.Visible : Visibility.Collapsed;
-            topPanel.Visibility = selectedKind == "distribution" ? Visibility.Visible : Visibility.Collapsed;
+            presentationPanel.Visibility = selectedKind is "distribution" or "metric" or "weather" or "matrix" or "histogram" ? Visibility.Visible : Visibility.Collapsed;
+            topPanel.Visibility = selectedKind is "distribution" or "matrix" or "boxplot" ? Visibility.Visible : Visibility.Collapsed;
+            hist.Visibility = selectedKind == "histogram" ? Visibility.Visible : Visibility.Collapsed;
             gaugePanel.Visibility = selectedKind == "metric" && Selected(presentation) == "gauge" ? Visibility.Visible : Visibility.Collapsed;
         };
         kind.SelectionChanged += (_, _) => { FillSources(); ConfigurePresentation(); updateOptions(); refreshPreview(); };
@@ -379,6 +403,14 @@ public sealed partial class DashboardView
             var lowerIsBetter = Selected(direction) == "lower";
             if (warningValue.HasValue && criticalValue.HasValue && (lowerIsBetter ? criticalValue < warningValue : criticalValue > warningValue))
             { error.Text = lowerIsBetter ? "Le seuil critique doit être supérieur ou égal au seuil de vigilance." : "Le seuil critique doit être inférieur ou égal au seuil de vigilance."; return; }
+            List<DashboardScopeFilter> filters; List<double> boundaries;
+            try
+            {
+                filters = readFilters(); DashboardScopeFilter.ValidateList(filters);
+                boundaries = hist.Text.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(x => double.Parse(x.Trim().Replace(',', '.'), CultureInfo.InvariantCulture)).Distinct().Order().ToList();
+                if (boundaries.Count > 30 || boundaries.Any(x => !double.IsFinite(x) || Math.Abs(x) > 1e9)) throw new FormatException("Trente bornes finies au maximum sont autorisées.");
+            }
+            catch (Exception ex) { error.Text = ex.Message; return; }
             Change(() =>
             {
                 widget.Title = title.Text.Trim(); widget.Kind = Selected(kind); widget.SourceKey = source is null ? "" : Selected(source);
@@ -386,6 +418,7 @@ public sealed partial class DashboardView
                 widget.Span = int.Parse(Selected(span), CultureInfo.InvariantCulture); widget.Height = h; widget.AutoHeight = autoHeight.IsChecked == true; widget.TopCount = n; widget.Note = note.Text;
                 widget.ShowDescription = descriptions.IsChecked == true; widget.Locked = locked.IsChecked == true; widget.Hidden = hidden.IsChecked == true;
                 widget.TargetValue = targetValue; widget.WarningValue = warningValue; widget.CriticalValue = criticalValue; widget.LowerIsBetter = lowerIsBetter;
+                widget.Section = sectionName.Text.Trim(); widget.Filters = filters; widget.HistogramBreaks = boundaries;
             });
         });
         apply.SetResourceReference(Button.StyleProperty, "PrimaryButton"); apply.HorizontalContentAlignment = HorizontalAlignment.Center; apply.Margin = new Thickness(0); actions.Children.Add(apply);

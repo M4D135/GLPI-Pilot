@@ -18,6 +18,9 @@ public partial class MainWindow
     private TextBox? _dashboardStaleBox, _dashboardOldBox, _dashboardDueBox;
     private ComboBox? _dashboardDateCulture;
     private StackPanel? _dashboardSettingsPanel;
+    private readonly Dictionary<string, TextBox> _weatherFields = new();
+    private ComboBox? _assignmentMode;
+    private TextBox? _priorityRulesBox;
     private int[]? _dashboardPreviewRows;
     private string _dashboardPreviewLabel = "";
 
@@ -31,6 +34,7 @@ public partial class MainWindow
         _dashboardView.SettingsRequested += () => { MainTabs.SelectedItem = SettingsTab; SettingsDashboardHost.BringIntoView(); };
         _dashboardView.ExportRequested += async () => await ExportDashboardAsync();
         _dashboardView.LayoutChanged += layout => SaveDashboardLayout(layout, _dashboardView);
+        _dashboardView.SnapshotChanged += snapshot => _dashboard = snapshot;
         _dashboardSettingsPanel = new StackPanel();
         _dashboardSettingsPanel.Children.Add(DashboardLabel("Laissez une correspondance vide pour la détection automatique. Si plusieurs colonnes conviennent, choisissez le titre exact. Les dates, seuils et correspondances suivent la configuration partageable."));
         var fields = new WrapPanel();
@@ -54,6 +58,18 @@ public partial class MainWindow
         dates.Children.Add(_dashboardDateCulture); thresholds.Children.Add(dates);
         _dashboardSettingsPanel.Children.Add(thresholds);
         _dashboardSettingsPanel.Children.Add(DashboardLabel("Les heures sont comparées à l’heure locale du poste. Les horodatages ISO avec fuseau sont convertis. Les durées affichées sont calendaires ; les pauses et calendriers SLA ne peuvent pas être reconstruits à partir d’un simple relevé."));
+        var weather = new StackPanel();
+        weather.Children.Add(DashboardLabel("Les poids sont relatifs. Un poids de zéro désactive un signal. Les champs manquants restent exclus ; la couverture demeure affichée."));
+        var weatherFields = new WrapPanel();
+        foreach (var (key, title) in new[] { ("OverdueWeight", "Poids · échéances dépassées"), ("PriorityWeight", "Poids · priorités hautes"), ("AssignmentWeight", "Poids · sans affectation"), ("StaleWeight", "Poids · dernière modification"), ("OldWeight", "Poids · ancienneté"), ("WatchThreshold", "Seuil · vigilance / 100"), ("RainThreshold", "Seuil · pluie / 100"), ("StormThreshold", "Seuil · orage / 100"), ("MinimumCoveragePercent", "Couverture minimale / signal (%)"), ("MinimumWeightPercent", "Part minimale des poids (%)") })
+            _weatherFields[key] = DashboardNumberField(weatherFields, title);
+        weather.Children.Add(weatherFields);
+        _assignmentMode = new ComboBox { ItemsSource = new[] { "Participations par technicien", "Parts égales par ticket", "Cellule d’affectation complète" }, SelectedIndex = 0, Margin = new Thickness(0, 8, 0, 8) };
+        weather.Children.Add(DashboardLabel("Comptage des matrices de techniciens")); weather.Children.Add(_assignmentMode);
+        weather.Children.Add(DashboardLabel("Matrice de priorité locale facultative · une règle par ligne : impact:urgence=priorité. Exemple : 5:5=6. Aucun défaut GLPI n’est présumé."));
+        _priorityRulesBox = new TextBox { AcceptsReturn = true, MinHeight = 80, MaxHeight = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        weather.Children.Add(_priorityRulesBox);
+        _dashboardSettingsPanel.Children.Add(new Expander { Header = "Météo, couverture et règles locales", Content = weather, Margin = new Thickness(0, 16, 0, 8) });
         SettingsDashboardHost.Content = _dashboardSettingsPanel;
         StartupDiagnostics.Step("Techniciens · construction de l’espace personnel");
         InitializeTechnicianWorkspace();
@@ -80,6 +96,9 @@ public partial class MainWindow
         _dashboardOldBox!.Text = dashboard.OldDays.ToString(CultureInfo.InvariantCulture);
         _dashboardDueBox!.Text = dashboard.DueSoonHours.ToString(CultureInfo.InvariantCulture);
         _dashboardDateCulture!.SelectedItem = _dashboardDateCulture.Items.Cast<ComboBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == dashboard.DateCulture) ?? _dashboardDateCulture.Items[0];
+        foreach (var pair in _weatherFields) pair.Value.Text = Convert.ToString(typeof(DashboardWeatherSettings).GetProperty(pair.Key)!.GetValue(dashboard.Weather), CultureInfo.InvariantCulture) ?? "0";
+        _assignmentMode!.SelectedIndex = dashboard.AssignmentCountingMode switch { "fractional" => 1, "cell" => 2, _ => 0 };
+        _priorityRulesBox!.Text = string.Join(Environment.NewLine, dashboard.PriorityRules.OrderBy(x => x.Key).Select(x => x.Key + "=" + x.Value));
         RefreshDashboardColumnChoices();
         _dashboardView?.SetLayout(dashboard.Layout);
         LoadTechnicianSettingsFields(settings);
@@ -99,6 +118,25 @@ public partial class MainWindow
             PersonalTechnician = _settings.Dashboard.PersonalTechnician,
             OpenPersonalAfterExtraction = _settings.Dashboard.OpenPersonalAfterExtraction
         };
+        foreach (var pair in _weatherFields)
+        {
+            var property = typeof(DashboardWeatherSettings).GetProperty(pair.Key)!;
+            if (!double.TryParse(pair.Value.Text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value))
+                throw new InvalidOperationException("Météo : renseignez des nombres valides pour les poids et seuils.");
+            if (property.PropertyType == typeof(int))
+            {
+                if (value != Math.Truncate(value) || value < 0 || value > 100) throw new InvalidOperationException("Météo : les poids et couvertures sont des entiers de 0 à 100.");
+                property.SetValue(settings.Dashboard.Weather, (int)value);
+            }
+            else property.SetValue(settings.Dashboard.Weather, value);
+        }
+        settings.Dashboard.AssignmentCountingMode = _assignmentMode!.SelectedIndex switch { 1 => "fractional", 2 => "cell", _ => "participation" };
+        foreach (var line in _priorityRulesBox!.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('=');
+            if (parts.Length != 2 || !int.TryParse(parts[1].Trim(), out var priority) || !settings.Dashboard.PriorityRules.TryAdd(parts[0].Trim(), priority))
+                throw new InvalidOperationException("Matrice locale : utilisez une règle unique impact:urgence=priorité par ligne.");
+        }
         DashboardService.ValidateSettings(settings.Dashboard);
     }
 
@@ -147,6 +185,9 @@ public partial class MainWindow
         {
             var allSettings = _settings.Copy(); ApplyDashboardSettingsFields(allSettings);
             var settings = EffectiveDashboardSettings(allSettings.Dashboard);
+            allSettings.Dashboard = settings.Copy();
+            if (IsHistoricalResult) allSettings.Cities = _historicalDocument!.Cities.Copy();
+            var calculationTime = IsHistoricalResult ? source.ExtractedAt : DateTimeOffset.Now;
             var cities = CitySourceIsCurrent() ? _cityEnrichment : null;
             var queries = allSettings.Queries.Copy();
             RefreshTechnicianWorkspace();
@@ -154,12 +195,14 @@ public partial class MainWindow
             RefreshQueryWorkspace(settings);
             var snapshot = await Task.Run(() =>
             {
-                var calculated = DashboardService.Calculate(source, settings, ct: operation.Token);
+                var calculated = DashboardService.Calculate(source, settings, calculationTime, operation.Token);
                 AppendLocalDashboardProbes(calculated, source, settings, cities, queries, operation.Token);
+                AttachDashboardScope(calculated, source, settings, cities, queries);
+                AttachDashboardHistory(calculated, source, allSettings, operation.Token);
                 return calculated;
             }, operation.Token);
             if (operation.IsCancellationRequested || _closing || !ReferenceEquals(source, _result)) return;
-            _dashboard = snapshot; _dashboardView?.Show(snapshot); _dashboardView?.SetBusy(_busy);
+            _dashboard = snapshot; RefreshAlerts(source, snapshot); _dashboardView?.Show(snapshot); _dashboardView?.SetBusy(_busy);
             AddLog($"DASHBOARD · {snapshot.RowCount:N0} lignes ; {snapshot.Columns.Count(c => c.Index.HasValue)}/{snapshot.Columns.Count} colonnes reconnues ; {snapshot.Warnings.Count} avertissement(s) ; météo={snapshot.Weather.State}.");
         }
         catch (OperationCanceledException) { }
@@ -169,6 +212,73 @@ public partial class MainWindow
             { _dashboardView?.ShowEmpty("Calcul indisponible. Vérifiez les correspondances de colonnes dans Réglages."); AddLog("DASHBOARD · " + AppPaths.SafeError(ex)); }
         }
         finally { if (_dashboardCancellation == operation) _dashboardCancellation = null; operation.Dispose(); }
+    }
+
+    private static void AttachDashboardScope(DashboardSnapshot snapshot, ExtractionResult source, DashboardSettings settings,
+        CityEnrichmentResult? cities, QueryLibrarySettings queries)
+    {
+        DashboardService.RefreshWeatherProfiles(snapshot, settings);
+        var rootRows = snapshot.ScopeRows.ToHashSet();
+        snapshot.RecalculateScope = (rows, label, cancellation) =>
+        {
+            var bounded = rows.Where(rootRows.Contains).Distinct().Order().ToArray();
+            var calculated = DashboardService.CalculateSubset(source, settings, bounded, label, snapshot.CalculatedAt, cancellation);
+            AppendLocalDashboardProbes(calculated, source, settings, cities, queries, cancellation);
+            DashboardService.RefreshWeatherProfiles(calculated, settings);
+            return calculated;
+        };
+    }
+
+    private static void AttachDashboardHistory(DashboardSnapshot snapshot, ExtractionResult source, AppSettings settings, CancellationToken ct)
+    {
+        // Global metadata is never reused by the scoped calculation callback above.
+        // A personal or locally filtered history needs its own historical row recalculation.
+        var sourceKey = SnapshotStore.SourceKey(source);
+        if (sourceKey.Length == 0 || snapshot.IsFiltered) return;
+        try
+        {
+            var schema = SnapshotStore.SchemaFingerprint(source.Headers);
+            var rules = SnapshotStore.RulesFingerprint(settings);
+            var entries = new SnapshotStore().List().Where(x => x.SourceKey == sourceKey).OrderBy(x => x.CapturedAt).TakeLast(500).ToArray();
+            ct.ThrowIfCancellationRequested();
+            var currentVerified = snapshot.Complete && source.Provenance is { SearchVerified: true, ScopeVerified: true };
+            var idColumn = snapshot.Column("id")?.Index;
+            var ids = new HashSet<ulong>();
+            if (idColumn is not int column) currentVerified = false;
+            else foreach (var row in source.Rows)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    var id = TicketReferenceResolver.NormalizeId(column < row.Length ? row[column] : "");
+                    if (!ids.Add(ulong.Parse(id, CultureInfo.InvariantCulture))) { currentVerified = false; break; }
+                }
+                catch (InvalidOperationException) { currentVerified = false; break; }
+            }
+            foreach (var (key, title) in new[] { ("total", "Stock observé"), ("active", "Actifs observés"), ("overdue", "Échéances dépassées observées"), ("high", "Priorités hautes actives observées") })
+            {
+                var points = entries.Select(entry =>
+                {
+                    var limits = new List<string>();
+                    if (!currentVerified) limits.Add("Relevé courant incomplet, périmètre non confirmé ou identifiants non fiables");
+                    if (!entry.Complete) limits.Add("Relevé incomplet");
+                    if (!entry.SearchVerified || !entry.ScopeVerified) limits.Add("Recherche ou contexte GLPI non confirmé");
+                    if (!entry.IdentityReliable) limits.Add("Identifiants non fiables");
+                    if (entry.SchemaFingerprint != schema) limits.Add("Colonnes différentes");
+                    if (entry.RulesFingerprint != rules) limits.Add("Règles de normalisation différentes");
+                    var value = entry.Metrics.GetValueOrDefault(key);
+                    if (value is null || !double.IsFinite(value.Value)) limits.Add("Indicateur indisponible dans ce relevé");
+                    return new DashboardHistoryPoint(entry.CapturedAt, value, entry.Rows, entry.Complete, limits.Count == 0, entry.Id,
+                        limits.Count == 0 ? "Même recherche, mêmes colonnes, mêmes règles ; relevé complet et contexte confirmé." : string.Join(" · ", limits));
+                }).ToArray();
+                snapshot.History.Add(new(key, title, "tickets", points,
+                    "Archives locales de cette recherche et de son contexte GLPI confirmé. Les colonnes, les règles et les identifiants doivent rester compatibles. Les relevés incomplets ou incompatibles interrompent la courbe. Une disparition du relevé ne signifie jamais une résolution. Les 500 archives les plus récentes de ce contexte sont retenues."));
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            snapshot.Warnings.Add("Historique local indisponible : " + AppPaths.SafeError(error));
+        }
     }
 
     private void UpdateDashboardControls()

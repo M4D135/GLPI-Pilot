@@ -32,13 +32,14 @@ public sealed class TourPlanningView : UserControl, IDisposable
     private TourPlan? _ticketPlan;
     private string _ticketCityId = "", _technicianKey = "";
     private TourOrderPreferences _orders = new();
+    private readonly ScheduledTourView _scheduledView;
     private CancellationTokenSource? _operation, _detailOperation;
     private Task _workTask = Task.CompletedTask, _detailTask = Task.CompletedTask;
     private long _generation, _publishedGeneration, _detailGeneration;
     private bool _busy, _calculating, _detailLoading, _updatingControls, _ordersLoaded, _disposed;
 
     public TourPlan? SelectedPlan { get; private set; }
-    public Task WhenIdle => Task.WhenAll(_workTask, _detailTask);
+    public Task WhenIdle => Task.WhenAll(_workTask, _detailTask, _scheduledView.WhenIdle);
     public event Action<int[], string>? RowsRequested;
     public event Action<ExtractionResult>? ExportRequested;
     public event Action? SettingsRequested;
@@ -48,6 +49,8 @@ public sealed class TourPlanningView : UserControl, IDisposable
     public TourPlanningView(string? orderPreferencesPath = null)
     {
         _orderPreferencesPath = orderPreferencesPath ?? Path.Combine(AppPaths.DataRoot, "tour-order.json");
+        _scheduledView = new ScheduledTourView(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_orderPreferencesPath))!, "scheduled-tours.json"));
+        _scheduledView.Log += message => Log?.Invoke(message);
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
         var root = new Grid();
@@ -172,6 +175,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
         _ticketNote.Margin = new Thickness(0, 8, 0, 0); _ticketNote.Visibility = Visibility.Collapsed;
         Grid.SetRow(_ticketNote, 2); detail.Children.Add(_ticketNote);
         detailTab.Content = detail;
+        sections.Items.Add(new TabItem { Header = "Tournées datées", Content = _scheduledView });
         Content = root;
 
         // Handlers are attached only after every referenced control has been constructed.
@@ -236,6 +240,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
             PublishPlan(report, plan, generation);
             if (result.ErrorType != null) SetStatus("L’ordre mémorisé n’a pas pu être chargé. Ce plan reste utilisable ; consultez le journal.", true);
             await _detailTask;
+            await _scheduledView.WhenIdle;
             if (OperationCurrent(report, generation, operation))
                 Log?.Invoke($"TOURNÉES · {plan.Stops.Count:N0} étapes, {plan.SelectedRows.Count:N0} lignes retenues, {plan.UnlocatedRows.Count:N0} non localisées et {plan.AmbiguousRows.Count:N0} ambiguës.");
         }
@@ -304,6 +309,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
             PublishPlan(report, plan, generation);
             if (persist) RememberOrder(plan);
             await _detailTask;
+            await _scheduledView.WhenIdle;
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { CalculationFailed(report, generation, operation, error); }
@@ -314,6 +320,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
     {
         var selectedCity = (_steps.SelectedItem as StepRow)?.Stop.CityId;
         SelectedPlan = plan; _publishedReport = report; _publishedGeneration = generation; _calculating = false;
+        _scheduledView.Show(plan);
         _summary.Text = $"{plan.Stops.Count:N0} étapes · {plan.SelectedRows.Count:N0} {plan.Grain} dans le plan";
         _scopeNote.Text = plan.ScopeLabel + " · " + plan.StatusLabel + $" · relevé de {plan.SourceRowCount:N0} lignes"
             + (plan.SourceComplete ? " · source complète" : " · source partielle ou non confirmée");
@@ -490,6 +497,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
         if (_disposed) return;
         _operation?.Cancel(); _detailOperation?.Cancel(); ++_generation; ++_detailGeneration;
         _report = _publishedReport = null; _context = null; SelectedPlan = null; _ticketPlan = null;
+        _scheduledView.ShowEmpty();
         _calculating = _detailLoading = false;
         _updatingControls = true;
         try { _steps.ItemsSource = null; _tickets.ItemsSource = null; _technician.ItemsSource = null; }
@@ -504,6 +512,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
     {
         if (_disposed) return;
         _disposed = true; ++_generation; ++_detailGeneration; _operation?.Cancel(); _detailOperation?.Cancel();
+        _scheduledView.Dispose();
     }
 
     private void SetStatus(string message, bool warning = false)
@@ -525,6 +534,7 @@ public sealed class TourPlanningView : UserControl, IDisposable
 
     private void UpdateEnabled()
     {
+        _scheduledView.SetBusy(_busy || _calculating || _disposed);
         var plan = CurrentPlan(); var available = plan != null;
         var controls = !_busy && !_calculating && !_disposed && _context != null;
         _technician.IsEnabled = _allStatuses.IsEnabled = controls;

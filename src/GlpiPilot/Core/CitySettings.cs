@@ -10,10 +10,13 @@ public sealed class CitySettings
     public const int MaximumCities = 1000;
     public const int MaximumAliases = 12;
     public const int MaximumTextLength = 120;
+    public const int MaximumRules = 16;
+    public const int MaximumSites = 2000;
 
     public bool Enabled { get; set; } = true;
     public string TitleColumn { get; set; } = "";
     public List<CityDefinition> Cities { get; set; } = new();
+    public List<SiteDefinition> Sites { get; set; } = new();
 
     /// <summary>A bounded, independent copy for use at runtime. Validate raw imports before copying.</summary>
     public CitySettings Copy()
@@ -23,7 +26,8 @@ public sealed class CitySettings
             Enabled = Enabled,
             TitleColumn = TitleColumn,
             Cities = Cities?.Where(city => city is not null).Take(MaximumCities)
-                .Select(city => city.Copy()).ToList() ?? new()
+                .Select(city => city.Copy()).ToList() ?? new(),
+            Sites = Sites?.Where(site => site is not null).Take(MaximumSites).Select(site => site.Copy()).ToList() ?? new()
         };
         copy.Normalize();
         return copy;
@@ -45,6 +49,9 @@ public sealed class CitySettings
                 // Repairing one duplicate identifier must not also change the other city.
                 var city = entry.Copy();
                 if (CityText.Tokens(city.Name).Count == 0) continue;
+                // Discard a damaged contextual definition as a whole. Removing just its rule
+                // could turn a restricted abbreviation back into an unconditional alias.
+                try { city.ValidateAdvanced(); } catch (InvalidDataException) { continue; }
                 var id = Guid.Parse(city.Id);
                 if (!ids.Add(id))
                 {
@@ -54,12 +61,16 @@ public sealed class CitySettings
                 normalized.Add(city);
             }
         Cities = normalized;
+        var siteIds = new HashSet<Guid>();
+        Sites = (Sites ?? new()).Where(site => site != null).Take(MaximumSites).Select(site => site.Copy())
+            .Where(site => site.IsValid(Cities) && Guid.TryParse(site.Id, out var id) && siteIds.Add(id)).ToList();
     }
 
     /// <summary>Checks the original values without repairing or discarding an invalid user entry.</summary>
     public void Validate()
     {
-        if (!CityText.ValidText(TitleColumn, allowEmpty: true) || Cities is null || Cities.Count > MaximumCities)
+        if (!CityText.ValidText(TitleColumn, allowEmpty: true) || Cities is null || Cities.Count > MaximumCities
+            || Sites is null || Sites.Count > MaximumSites)
             throw new InvalidDataException($"La liste de villes est invalide : au maximum {MaximumCities} villes et {MaximumTextLength} caractères pour le nom de colonne.");
         var ids = new HashSet<Guid>();
         for (var index = 0; index < Cities.Count; index++)
@@ -78,7 +89,12 @@ public sealed class CitySettings
                 throw new InvalidDataException($"Ville {number} : le code postal doit compter au maximum {MaximumTextLength} caractères.");
             if (!CityDefinition.ValidCoordinates(city.Latitude, city.Longitude))
                 throw new InvalidDataException($"Ville {number} : renseignez latitude et longitude ensemble, avec une latitude de −90 à 90 et une longitude de −180 à 180.");
+            city.ValidateAdvanced();
         }
+        var siteIds = new HashSet<Guid>();
+        foreach (var site in Sites)
+            if (site is null || !site.IsValid(Cities) || !siteIds.Add(Guid.Parse(site.Id)))
+                throw new InvalidDataException("Chaque site doit avoir un identifiant unique, une ville existante, un nom et des coordonnées valides si elles sont renseignées.");
     }
 }
 
@@ -90,13 +106,20 @@ public sealed class CityDefinition
     public string PostalCode { get; set; } = "";
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
+    public string Region { get; set; } = "";
+    public string Department { get; set; } = "";
+    public string Sector { get; set; } = "";
+    public List<string> ExcludedTerms { get; set; } = new();
+    public List<CityAliasRule> Rules { get; set; } = new();
 
     public CityDefinition Copy()
     {
         var copy = new CityDefinition
         {
             Id = Id, Name = Name, PostalCode = PostalCode, Latitude = Latitude, Longitude = Longitude,
-            Aliases = Aliases?.Take(CitySettings.MaximumAliases).ToList() ?? new()
+            Aliases = Aliases?.Take(CitySettings.MaximumAliases).ToList() ?? new(),
+            Region = Region, Department = Department, Sector = Sector,
+            ExcludedTerms = ExcludedTerms?.ToList()!, Rules = Rules?.Select(rule => rule?.Copy()!).ToList()!
         };
         copy.Normalize();
         return copy;
@@ -120,6 +143,22 @@ public sealed class CityDefinition
         if (!ValidCoordinates(Latitude, Longitude)) Latitude = Longitude = null;
     }
 
+    internal void ValidateAdvanced()
+    {
+        if (new[] { Region, Department, Sector }.Any(value => !CityText.ValidText(value, true))
+            || !CityText.ValidTerms(ExcludedTerms) || Rules is null || Rules.Count > CitySettings.MaximumRules)
+            throw new InvalidDataException("Région, département, secteur, exclusions ou règles contextuelles de ville invalides.");
+        var ids = new HashSet<Guid>();
+        foreach (var rule in Rules)
+        {
+            if (rule is null || !Guid.TryParse(rule.Id, out var id) || id == Guid.Empty || !ids.Add(id)
+                || !CityText.ValidText(rule.Term, false) || CityText.Tokens(rule.Term).Count == 0
+                || !CityText.ValidTerms(rule.RequiredTerms) || !CityText.ValidTerms(rule.ExcludedTerms)
+                || !CityText.ValidText(rule.ContextColumn, true) || rule.Priority is < 0 or > 100)
+                throw new InvalidDataException("Une règle de ville est invalide : terme requis, 12 contextes/exclusions au maximum, priorité entre 0 et 100.");
+        }
+    }
+
     internal static bool ValidCoordinates(double? latitude, double? longitude)
         => !latitude.HasValue && !longitude.HasValue
             || latitude.HasValue && longitude.HasValue && double.IsFinite(latitude.Value)
@@ -137,7 +176,46 @@ public enum CityMatchState
 
 /// <summary>RowIndex always refers to the unchanged order of Source.Rows.</summary>
 public sealed record CityMatch(int RowIndex, string? CityId, string? CityName,
-    CityMatchState State, IReadOnlyList<string> CandidateIds);
+    CityMatchState State, IReadOnlyList<string> CandidateIds)
+{
+    public string? SiteId { get; init; }
+    public string SiteName { get; init; } = "";
+    public string SiteState { get; init; } = "unmatched";
+    public string Explanation { get; init; } = "";
+    public string Confidence { get; init; } = "none";
+    public bool IsOverride { get; init; }
+    public IReadOnlyList<CityMatchEvidence> Evidence { get; init; } = Array.Empty<CityMatchEvidence>();
+}
+
+public sealed record CityMatchEvidence(string CityId, string CityName, string Term, string RuleId, int Priority,
+    string Decision, string Explanation);
+
+public sealed class CityAliasRule
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Term { get; set; } = "";
+    public List<string> RequiredTerms { get; set; } = new();
+    public List<string> ExcludedTerms { get; set; } = new();
+    public string ContextColumn { get; set; } = "";
+    public int Priority { get; set; }
+    public CityAliasRule Copy() => new()
+    { Id = Id, Term = Term, RequiredTerms = RequiredTerms?.ToList()!, ExcludedTerms = ExcludedTerms?.ToList()!, ContextColumn = ContextColumn, Priority = Priority };
+}
+
+public sealed class SiteDefinition
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string CityId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public List<string> Aliases { get; set; } = new();
+    public string Address { get; set; } = "";
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public SiteDefinition Copy() => new() { Id = Id, CityId = CityId, Name = Name, Aliases = Aliases?.ToList()!, Address = Address, Latitude = Latitude, Longitude = Longitude };
+    internal bool IsValid(IReadOnlyList<CityDefinition> cities) => Guid.TryParse(Id, out var id) && id != Guid.Empty
+        && cities.Any(city => city.Id == CityId) && CityText.ValidText(Name, false) && CityText.Tokens(Name).Count > 0
+        && CityText.ValidTerms(Aliases) && CityText.ValidText(Address, true) && CityDefinition.ValidCoordinates(Latitude, Longitude);
+}
 
 public sealed class CityEnrichmentResult
 {
@@ -148,6 +226,12 @@ public sealed class CityEnrichmentResult
     public string CityColumnName { get; init; } = "";
     public string StateColumnName { get; init; } = "";
     public string TitleColumnName { get; init; } = "";
+    public string SiteColumnName { get; init; } = "";
+    public string RegionColumnName { get; init; } = "";
+    public string DepartmentColumnName { get; init; } = "";
+    public string SectorColumnName { get; init; } = "";
+    public int SiteMatchedCount { get; init; }
+    public int ManualCount { get; init; }
     public int MatchedCount { get; init; }
     public int UnmatchedCount { get; init; }
     public int AmbiguousCount { get; init; }
@@ -157,6 +241,8 @@ public sealed class CityEnrichmentResult
 
 internal static class CityText
 {
+    public static bool ValidTerms(IReadOnlyList<string>? terms) => terms != null && terms.Count <= CitySettings.MaximumAliases
+        && terms.All(term => ValidText(term, false) && Tokens(term).Count > 0);
     public static bool ValidText(string? value, bool allowEmpty)
     {
         if (value is null || value.Length > CitySettings.MaximumTextLength

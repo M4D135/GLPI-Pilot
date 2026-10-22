@@ -1,6 +1,4 @@
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using System.Windows;
 using GlpiPilot.Core;
 
@@ -8,8 +6,10 @@ namespace GlpiPilot;
 
 public partial class App : Application
 {
-    private Mutex? _instance;
+    private SingleInstanceCoordinator? _instance;
     private bool _exceptionHandlersRegistered;
+    private bool _activationRequested;
+    private bool _backupPrepared;
 
     internal void RegisterExceptionHandlers()
     {
@@ -53,13 +53,31 @@ public partial class App : Application
     {
         RegisterExceptionHandlers();
         StartupDiagnostics.Step("Vérification de l’instance Windows");
-        var userKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.UserDomainName + "\\" + Environment.UserName)))[..16];
-        _instance = new Mutex(true, "Local\\GLPIPilot_" + userKey, out var first);
-        if (!first)
+        _instance = new SingleInstanceCoordinator();
+        if (!_instance.IsPrimary)
         {
             StartupDiagnostics.Step("Une autre instance est déjà ouverte");
-            MessageBox.Show("GLPI Pilot est déjà ouvert dans cette session Windows.", "GLPI Pilot", MessageBoxButton.OK, MessageBoxImage.Information);
+            var signaled = _instance.ActivateExistingAsync().GetAwaiter().GetResult();
+            StartupDiagnostics.Step(signaled ? "Demande de retour à la fenêtre existante transmise" : "La fenêtre existante ne répond pas au signal d’activation");
+            if (!signaled)
+                MessageBox.Show("GLPI Pilot est déjà ouvert dans cette session Windows.\n\nOuvrez sa fenêtre depuis la barre des tâches. Si son démarrage est encore en cours, patientez quelques secondes.\n\nLe diagnostic de ce lancement est disponible ici :\n" + StartupDiagnostics.LogPath,
+                    "GLPI Pilot", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown(); return;
+        }
+        _instance.Listen(() =>
+        {
+            if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke((Action)ActivateExistingWindow);
+        }, error => StartupDiagnostics.Step("Signal d’activation indisponible : " + AppPaths.SafeError(error)));
+        StartupDiagnostics.Step("Sauvegarde préalable des préférences en cas de nouvelle version");
+        try
+        {
+            var backup = StartupBackupService.Prepare(AppPaths.DataRoot, AppPaths.ApplicationVersion);
+            _backupPrepared = true;
+            StartupDiagnostics.Step(backup.Message + (backup.Files > 0 ? " Fichiers : " + backup.Files + "." : ""));
+        }
+        catch (Exception error)
+        {
+            StartupDiagnostics.Step("Sauvegarde préalable non réalisée : " + AppPaths.SafeError(error));
         }
         base.OnStartup(e);
         try
@@ -70,16 +88,36 @@ public partial class App : Application
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             window.ContentRendered += (_, _) =>
             {
-                if (!StartupDiagnostics.IsReady) StartupDiagnostics.MarkReady();
+                if (!StartupDiagnostics.IsReady)
+                {
+                    StartupDiagnostics.MarkReady();
+                    if (_backupPrepared)
+                    {
+                        try { StartupBackupService.MarkReady(AppPaths.DataRoot, AppPaths.ApplicationVersion); }
+                        catch (Exception error) { StartupDiagnostics.Step("Repère de version non enregistré : " + AppPaths.SafeError(error)); }
+                    }
+                }
             };
             StartupDiagnostics.Step("Affichage et premier rendu de la fenêtre");
             window.Show();
+            if (_activationRequested) ActivateExistingWindow();
         }
         catch (Exception error)
         {
             Program.ReportStartupFailure(error);
             Shutdown(1);
         }
+    }
+
+    private void ActivateExistingWindow()
+    {
+        _activationRequested = true;
+        if (MainWindow is not Window window || Dispatcher.HasShutdownStarted) return;
+        if (!window.IsVisible) window.Show();
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        _ = window.Activate();
+        _activationRequested = false;
+        StartupDiagnostics.Step("Fenêtre existante rappelée à la demande d’un nouveau lancement");
     }
 
     protected override void OnExit(ExitEventArgs e)

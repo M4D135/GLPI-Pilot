@@ -8,7 +8,22 @@ public sealed class TechnicianPreference
     public bool Favorite { get; set; }
     public int? ActiveTarget { get; set; }
     public string Notes { get; set; } = "";
-    public TechnicianPreference Copy() => new() { Favorite = Favorite, ActiveTarget = ActiveTarget, Notes = Notes };
+    public List<string> Skills { get; set; } = new();
+    public List<string> PrimaryTerritories { get; set; } = new();
+    public List<string> BackupTerritories { get; set; } = new();
+    public int? DailyCapacityMinutes { get; set; }
+    public int? EstimatedTicketMinutes { get; set; }
+    public DateTime? UnavailableFrom { get; set; }
+    public DateTime? UnavailableUntil { get; set; }
+    public string AvailabilityNote { get; set; } = "";
+    public TechnicianPreference Copy() => new()
+    {
+        Favorite = Favorite, ActiveTarget = ActiveTarget, Notes = Notes,
+        Skills = Skills?.ToList() ?? new(), PrimaryTerritories = PrimaryTerritories?.ToList() ?? new(),
+        BackupTerritories = BackupTerritories?.ToList() ?? new(), DailyCapacityMinutes = DailyCapacityMinutes,
+        EstimatedTicketMinutes = EstimatedTicketMinutes, UnavailableFrom = UnavailableFrom,
+        UnavailableUntil = UnavailableUntil, AvailabilityNote = AvailabilityNote
+    };
 }
 
 /// <summary>Local planning aids only; neither GLPI state nor portable application configuration.</summary>
@@ -38,7 +53,10 @@ public sealed class TechnicianPreferences
         var normalizedKey = ValidIdentity(key);
         var normalizedPreference = ValidPreference(preference);
         var copy = Copy();
-        if (!normalizedPreference.Favorite && !normalizedPreference.ActiveTarget.HasValue && normalizedPreference.Notes.Length == 0)
+        if (!normalizedPreference.Favorite && !normalizedPreference.ActiveTarget.HasValue && normalizedPreference.Notes.Length == 0
+            && normalizedPreference.Skills.Count == 0 && normalizedPreference.PrimaryTerritories.Count == 0 && normalizedPreference.BackupTerritories.Count == 0
+            && !normalizedPreference.DailyCapacityMinutes.HasValue && !normalizedPreference.EstimatedTicketMinutes.HasValue
+            && !normalizedPreference.UnavailableFrom.HasValue && !normalizedPreference.UnavailableUntil.HasValue && normalizedPreference.AvailabilityNote.Length == 0)
             copy.Technicians.Remove(normalizedKey);
         else copy.Technicians[normalizedKey] = normalizedPreference;
         if (copy.Technicians.Count > MaximumTechnicians)
@@ -117,6 +135,25 @@ public sealed class TechnicianPreferences
         var notes = (value.Notes ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Trim();
         if (notes.Length > MaximumNotesLength || notes.Any(character => char.IsControl(character) && character is not ('\n' or '\t')))
             throw new InvalidDataException($"La note locale doit contenir au maximum {MaximumNotesLength:N0} caractères de texte.");
-        return new() { Favorite = value.Favorite, ActiveTarget = value.ActiveTarget, Notes = notes };
+        if (value.DailyCapacityMinutes is < 0 or > 1440 || value.EstimatedTicketMinutes is < 1 or > 10080
+            || value.UnavailableFrom.HasValue != value.UnavailableUntil.HasValue
+            || value.UnavailableFrom > value.UnavailableUntil)
+            throw new InvalidDataException("La capacité doit être de 0 à 1 440 minutes, l’estimation de 1 à 10 080 minutes, et une indisponibilité doit avoir deux dates ordonnées.");
+        static List<string> Labels(List<string>? items)
+        {
+            if (items == null || items.Count > 50 || items.Any(text => text == null || text.Length > 160 || text.Any(char.IsControl)))
+                throw new InvalidDataException("Une liste de compétences ou de secteurs est invalide (50 valeurs de 160 caractères maximum).");
+            return items.Select(text => text.Trim()).Where(text => text.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        var availability = (value.AvailabilityNote ?? "").Trim();
+        if (availability.Length > 1200 || availability.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t')))
+            throw new InvalidDataException("La note de disponibilité dépasse 1 200 caractères.");
+        return new()
+        {
+            Favorite = value.Favorite, ActiveTarget = value.ActiveTarget, Notes = notes,
+            Skills = Labels(value.Skills), PrimaryTerritories = Labels(value.PrimaryTerritories), BackupTerritories = Labels(value.BackupTerritories),
+            DailyCapacityMinutes = value.DailyCapacityMinutes, EstimatedTicketMinutes = value.EstimatedTicketMinutes,
+            UnavailableFrom = value.UnavailableFrom?.Date, UnavailableUntil = value.UnavailableUntil?.Date, AvailabilityNote = availability
+        };
     }
 }

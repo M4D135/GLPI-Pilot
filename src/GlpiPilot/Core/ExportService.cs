@@ -20,8 +20,9 @@ public static class ExportService
     private const string DocumentRelationshipsNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
-    public static ExportResult WriteXlsx(ExtractionResult data, string path)
+    public static ExportResult WriteXlsx(ExtractionResult data, string path, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ValidateData(data);
         if (data.Headers.Count > ExcelMaxColumns)
             throw new InvalidOperationException("Le tableau dépasse la limite Excel de 16 384 colonnes. Utilisez le CSV.");
@@ -39,15 +40,17 @@ public static class ExportService
             WriteWorkbook(archive);
             WriteWorkbookRelationships(archive);
             WriteStyles(archive);
-            WriteDataSheet(archive, data, counters);
+            WriteDataSheet(archive, data, counters, ct);
             WriteInformationSheet(archive, data, counters);
             WriteDocumentProperties(archive, data.ExtractedAt);
+            ct.ThrowIfCancellationRequested();
         });
         return new ExportResult(destination, data.Rows.Count, data.Headers.Count, counters.Truncated);
     }
 
-    public static ExportResult WriteCsv(ExtractionResult data, string path)
+    public static ExportResult WriteCsv(ExtractionResult data, string path, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ValidateData(data);
         string destination = WriteAtomically(path, stream =>
         {
@@ -57,7 +60,11 @@ public static class ExportService
             };
             WriteCsvRow(writer, data.Headers, data.Headers.Count);
             foreach (string[] row in data.Rows)
+            {
+                ct.ThrowIfCancellationRequested();
                 WriteCsvRow(writer, row ?? Array.Empty<string>(), data.Headers.Count);
+            }
+            ct.ThrowIfCancellationRequested();
         });
         return new ExportResult(destination, data.Rows.Count, data.Headers.Count, 0);
     }
@@ -257,7 +264,7 @@ public static class ExportService
         x.WriteEndElement(); x.WriteEndElement();
     }
 
-    private static void WriteDataSheet(ZipArchive archive, ExtractionResult data, TextCounters counters)
+    private static void WriteDataSheet(ZipArchive archive, ExtractionResult data, TextCounters counters, CancellationToken ct)
     {
         using var x = EntryWriter(archive, "xl/worksheets/sheet1.xml");
         int columns = data.Headers.Count;
@@ -279,6 +286,7 @@ public static class ExportService
         x.WriteEndElement();
         for (int rowNumber = 0; rowNumber < data.Rows.Count; rowNumber++)
         {
+            ct.ThrowIfCancellationRequested();
             string[] row = data.Rows[rowNumber] ?? Array.Empty<string>();
             int excelRow = rowNumber + 2;
             StartRow(x, excelRow);

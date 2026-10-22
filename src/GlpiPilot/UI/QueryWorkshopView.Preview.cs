@@ -71,6 +71,12 @@ public sealed partial class QueryWorkshopView
             Binding = new Binding(nameof(DashboardBucket.Label)) { Mode = BindingMode.OneWay } });
         _buckets.Columns.Add(new DataGridTextColumn { Header = "Lignes", Width = 130,
             Binding = new Binding(nameof(DashboardBucket.Count)) { Mode = BindingMode.OneWay, StringFormat = "N0" } });
+        _buckets.Columns.Add(new DataGridTextColumn { Header = "Résultat", Width = 130,
+            Binding = new Binding(nameof(DashboardBucket.Value)) { Mode = BindingMode.OneWay, StringFormat = "N2", TargetNullValue = "—" } });
+        _buckets.Columns.Add(new DataGridTextColumn { Header = "Échantillon", Width = 120,
+            Binding = new Binding(nameof(DashboardBucket.Sample)) { Mode = BindingMode.OneWay, StringFormat = "N0", TargetNullValue = "—" } });
+        _buckets.Columns.Add(new DataGridTextColumn { Header = "Unité", Width = 130,
+            Binding = new Binding(nameof(DashboardBucket.Unit)) { Mode = BindingMode.OneWay } });
         VirtualizingPanel.SetIsVirtualizing(_buckets, true); VirtualizingPanel.SetVirtualizationMode(_buckets, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(_buckets, true);
         AutomationProperties.SetName(_buckets, "Répartition complète des résultats de la requête, double-cliquer pour voir les lignes");
         return panel;
@@ -128,6 +134,7 @@ public sealed partial class QueryWorkshopView
         _previewRows.Content = "Voir les lignes retenues"; _contributionRows.Content = "Voir les contributions au calcul";
         _previewMessage.Text = message; _previewMessage.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); _previewExplanation.Text = "";
         _bucketNote.Text = ""; _bucketSummary.Text = "";
+        _explainGrid.ItemsSource = null; _explainMessage.Text = "La définition ou le relevé a changé. Demandez de nouveau l’explication du ticket.";
         _buckets.ItemsSource = null; _bucketPanel.Visibility = Visibility.Collapsed; _distributionEmpty.Visibility = Visibility.Visible; UpdateEnabled();
     }
 
@@ -143,7 +150,7 @@ public sealed partial class QueryWorkshopView
             InvalidatePreview("Calcul de la requête en cours…");
             var generation = _generation; var cancellation = new CancellationTokenSource(); _previewCancellation = cancellation; _previewRunning = true;
             _previewValue.Text = "…"; _previewSample.Text = $"Lecture de {source.Rows.Count:N0} lignes"; UpdateEnabled();
-            var task = CalculatePreviewAsync(source, settings, cities, query, generation, cancellation);
+            var task = CalculatePreviewAsync(source, settings, cities, query, generation, cancellation, RuntimeParameters());
             _pending.Add(task); _ = RemoveCompletedAsync(task);
         }
         catch (Exception error) when (error is InvalidDataException or ArgumentException)
@@ -159,7 +166,7 @@ public sealed partial class QueryWorkshopView
     }
 
     private async Task CalculatePreviewAsync(ExtractionResult source, DashboardSettings settings, CityEnrichmentResult? cities,
-        SavedQuery query, long generation, CancellationTokenSource cancellation)
+        SavedQuery query, long generation, CancellationTokenSource cancellation, IReadOnlyDictionary<string, string> parameters)
     {
         try
         {
@@ -168,7 +175,7 @@ public sealed partial class QueryWorkshopView
             {
                 var snapshot = DashboardService.Calculate(source, settings, ct: token);
                 if (cities != null) CityDetectionService.AppendDashboardProbes(snapshot, cities, token);
-                return QueryService.Evaluate(source, settings, snapshot, query, token);
+                return QueryService.Evaluate(source, settings, snapshot, query, token, parameters);
             }, token);
             if (_disposed || token.IsCancellationRequested || generation != _generation || !ReferenceEquals(source, _source) || query.Id != _selectedId) return;
             _previewResult = result; _previewSource = source; _previewQueryId = query.Id; _previewGeneration = generation;

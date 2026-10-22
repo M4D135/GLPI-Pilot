@@ -66,13 +66,20 @@ public sealed partial class BrowserService
             if (!inspection.Supported || inspection.Plans.Count != 1)
             {
                 LogNativeInspection(inspection);
+                if (inspection.Unavailable)
+                    throw new NativeExportUnavailableException("Aucune commande CSV Toutes les pages n’est identifiable sur ce tableau.");
                 throw new InvalidOperationException("L’export CSV de toutes les pages n’a pas été identifié sans ambiguïté. " + inspection.Reason + " Copie le diagnostic ; les repères d’export peuvent être mémorisés dans Réglages.");
             }
             plan = inspection.Plans[0];
         }
+        if (!custom && plan.Kind == "menu")
+            throw new NativeExportUnavailableException("Le menu d’export est présent, mais aucune option CSV Toutes les pages n’est disponible après son ouverture.");
         if (!plan.AllPages || plan.Format != "csv" || plan.Kind is not ("direct" or "form"))
             throw new InvalidOperationException("L’option Toutes les pages en CSV n’a pas été confirmée. L’export automatique s’arrête avant de récupérer seulement la page courante.");
-        var expected = settings.ExpectedTotal ?? inspection.ExpectedTotal ?? await ReadExpectedTotalAsync(table, ct);
+        var observed = inspection.ExpectedTotal ?? await ReadExpectedTotalAsync(table, ct);
+        if (settings.ExpectedTotal.HasValue && observed.HasValue && settings.ExpectedTotal != observed)
+            throw new InvalidOperationException("Le total configuré ne correspond pas au total annoncé par GLPI. Corrigez le total attendu avant d’exporter.");
+        var expected = settings.ExpectedTotal ?? observed;
         Log?.Invoke($"EXPORT · option toutes les pages CSV confirmée ; mode={plan.Kind}, total annoncé={(expected?.ToString() ?? "inconnu")}.");
         var path = await CaptureDownloadCoreAsync(table.Page!, settings.ExportFolder, async token =>
         {

@@ -13,6 +13,26 @@
              VirtualizingPanel.IsVirtualizing="True"
              VirtualizingPanel.VirtualizationMode="Recycling"
              VirtualizingPanel.ScrollUnit="Pixel">
+        <ListBox.GroupStyle>
+            <GroupStyle>
+                <GroupStyle.ContainerStyle>
+                    <Style TargetType="GroupItem">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="GroupItem">
+                                    <Expander IsExpanded="True" Margin="0,8,0,4">
+                                        <Expander.Header>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                                        </Expander.Header>
+                                        <ItemsPresenter />
+                                    </Expander>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </GroupStyle.ContainerStyle>
+            </GroupStyle>
+        </ListBox.GroupStyle>
         <ListBox.ItemTemplate>
             <DataTemplate>
                 <Border BorderBrush="{DynamicResource LineBrush}"

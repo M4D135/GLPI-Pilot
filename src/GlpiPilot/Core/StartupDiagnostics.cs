@@ -96,6 +96,7 @@ public static class StartupDiagnostics
             }
             if (chain.Count == MaximumExceptions && chain[^1].InnerException != null)
                 Append("EXCEPTION", $"Chaîne limitée aux {MaximumExceptions} premières exceptions.", critical: true);
+            Append("ACTION", RecoveryAdvice(error), critical: true);
             for (var index = 0; index < chain.Count && !_fullyLimited; index++)
             {
                 try
@@ -114,6 +115,24 @@ public static class StartupDiagnostics
                 catch (Exception) { Append("PILE", $"#{index + 1} détails structurels indisponibles.", critical: true); }
             }
         }
+    }
+
+    public static string RecoveryAdvice(Exception error)
+    {
+        var chain = new List<Exception>();
+        var seen = new HashSet<Exception>(ReferenceEqualityComparer.Instance);
+        for (Exception? current = error; current != null && chain.Count < MaximumExceptions && seen.Add(current); current = current.InnerException) chain.Add(current);
+        if (chain.Any(item => item is UnauthorizedAccessException))
+            return "Vérifiez que votre compte peut écrire dans %LOCALAPPDATA%\\GLPI-Pilot et %TEMP%, puis relancez depuis un dossier local accessible. Faites examiner ce journal si une règle du poste refuse l’accès.";
+        if (chain.Any(item => item is BadImageFormatException or DllNotFoundException or FileNotFoundException or FileLoadException))
+            return "Extrayez le pack Windows x64 complet dans un nouveau dossier local en conservant GLPI-Pilot.exe avec son dossier wad, puis lancez cet exécutable. Le pack autonome contient son runtime. Joignez le journal si le chargement reste impossible.";
+        if (chain.Any(item => item is OutOfMemoryException))
+            return "Libérez de la mémoire, fermez les applications inutilisées, puis relancez. Conservez le journal et la taille du relevé qui précédait ce démarrage.";
+        if (chain.Any(item => item is IOException))
+            return "Vérifiez l’espace disponible et les droits d’écriture des dossiers locaux. Fermez l’outil qui verrouille le fichier indiqué, puis relancez. Conservez vos préférences et ce journal avant toute réparation.";
+        if (chain.Any(item => item.GetType().Name.Contains("Xaml", StringComparison.Ordinal)))
+            return "Réextrayez le pack complet dans un nouveau dossier local pour éviter un mélange de versions, puis relancez. Joignez ce journal si la construction de l’interface échoue encore.";
+        return "Conservez ce journal et l’étape indiquée. Réessayez depuis le pack complet dans un nouveau dossier local ; transmettez le journal si le démarrage reste bloqué. Les sauvegardes de préférences se trouvent dans %LOCALAPPDATA%\\GLPI-Pilot\\Backups.";
     }
 
     private static string DefaultDirectory(bool temporary)

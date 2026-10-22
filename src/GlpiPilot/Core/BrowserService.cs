@@ -13,6 +13,7 @@ namespace GlpiPilot.Core;
 public sealed partial class BrowserService : IAsyncDisposable
 {
     private IPlaywright? _playwright;
+    private BrowserProfileLease? _profileLease;
     private IBrowserContext? _context;
     private readonly string _bridge;
     private DateTimeOffset _openedAt;
@@ -55,12 +56,12 @@ public sealed partial class BrowserService : IAsyncDisposable
             var packagedDriver = Path.Combine(AppContext.BaseDirectory, "wad");
             if (Directory.Exists(Path.Combine(packagedDriver, ".playwright")))
                 Environment.SetEnvironmentVariable("PLAYWRIGHT_DRIVER_SEARCH_PATH", packagedDriver);
-            _playwright ??= await Playwright.CreateAsync();
-            Directory.CreateDirectory(AppPaths.Profile(settings.BrowserChannel));
+            _profileLease = BrowserProfileLease.Acquire(AppPaths.Profile(settings.BrowserChannel));
             Log?.Invoke(background ? "Ouverture du navigateur en arrière-plan avec le profil réservé à GLPI Pilot." : "Ouverture du navigateur avec le profil réservé à GLPI Pilot.");
             if (background) BackgroundLaunchStateChanged?.Invoke(true);
             try
             {
+                _playwright ??= await Playwright.CreateAsync();
                 _context = await _playwright.Chromium.LaunchPersistentContextAsync(AppPaths.Profile(settings.BrowserChannel), new()
                 {
                     Channel = settings.BrowserChannel == "chrome" ? "chrome" : "msedge",
@@ -79,7 +80,19 @@ public sealed partial class BrowserService : IAsyncDisposable
                 if (BackgroundMode && _context.Pages.FirstOrDefault(p => !p.IsClosed) is { } initialPage)
                     await SetPageWindowAsync(initialPage, false, cancellationToken);
             }
-            finally { if (background) BackgroundLaunchStateChanged?.Invoke(false); }
+            catch (PlaywrightException error) when (error.Message.Contains("Singleton", StringComparison.OrdinalIgnoreCase)
+                || error.Message.Contains("profile in use", StringComparison.OrdinalIgnoreCase))
+            { throw new InvalidOperationException("Le profil GLPI Pilot est déjà utilisé par un navigateur. Fermez cette fenêtre avant de relancer l’extraction."); }
+            catch (PlaywrightException error) when (error.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase)
+                || error.Message.Contains("executable doesn't exist", StringComparison.OrdinalIgnoreCase)
+                || error.Message.Contains("distribution 'msedge' is not found", StringComparison.OrdinalIgnoreCase)
+                || error.Message.Contains("distribution 'chrome' is not found", StringComparison.OrdinalIgnoreCase))
+            { throw new InvalidOperationException("Le navigateur choisi est introuvable. Installez Edge ou Chrome, ou choisissez celui déjà présent dans Réglages."); }
+            finally
+            {
+                if (_context == null) { _profileLease?.Dispose(); _profileLease = null; }
+                if (background) BackgroundLaunchStateChanged?.Invoke(false);
+            }
             if (BackgroundMode)
                 foreach (var initialPage in _context.Pages.ToArray()) _ = KeepPageInBackgroundAsync(initialPage);
         }
@@ -100,7 +113,7 @@ public sealed partial class BrowserService : IAsyncDisposable
     {
         context.SetDefaultTimeout(10000);
         context.SetDefaultNavigationTimeout(30000);
-        context.Close += (_, _) => { if (ReferenceEquals(_context, context)) { _context = null; _activePage = null; } _downloadWaiter?.TrySetException(new InvalidOperationException("Le navigateur a été fermé.")); NotifyPagesChanged(); };
+        context.Close += (_, _) => { if (ReferenceEquals(_context, context)) { _context = null; _activePage = null; _profileLease?.Dispose(); _profileLease = null; } _downloadWaiter?.TrySetException(new InvalidOperationException("Le navigateur a été fermé.")); NotifyPagesChanged(); };
         context.Page += (_, page) => HookPage(page);
         foreach (var page in context.Pages) HookPage(page, initial: true);
     }
@@ -337,10 +350,14 @@ public sealed partial class BrowserService : IAsyncDisposable
         var customNext = settings.SelectorOrigin == table.FrameOrigin ? settings.NextSelector : "";
         try
         {
+            var originalScope = await CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
             for (var pageNo = 1; pageNo <= (followingPages ? settings.MaxPages : 1); pageNo++)
             {
                 ct.ThrowIfCancellationRequested();
                 var (frame, snapshot, _) = await ReadAsync(table, customNext, ct);
+                var currentScope = await CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
+                if (originalScope.Fingerprint.Length > 0 && currentScope.Fingerprint != originalScope.Fingerprint)
+                    throw new InvalidOperationException("La recherche, l’entité ou le profil GLPI a changé pendant la pagination. Les pages suivantes n’ont pas été mélangées au relevé initial.");
                 if (pageNo == 1)
                 {
                     result.Headers = snapshot.Headers;
@@ -350,7 +367,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                     throw new InvalidOperationException("Les colonnes ont changé pendant l’extraction.");
                 if (!signatures.Add(snapshot.Signature))
                     throw new InvalidOperationException("Une page déjà lue a été retrouvée. Arrêt pour éviter une boucle ou des doublons.");
-                if (snapshot.ExpectedTotal.HasValue && result.ExpectedTotal.HasValue && snapshot.ExpectedTotal != result.ExpectedTotal && !settings.ExpectedTotal.HasValue)
+                if (snapshot.ExpectedTotal.HasValue && result.ExpectedTotal.HasValue && snapshot.ExpectedTotal != result.ExpectedTotal)
                     throw new InvalidOperationException("Le nombre de résultats a changé pendant l’extraction. Relance la recherche avec un tri stable.");
                 foreach (var warning in snapshot.Warnings) if (!result.Warnings.Contains(warning)) result.Warnings.Add(warning);
                 for (var i = 0; i < snapshot.Rows.Count; i++)
@@ -526,5 +543,6 @@ public sealed partial class BrowserService : IAsyncDisposable
         if (context != null) { try { await context.CloseAsync(); } catch (PlaywrightException) { } }
         _playwright?.Dispose();
         _playwright = null;
+        _profileLease?.Dispose(); _profileLease = null;
     }
 }

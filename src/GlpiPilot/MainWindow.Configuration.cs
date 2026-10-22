@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using GlpiPilot.Core;
+using GlpiPilot.UI;
 using Microsoft.Win32;
 
 namespace GlpiPilot;
@@ -33,23 +34,30 @@ public partial class MainWindow
             var dialog = new OpenFileDialog { Title = "Importer une configuration GLPI Pilot", Filter = "Configuration GLPI Pilot (*.json)|*.json", CheckFileExists = true, Multiselect = false };
             if (dialog.ShowDialog(this) != true) return;
             var imported = ConfigurationTransferService.Import(dialog.FileName, _settings);
-            Directory.CreateDirectory(AppPaths.DataRoot);
-            if (File.Exists(AppPaths.SettingsFile))
-            {
-                var backupFolder = Path.Combine(AppPaths.DataRoot, "Backups"); Directory.CreateDirectory(backupFolder);
-                File.Copy(AppPaths.SettingsFile, Path.Combine(backupFolder, $"settings-before-import-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json"), overwrite: false);
-            }
-            imported.Save();
-            _settings = imported;
-            ThemeService.Apply(_settings.Theme); UpdateThemeButton();
-            LoadSettingsFields();
-            ClearResult("Configuration importée. Cliquez sur Extraire tout pour charger le relevé de cette source.", retainPrevious: false);
-            StatsText.Text = "Prêt à extraire";
-            EmptyStateTitleText.Text = "Configuration importée";
-            UpdateControls();
-            SetStatus("Configuration et widgets importés. Réglages précédents sauvegardés ; identité personnelle, session SSO et dossier d’export conservés sur ce poste.");
-            AddLog("CONFIG · import validé ; anciennes données retirées de l’aperçu ; réglages précédents sauvegardés.");
+            ReviewConfiguration(imported, "Importer la configuration");
         }
         catch (Exception ex) { ShowError(ex); }
     }
+    private void ReviewConfiguration(AppSettings imported, string title)
+    {
+        var review = new ConfigurationReviewView(_settings, imported, title);
+        review.ApplyRequested += (parts, merge) =>
+        {
+            if (_busy || _closing) return;
+            try
+            {
+                var settings = ConfigurationReview.Apply(_settings, imported, parts, merge);
+                settings.Save(); _settings = settings;
+                CloseInlinePanel(); LoadSettingsFields(); _controlCenter?.Load(_settings);
+                ApplyInterfacePreferences(); UpdateThemeButton(); ResetAutomaticSchedule();
+                ClearResult("Configuration appliquée. Cliquez sur Extraire tout pour charger le relevé de cette source.", retainPrevious: false);
+                StatsText.Text = "Prêt à extraire"; EmptyStateTitleText.Text = "Configuration appliquée"; UpdateControls();
+                SetStatus("Configuration appliquée. La version précédente est disponible dans Sources et organisation → Réglages sauvegardés.");
+                AddLog("CONFIG · sections choisies appliquées ; réglages précédents archivés, préférences locales conservées.");
+            }
+            catch (Exception error) { review.ShowError(AppPaths.SafeError(error)); }
+        };
+        ShowInlinePanel(review);
+    }
+
 }

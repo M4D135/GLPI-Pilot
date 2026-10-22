@@ -43,6 +43,21 @@ node .\run.cjs .\result-local.log
 variable, the Playwright bundled Chromium installation is used; install it
 with `npx playwright install chromium` if needed.
 
+CI can instead reuse the driver package restored by the .NET integration tests,
+without installing another Node dependency. After building `AutomationChecks`,
+run from the repository root in PowerShell:
+
+```powershell
+$driver = (Resolve-Path 'tests/AutomationChecks/bin/Release/net10.0/.playwright').Path
+$env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+$node = Join-Path $driver 'node/win32_x64/node.exe'
+& $node tests/NativeDomChecks/run.cjs result-native-dom.log
+```
+
+Keep `GLPI_TEST_CHROMIUM` set to the test browser. This option uses the exact
+Microsoft.Playwright driver version restored by the .NET project. It creates
+an ephemeral browser context and never opens the application's persistent profile.
+
 ## Run on Linux
 
 ```bash

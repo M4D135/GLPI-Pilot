@@ -19,6 +19,7 @@ public partial class MainWindow
         _citySettingsView = new CitySettingsView();
         SettingsCitiesHost.Content = _citySettingsView;
         _citySettingsView.SaveRequested += async () => await SaveCitySettingsAsync();
+        _citySettingsView.LocalCorrectionRequested += async (row, city, site) => await SaveCityCorrectionAsync(row, city, site);
         _tourPlanningView = new TourPlanningView();
         ToursHost.Content = _tourPlanningView;
         _tourPlanningView.SettingsRequested += OpenCitySettings;
@@ -58,7 +59,13 @@ public partial class MainWindow
 
     private DashboardSettings EffectiveDashboardSettings(DashboardSettings settings)
     {
-        var effective = settings.Copy();
+        var effective = IsHistoricalResult ? _historicalDocument!.Dashboard.Copy() : settings.Copy();
+        if (IsHistoricalResult)
+        {
+            // Keep today’s presentation, but replay the recorded interpretation and date.
+            effective.Layout = settings.Layout.Copy(); effective.PersonalLayout = settings.PersonalLayout.Copy();
+            effective.PersonalTechnician = settings.PersonalTechnician;
+        }
         // Inference is tied to this exact extraction. Never persist this generated
         // header or overwrite an explicitly selected GLPI city column.
         if (CitySourceIsCurrent() && _cityEnrichment!.Applied &&
@@ -71,7 +78,40 @@ public partial class MainWindow
     {
         var cities = settings.Cities.Copy();
         var dashboard = settings.Dashboard.Copy();
-        return await Task.Run(() => CityDetectionService.Enrich(source, cities, dashboard, ct), ct);
+        return await Task.Run(() =>
+        {
+            var corrections = CityOverrideStore.Load(Path.Combine(AppPaths.DataRoot, "city-overrides.json"));
+            return CityDetectionService.Enrich(source, cities, dashboard, ct, corrections.Overrides);
+        }, ct);
+    }
+
+    private async Task SaveCityCorrectionAsync(int row, string cityId, string siteId)
+    {
+        if (_busy || _closing || !CitySourceIsCurrent()) return;
+        await RunAsync("Application de la correction locale de lieu…", async ct =>
+        {
+            var source = _cityEnrichment!.Source;
+            if (row < 0 || row >= source.Rows.Count) throw new InvalidDataException("La ligne n’appartient plus au relevé actuel.");
+            if (cityId.Length > 0 && !_settings.Cities.Cities.Any(city => city.Id == cityId))
+                throw new InvalidDataException("Enregistrez d’abord cette ville dans le référentiel avant de corriger un ticket.");
+            if (siteId.Length > 0 && !_settings.Cities.Sites.Any(site => site.Id == siteId && site.CityId == cityId))
+                throw new InvalidDataException("Enregistrez d’abord le site dans la ville sélectionnée.");
+            var column = DashboardService.ResolveColumns(source.Headers, _settings.Dashboard).First(item => item.Role == "id").Index;
+            string Id(int index) => column is int position && source.Rows[index] is { } cells && position < cells.Length ? cells[position]?.Trim() ?? "" : "";
+            var ticketId = Id(row); var sourceKey = CityOverrideStore.SourceKey(source.SourceUrl);
+            if (sourceKey.Length == 0 || ticketId.Length == 0 || Enumerable.Range(0, source.Rows.Count).Count(index => Id(index) == ticketId) != 1)
+                throw new InvalidDataException("Une correction mémorisée nécessite une source GLPI et un identifiant de ticket unique dans ce relevé.");
+            var path = Path.Combine(AppPaths.DataRoot, "city-overrides.json");
+            var result = await Task.Run(() =>
+            {
+                var store = CityOverrideStore.Load(path).With(cityId.Length == 0 ? null : new CityTicketOverride { CityId = cityId, SiteId = siteId }, sourceKey, ticketId);
+                var report = CityDetectionService.Enrich(source, _settings.Cities, _settings.Dashboard, ct, store.Overrides);
+                ct.ThrowIfCancellationRequested(); store.Save(path); return report;
+            }, ct);
+            var selectedTab = MainTabs.SelectedItem; PublishCityResult(result, _settings); BuildPreview(); MainTabs.SelectedItem = selectedTab;
+            SetStatus(cityId.Length == 0 ? "Correction locale retirée ; les règles de détection sont réappliquées." : "Lieu corrigé localement. Les tableaux de bord et tournées utilisent la correction.");
+            AddLog("VILLES · correction locale " + (cityId.Length == 0 ? "retirée" : "enregistrée") + " ; aucune écriture dans GLPI.");
+        });
     }
 
     private void PublishCityResult(CityEnrichmentResult report, AppSettings settings)

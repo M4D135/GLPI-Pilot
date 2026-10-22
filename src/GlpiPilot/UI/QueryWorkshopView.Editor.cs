@@ -74,7 +74,7 @@ public sealed partial class QueryWorkshopView
         var aggregatePanel = new StackPanel { Margin = new Thickness(0, 0, 14, 0) }; Field(aggregatePanel, "Calcul", _aggregate); calculation.Children.Add(aggregatePanel);
         var valuePanel = new StackPanel(); Field(valuePanel, "Champ du calcul", _aggregateField); Grid.SetColumn(valuePanel, 1); calculation.Children.Add(valuePanel); _editorFields.Children.Add(calculation);
         _editorFields.Children.Add(_aggregateHint); Field(_editorFields, "Répartition par · facultative", _groupBy);
-        _editorFields.Children.Add(Text("Le regroupement compte les lignes retenues par catégorie. Il reste distinct d’une somme, d’une moyenne ou d’un autre calcul numérique.", 11, "MutedBrush"));
+        _editorFields.Children.Add(BuildGroupingOptions());
         Section(_editorFields, "3 · Définir les conditions", "Sans condition supplémentaire, tout le périmètre est conservé. En mode OU, une condition vraie suffit, même si une autre cellule est illisible. Une colonne requise absente rend la requête indisponible.");
         _editorFields.Children.Add(Text("Utilisez les champs sémantiques pour retrouver les colonnes configurées, ou une colonne exacte du relevé. « Est vide » et « Est renseigné » n’attendent pas de valeur. Pour les dates, vous pouvez saisir AAAA-MM-JJ ; les durées sont exprimées en jours.", 11, "MutedBrush"));
         var openConditions = Command("Définir les conditions →"); openConditions.Click += (_, _) => _sections.SelectedItem = _conditionsTab;
@@ -96,11 +96,13 @@ public sealed partial class QueryWorkshopView
         actions.Children.Add(_addCondition); actions.Children.Add(_removeCondition);
         DockPanel.SetDock(actions, Dock.Right); controls.Children.Add(actions);
         _match.Margin = new Thickness(0, 0, 12, 7); _match.ToolTip = "Combiner toutes les conditions (ET) ou accepter au moins une condition vraie (OU)";
-        controls.Children.Add(_match); header.Children.Add(controls); header.Children.Add(_conditionCount);
+        controls.Children.Add(_match); header.Children.Add(controls); header.Children.Add(_conditionCount); header.Children.Add(BuildLogicEditor());
         panel.Children.Add(header); Grid.SetRow(_conditions, 1); panel.Children.Add(_conditions);
         _conditions.Margin = new Thickness(0, 8, 0, 0);
         AutomationProperties.SetName(_conditions, "Conditions de la requête, champs opérateurs et valeurs modifiables");
-        _conditions.ToolTip = "Dates : AAAA-MM-JJ · durées : jours. Les explications complètes restent dans Définition.";
+        _conditions.ToolTip = "Dates : AAAA-MM-JJ · durées : jours. Les sources de comparaison et bornes se règlent sous la liste.";
+        panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var operands = BuildOperandEditor(); Grid.SetRow(operands, 2); panel.Children.Add(operands);
         return panel;
     }
 
@@ -127,14 +129,18 @@ public sealed partial class QueryWorkshopView
         var choices = new[]
         {
             new QueryChoice("contains", "Contient"), new QueryChoice("not-contains", "Ne contient pas"), new QueryChoice("equals", "Égal à"),
-            new QueryChoice("not-equals", "Différent de"), new QueryChoice("starts-with", "Commence par"), new QueryChoice("empty", "Est vide"), new QueryChoice("not-empty", "Est renseigné"),
+            new QueryChoice("not-equals", "Différent de"), new QueryChoice("starts-with", "Commence par"), new QueryChoice("ends-with", "Finit par"),
+            new QueryChoice("in", "Appartient à la liste"), new QueryChoice("not-in", "Hors de la liste"), new QueryChoice("empty", "Est vide"), new QueryChoice("not-empty", "Est renseigné"),
             new QueryChoice("number-eq", "Nombre égal à"), new QueryChoice("number-gt", "Nombre supérieur à"), new QueryChoice("number-gte", "Nombre supérieur ou égal à"),
             new QueryChoice("number-lt", "Nombre inférieur à"), new QueryChoice("number-lte", "Nombre inférieur ou égal à"),
+            new QueryChoice("number-between", "Nombre entre deux bornes"), new QueryChoice("number-outside", "Nombre hors intervalle"),
+            new QueryChoice("date-between", "Date entre deux bornes"), new QueryChoice("date-outside", "Date hors intervalle"),
             new QueryChoice("date-before", "Date avant le"), new QueryChoice("date-after", "Date après le"), new QueryChoice("last-days", "Dans les N derniers jours"),
             new QueryChoice("next-days", "Dans les N prochains jours"), new QueryChoice("age-at-least", "Date ancienne d’au moins N jours")
         };
         ConfigureComboColumn(_conditionFieldColumn, "Champ", nameof(ConditionRow.Field), _fields, 2);
         var operatorColumn = new DataGridComboBoxColumn(); ConfigureComboColumn(operatorColumn, "Condition", nameof(ConditionRow.Operator), choices, 2);
+        _conditions.Columns.Add(new DataGridTextColumn { Header = "N°", IsReadOnly = true, Width = 45, Binding = new Binding(nameof(ConditionRow.Number)) { Mode = BindingMode.OneWay } });
         _conditions.Columns.Add(_conditionFieldColumn); _conditions.Columns.Add(operatorColumn);
         var display = new Style(typeof(TextBlock)); display.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
         display.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(nameof(ConditionRow.Value)) { Mode = BindingMode.OneWay }));
@@ -176,7 +182,7 @@ public sealed partial class QueryWorkshopView
         {
             if (!string.IsNullOrWhiteSpace(query.BaseProbe) && _bases.All(item => item.Key != query.BaseProbe))
                 _bases.Add(new QueryChoice(query.BaseProbe, query.BaseProbe + " · sonde mémorisée"));
-            foreach (var field in query.Conditions.Select(condition => condition.Field).Concat(new[] { query.AggregateField, query.GroupBy }))
+            foreach (var field in query.Conditions.Select(condition => condition.Field).Concat(new[] { query.AggregateField, query.GroupBy, query.GroupBySecondary, query.GroupByTertiary }.Concat(query.ComputedFields.SelectMany(field => new[] { field.Field, field.OtherField }))))
                 if (!string.IsNullOrWhiteSpace(field) && _fields.All(item => item.Key != field))
                 {
                     var choice = new QueryChoice(field, field.StartsWith("column:", StringComparison.Ordinal) ? field[7..] + " · colonne mémorisée" : field + " · champ mémorisé");
@@ -232,6 +238,7 @@ public sealed partial class QueryWorkshopView
             _name.Text = query?.Name ?? ""; _description.Text = query?.Description ?? ""; _category.Text = query?.Category ?? "";
             _favorite.IsChecked = query?.Favorite ?? false;
             SetSelection(_baseProbe, query?.BaseProbe ?? "total"); SetSelection(_match, query?.Match ?? "all"); SetSelection(_aggregate, query?.Aggregate ?? "count");
+            LoadAdvancedDraft(query);
             _aggregateField.SelectedValue = query?.AggregateField ?? ""; _groupBy.SelectedValue = query?.GroupBy ?? "";
             foreach (var condition in query?.Conditions ?? new List<QueryCondition>()) AddConditionRow(new ConditionRow(condition));
             _editorTitle.Text = query == null ? "Votre première requête" : string.IsNullOrWhiteSpace(query.Name) ? "Requête sans nom" : query.Name;
@@ -262,10 +269,18 @@ public sealed partial class QueryWorkshopView
         CommitDraft();
         var selected = _conditions.SelectedItems.OfType<ConditionRow>().ToArray();
         foreach (var row in selected) { row.PropertyChanged -= ConditionChanged; _conditionRows.Remove(row); }
+        RenumberConditions();
         if (selected.Length > 0) MarkEdited();
     }
 
-    private void AddConditionRow(ConditionRow row) { row.PropertyChanged += ConditionChanged; _conditionRows.Add(row); }
+    private void AddConditionRow(ConditionRow row) { row.Number = _conditionRows.Count + 1; row.PropertyChanged += ConditionChanged; _conditionRows.Add(row); ShowLogic(); }
+    private void RenumberConditions()
+    {
+        var previous = _loading; _loading = true;
+        try { for (var index = 0; index < _conditionRows.Count; index++) _conditionRows[index].Number = index + 1; }
+        finally { _loading = previous; }
+        ShowLogic();
+    }
     private void ConditionChanged(object? sender, PropertyChangedEventArgs args) => MarkEdited();
 
     private void UpdateEnabled()
@@ -288,7 +303,7 @@ public sealed partial class QueryWorkshopView
         _aggregateHint.Text = aggregate switch
         {
             "distinct" => "Choisissez le champ dont vous souhaitez compter les valeurs distinctes.",
-            "sum" or "average" or "min" or "max" => "Choisissez un champ numérique. Seules les valeurs interprétables participent au calcul ; l’échantillon est affiché.",
+            "sum" or "average" or "min" or "max" or "median" or "percentile" => "Choisissez un champ numérique. Seules les valeurs interprétables participent au calcul ; l’échantillon est affiché.",
             "percent" => "La prévisualisation précisera la base du pourcentage et les lignes retenues.",
             _ => "Le calcul compte les lignes retenues. Le champ du calcul n’est pas utilisé."
         };
@@ -300,18 +315,23 @@ public sealed partial class QueryWorkshopView
         _widgetHint.Text = _dirty ? "Enregistrez les brouillons avant d’ajouter un widget."
             : selected == null ? "Choisissez une requête pour créer son widget."
             : "Le widget sera ajouté à la disposition active du dashboard choisi. Ajoutez un regroupement pour créer une répartition.";
+        UpdateAdvancedEnabled(allowed, selected != null);
         UpdatePreviewActions();
     }
 
     private sealed class ConditionRow : INotifyPropertyChanged
     {
-        private string _field, _operator, _value, _value2;
+        private string _field, _operator, _value, _value2, _valueSource, _value2Source;
+        private int _number;
+        public int Number { get => _number; set { if (_number == value) return; _number = value; PropertyChanged?.Invoke(this, new(nameof(Number))); } }
+        public string ValueSource { get => _valueSource; set => Set(ref _valueSource, value); }
+        public string Value2Source { get => _value2Source; set => Set(ref _value2Source, value); }
         public string Field { get => _field; set => Set(ref _field, value); }
         public string Operator { get => _operator; set => Set(ref _operator, value); }
         public string Value { get => _value; set => Set(ref _value, value); }
         public string Value2 { get => _value2; set => Set(ref _value2, value); }
         public event PropertyChangedEventHandler? PropertyChanged;
-        public ConditionRow(QueryCondition condition) { _field = condition.Field; _operator = condition.Operator; _value = condition.Value; _value2 = condition.Value2; }
+        public ConditionRow(QueryCondition condition) { _field = condition.Field; _operator = condition.Operator; _value = condition.Value; _value2 = condition.Value2; _valueSource = condition.ValueSource; _value2Source = condition.Value2Source; }
         private void Set(ref string field, string? value, [CallerMemberName] string? property = null)
         {
             value ??= ""; if (field == value) return; field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
