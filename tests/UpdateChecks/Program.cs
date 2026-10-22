@@ -1,9 +1,11 @@
 using System.IO.Compression;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GlpiPilot.Core;
+using Microsoft.Win32.SafeHandles;
 
 var root = Path.Combine(Path.GetTempPath(), "GLPI-UpdateChecks-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 const string Commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -228,6 +230,44 @@ Test("Exception during startup triggers the same verified binary rollback", () =
     var value = Prepare(); var result = UpdateService.ApplyPrepared(value, _ => throw new IOException("Synthetic startup failure"));
     Check(result.State == "rolled-back" && result.Detail.Contains("Synthetic startup failure") && UpdateService.HashFile(Path.Combine(value.InstallRoot, "GLPI-Pilot.exe")) == value.PreviousFiles["GLPI-Pilot.exe"]);
 });
+if (OperatingSystem.IsWindows())
+    Test("A transient native Windows directory lock is released before verified rollback completes", () =>
+    {
+        var value = Prepare(); SafeFileHandle? held = null; Task? release = null;
+        try
+        {
+            var result = UpdateService.ApplyPrepared(value, plan =>
+            {
+                var wad = Path.Combine(plan.InstallRoot, "wad");
+                var directoryLock = WindowsDirectoryLock.Open(wad); held = directoryLock;
+                Check(!directoryLock.IsInvalid, "Unable to hold the Windows directory: " + Marshal.GetLastPInvokeError());
+                var refused = false;
+                try { Directory.Move(wad, Path.Combine(plan.InstallRoot, "unexpectedly-moved-wad")); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException && (error.HResult & 0xffff) is 5 or 32 or 33) { refused = true; }
+                Check(refused, "The fixture directory handle did not actually prevent its rename.");
+                release = Task.Run(() =>
+                {
+                    try
+                    {
+                        // The failed EXE is moved immediately before wad. Keep
+                        // the directory locked across that first rollback attempt.
+                        var movedExe = Path.Combine(plan.InstallRoot, ".glpi-failed-" + plan.Id, "GLPI-Pilot.exe");
+                        var deadline = System.Diagnostics.Stopwatch.StartNew();
+                        while (!File.Exists(movedExe) && deadline.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(10);
+                        Thread.Sleep(500);
+                    }
+                    finally { directoryLock.Dispose(); }
+                });
+                return false;
+            });
+            release?.GetAwaiter().GetResult();
+            Check(result.State == "rolled-back", result.Detail);
+            UpdateService.VerifyInventory(value.InstallRoot, value.PreviousFiles);
+            UpdateService.VerifyInventory(value.BackupRoot, value.PreviousFiles);
+            Check(File.ReadAllText(Path.Combine(value.InstallRoot, "personal-export.csv")) == "User-owned root file");
+        }
+        finally { held?.Dispose(); release?.GetAwaiter().GetResult(); }
+    });
 Test("Changed staged or installed files are rejected before replacement", () =>
 {
     var stage = Prepare(); File.WriteAllText(Path.Combine(stage.StageRoot, "GLPI-Pilot.exe"), "tampered"); Reject<InvalidDataException>(() => UpdateService.ApplyPrepared(stage, _ => true));
@@ -311,4 +351,13 @@ sealed class FixtureHandler(Func<HttpRequestMessage, CancellationToken, Task<Htt
     public bool NoCredentials { get; private set; } = true;
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     { cancellationToken.ThrowIfCancellationRequested(); Requests.Add(request.RequestUri!.AbsoluteUri); NoCredentials &= request.Headers.Authorization == null && !request.Headers.Contains("Cookie"); return respond(request, cancellationToken); }
+}
+
+static class WindowsDirectoryLock
+{
+    // A directory handle without FILE_SHARE_DELETE reproduces the exact Windows
+    // rename refusal while allowing the fixture's ordinary reads and writes.
+    public static SafeFileHandle Open(string path) => CreateFile(path, 0x80, 3, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+    [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
 }

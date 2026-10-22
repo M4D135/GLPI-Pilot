@@ -118,6 +118,7 @@ internal sealed class WindowsUpdateFixture
                 return false;
             }, _deadline.Token);
             Require(result.State == "recovery-needed", "A lock which prevents rollback must be reported explicitly, never as a successful restoration.");
+            Require(result.Detail.Contains("Échec initial :") && result.Detail.Contains("Restauration :"), "Both the failed startup and blocked restoration must remain diagnosable.");
             UpdateService.VerifyInventory(blockedRollback.BackupRoot, blockedRollback.PreviousFiles, _deadline.Token);
             UpdateService.VerifyInventory(Path.Combine(blockedRollback.InstallRoot, ".glpi-previous-" + blockedRollback.Id), blockedRollback.PreviousFiles, _deadline.Token);
         }
@@ -157,7 +158,8 @@ internal sealed class WindowsUpdateFixture
         {
             var helper = LaunchRealHelper(plan); WaitForExit(helper, TimeSpan.FromSeconds(300));
             Require(helper.ExitCode == 1, "The missing receipt was incorrectly accepted.");
-            Require(UpdateService.ReadPrepared(plan.TransactionPath).State == "rolled-back", "The helper did not complete rollback.");
+            var applied = UpdateService.ReadPrepared(plan.TransactionPath);
+            Require(applied.State == "rolled-back", "The helper did not complete rollback: " + applied.State + ". " + UpdateService.ReadLastOutcome(Path.GetDirectoryName(plan.WorkRoot)!)?.Detail);
             UpdateService.VerifyInventory(plan.InstallRoot, plan.PreviousFiles, _deadline.Token);
             UpdateService.VerifyInventory(plan.BackupRoot, plan.PreviousFiles, _deadline.Token);
             Require(File.Exists(Path.Combine(plan.InstallRoot, "wad", "update-fixture.txt")), "A file unique to the original pack was not restored.");

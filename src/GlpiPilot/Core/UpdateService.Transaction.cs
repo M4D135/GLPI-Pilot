@@ -66,10 +66,11 @@ public static partial class UpdateService
                 // binaries underneath an application which is still running.
                 if (oldExeMoved || oldWadMoved || newExeMoved || newWadMoved) EnsureInstallNotRunning(value.InstallRoot);
                 var failed = Path.Combine(value.InstallRoot, ".glpi-failed-" + value.Id); Directory.CreateDirectory(failed);
-                if (newExeMoved && File.Exists(Path.Combine(value.InstallRoot, "GLPI-Pilot.exe"))) File.Move(Path.Combine(value.InstallRoot, "GLPI-Pilot.exe"), Path.Combine(failed, "GLPI-Pilot.exe"));
-                if (newWadMoved && Directory.Exists(Path.Combine(value.InstallRoot, "wad"))) Directory.Move(Path.Combine(value.InstallRoot, "wad"), Path.Combine(failed, "wad"));
-                if (oldExeMoved) File.Move(Path.Combine(previous, "GLPI-Pilot.exe"), Path.Combine(value.InstallRoot, "GLPI-Pilot.exe"));
-                if (oldWadMoved) Directory.Move(Path.Combine(previous, "wad"), Path.Combine(value.InstallRoot, "wad"));
+                var restoreDeadline = Stopwatch.StartNew();
+                if (newExeMoved && File.Exists(Path.Combine(value.InstallRoot, "GLPI-Pilot.exe"))) RetryRollbackMove(() => File.Move(Path.Combine(value.InstallRoot, "GLPI-Pilot.exe"), Path.Combine(failed, "GLPI-Pilot.exe")), restoreDeadline);
+                if (newWadMoved && Directory.Exists(Path.Combine(value.InstallRoot, "wad"))) RetryRollbackMove(() => Directory.Move(Path.Combine(value.InstallRoot, "wad"), Path.Combine(failed, "wad")), restoreDeadline);
+                if (oldExeMoved) RetryRollbackMove(() => File.Move(Path.Combine(previous, "GLPI-Pilot.exe"), Path.Combine(value.InstallRoot, "GLPI-Pilot.exe")), restoreDeadline);
+                if (oldWadMoved) RetryRollbackMove(() => Directory.Move(Path.Combine(previous, "wad"), Path.Combine(value.InstallRoot, "wad")), restoreDeadline);
                 VerifyInventory(value.InstallRoot, value.PreviousFiles); value.State = "rolled-back"; WriteJson(value.TransactionPath, value);
                 DeleteOwnDirectory(failed); DeleteOwnDirectory(previous);
                 return RecordOutcome(value, "rolled-back", "Installation interrompue ; le pack précédent a été restauré et vérifié. Motif : " + SafeUpdateError(error));
@@ -77,10 +78,26 @@ public static partial class UpdateService
             catch (Exception restoreError)
             {
                 value.State = "recovery-needed"; WriteJson(value.TransactionPath, value);
-                return RecordOutcome(value, "recovery-needed", "La restauration n’a pas pu se terminer. Les fichiers précédents sont conservés dans " + value.BackupRoot + ". Fermez GLPI Pilot avant de les restaurer. " + SafeUpdateError(restoreError));
+                return RecordOutcome(value, "recovery-needed", "La restauration n’a pas pu se terminer. Les fichiers précédents sont conservés dans " + value.BackupRoot + ". Fermez GLPI Pilot avant de les restaurer. Échec initial : " + SafeUpdateError(error) + " Restauration : " + SafeUpdateError(restoreError));
             }
         }
         finally { DeleteOwnDirectory(incoming); }
+    }
+    private static void RetryRollbackMove(Action move, Stopwatch deadline)
+    {
+        // WaitForExit observes the host, not every WebView descendant. Windows
+        // can still be releasing directory/file handles after that host exits.
+        // Share one ten-second budget across all rollback renames; a persistent
+        // lock or denied ACL must still retain the backup as recovery-needed.
+        while (true)
+        {
+            try { move(); return; }
+            catch (Exception error) when (OperatingSystem.IsWindows()
+                && error is IOException or UnauthorizedAccessException
+                && (error.HResult & 0xffff) is 5 or 32 or 33
+                && deadline.Elapsed < TimeSpan.FromSeconds(10))
+            { Thread.Sleep(100); }
+        }
     }
     private static void CopyInventory(string source, string target, Dictionary<string, string> files, CancellationToken ct)
     {
@@ -250,8 +267,24 @@ public static partial class UpdateService
         }
         finally
         {
-            if (!success && !process.HasExited) { process.Kill(entireProcessTree: true); if (!process.WaitForExit(5000)) throw new IOException("La nouvelle version ne s’est pas fermée ; sauvegarde conservée pour restauration."); }
+            if (!success) StopFailedHealthProcess(process);
         }
+    }
+    private static void StopFailedHealthProcess(Process process)
+    {
+        if (process.HasExited) return;
+        try
+        {
+            // Let the owned window finish its draft handshake (15 seconds),
+            // drain the bridge (5 seconds) and dispose WebView before rollback.
+            // An unresponsive or windowless child still has a bounded fallback.
+            if (process.CloseMainWindow() && process.WaitForExit(25000)) return;
+        }
+        catch (InvalidOperationException) when (process.HasExited) { return; }
+        catch (System.ComponentModel.Win32Exception) { /* Try terminating only the process started by this health probe. */ }
+        if (process.HasExited) return;
+        process.Kill(entireProcessTree: true);
+        if (!process.WaitForExit(5000)) throw new IOException("La nouvelle version ne s’est pas fermée ; sauvegarde conservée pour restauration.");
     }
     private sealed record UpdateHealth(string Nonce, int ProcessId, string Version);
     public static void AcknowledgeStartup()
