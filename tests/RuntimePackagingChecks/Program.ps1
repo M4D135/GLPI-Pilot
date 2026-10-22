@@ -51,10 +51,16 @@ try {
     $sourceCopy = Join-Path $temporary 'manifest-copy'; New-Item -ItemType Directory -Path $sourceCopy | Out-Null
     foreach ($name in @('WebView2Runtime.ps1', 'WebView2Runtime.json', 'WebView2Runtime.files.sha256')) { Copy-Item -LiteralPath (Join-Path $repository ('build-tools/' + $name)) -Destination $sourceCopy }
     $indexPath = Join-Path $sourceCopy 'WebView2Runtime.files.sha256'
-    [IO.File]::WriteAllText($indexPath, [IO.File]::ReadAllText($indexPath).Replace("`n", "`r`n"), [Text.UTF8Encoding]::new($false))
+    # The runner may already have checked out CRLF. Normalize before generating
+    # either fixture so a Windows checkout cannot turn into malformed CRCRLF.
+    $indexText = [IO.File]::ReadAllText($indexPath).Replace("`r`n", "`n")
     & {
         . (Join-Path $sourceCopy 'WebView2Runtime.ps1')
-        Check ((Get-WebView2PinnedFiles).Count -eq 257) 'Windows CRLF checkout preserves the pinned inventory digest'
+        [IO.File]::WriteAllText($indexPath, $indexText, [Text.UTF8Encoding]::new($false))
+        $lfCount = (Get-WebView2PinnedFiles).Count
+        [IO.File]::WriteAllText($indexPath, $indexText.Replace("`n", "`r`n"), [Text.UTF8Encoding]::new($false))
+        $crlfCount = (Get-WebView2PinnedFiles).Count
+        Check ($lfCount -eq 257 -and $crlfCount -eq 257) 'LF and Windows CRLF checkouts preserve the same pinned inventory digest'
         [IO.File]::AppendAllText($indexPath, 'tampered')
         Reject { Get-WebView2PinnedManifest } 'modifié' 'Tampered pinned inventory is rejected'
     }
