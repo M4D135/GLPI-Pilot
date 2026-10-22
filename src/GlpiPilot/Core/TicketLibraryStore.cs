@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 namespace GlpiPilot.Core;
 
 /// <summary>Short local transactions only. Other modules may use the same file with their own table prefix.</summary>
-public sealed class TicketLibraryStore
+public sealed partial class TicketLibraryStore
 {
     public const int SchemaVersion = 1;
     public string DatabasePath { get; }
@@ -142,18 +142,22 @@ public sealed class TicketLibraryStore
     {
         ArgumentNullException.ThrowIfNull(query);
         var q = TicketLibraryRules.Copy(query); q.Limit = Math.Clamp(q.Limit, 1, TicketLibrarySearch.MaximumPageSize); q.Offset = Math.Clamp(q.Offset, 0, 1000000);
-        var match = TicketLibrarySearch.MatchQuery(q.Text ?? "");
+        var exactId = TicketLibrarySearch.NumericIdentifier(q.Text ?? "");
+        var match = TicketLibrarySearch.MatchQuery(exactId.Length > 0 ? exactId : q.Text ?? "");
         return Run(c =>
         {
             var result = new TicketLibrarySearchResult { Offset = q.Offset, Limit = q.Limit };
             if (!string.IsNullOrWhiteSpace(q.Text) && match.Length == 0) return result;
-            var where = " WHERE ($installation='' OR t.installation=$installation) AND ($resolved=0 OR (t.status_code IN (5,6) AND t.details_current=1 AND t.detail_complete=1))";
-            if (match.Length > 0) where += " AND t.ticket_key IN (SELECT c.ticket_key FROM ticket_library_fts JOIN ticket_library_chunks c ON c.chunk_id=ticket_library_fts.rowid WHERE ticket_library_fts MATCH $match)";
-            (string, object?)[] parameters = [("$installation", q.Installation ?? ""), ("$resolved", q.ResolvedOnly ? 1 : 0), ("$match", match), ("$offset", q.Offset), ("$limit", q.Limit)];
+            var where = " WHERE ($installation='' OR t.installation=$installation) AND ($resolved=0 OR (t.status_code IN (5,6) AND t.details_current=1 AND t.detail_complete=1 AND json_extract(t.document_json,'$.confirmedContentHash')=t.content_hash AND length(json_extract(t.document_json,'$.confirmationId'))=32))";
+            // Keys contain the validated canonical installation and decimal ticket ID.
+            // Keep the source/resolution filters outside this alternative and rank before LIMIT.
+            const string exact = "($exactId<>'' AND t.ticket_key LIKE '%:ticket:' || $exactId)";
+            if (match.Length > 0) where += " AND (t.ticket_key IN (SELECT c.ticket_key FROM ticket_library_fts JOIN ticket_library_chunks c ON c.chunk_id=ticket_library_fts.rowid WHERE ticket_library_fts MATCH $match) OR " + exact + ")";
+            (string, object?)[] parameters = [("$installation", q.Installation ?? ""), ("$resolved", q.ResolvedOnly ? 1 : 0), ("$match", match), ("$exactId", exactId), ("$offset", q.Offset), ("$limit", q.Limit)];
             result.Total = ScalarLong(c, null, "SELECT COUNT(*) FROM ticket_library_tickets t" + where, parameters);
             var keys = new List<string>();
             var ranked = match.Length == 0 ? "" : "WITH hits AS MATERIALIZED (SELECT c.ticket_key,bm25(ticket_library_fts) AS score FROM ticket_library_fts JOIN ticket_library_chunks c ON c.chunk_id=ticket_library_fts.rowid WHERE ticket_library_fts MATCH $match) ";
-            var order = match.Length == 0 ? "t.title COLLATE NOCASE,t.ticket_key" : "(SELECT MIN(h.score) FROM hits h WHERE h.ticket_key=t.ticket_key),t.title COLLATE NOCASE,t.ticket_key";
+            var order = match.Length == 0 ? "t.title COLLATE NOCASE,t.ticket_key" : "CASE WHEN " + exact + " THEN 0 ELSE 1 END,(SELECT MIN(h.score) FROM hits h WHERE h.ticket_key=t.ticket_key),t.title COLLATE NOCASE,t.ticket_key";
             using (var command = Command(c, null, ranked + "SELECT t.ticket_key FROM ticket_library_tickets t" + where + " ORDER BY " + order + " LIMIT $limit OFFSET $offset", parameters))
             using (var reader = command.ExecuteReader()) while (reader.Read()) keys.Add(reader.GetString(0));
             foreach (var key in keys)
@@ -164,7 +168,12 @@ public sealed class TicketLibraryStore
                     ? "SELECT citation_json,0.0 FROM ticket_library_chunks WHERE ticket_key=$key ORDER BY json_extract(citation_json,'$.isSolution') DESC,chunk_id LIMIT 4"
                     : "SELECT c.citation_json,bm25(ticket_library_fts) FROM ticket_library_fts JOIN ticket_library_chunks c ON c.chunk_id=ticket_library_fts.rowid WHERE ticket_library_fts MATCH $match AND c.ticket_key=$key ORDER BY bm25(ticket_library_fts),c.chunk_id LIMIT 4";
                 using var citations = Command(c, null, sql, ("$key", key), ("$match", match)); using var reader = citations.ExecuteReader();
-                while (reader.Read()) { row.Citations.Add(System.Text.Json.JsonSerializer.Deserialize<TicketLibraryCitation>(reader.GetString(0), TicketLibraryRules.Json)!); row.Score = Math.Max(row.Score, Math.Clamp(-reader.GetDouble(1), 0, 1000000)); }
+                while (reader.Read())
+                {
+                    var citation = System.Text.Json.JsonSerializer.Deserialize<TicketLibraryCitation>(reader.GetString(0), TicketLibraryRules.Json)!;
+                    citation.Current = d.DetailsCurrent; citation.IsSolution &= d.DetailsCurrent && d.DetailComplete;
+                    row.Citations.Add(citation); row.Score = Math.Max(row.Score, Math.Clamp(-reader.GetDouble(1), 0, 1000000));
+                }
                 result.Rows.Add(row);
             }
             return result;
@@ -193,11 +202,13 @@ public sealed class TicketLibraryStore
                         ct.ThrowIfCancellationRequested(); var document = TicketLibraryRules.Deserialize(reader.GetString(0));
                         writer.WriteLine(TicketLibraryRules.Serialize(new { recordType = "ticket", format = SchemaVersion, document }));
                     }
-                using (var command = Command(c, snapshot, "SELECT citation_json FROM ticket_library_chunks ORDER BY ticket_key,chunk_id"))
+                using (var command = Command(c, snapshot, "SELECT c.citation_json,t.document_json FROM ticket_library_chunks c JOIN ticket_library_tickets t ON t.ticket_key=c.ticket_key ORDER BY c.ticket_key,c.chunk_id"))
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                     {
                         ct.ThrowIfCancellationRequested(); var citation = System.Text.Json.JsonSerializer.Deserialize<TicketLibraryCitation>(reader.GetString(0), TicketLibraryRules.Json)!;
+                        var owner = TicketLibraryRules.Deserialize(reader.GetString(1));
+                        citation.Current = owner.DetailsCurrent; citation.IsSolution &= owner.DetailsCurrent && owner.DetailComplete;
                         writer.WriteLine(TicketLibraryRules.Serialize(new
                         {
                             recordType = "chunk", format = SchemaVersion, citation.ChunkKey, ticketKey = citation.Key, text = citation.Excerpt,
@@ -213,21 +224,32 @@ public sealed class TicketLibraryStore
 
     private TicketLibraryWriteResult Save(SqliteConnection c, TicketLibraryDocument candidate, long? expectedRevision, CancellationToken ct)
     {
-        using var tx = c.BeginTransaction(); var current = Read(c, tx, candidate.Key);
+        using var tx = c.BeginTransaction();
+        var result = SaveCore(c, tx, candidate, expectedRevision, ct);
+        ct.ThrowIfCancellationRequested(); tx.Commit();
+        return result;
+    }
+
+    // Capture adds its local confirmation proof and diagnostic in this same short transaction.
+    private TicketLibraryWriteResult SaveCore(SqliteConnection c, SqliteTransaction tx, TicketLibraryDocument candidate,
+        long? expectedRevision, CancellationToken ct, bool queueChanges = true)
+    {
+        var current = Read(c, tx, candidate.Key);
         if (expectedRevision.HasValue && (current?.LocalRevision ?? 0) != expectedRevision.Value)
             throw new InvalidOperationException("La fiche locale a changé pendant sa lecture. Relisez son état avant de l’enregistrer.");
         var merge = TicketLibraryRules.Merge(current, candidate);
         var conflictCreated = merge.Conflict && current is not null && AddConflict(c, tx, current, candidate, merge.Outcome);
         var changed = current is null || current.ContentHash != merge.Document.ContentHash || current.DetailsCurrent != merge.Document.DetailsCurrent
+            || current.ConfirmationPending != merge.Document.ConfirmationPending || current.ConfirmedContentHash != merge.Document.ConfirmedContentHash || current.ConfirmationId != merge.Document.ConfirmationId
             || current.ReadAt != merge.Document.ReadAt || current.ReaderSignature != merge.Document.ReaderSignature;
         if (current is not null && changed) AddHistory(c, tx, current, merge.Outcome);
         merge.Document.LocalRevision = (current?.LocalRevision ?? 0) + 1;
         merge.Document.CentralRevision = current?.CentralRevision ?? 0;
         Write(c, tx, merge.Document, ct, rebuildIndex: changed);
         // Conflicting candidate content is itself pushed so that both versions reach the central history.
-        if (changed || conflictCreated) Queue(c, tx, merge.Conflict ? candidate : merge.Document);
-        ct.ThrowIfCancellationRequested(); tx.Commit();
-        return new(Read(c, null, candidate.Key)!, merge.Outcome, conflictCreated);
+        if (queueChanges && (changed || conflictCreated)) Queue(c, tx, merge.Conflict ? candidate : merge.Document);
+        ct.ThrowIfCancellationRequested();
+        return new(Read(c, tx, candidate.Key)!, merge.Outcome, conflictCreated);
     }
 
     internal Task<T> Run<T>(Func<SqliteConnection, T> operation, CancellationToken ct) => Task.Run(() =>
@@ -249,7 +271,7 @@ public sealed class TicketLibraryStore
             using (var check = Command(c, null, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ticket_library_schema'"))
                 if (Convert.ToInt64(check.ExecuteScalar(), CultureInfo.InvariantCulture) != 0 && ScalarLong(c, null, "SELECT version FROM ticket_library_schema WHERE singleton=1") != SchemaVersion)
                     throw new InvalidDataException("Version du schéma de bibliothèque non prise en charge. La base est conservée.");
-            using var tx = c.BeginTransaction(); Execute(c, tx, SchemaSql); tx.Commit();
+            using var tx = c.BeginTransaction(); Execute(c, tx, SchemaSql); Execute(c, tx, CaptureSchemaSql); tx.Commit();
             _initialized = true;
         }
     }

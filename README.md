@@ -1,4 +1,4 @@
-# GLPI Pilot 3.2.0 — Windows x64
+# GLPI Pilot 3.2.1 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -35,7 +35,21 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Nouveautés de la version 3.2.0
+## Nouveautés de la version 3.2.1
+
+**Ctrl+K retrouve les tickets conservés**, en plus des écrans et actions. Les résultats précisent leur installation GLPI, leur état et la date de lecture. Un numéro exact est prioritaire ; le filtre d’installation distingue les tickets portant le même numéro. La lecture du contenu local garde la saisie, l’écran et le relevé en cours. Les flèches et Entrée permettent de choisir, Échap rend le focus au point de départ.
+
+**Le lecteur recherche les précédents résolus du ticket.** Le moteur C# recherche dans la même installation, explique les termes et codes d’erreur communs et cite les passages exacts, avec priorité aux solutions recueillies. Les contenus partiels, périmés ou non confirmés sont exclus. Une catégorie identique seule ne suffit pas. La recherche peut être affinée manuellement et le retour garde la fiche de départ ainsi que le travail en cours. Jusqu’à huit résultats sont présentés avec les limites de la portion examinée ; aucun modèle distant n’est contacté.
+
+**Les collectes conservent leur bilan sur le poste.** Après une annulation ou un redémarrage, **Dernière collecte → Détail de la collecte** retrouve les résultats par ticket, avec filtre et pagination. **Reprendre les tickets à relire** réactualise d’abord l’index et ne relit que les fiches encore accessibles dans le même contexte. Une lecture partielle reste comptée comme telle, même lorsqu’une copie complète antérieure est conservée.
+
+La fraîcheur des nouveaux contenus reste à confirmer jusqu’au contrôle final de leur version GLPI et du périmètre. La confirmation est liée au contenu précis reçu, se synchronise avec les autres postes et ne lève pas un conflit historique. Un arrêt entre lecture et confirmation conserve les observations sans les présenter comme actuelles.
+
+**Les conflits d’équipe se comparent champ par champ**, données structurées comprises : horaires, affectations, disponibilités ou configurations. Les paires archivées sont paginées. Les valeurs absentes, nulles et vides sont distinguées ; les textes conservent leur mise en ligne. L’aperçu annonce ses limites et **Exporter les deux versions** conserve les documents complets. Une contribution créée dans l’espace d’équipe est clairement indiquée comme partageable, même en brouillon ; les notes personnelles restent dans les fiches de l’écran Tickets.
+
+Les [notes 3.2.1](docs/RELEASE-3.2.1.md) détaillent les parcours et les vérifications de cette mise à jour.
+
+### Bibliothèque et interface introduites en 3.2.0
 
 **Le style reprend directement Domenia 2** : palette bleu, violet, turquoise et rose, surfaces translucides, fond animé et transitions de navigation. Les thèmes clair/sombre, le contraste renforcé et la réduction des animations restent disponibles. **Personnaliser la navigation** permet de masquer ou épingler les pages, déplacer les entrées et réordonner leurs groupes ; Accueil et Réglages restent visibles, et la palette ouvre aussi les pages dont le raccourci est masqué. Les groupes suivent les tâches : collecter, consulter et résoudre, piloter l’équipe, travailler sur le terrain, puis administrer le logiciel.
 
@@ -166,6 +180,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.2.1](docs/RELEASE-3.2.1.md)
 - [Notes de version 3.2.0](docs/RELEASE-3.2.0.md)
 - [Notes de version 3.1.1](docs/RELEASE-3.1.1.md)
 - [Notes de version 3.1.0](docs/RELEASE-3.1.0.md)
@@ -199,7 +214,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.2.0'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.2.1'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -215,7 +230,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.2.0'
+  -OutputDirectory '.\artifacts\release-3.2.1'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

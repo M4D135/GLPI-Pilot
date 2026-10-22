@@ -30,7 +30,7 @@ public static class TicketLibraryRules
     public static bool CanSkip(TicketLibrarySeed seed, TicketLibraryDocument? stored, string readerSignature, TicketLibraryCachePolicy? policy = null)
     {
         policy ??= new();
-        if (policy.ForceRefresh || stored is null || !stored.DetailComplete || !stored.DetailsCurrent || stored.Detail is null
+        if (policy.ForceRefresh || stored is null || !stored.DetailComplete || !IsContentConfirmed(stored)
             || string.IsNullOrEmpty(readerSignature) || stored.ReaderSignature != readerSignature
             || !seed.LastModifiedReliable || !stored.Seed.LastModifiedReliable || seed.LastModifiedAt is not { } modified
             || stored.ReadAt is not { } read || seed.LastModifiedRaw.Length == 0 || stored.DetailModifiedRaw != seed.LastModifiedRaw
@@ -41,6 +41,9 @@ public static class TicketLibraryRules
         return interval > TimeSpan.Zero && read >= modified + interval + policy.SafetyMargin
             && policy.Now >= read && policy.Now - read <= policy.MaximumAge;
     }
+
+    public static bool IsContentConfirmed(TicketLibraryDocument? document) => document is { Detail: not null, DetailsCurrent: true, ConfirmationPending: false }
+        && document.ContentHash.Length == 64 && document.ConfirmedContentHash == document.ContentHash && Guid.TryParseExact(document.ConfirmationId, "N", out _);
 
     internal static TimeSpan Interval(TicketLibrarySeed seed) => seed.LastModifiedPrecision switch
     { "seconds" => TimeSpan.FromSeconds(1), "minutes" => TimeSpan.FromMinutes(1), _ => TimeSpan.Zero };
@@ -93,7 +96,11 @@ public static class TicketLibraryRules
             && detail.Sections.Count > 0 && detail.Tabs.All(t => t.Loaded) && detail.Sections.All(s => s.Data.Complete);
         document.DetailsCurrent = true;
         document.DetailModifiedRaw = seed.LastModifiedRaw; document.DetailModifiedAt = seed.LastModifiedAt; document.ReadAt = detail.ReadAt;
-        return Seal(document);
+        Seal(document);
+        // This low-level API is for an already verified read. Browser acquisition uses
+        // SaveCaptureDetailAsync, which removes this proof before persisting the body.
+        document.ConfirmationId = Guid.NewGuid().ToString("N"); document.ConfirmedContentHash = document.ContentHash;
+        return document;
     }
 
     internal static TicketLibraryDocument Seal(TicketLibraryDocument document)
@@ -142,6 +149,12 @@ public static class TicketLibraryRules
         }
         else if (document.DetailComplete || document.DetailsCurrent || document.ReadAt is not null)
             throw new InvalidDataException("La fiche déclarée n’est pas présente dans la bibliothèque.");
+        if (document.ConfirmationId is null || document.ConfirmationId.Length != 0 && !Guid.TryParseExact(document.ConfirmationId, "N", out _)
+            || document.ConfirmedContentHash is null || document.ConfirmedContentHash.Length > 64
+            || document.ConfirmationPending && (document.Detail is null || document.DetailsCurrent || document.ConfirmedContentHash.Length > 0)
+            || document.ConfirmedContentHash.Length > 0 && (!document.DetailsCurrent || document.ConfirmedContentHash != document.ContentHash || document.ConfirmationId.Length == 0)
+            || !document.DetailsCurrent && !document.ConfirmationPending && document.ConfirmationId.Length > 0)
+            throw new InvalidDataException("La confirmation ne correspond pas au contenu de bibliothèque.");
         if (Encoding.UTF8.GetByteCount(Serialize(document)) > MaximumDocumentBytes)
             throw new InvalidDataException("Une fiche de bibliothèque dépasse 8 Mio.");
         if (checkHash && document.ContentHash != Hash(document)) throw new InvalidDataException("L’empreinte du document de bibliothèque est invalide.");
@@ -180,19 +193,48 @@ public static class TicketLibraryRules
     internal static TicketLibraryDocument Deserialize(string json)
     {
         if (Encoding.UTF8.GetByteCount(json) > MaximumDocumentBytes) throw new InvalidDataException("Une fiche de bibliothèque dépasse 8 Mio.");
-        return Validate(JsonSerializer.Deserialize<TicketLibraryDocument>(json, Json) ?? throw new InvalidDataException("Fiche de bibliothèque vide."));
+        return QualifyLegacy(Validate(JsonSerializer.Deserialize<TicketLibraryDocument>(json, Json) ?? throw new InvalidDataException("Fiche de bibliothèque vide.")));
+    }
+
+    private static TicketLibraryDocument QualifyLegacy(TicketLibraryDocument document)
+    {
+        if (document.DetailsCurrent && document.ConfirmedContentHash.Length == 0)
+        {
+            // Legacy 3.2.0 bytes remain available, but its pre-final-check flag is not a v2 proof.
+            document = Copy(document); document.DetailsCurrent = false; document.ConfirmationPending = true; document.ConfirmationId = "";
+        }
+        return document;
     }
 
     internal static LibraryMerge Merge(TicketLibraryDocument? current, TicketLibraryDocument candidate)
     {
-        Validate(candidate);
+        Validate(candidate); candidate = QualifyLegacy(candidate);
+        if (current is not null) current = QualifyLegacy(current);
         if (current is null) return new(Copy(candidate), "inserted", false);
         if (current.Key != candidate.Key) throw new InvalidDataException("Les deux versions ne désignent pas le même ticket.");
         if (current.ContentHash == candidate.ContentHash)
         {
             var same = Copy(current);
-            same.DetailsCurrent = current.DetailsCurrent && candidate.DetailsCurrent;
-            if (candidate.ReadAt > current.ReadAt && candidate.DetailComplete)
+            // A final confirmation can promote only the exact body explicitly awaiting it.
+            // A false state caused by a real version conflict is never lifted by a replay.
+            var matchingConfirmation = current.ConfirmationId.Length > 0 && current.ConfirmationId == candidate.ConfirmationId
+                // A legacy copy has no attempt to supersede. A new exact-body proof
+                // received from another client may confirm it; a real conflict is not pending.
+                || current.ConfirmationPending && current.ConfirmationId.Length == 0 && IsContentConfirmed(candidate);
+            var replayPending = current.DetailsCurrent && candidate.ConfirmationPending && (matchingConfirmation || candidate.ConfirmationId.Length == 0);
+            same.DetailsCurrent = current.DetailsCurrent && candidate.DetailsCurrent || replayPending
+                || current.ConfirmationPending && candidate.DetailsCurrent && matchingConfirmation && candidate.ConfirmedContentHash == candidate.ContentHash;
+            same.ConfirmationPending = !same.DetailsCurrent && (current.ConfirmationPending && (candidate.DetailsCurrent || candidate.ConfirmationPending)
+                || current.DetailsCurrent && candidate.ConfirmationPending);
+            var useCandidateObservation = same.DetailsCurrent
+                ? candidate.DetailsCurrent && (!current.DetailsCurrent || candidate.ReadAt > current.ReadAt)
+                : same.ConfirmationPending && candidate.ConfirmationPending && candidate.ConfirmationId.Length > 0;
+            same.ConfirmationId = same.DetailsCurrent
+                ? (useCandidateObservation ? candidate.ConfirmationId : current.ConfirmationId)
+                : same.ConfirmationPending ? (candidate.ConfirmationPending && candidate.ConfirmationId.Length > 0 ? candidate.ConfirmationId : current.ConfirmationId) : "";
+            same.ConfirmedContentHash = same.DetailsCurrent
+                ? (useCandidateObservation ? candidate.ConfirmedContentHash : current.ConfirmedContentHash) : "";
+            if (useCandidateObservation)
             { same.Detail = Copy(candidate.Detail); same.ReadAt = candidate.ReadAt; same.ReaderSignature = candidate.ReaderSignature; }
             if (candidate.Seed.ObservedAt > current.Seed.ObservedAt) same.Seed.ObservedAt = candidate.Seed.ObservedAt;
             return new(same, "identical", false);
@@ -204,6 +246,7 @@ public static class TicketLibraryRules
             if (candidate.Detail is null || !candidate.DetailComplete && current.DetailComplete)
             {
                 var next = Copy(current); next.Seed = Copy(candidate.Seed); next.DetailsCurrent = false;
+                next.ConfirmationPending = false; next.ConfirmationId = ""; next.ConfirmedContentHash = "";
                 return new(Seal(next), candidate.Detail is null ? "newer-metadata" : "newer-partial-read", candidate.Detail is not null);
             }
             return new(Copy(candidate), "newer-source-version", false);
@@ -216,6 +259,7 @@ public static class TicketLibraryRules
         if (candidate.Detail is null && SameSeed(candidate.Seed, current.Seed)) return new(Copy(current), "identical", false);
         // Unknown or equal GLPI versions never use client read times to choose a winner.
         var uncertain = Copy(current); uncertain.DetailsCurrent = false;
+        uncertain.ConfirmationPending = false; uncertain.ConfirmationId = ""; uncertain.ConfirmedContentHash = "";
         return new(Seal(uncertain), version == 0 ? "same-version-different-content" : "incomparable-source-version", true);
     }
 

@@ -1,5 +1,5 @@
 import {api} from './bridge.js';
-import {el,button,icon,badge,dialog,input,empty,showError,extractionStatus} from './ui.js';
+import {el,button,icon,badge,empty,showError,extractionStatus} from './ui.js';
 import {pages as foundation} from './pages/foundation.js';
 import {pages as records} from './pages/records.js';
 import {pages as configuration} from './pages/settings.js';
@@ -10,6 +10,7 @@ import {pages as terrain} from './pages/terrain.js';
 import {pages as library} from './pages/library.js';
 import {navigationModel,navigationLabel,openNavigationEditor} from './navigation.js';
 import {initializeDomeniaMotion} from './domenia-motion.js';
+import {createCommandPalette} from './command-palette.js';
 
 const pages=[...foundation,...library,...records,...analytics,...workplace,...terrain,...automation,...configuration];
 const registry=new Map(pages.map(page=>[page.id,page]));
@@ -76,14 +77,27 @@ async function navigate(id,nextParams={},options={}){
  catch(error){if(!signal.aborted&&error.name!=='AbortError')showError(pageRoot,error);}
  finally{if(local===revision)content.removeAttribute('aria-busy');}
 }
-function commandPalette(){closeNavigation(true);const search=input('',{placeholder:'Chercher un écran ou une action…','aria-label':'Rechercher une commande'});const results=el('div',{class:'command-results'});const commands=[{label:'Personnaliser la navigation',icon:'settings',run:customizeNavigation},...pages.map(p=>({label:p.title,keywords:navigationLabel(p),icon:p.icon,run:()=>navigate(p.id)})),{label:'Trouver une solution',icon:'spark',run:()=>navigate('library',{view:'resolution'})},{label:'Espace d’équipe',icon:'users',run:()=>navigate('library',{view:'team'})},{label:'Stockage et synchronisation',icon:'folder',run:()=>navigate('library',{view:'connection'})},{label:'Charger la démonstration',icon:'spark',run:async()=>{await api.call('app.demo');navigate('dashboard');}},{label:'Importer un relevé CSV ou Excel',icon:'download',run:async()=>{await api.call('records.import');navigate('records');}},{label:'Collecter la source actuelle',icon:'refresh',run:async()=>{await api.call('collect.run');navigate('dashboard');}}];const modal=dialog('Ouvrir un espace ou lancer une action',el('div',{},search,results));const paint=()=>{const q=search.value.toLocaleLowerCase('fr');results.replaceChildren(...commands.filter(c=>(c.label+' '+(c.keywords||'')).toLocaleLowerCase('fr').includes(q)).slice(0,16).map(c=>button(c.label,async()=>{modal.close();await c.run();},{icon:c.icon})));};search.addEventListener('input',paint);search.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();results.querySelector('button')?.focus();}if(e.key==='Enter'){e.preventDefault();results.querySelector('button')?.click();}});paint();search.focus();}
+const palette=createCommandPalette({api,navigate,getPageSignal:()=>controller?.signal,notify,getCommands:()=>({
+ pages:pages.map(page=>({id:`page:${page.id}`,label:page.title,keywords:navigationLabel(page),icon:page.icon,
+  active:page.id===current,run:()=>navigate(page.id)})),
+ actions:[
+  {id:'action:navigation',label:'Personnaliser la navigation',icon:'settings',keywords:'menu groupes favoris',run:customizeNavigation},
+  {id:'action:resolution',label:'Trouver une solution',icon:'spark',keywords:'bibliothèque tickets résolus similaires',run:()=>navigate('library',{view:'resolution'})},
+  {id:'action:team',label:'Espace d’équipe',icon:'users',keywords:'partage notes contributions',run:()=>navigate('library',{view:'team'})},
+  {id:'action:connection',label:'Stockage et synchronisation',icon:'folder',keywords:'bibliothèque base locale centrale connexion',run:()=>navigate('library',{view:'connection'})},
+  {id:'action:demo',label:'Charger la démonstration',icon:'spark',run:async()=>{await api.call('app.demo');await navigate('dashboard');}},
+  {id:'action:import',label:'Importer un relevé CSV ou Excel',icon:'download',run:async()=>{await api.call('records.import');await navigate('records');}},
+  {id:'action:collect',label:'Collecter la source actuelle',icon:'refresh',run:async()=>{await api.call('collect.run');await navigate('dashboard');}}
+ ]
+})});
+function commandPalette(){closeNavigation(true);palette.toggle();}
 async function start(){
  root=document.querySelector('#app');
  if(!api.available){root.className='';root.replaceChildren(el('main',{class:'workspace'},empty('Ouvrez GLPI-Pilot.exe','Cette interface locale utilise le moteur C# de l’application Windows. Le dossier web seul ne peut pas collecter ni modifier des données.')));return;}
  try{Object.assign(state,await api.call('app.bootstrap'));applyAppearance();root.className='';root.removeAttribute('role');navigation=el('nav',{class:'nav','aria-label':'Navigation principale'});sidebar=el('aside',{class:'sidebar',id:'app-sidebar','aria-label':'Navigation principale'},el('div',{class:'brand'},el('div',{class:'brand-mark',text:'GP','aria-hidden':'true'}),el('div',{class:'brand-copy'},el('div',{class:'brand-name',text:'GLPI Pilot'}),el('div',{class:'brand-subtitle',text:'Votre espace de pilotage'})),button('Fermer',()=>closeNavigation(true),{icon:'close',attributes:{class:'button sidebar-close','aria-label':'Fermer la navigation'}})),navigation,button('Personnaliser',customizeNavigation,{icon:'settings',title:'Personnaliser la navigation',attributes:{class:'button nav-customize','aria-label':'Personnaliser la navigation'}}),el('div',{class:'sidebar-foot'},el('span',{},el('span',{class:'local-dot'}),'Interface locale'),el('span',{text:`v${state.version}`})));
  sourceLabel=badge('');pageTitle=el('h1',{text:'Accueil'});groupTitle=el('small',{text:'Espace de travail'});content=el('div',{id:'content',tabIndex:-1});statusLabel=el('span',{class:'status-text'});progress=el('progress',{hidden:true,'aria-label':'Traitement en cours'});cancel=button('Annuler',async()=>{api.cancelAll();await api.call('operations.cancel');},{icon:'close'});cancel.hidden=true;overlay=el('div',{class:'nav-overlay','aria-hidden':'true',onClick:()=>closeNavigation(true)});
  navToggle=button('Navigation',toggleNavigation,{icon:'menu',title:'Replier la navigation',attributes:{class:'button nav-toggle','aria-label':'Navigation','aria-controls':'app-sidebar','aria-expanded':'true'}});
- const topbar=el('header',{class:'topbar'},el('div',{class:'breadcrumb'},navToggle,el('span',{class:'breadcrumb-home',text:'Mon espace'}),el('span',{class:'breadcrumb-separator',text:'/','aria-hidden':'true'}),el('strong',{id:'breadcrumb-page',text:'GLPI Pilot'})),el('div',{class:'top-actions'},sourceLabel,el('button',{type:'button',class:'search-command',onClick:commandPalette,title:'Rechercher un écran ou une action (Ctrl K)','aria-label':'Rechercher un écran ou une action'},icon('search'),el('span',{text:'Rechercher'}),el('kbd',{text:'Ctrl K'})),button('Thème',()=>appearance({theme:document.documentElement.dataset.theme==='dark'?'light':'dark',preferences:{...state.settings.interface,followWindowsTheme:false}}),{icon:'sun',title:'Changer de thème',attributes:{'aria-label':'Changer de thème'}})));
+ const topbar=el('header',{class:'topbar'},el('div',{class:'breadcrumb'},navToggle,el('span',{class:'breadcrumb-home',text:'Mon espace'}),el('span',{class:'breadcrumb-separator',text:'/','aria-hidden':'true'}),el('strong',{id:'breadcrumb-page',text:'GLPI Pilot'})),el('div',{class:'top-actions'},sourceLabel,el('button',{type:'button',class:'search-command',onClick:commandPalette,title:'Rechercher un écran, une action ou un ticket (Ctrl K)','aria-label':'Rechercher un écran, une action ou un ticket'},icon('search'),el('span',{text:'Rechercher'}),el('kbd',{text:'Ctrl K'})),button('Thème',()=>appearance({theme:document.documentElement.dataset.theme==='dark'?'light':'dark',preferences:{...state.settings.interface,followWindowsTheme:false}}),{icon:'sun',title:'Changer de thème',attributes:{'aria-label':'Changer de thème'}})));
  root.replaceChildren(el('div',{class:'shell'},sidebar,topbar,el('main',{class:'workspace'},el('div',{class:'page-heading'},el('div',{},groupTitle,pageTitle,el('p',{id:'page-description'})),button('Actualiser',()=>navigate(current,params),{icon:'refresh',title:'Actualiser cet espace',attributes:{'aria-label':'Actualiser'}})),content),el('footer',{class:'statusbar'},el('span',{class:'local-dot'}),statusLabel,progress,cancel,button('Journal',openLog,{icon:'log'}),button('−',()=>changeZoom(-5),{title:'Réduire le zoom',attributes:{'aria-label':'Réduire le zoom'}}),button(`${state.settings.interfaceZoomPercent} %`,()=>changeZoom(0),{title:'Revenir à 100 %',attributes:{id:'zoom-label','aria-label':'Réinitialiser le zoom'}}),button('+',()=>changeZoom(5),{title:'Augmenter le zoom',attributes:{'aria-label':'Augmenter le zoom'}}))),overlay);
  buildNavigation();sessionChanged();await navigate('home');await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));await api.call('app.ready');document.body.dataset.ready='true';
  }catch(error){root.className='';root.replaceChildren(el('main',{class:'workspace'},empty('L’interface n’a pas pu démarrer','Le diagnostic de démarrage est disponible dans le dossier de données de GLPI Pilot.'),el('p',{class:'notice danger',text:error.message})));}
@@ -101,7 +115,11 @@ window.addEventListener('pilot:editor',event=>{modalEditor=!!event.detail;report
 window.addEventListener('focusin',reportEditor);window.addEventListener('focusout',()=>queueMicrotask(reportEditor));
 window.addEventListener('input',event=>{if(event.target.closest('.form-grid')){dirtyEditor=true;reportEditor();}});
 window.addEventListener('keydown',event=>{
- if(!state.settings||!navigation)return;
+ if(!state.settings||!navigation||event.defaultPrevented)return;
+ if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='k'){
+  event.preventDefault();if(!event.repeat)commandPalette();return;
+ }
+ if(document.querySelector('dialog[open]'))return;
  if(narrowNavigation.matches&&sidebar.classList.contains('open')&&event.key==='Tab'){
   const items=[...sidebar.querySelectorAll('button:not(:disabled),a[href]')].filter(item=>item.getClientRects().length);
   const first=items[0],last=items.at(-1);
@@ -110,8 +128,7 @@ window.addEventListener('keydown',event=>{
   return;
  }
  const typing=event.target.matches('input,textarea,select,[contenteditable=true]');
- if(event.ctrlKey&&event.key.toLowerCase()==='k'){event.preventDefault();commandPalette();}
- else if(event.key==='F11'){event.preventDefault();closeNavigation();appearance({preferences:{...state.settings.interface,focusMode:!state.settings.interface.focusMode}});}
+ if(event.key==='F11'){event.preventDefault();closeNavigation();appearance({preferences:{...state.settings.interface,focusMode:!state.settings.interface.focusMode}});}
  else if(event.ctrlKey&&['+','=','-','0'].includes(event.key)){event.preventDefault();changeZoom(event.key==='0'?0:event.key==='-'?-5:5);}
  else if(!typing&&event.key==='Escape'&&!document.querySelector('dialog[open]')){event.preventDefault();closeNavigation(true);}
 });

@@ -83,9 +83,9 @@ internal static partial class Program
         }
         async Task SelectHiddenRoute(string search, string title)
         {
-            await Button("Rechercher un écran ou une action").ClickAsync();
-            await page.GetByRole(AriaRole.Textbox, new() { Name = "Rechercher une commande", Exact = true }).FillAsync(search);
-            await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = title, Exact = true }).ClickAsync();
+            await Button("Rechercher un écran, une action ou un ticket").ClickAsync();
+            await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync(search);
+            await page.Locator(".command-palette [role=option]").Filter(new() { Has = page.GetByText(title, new() { Exact = true }) }).ClickAsync();
         }
         async Task ApplyPreferences(InterfacePreferences preferences, string? theme = null)
         {

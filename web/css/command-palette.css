@@ -1,0 +1,37 @@
+/* One compact search surface using the existing Domenia tokens. */
+dialog.command-palette { width: min(820px, calc(100vw - 32px)); max-height: min(820px, calc(100dvh - 40px)); }
+.command-palette .modal-body { padding: 0; display: flex; min-height: 0; overflow: hidden; }
+.command-palette .modal-actions:empty { display: none; }
+.command-palette-body { display: flex; flex-direction: column; min-width: 0; width: 100%; min-height: 0; }
+.command-palette-input { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.command-palette-input > .icon { flex: none; color: var(--accent); width: 22px; height: 22px; }
+.command-palette-input > input { flex: 1; min-width: 0; font-size: 16px; min-height: 42px; }
+.command-palette-scope { padding: 10px 20px; display: grid; grid-template-columns: minmax(180px, 1fr) 1fr; gap: 16px; align-items: end; border-bottom: 1px solid var(--border); }
+.command-palette-scope .field { gap: 4px; }
+.command-palette-scope select { min-height: 36px; width: 100%; }
+.command-palette-scope p { margin: 0 0 4px; }
+.command-palette-results { flex: 1; min-height: 100px; overflow-y: auto; overscroll-behavior: contain; padding: 8px; }
+.command-palette-group + .command-palette-group { margin-top: 10px; }
+.command-palette-group-title { padding: 8px 12px 5px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.command-palette-option { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 10px 12px; border: 1px solid transparent; border-radius: 9px; cursor: pointer; color: var(--text); }
+.command-palette-option > .icon { flex: none; width: 20px; height: 20px; color: var(--accent); }
+.command-palette-option[aria-selected=true] { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.command-palette-option[aria-disabled=true] { cursor: default; color: var(--muted); }
+.command-palette-option-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 3px; }
+.command-palette-option-copy > strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.command-palette-ticket-id { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.command-palette-hint, .command-palette-detail { font-size: 12px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.command-palette-current { font-size: 11px; color: var(--accent); flex: none; }
+.command-palette-status { padding: 10px 20px; margin: 0; min-height: 38px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+.command-palette-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 20px 14px; }
+.command-palette-footer > span { font-size: 12px; color: var(--muted); }
+.command-palette-empty { padding: 18px 12px; color: var(--muted); }
+.library-ticket-modal .modal-heading > h2 { overflow-wrap: anywhere; }
+:root[data-contrast=true] .command-palette-option[aria-selected=true] { border-color: currentColor; outline: 1px solid currentColor; }
+@media (max-width: 600px) {
+  dialog.command-palette { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .command-palette-input, .command-palette-scope, .command-palette-status, .command-palette-footer { padding-inline: 12px; }
+  .command-palette-scope { grid-template-columns: 1fr; gap: 6px; }
+  .command-palette-footer { flex-wrap: wrap; }
+  .command-palette-current { max-width: 65px; white-space: normal; }
+}

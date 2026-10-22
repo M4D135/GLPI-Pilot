@@ -14,15 +14,26 @@ Cette fonction suit l’architecture C# et WebView de l’application : acquisit
 
 Les paramètres de connexion restent dans `library.local.json`, dans le dossier de données de l’application. Changer le dossier de bibliothèque par l’interface utilise une sauvegarde SQLite vers un nouveau fichier ; la copie précédente est conservée. Une destination qui contient déjà une base n’est pas écrasée.
 
-### Les trois opérations
+### Collecte et synchronisation
 
 | Action | Source lue | Effet |
 |---|---|---|
 | **Aspirer tous les tickets** / **Mettre à jour le cache** | Session GLPI ouverte | Réénumération des tickets et lecture des contenus nouveaux, modifiés ou à recontrôler. |
 | **Connexion → Relire tous les contenus** | Session GLPI ouverte | Relecture forcée des contenus, même si le jeton de modification n’a pas changé. |
+| **Dernière collecte → Reprendre les tickets à relire** | Index GLPI réactualisé dans le contexte du bilan | Nouvelle tentative pour les fiches en échec, partielles ou non confirmées encore accessibles. |
 | **Synchroniser** | PostgreSQL configuré | Publication des éléments locaux en attente et récupération des versions centrales. |
 
 La synchronisation automatique concerne les échanges avec PostgreSQL. Elle ne lance pas une aspiration périodique de GLPI. Elle fonctionne pendant que GLPI Pilot est ouvert, à l’intervalle configuré, avec cinq minutes par défaut. Une opération en cours ou une édition active peut différer ce passage ; la file locale est conservée.
+
+### Comprendre le bilan et reprendre
+
+Le bloc **Dernière collecte** survit au redémarrage. **Détail de la collecte** affiche les compteurs, les limites du périmètre et les résultats ticket par ticket, par pages de 25. Le filtre **Afficher uniquement les tickets à relire** retrouve les tentatives non abouties. Les motifs restent des messages fixes sans contenu de cellule.
+
+Le journal retient jusqu’à 20 bilans, en préservant celui utilisé par une reprise en cours. Cette rotation ne supprime pas les contenus des tickets. Le journal appartient au poste ; les documents de ticket et leurs confirmations ont leur propre synchronisation.
+
+Une lecture partielle dans ce bilan décrit cet essai, même lorsqu’une ancienne fiche complète reste dans le cache. Une annulation conserve les lectures terminées et les tickets restant à traiter. Après une fermeture brutale, une tentative abandonnée est indiquée comme interrompue.
+
+La reprise est liée au contexte d’origine. Elle renouvelle l’index avant toute lecture de fiche. Les tickets qui n’apparaissent plus dans cet index sont indiqués comme absents ; leur contenu local n’est ni supprimé ni déclaré encore accessible. Changer d’installation ou de configuration rend cette reprise incompatible : lancer une nouvelle collecte depuis le contexte souhaité.
 
 ## Ce que signifie « tous les tickets »
 
@@ -48,6 +59,8 @@ Le cache peut être réutilisé si le ticket, le jeton de modification, la préc
 
 Cette politique exploite la précision réellement disponible. Elle ne garantit pas de détecter chaque modification cachée derrière le même affichage à la minute. La relecture périodique et **Relire tous les contenus** permettent la réconciliation. Si deux lectures de la même version apparente donnent des contenus différents, les deux copies restent conservées comme conflit.
 
+Une nouvelle lecture conserve d’abord le contenu avec une fraîcheur non confirmée. Le contrôle final doit confirmer la version et le périmètre pour la tentative correspondante. Cette confirmation se synchronise séparément avec les autres postes et ne relève pas un état issu d’un conflit. Les anciennes copies restent consultables ; la signature de lecture et les preuves introduites en 3.2.1 nécessitent une relecture avant leur réutilisation comme contenu confirmé. Mettre les clients d’une même base à jour pour appliquer les mêmes règles.
+
 | Situation constatée | Traitement |
 |---|---|
 | Date source plus récente, comparable | Les métadonnées nouvelles invalident la fraîcheur de l’ancien détail ; celui-ci reste disponible jusqu’à une lecture appropriée. |
@@ -59,6 +72,14 @@ Cette politique exploite la précision réellement disponible. Elle ne garantit 
 ## Recherche, résolution et corpus RAG
 
 **Bibliothèque** recherche localement dans les titres et les contenus conservés. **Résolution** limite les résultats aux tickets résolus ou clos dont le contenu est complet et courant. Une solution est signalée comme telle lorsqu’elle a été effectivement recueillie dans la rubrique correspondante. Chaque extrait garde son ticket, son installation, sa rubrique, sa ligne, son URL et sa date d’observation.
+
+**Ctrl+K** permet la même recherche depuis les autres écrans. La palette sépare écrans, actions et tickets conservés, donne priorité au numéro exact et affiche jusqu’à huit tickets. Le filtre d’installation distingue les numéros identiques de portails différents. Ouvrir un contenu conservé laisse en place la saisie, le focus de retour et le relevé ; **Ouvrir la bibliothèque filtrée** rejoint les résultats complets. Les flèches et Entrée choisissent une proposition, Échap ferme le dialogue.
+
+Depuis une fiche, la recherche de **précédents résolus** utilise les termes distinctifs du titre conservé et reste dans la même installation. Elle exclut la fiche de départ ainsi que les tickets actifs, les contenus partiels, périmés, en conflit ou non confirmés. Une correspondance automatique exige deux termes utiles communs ou un code d’erreur alphanumérique exact ; la catégorie ne fait que départager des propositions déjà pertinentes. La recherche manuelle permet de préciser le symptôme ou l’équipement, y compris avec un seul terme choisi explicitement.
+
+Les propositions expliquent les termes communs et présentent les extraits exacts conservés, en privilégiant les solutions recueillies. La lecture d’un précédent et le retour au ticket initial conservent le travail de l’écran d’origine. Un titre trop général appelle une recherche manuelle ; l’ancien contenu non confirmé du ticket source ne sert pas à enrichir automatiquement la requête. Le moteur examine au maximum 100 candidats, recontrôle jusqu’à 16 documents avec leurs preuves et restitue huit propositions au plus. L’interface indique les limites rencontrées. Cette recherche aide à retrouver une procédure à vérifier ; elle ne génère pas de solution ni de score de confiance.
+
+Dans l’écran **Tickets**, **Chercher des solutions similaires** retrouve la fiche de la bibliothèque à partir de son numéro et de son adresse GLPI validés ensemble, puis ouvre le même lecteur de précédents. Si elle n’est pas encore dans ce cache, le dialogue l’indique sans ouvrir une fiche homonyme d’une autre installation, sans lancer de collecte et sans quitter le travail en cours.
 
 Le moteur utilise l’index plein texte SQLite FTS5 et un classement BM25. Le découpage du contenu produit des passages citables de 3 000 caractères au maximum. **Exporter le corpus RAG** écrit un JSONL UTF-8 avec un manifeste de protocole, les documents et leurs passages sourcés. Il peut alimenter un autre outil de recherche ou une chaîne RAG autorisée. Cette version fournit la recherche et le corpus ; elle n’envoie pas automatiquement ces contenus à un modèle distant et ne calcule pas d’index vectoriel.
 
@@ -87,9 +108,11 @@ L’aperçu ne modifie aucun fichier local. Sa confirmation est liée à la vers
 
 Les sauvegardes précédant le remplacement d’un scénario ou l’application de données techniciens sont conservées dans `%LOCALAPPDATA%\GLPI-Pilot\SharedImports`. Elles contiennent la copie exacte du fichier local avant application. Une tournée reçue doit être rapprochée du relevé et de la configuration de villes du poste avant validation. Aucune de ces reprises n’envoie d’affectation dans GLPI ni ne déclenche l’exécution d’une tournée.
 
-Les notes restent privées jusqu’à leur publication explicite. Une fois publiées, elles sont accessibles aux lecteurs de l’espace d’équipe et de sa base centrale selon les droits accordés. La publication ne confère pas de nouveaux droits de consultation ou de modification dans GLPI.
+Les notes personnelles de l’écran **Tickets** restent privées jusqu’à leur publication explicite. Une contribution créée directement dans **Bibliothèque → Équipe** est destinée au partage dès son enregistrement, même avec l’état **Brouillon** ; cet état sert à l’organisation du travail. Une fois synchronisés, ces documents sont accessibles aux lecteurs de l’espace d’équipe et de sa base centrale selon les droits accordés. La publication ne confère pas de nouveaux droits de consultation ou de modification dans GLPI.
 
 Les modifications exigent la révision du document ouvert. Un éditeur devenu ancien ne peut pas écraser la version déjà enregistrée. La suppression d’une contribution crée une marque de suppression qui se propage aux autres clients. Les versions concurrentes sont conservées dans la base centrale et transmises aux autres postes, y compris à un troisième client arrivé plus tard ; elles ne sont pas fusionnées automatiquement.
+
+**Examiner les versions → Comparer tous les champs** détaille les différences des champs métier et des données structurées, y compris lorsque le résumé est identique. Les champs absents, valeurs nulles et textes vides sont distingués. L’aperçu peut être filtré ; il annonce ses limites. **Exporter les deux versions** conserve les deux documents entiers et leurs empreintes en JSON. Ces deux actions restent en lecture seule. Les paires plus anciennes sont accessibles par la pagination.
 
 ### Organiser les accès aux outils
 
@@ -181,7 +204,7 @@ Le cache central ou local peut conserver des tickets devenus inaccessibles dans 
 
 ## Vérifications et sources
 
-Les suites `TicketLibraryChecks`, `SharedWorkspaceChecks`, `TicketLibraryAcquisitionChecks`, `RuntimeSessionChecks` et le parcours `WebViewChecks --library-only` couvrent le stockage, les versions, le navigateur et les interactions. Le workflow exige les validations Windows et un serveur PostgreSQL 17 éphémère avant de publier les packs. Un parcours synthétique ou une CI réussie ne prouve pas la couverture d’une installation privée ; le bilan de chaque collecte conserve les limites réellement observées.
+Les suites `TicketLibraryChecks`, `TicketResolutionChecks`, `SharedWorkspaceChecks`, `TicketLibraryAcquisitionChecks`, `RuntimeSessionChecks` et les parcours `WebViewChecks --library-only`, `--palette-only`, `--library-workflows-only`, `--resolution-only` couvrent le stockage, les versions, le navigateur et les interactions. Le workflow exige les validations Windows et un serveur PostgreSQL 17 éphémère avant de publier les packs. Un parcours synthétique ou une CI réussie ne prouve pas la couverture d’une installation privée ; le bilan de chaque collecte conserve les limites réellement observées.
 
 Sources primaires utilisées pour le protocole de navigation et l’installation :
 

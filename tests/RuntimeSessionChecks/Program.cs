@@ -233,9 +233,12 @@ Add("Busy events finish one operation before announcing the next", async f =>
 });
 
 tests.AddRange(LibraryRuntimeChecks.Create());
+tests.AddRange(LibraryCaptureRuntimeChecks.Create());
 tests.AddRange(SharedOperationsRuntimeChecks.Create());
+tests.AddRange(SharedConflictRuntimeChecks.Create());
 var chromium = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM");
 if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await SessionBrowserChecks.Create(chromium));
+if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await LibraryCaptureRuntimeChecks.CreateBrowser(chromium));
 else Console.WriteLine("SKIP Chromium checks: set GLPI_TEST_CHROMIUM to a local test browser.");
 int failures = 0;
 foreach (var test in tests)
@@ -245,6 +248,7 @@ foreach (var test in tests)
 }
 Console.WriteLine($"{tests.Count - failures}/{tests.Count} Runtime session isolation and shutdown checks passed.");
 await SessionBrowserChecks.DisposeAsync();
+await LibraryCaptureRuntimeChecks.DisposeAsync();
 return failures == 0 ? 0 : 1;
 
 static void Check(bool value, string message = "Assertion failed") { if (!value) throw new InvalidOperationException(message); }

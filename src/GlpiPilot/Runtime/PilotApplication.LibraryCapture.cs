@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using GlpiPilot.Core;
+using Microsoft.Data.Sqlite;
 using Microsoft.Playwright;
 using Npgsql;
 
@@ -11,66 +12,119 @@ public sealed partial class PilotApplication
     private async Task<object?> CaptureLibraryAsync(JsonElement args, CancellationToken ct)
     {
         var mode = Text(args, "mode", 30, "incremental");
-        if (mode is not ("incremental" or "all")) throw new InvalidDataException("Mode de collecte de bibliothèque inconnu.");
+        if (mode is not ("incremental" or "all" or "retry")) throw new InvalidDataException("Mode de collecte de bibliothèque inconnu.");
         var settings = Settings.Copy(); _ = TargetUrlPolicy.Validate(settings.PortalUrl);
         var preferences = LibrarySettings.Copy(); var local = TicketLibrary;
         await local.InitializeAsync(ct).ConfigureAwait(false);
-        LibraryProgress("Lecture de l’index de tous les statuts dans les entités GLPI accessibles…");
-        var index = await Browser.ReadTicketLibraryIndexAsync(settings, Progress(), ct, preferences.SourceDateOrder).ConfigureAwait(false);
-        if (!index.AllStatuses) throw new InvalidDataException("La recherche GLPI n’a pas confirmé tous les statuts. La collecte de bibliothèque est interrompue.");
-        var read = 0; var reused = 0; var failed = 0; var partial = 0; var conflicts = 0;
-        var policy = new TicketLibraryCachePolicy { ForceRefresh = mode == "all", MaximumAge = TimeSpan.FromDays(preferences.MaxAgeDays) };
-        foreach (var seed in index.Tickets)
-        {
-            ct.ThrowIfCancellationRequested(); NormalizeLibraryDate(seed, preferences);
-            var observed = await local.ObserveSeedAsync(seed, ct).ConfigureAwait(false);
-            if (observed.ConflictCreated) conflicts++;
-            policy.Now = DateTimeOffset.UtcNow;
-            if (TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy))
-            { reused++; LibraryProgress($"Bibliothèque · {read + reused + failed}/{index.Tickets.Count} tickets · {reused} contenus réutilisés"); continue; }
-            try
-            {
-                LibraryProgress($"Lecture des contenus · {read + reused + failed + 1}/{index.Tickets.Count}");
-                var detail = await Browser.ReadTicketLibraryDetailsAsync(seed.Ticket, settings, Progress(), ct).ConfigureAwait(false);
-                var saved = await local.SaveDetailAsync(seed, detail.Detail, detail.Coverage, detail.ReaderSignature, observed.Document.LocalRevision, ct).ConfigureAwait(false);
-                read++; if (!saved.Document.DetailComplete) partial++; if (saved.ConflictCreated) conflicts++;
-            }
-            catch (Exception error) when (error is PlaywrightException or TimeoutException or InvalidDataException or InvalidOperationException)
-            {
-                // Partial successes are already committed. No ticket identifier, title or DOM value enters the general journal.
-                failed++; Log("BIBLIOTHÈQUE · une fiche n’a pas pu être conservée complètement ; elle sera proposée à la prochaine collecte.");
-            }
-        }
-        var limits = index.Limitations.ToList(); var finalScopeVerified = false;
-        // A long collection is not a transaction in GLPI. Reobserve date_mod after reading the bodies,
-        // so a ticket changed during this run cannot remain a current solution in the local search.
+        var context = LibraryCaptureContext(settings, preferences); var parentRunId = mode == "retry" ? Text(args, "runId", 32) : "";
+        var targets = mode == "retry" ? await local.CaptureRetryTargetsAsync(parentRunId, context, ct).ConfigureAwait(false) : null;
+        if (targets is { Count: 0 }) throw new InvalidOperationException("Cet essai ne contient aucune fiche à reprendre.");
+        var runId = await local.BeginCaptureAsync(context, mode, parentRunId, ct).ConfigureAwait(false);
+        var limits = new List<string>(); var finished = false; var status = "failed";
         try
         {
-            LibraryProgress("Vérification finale des dates de modification et du périmètre…");
-            var finalIndex = await Browser.ReadTicketLibraryIndexAsync(settings, Progress(), ct, preferences.SourceDateOrder).ConfigureAwait(false);
-            finalScopeVerified = finalIndex.AllStatuses && finalIndex.Complete && index.Complete && finalIndex.ScopeFingerprint == index.ScopeFingerprint;
-            foreach (var seed in finalIndex.Tickets)
-            { ct.ThrowIfCancellationRequested(); NormalizeLibraryDate(seed, preferences); await local.ObserveSeedAsync(seed, ct).ConfigureAwait(false); }
-            limits.AddRange(finalIndex.Limitations);
-            if (!finalScopeVerified) limits.Add("Le périmètre final diffère ou reste partiel. Les observations déjà conservées restent consultables ; aucune absence n’est traitée comme une suppression.");
+            LibraryProgress("Lecture de l’index de tous les statuts dans les entités GLPI accessibles…");
+            var index = await Browser.ReadTicketLibraryIndexAsync(settings, Progress(), ct, preferences.SourceDateOrder).ConfigureAwait(false);
+            if (!index.AllStatuses) throw new InvalidDataException("La recherche GLPI n’a pas confirmé tous les statuts.");
+            foreach (var seed in index.Tickets) NormalizeLibraryDate(seed, preferences);
+            await local.SetCaptureIndexAsync(runId, index, targets, ct).ConfigureAwait(false); limits.AddRange(index.Limitations);
+            var selected = targets?.Select(t => t.TicketKey).ToHashSet(StringComparer.Ordinal);
+            var tickets = index.Tickets.Where(s => selected is null || selected.Contains(TicketLibraryRules.Key(s.Ticket))).ToList();
+            var policy = new TicketLibraryCachePolicy { ForceRefresh = mode is "all" or "retry", MaximumAge = TimeSpan.FromDays(preferences.MaxAgeDays) };
+            var processed = 0; var reused = 0;
+            foreach (var seed in tickets)
+            {
+                ct.ThrowIfCancellationRequested(); var key = TicketLibraryRules.Key(seed.Ticket);
+                try
+                {
+                    var observed = await local.ObserveCaptureSeedAsync(runId, seed, ct).ConfigureAwait(false); policy.Now = DateTimeOffset.UtcNow;
+                    if (TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy))
+                    {
+                        await local.RecordCaptureReuseAsync(runId, key, ct).ConfigureAwait(false); reused++; processed++;
+                        LibraryProgress($"Bibliothèque · {processed}/{tickets.Count} tickets · {reused} contenus réutilisés"); continue;
+                    }
+                    await local.RecordCaptureReadingAsync(runId, key, ct).ConfigureAwait(false);
+                    LibraryProgress($"Lecture des contenus · {processed + 1}/{tickets.Count}");
+                    var detail = await Browser.ReadTicketLibraryDetailsAsync(seed.Ticket, settings, Progress(), ct).ConfigureAwait(false);
+                    await local.SaveCaptureDetailAsync(runId, seed, detail, observed.Document.LocalRevision, ct).ConfigureAwait(false);
+                }
+                catch (Exception error) when (IsLibraryCaptureFailure(error))
+                {
+                    // Only a fixed category enters the per-ticket journal; provider messages never reach it or the general log.
+                    await local.RecordCaptureFailureAsync(runId, key, LibraryCaptureFailureCategory(error), ct).ConfigureAwait(false);
+                    Log("BIBLIOTHÈQUE · une fiche n’a pas pu être conservée complètement ; le journal local permet de la reprendre.");
+                }
+                processed++;
+            }
+            var finalScopeVerified = false; var finalIndexRead = false;
+            // A body is durable but explicitly unconfirmed until its own GLPI version is reobserved.
+            try
+            {
+                LibraryProgress("Vérification finale des dates de modification et du périmètre…");
+                var finalIndex = await Browser.ReadTicketLibraryIndexAsync(settings, Progress(), ct, preferences.SourceDateOrder).ConfigureAwait(false);
+                finalScopeVerified = finalIndex.AllStatuses && finalIndex.Complete && index.Complete && finalIndex.ScopeFingerprint == index.ScopeFingerprint;
+                if (!finalIndex.AllStatuses || ObjectIdentity.Installation(finalIndex.SourceUrl) != context.Installation)
+                    throw new InvalidDataException("Le périmètre final ne correspond pas à cette collecte.");
+                foreach (var seed in finalIndex.Tickets)
+                {
+                    ct.ThrowIfCancellationRequested(); NormalizeLibraryDate(seed, preferences);
+                    await local.ConfirmCaptureTicketAsync(runId, seed, finalScopeVerified, ct).ConfigureAwait(false);
+                }
+                finalIndexRead = true; limits.AddRange(finalIndex.Limitations);
+                if (!finalScopeVerified) limits.Add("Le périmètre final diffère ou reste partiel. Les observations sont conservées ; aucune absence n’est traitée comme une suppression.");
+            }
+            catch (Exception error) when (IsLibraryCaptureFailure(error))
+            {
+                finalScopeVerified = false;
+                limits.Add("La vérification finale n’a pas abouti. Les contenus reçus restent consultables, avec leur état de confirmation et une reprise ciblée.");
+            }
+            await local.FinishCaptureVerificationAsync(runId, finalIndexRead, finalScopeVerified, ct).ConfigureAwait(false);
+            if (preferences.SourceTimeZone.Length == 0)
+                limits.Add("Le fuseau des dates GLPI n’est pas configuré : les dates sans décalage explicite ne permettent pas de confirmer la fraîcheur ni de réutiliser automatiquement les contenus.");
+            limits.Add("Les pièces jointes sont conservées sous forme de références et métadonnées ; leurs fichiers binaires ne sont pas téléchargés.");
+            await local.FinishCaptureAsync(runId, "completed", limits, ct).ConfigureAwait(false); finished = true;
+            var report = await local.GetCaptureAsync(runId, ct).ConfigureAwait(false);
+            Log($"BIBLIOTHÈQUE · index={report.Observed}; lus={report.Read}; cache={report.Reused}; partiels={report.Partial}; à reprendre={report.RetryCount}; versions concurrentes={report.Conflicts}.");
+            string sync = "";
+            if (preferences.PostgresEnabled)
+            {
+                try { await SynchronizeLibraryAsync(ct).ConfigureAwait(false); sync = _librarySyncLabel; }
+                catch (InvalidOperationException) { sync = _librarySyncLabel; }
+            }
+            return new
+            {
+                report.RunId, report.Message, report.Status, report.StatusLabel, report.StartedAt, report.CompletedAt, report.Mode,
+                report.Observed, report.Targeted, report.Processed, report.Read, report.Reused, report.Failed, report.Partial,
+                report.Conflicts, report.Unconfirmed, report.RetryCount, report.Scope, report.FinalScopeVerified, report.Limitations, sync
+            };
         }
-        catch (Exception error) when (error is PlaywrightException or TimeoutException or InvalidDataException or InvalidOperationException)
-        { limits.Add("La vérification finale des dates n’a pas abouti. Une nouvelle mise à jour du cache est nécessaire pour confirmer la fraîcheur après cette collecte."); }
-        if (preferences.SourceTimeZone.Length == 0)
-            limits.Add("Le fuseau des dates GLPI n’est pas configuré : les dates sans décalage explicite ne permettent pas de réutiliser automatiquement les contenus.");
-        limits.Add("Les pièces jointes sont conservées sous forme de références et métadonnées ; leurs fichiers binaires ne sont pas téléchargés.");
-        var message = $"Bibliothèque mise à jour · {index.Tickets.Count:N0} tickets observés, {read:N0} contenus lus, {reused:N0} réutilisés";
-        if (failed > 0 || partial > 0) message += $" · {failed:N0} lectures à reprendre, {partial:N0} contenus partiels";
-        Log($"BIBLIOTHÈQUE · index={index.Tickets.Count}; lus={read}; cache={reused}; partiels={partial}; à reprendre={failed}; versions concurrentes={conflicts}.");
-        string sync = "";
-        if (preferences.PostgresEnabled)
+        catch (OperationCanceledException) { status = "cancelled"; throw; }
+        catch (Exception error) when (IsLibraryCaptureFailure(error))
         {
-            try { await SynchronizeLibraryAsync(ct).ConfigureAwait(false); sync = _librarySyncLabel; }
-            catch (InvalidOperationException) { sync = _librarySyncLabel; }
+            limits.Add(TicketLibraryCaptureMessages.For(LibraryCaptureFailureCategory(error)));
+            throw new InvalidOperationException("La collecte n’a pas abouti. Son bilan local conserve les observations et les fiches à reprendre.");
         }
-        Publish("library.changed", new { captured = true });
-        return new { message, observed = index.Tickets.Count, read, reused, failed, partial, conflicts, scope = index.ScopeDescription, finalScopeVerified, limitations = limits.Distinct().ToArray(), sync };
+        finally
+        {
+            if (!finished)
+            {
+                // Cancellation of the browser must not cancel the short journal commit that makes resumption possible.
+                using var saveBudget = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                try { await local.FinishCaptureAsync(runId, status, limits, saveBudget.Token).ConfigureAwait(false); }
+                catch (Exception error) when (IsLibraryCaptureFailure(error) || error is OperationCanceledException)
+                { Log("BIBLIOTHÈQUE · le bilan sera marqué interrompu à la prochaine ouverture ; les observations déjà enregistrées restent conservées."); }
+            }
+            TicketLibraryStore.ReleaseCapture(runId);
+            Publish("library.changed", new { captured = true, runId });
+        }
     }
+    private static bool IsLibraryCaptureFailure(Exception error) => error is PlaywrightException or TimeoutException or InvalidDataException or JsonException
+        or InvalidOperationException or IOException or SqliteException or UnauthorizedAccessException;
+    private static string LibraryCaptureFailureCategory(Exception error) => error switch
+    {
+        TimeoutException => "read-timeout", PlaywrightException => "browser-unavailable", InvalidDataException or JsonException => "invalid-content",
+        SqliteException or IOException or UnauthorizedAccessException => "local-storage", _ => "local-changed"
+    };
     private static void NormalizeLibraryDate(TicketLibrarySeed seed, LibraryPreferences preferences)
     {
         if (!seed.LastModifiedReliable) { seed.LastModifiedAt = null; return; }

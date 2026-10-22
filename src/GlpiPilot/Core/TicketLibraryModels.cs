@@ -39,6 +39,12 @@ public sealed class TicketLibraryDocument
     public string ReaderSignature { get; set; } = "";
     public bool DetailComplete { get; set; }
     public bool DetailsCurrent { get; set; }
+    /// <summary>A complete/partial body received by a capture whose final index has not confirmed it yet.</summary>
+    public bool ConfirmationPending { get; set; }
+    /// <summary>The acquisition attempt; an old proof cannot confirm a later interrupted read of identical bytes.</summary>
+    public string ConfirmationId { get; set; } = "";
+    /// <summary>Confirmation applies to this exact content hash, never to a different retained conflict.</summary>
+    public string ConfirmedContentHash { get; set; } = "";
     public string DetailModifiedRaw { get; set; } = "";
     public DateTimeOffset? DetailModifiedAt { get; set; }
     public DateTimeOffset? ReadAt { get; set; }

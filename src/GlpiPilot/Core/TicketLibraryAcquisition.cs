@@ -26,5 +26,5 @@ public sealed class TicketLibraryDetailRead
 
 public static class TicketLibraryAcquisition
 {
-    public const string ReaderSignature = "glpi-browser-library-v1";
+    public const string ReaderSignature = "glpi-browser-library-v2-confirmed";
 }

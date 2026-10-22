@@ -1,6 +1,7 @@
 import { el, button, toolbar, empty, badge, input, select, field, table, dialog, confirm, formatNumber, formatDate, icon, showError } from '../ui.js';
 
 import { sharedOperationKinds, reviewSharedOperation } from './shared-operations.js';
+import { openLibraryTicket } from '../library-ticket.js';
 
 const kinds = { comment: 'Commentaire', knowledge: 'Connaissance', assignment: 'Affectation', note: 'Note', configuration: 'Configuration partagée', statistics: 'Statistiques partagées', ...sharedOperationKinds };
 const states = { open: 'Ouvert', done: 'Terminé', draft: 'Brouillon', published: 'Publié' };
@@ -14,7 +15,7 @@ const check = (label, checked = false) => {
 async function library(ctx) {
   const { root, api, signal, navigate, notify } = ctx;
   const call = (op, args = {}, options = {}) => api.call(op, args, { signal, ...options });
-  let model = await call('library.get');
+  let model = await call('library.get'), latestCapture = null;
   let view = ctx.params?.resolvedOnly ? 'resolution' : ['library', 'resolution', 'team', 'connection'].includes(ctx.params?.view) ? ctx.params.view : 'library';
   let query = text(ctx.params?.text), installation = text(ctx.params?.installation), offset = 0, searchVersion = 0;
   let operation = null, passwordInput = null, busy = false, disposed = false;
@@ -25,10 +26,11 @@ async function library(ctx) {
   const progress = el('section', { class: 'library-progress', hidden: true, role: 'status', 'aria-live': 'polite' },
     toolbar(progressText, button('Annuler le traitement', () => operation?.abort(), { icon: 'close' })), el('progress', { 'aria-label': 'Opération de bibliothèque en cours' }), progressDetail);
   const outcome = el('section', { class: 'card library-outcome', hidden: true, 'aria-label': 'Bilan de la bibliothèque' });
+  const captureSummary = el('section', { class: 'card library-outcome library-capture-summary', hidden: true, 'aria-label': 'Dernière collecte conservée' });
   root.classList.add('ticket-library');
-  root.replaceChildren(header, statistics, storage, progress, outcome, tabs, content);
+  root.replaceChildren(header, statistics, storage, progress, captureSummary, outcome, tabs, content);
   const stopProgress = api.on('operation.progress', data => { if (busy && !disposed) progressDetail.textContent = text(data.message); });
-  const stopLibrary = api.on('library.changed', () => { if (!busy && !disposed) void refreshModel().catch(error => { if (!disposed) showError(storage, error); }); });
+  const stopLibrary = api.on('library.changed', () => { if (!busy && !disposed) void Promise.all([refreshModel(), refreshCapture()]).catch(error => { if (!disposed) showError(storage, error); }); });
   const abort = () => operation?.abort(); signal?.addEventListener('abort', abort, { once: true });
 
   function action(label, handler, options = {}) {
@@ -40,20 +42,87 @@ async function library(ctx) {
     progress.hidden = !value;
   }
   async function refreshModel() { model = await call('library.get'); if (!disposed) drawSummary(); }
+  async function refreshCapture() { latestCapture = await call('library.capture.latest'); if (!disposed) drawCapture(); }
   async function perform(label, op, args = {}) {
     if (busy) return;
     operation = new AbortController(); lock(true); outcome.hidden = true; progressText.textContent = label; progressDetail.textContent = 'Les observations et les limites du traitement sont indiquées au fil de son exécution.';
     try {
       const result = await call(op, args, { signal: operation.signal });
       if (!result?.cancelled) notify(result?.message || result?.summary || 'Opération terminée.');
-      if (!disposed && result && !result.cancelled) drawOutcome(result);
-      await refreshModel();
-      if (!disposed && ['library', 'resolution', 'team'].includes(view)) await drawView();
+      if (!disposed && result && !result.cancelled && op !== 'library.capture') drawOutcome(result);
       return result;
     } catch (error) {
-      if (error?.name === 'AbortError' || error?.code === 'CANCELLED') { if (!disposed) { notify('Opération annulée.', 'info'); await refreshModel(); } return; }
+      if (error?.name === 'AbortError' || error?.code === 'CANCELLED') { if (!disposed) notify('Opération annulée. Les observations déjà enregistrées sont conservées.', 'info'); return; }
       throw error;
-    } finally { operation = null; lock(false); }
+    } finally {
+      operation = null;
+      if (!disposed && !signal?.aborted) {
+        try {
+          await Promise.all([refreshModel(), refreshCapture()]);
+          if (['library', 'resolution', 'team'].includes(view)) await drawView();
+        } catch (error) { if (!disposed) showError(storage, error); }
+      }
+      lock(false);
+    }
+  }
+  function drawCapture() {
+    captureSummary.hidden = !latestCapture;
+    if (!latestCapture) { captureSummary.replaceChildren(); return; }
+    const run = latestCapture, canRetry = run.retryCount > 0 && run.status !== 'running';
+    captureSummary.replaceChildren(el('div', { class: 'library-outcome-heading' },
+      el('div', {}, el('h3', { text: 'Dernière collecte' }),
+        el('p', { class: 'help', text: `Démarrée le ${formatDate(run.startedAt)}${run.completedAt ? ' · Terminée le ' + formatDate(run.completedAt) : ''}` })),
+      badge(run.statusLabel || 'Bilan conservé', run.status === 'completed' && !run.retryCount ? '' : 'info')),
+      el('p', { text: run.message || 'Le bilan et les observations de cette collecte sont conservés sur ce poste.' }),
+      toolbar(action('Détail de la collecte', () => showCapture(run), { icon: 'log' }),
+        canRetry ? action(`Reprendre les ${count(run.retryCount)} ticket(s) à relire`, () => retryCapture(run), { icon: 'refresh' }) : null));
+    if (run.finalScopeVerified !== true) captureSummary.append(el('p', { class: 'help', text: 'La vérification finale n’est pas confirmée. Les nouveaux contenus restent consultables ; leur fraîcheur devra être contrôlée.' }));
+    if (canRetry) captureSummary.append(el('p', { class: 'help', text: 'La reprise réactualise la liste GLPI et relit les tickets encore accessibles dans le même contexte.' }));
+  }
+  function retryCapture(run) {
+    return perform('Reprise des tickets à relire…', 'library.capture', { mode: 'retry', runId: run.runId });
+  }
+  async function showCapture(run) {
+    const request = new AbortController(), rows = el('div'), pager = el('div', { class: 'library-pagination' }),
+      summary = el('p', { class: 'help', role: 'status' }), retryOnly = check('Afficher uniquement les tickets à relire', run.retryCount > 0);
+    let offset = 0, generation = 0;
+    const body = el('div', { class: 'library-detail library-capture-detail' },
+      el('p', { text: `${run.statusLabel || 'Collecte'} · ${formatDate(run.startedAt)}` }),
+      el('dl', { class: 'library-outcome-counts' }, ...[
+        [run.observed, 'Tickets observés'], [run.read, 'Contenus lus'], [run.reused, 'Contenus réutilisés'],
+        [run.failed, 'Lectures en échec'], [run.partial, 'Lectures partielles'], [run.unconfirmed, 'Fraîcheur à confirmer']
+      ].map(([value, label]) => el('div', {}, el('dt', { text: label }), el('dd', { text: count(value) })))),
+      el('p', { class: 'help', text: 'Ce bilan décrit la tentative de lecture. Une fiche complète plus ancienne peut rester conservée lorsqu’une nouvelle lecture est partielle.' }),
+      el('p', { class: 'help', text: run.scope || '' }),
+      ...(run.limitations || []).map(value => el('p', { class: 'help', text: value })),
+      retryOnly.element, summary, rows, pager);
+    const modal = dialog('Détail et reprise de la collecte', body, run.retryCount > 0 && run.status !== 'running' ? [
+      { label: 'Reprendre les tickets à relire', primary: true, disabled: busy, action: async close => { close(); await retryCapture(run); } }
+    ] : []);
+    const close = () => modal.close();
+    signal?.addEventListener('abort', close, { once: true });
+    modal.element.addEventListener('pilot:closed', () => { request.abort(); signal?.removeEventListener('abort', close); }, { once: true });
+    async function load() {
+      const version = ++generation; rows.setAttribute('aria-busy', 'true');
+      try {
+        const response = await call('library.capture.entries', { runId: run.runId, offset, limit: 25, retryOnly: retryOnly.control.checked }, { signal: request.signal });
+        if (request.signal.aborted || version !== generation) return;
+        offset = response.offset; const items = response.items || [];
+        summary.textContent = `${count(response.total)} ticket(s)${retryOnly.control.checked ? ' à relire' : ' dans ce bilan'} · ${count(run.processed)} traité(s) sur ${count(run.targeted)} ciblé(s)`;
+        rows.replaceChildren(items.length ? table(items, [
+          { label: 'Ticket', render: item => el('span', { class: 'library-ticket-id', text: '#' + item.ticketId }) },
+          { label: 'État de la lecture', render: item => badge(item.stateLabel || 'Observation conservée', item.retryable ? 'info' : '') },
+          { label: 'Observation', render: item => el('p', { class: 'library-capture-message', text: item.message || 'Observation enregistrée.' }) },
+          { label: 'Contenu local', render: item => item.ticketKey ? button('Lire le cache', () => openTicket(item.ticketKey), { icon: 'ticket' }) : el('span', { text: '—' }) }
+        ]) : empty('Aucun ticket dans cette sélection', retryOnly.control.checked ? 'Tous les tickets de ce bilan peuvent être affichés en désactivant le filtre.' : 'Aucune lecture individuelle n’avait encore été enregistrée.'));
+        pager.replaceChildren(button('Tickets précédents', async () => { offset = Math.max(0, offset - response.limit); await load(); }, { disabled: offset === 0 }),
+          el('span', { text: `${items.length ? offset + 1 : 0}–${Math.min(response.total, offset + items.length)} sur ${count(response.total)}` }),
+          button('Tickets suivants', async () => { offset += response.limit; await load(); }, { disabled: offset + items.length >= response.total || !items.length }));
+      } catch (error) { if (!request.signal.aborted && version === generation) showError(body, error); }
+      finally { if (version === generation) rows.removeAttribute('aria-busy'); }
+    }
+    retryOnly.control.addEventListener('change', () => { offset = 0; void load(); });
+    if (signal?.aborted) modal.close(); else await load();
   }
   function drawOutcome(result) {
     const captured = Number.isFinite(result.observed);
@@ -77,17 +146,16 @@ async function library(ctx) {
   }
   function drawSummary() {
     actionButtons.splice(0, actionButtons.length, ...actionButtons.filter(entry => entry.control.isConnected));
-    const s = model.stats || {}, settings = model.settings || {};
+    const s = model.stats || {}, settings = model.settings || {}, hasTickets = s.ticketCount > 0;
     header.replaceChildren(el('section', { class: 'card library-overview' }, el('div', {},
       el('div', { class: 'library-overline' }, icon('layers'), el('span', { text: 'Votre mémoire de travail GLPI' }), badge('Stockage local', 'info')),
-      el('h2', { text: 'Collecter les tickets accessibles' }),
-      el('p', { text: 'Tous les statuts, dans les entités actives de votre session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' })),
-      toolbar(action('Aspirer tous les tickets', () => perform('Collecte des tickets et de leurs contenus…', 'library.capture', { mode: 'incremental' }), { primary: true, icon: 'download' }),
-        action('Mettre à jour le cache', () => perform('Mise à jour du cache…', 'library.capture', { mode: 'incremental' }), { icon: 'refresh' }))));
+      el('h2', { text: hasTickets ? 'Votre bibliothèque GLPI' : 'Collecter les tickets accessibles' }),
+      el('p', { text: hasTickets ? 'Retrouvez les fiches et leurs solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de votre session.' : 'Tous les statuts, dans les entités actives de votre session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' })),
+      toolbar(action(hasTickets ? 'Mettre à jour le cache' : 'Aspirer tous les tickets', () => perform(hasTickets ? 'Mise à jour du cache…' : 'Collecte des tickets et de leurs contenus…', 'library.capture', { mode: 'incremental' }), { primary: true, icon: hasTickets ? 'refresh' : 'download' }))));
     statistics.replaceChildren(...[
       [s.ticketCount, 'Tickets conservés', 'Index de la bibliothèque'],
       [s.contentCount, 'Fiches avec contenu', 'Lectures effectivement recueillies'],
-      [s.resolvedCount, 'Tickets résolus', 'Pour retrouver des précédents'],
+      [s.resolvedCount, 'Tickets résolus ou clos', 'Statut conservé dans l’index'],
       [s.conflictCount, 'Conflits à examiner', 'Versions concurrentes conservées']
     ].map(([value, label, detail]) => el('div', { class: 'library-stat' }, el('div', { class: 'library-stat-label', text: label }), el('div', { class: 'library-stat-value', text: count(value) }), el('div', { class: 'library-stat-detail', text: detail }))));
     storage.replaceChildren(el('section', { class: 'card library-storage', 'aria-label': 'Stockage et synchronisation' },
@@ -134,8 +202,8 @@ async function library(ctx) {
         offset = response.offset; const rows = response.rows || [];
         summary.textContent = `${count(response.total)} résultat(s)${resolved ? ' parmi les tickets résolus' : ''}`;
         results.replaceChildren(...rows.map(row => resultCard(row, resolved)));
-        if (!rows.length) results.append(empty(query ? 'Aucun ticket ne correspond' : resolved ? 'Aucun précédent résolu conservé' : 'Votre bibliothèque est prête à être alimentée',
-          query ? 'Essayez un numéro, un terme plus court ou une autre installation.' : 'Aspirez les tickets accessibles depuis votre session GLPI pour recueillir leur contenu.'));
+        if (!rows.length) results.append(empty(query ? 'Aucun ticket ne correspond' : resolved ? 'Aucun précédent résolu confirmé' : 'Votre bibliothèque est prête à être alimentée',
+          query ? 'Essayez un numéro, un terme plus court ou une autre installation.' : resolved ? 'Mettez à jour le cache pour recueillir et confirmer les contenus des tickets résolus ou clos. Les fiches à recontrôler restent consultables dans Bibliothèque.' : 'Aspirez les tickets accessibles depuis votre session GLPI pour recueillir leur contenu.'));
         pager.replaceChildren(button('Précédent', async () => { offset = Math.max(0, offset - response.limit); await load(); }, { disabled: offset === 0 }),
           el('span', { text: `${response.total ? offset + 1 : 0}–${Math.min(response.total, offset + rows.length)} sur ${count(response.total)}` }),
           button('Suivant', async () => { offset += response.limit; await load(); }, { disabled: offset + response.limit >= response.total }));
@@ -154,7 +222,7 @@ async function library(ctx) {
         row.conflicts ? el('p', { class: 'library-conflict', text: `${count(row.conflicts)} version(s) concurrente(s) conservée(s). La synchronisation ne les fusionne pas silencieusement.` }) : null),
       el('div', { class: 'library-result-actions' }, button('Lire le contenu conservé', () => openTicket(row.key), { icon: 'ticket' }),
         button('Ouvrir dans GLPI', () => call('library.open', { key: row.key }), { icon: 'arrow' }),
-        button('Ajouter une note', () => editWorkspace({ kind: 'note', ticketKey: row.key, title: 'Ticket ' + row.ticket.id, body: '', status: 'draft' }, 'Ticket ' + row.ticket.id)),
+        button('Ajouter une note d’équipe', () => editWorkspace({ kind: 'note', ticketKey: row.key, title: 'Ticket ' + row.ticket.id, body: '', status: 'draft' }, 'Ticket ' + row.ticket.id)),
         row.conflicts ? button('Examiner les versions', () => showConflicts('library.conflicts', { key: row.key }, true)) : null));
     if (citations.length) node.append(el('div', { class: 'library-solution' },
       el('div', { class: 'library-solution-heading' }, icon(resolved ? 'check' : 'search'), el('span', { text: resolved ? 'Extraits sourcés de ce ticket résolu' : 'Extraits recueillis' })),
@@ -163,43 +231,7 @@ async function library(ctx) {
         el('p', { class: 'library-evidence', text: `Ticket ${citation.ticket?.id || row.ticket.id} · ${citation.section || 'Fiche GLPI'} · Observé le ${formatDate(citation.observedAt)}${citation.current === false ? ' · Observation à recontrôler' : ''}` })))));
     return node;
   }
-  async function openTicket(key) {
-    const document = await call('library.ticket', { key });
-    const seed = document.seed || document, detail = document.detail;
-    const body = el('div', { class: 'library-detail' },
-      el('dl', { class: 'library-detail-summary' }, ...[
-        ['Installation', document.installation], ['État', seed.status || 'Non recueilli'],
-        ['Dernière modification GLPI', seed.lastModifiedRaw || formatDate(seed.lastModifiedAt)], ['Lecture du contenu', formatDate(detail?.readAt)],
-        ['Source', seed.ticket?.url || detail?.ticket?.url], ['Fraîcheur', document.detailsCurrent && document.detailComplete ? 'Contenu à jour' : 'Contenu partiel ou à recontrôler']
-      ].map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: value || '—' })))),
-      document.conflicts ? el('p', { class: 'library-conflict', text: 'Plusieurs versions de cette fiche sont conservées. Leur coexistence reste signalée tant que le conflit n’est pas résolu.' }) : null,
-      ...(detail?.warnings || []).map(warning => el('p', { class: 'help', text: warning })),
-      ...(document.coverage?.limitations || []).map(limitation => el('p', { class: 'help', text: limitation })));
-    if (!detail?.sections?.length) body.append(empty('Aucun contenu recueilli', 'La prochaine mise à jour du cache tentera de lire cette fiche et ses onglets de consultation.'));
-    for (const section of detail?.sections || []) {
-      const data = section.data || {};
-      const rows = data.rows || [], rowsHost = el('div'); let page = 0, rendered = false;
-      const drawRows = () => {
-        rendered = true;
-        rowsHost.replaceChildren(...rows.slice(page * 50, (page + 1) * 50).map(row => el('div', { class: 'library-detail-row' }, ...row.map((value, index) => el('div', {},
-          data.headers?.[index] ? el('span', { class: 'help', text: data.headers[index] }) : null, el('pre', { class: 'library-detail-text', text: value ?? '' }))))));
-        if (rows.length > 50) rowsHost.append(el('div', { class: 'library-pagination' },
-          button('Lignes précédentes', () => { page--; drawRows(); }, { disabled: page === 0 }),
-          el('span', { text: `${page * 50 + 1}–${Math.min(rows.length, (page + 1) * 50)} sur ${count(rows.length)}` }),
-          button('Lignes suivantes', () => { page++; drawRows(); }, { disabled: (page + 1) * 50 >= rows.length })));
-      };
-      const disclosure = el('details', { class: 'library-detail-section', open: detail.sections.length === 1 },
-        el('summary', { text: `${section.name || section.tabName || 'Rubrique recueillie'} · ${count(rows.length)} ligne(s)` }), rowsHost,
-        data.complete === false ? el('p', { class: 'help', text: 'Exhaustivité de cette rubrique non confirmée.' }) : null);
-      disclosure.addEventListener('toggle', () => { if (disclosure.open && !rendered) drawRows(); });
-      if (disclosure.open) drawRows();
-      body.append(disclosure);
-    }
-    dialog(`Ticket ${seed.ticket?.id || detail?.ticket?.id || ''} · ${seed.title || detail?.title || 'Contenu conservé'}`, body, [
-      { label: 'Copier la référence', action: () => call('app.copy', { text: seed.ticket?.url || detail?.ticket?.url || '' }) },
-      { label: 'Ouvrir dans GLPI', action: () => call('library.open', { key }) }
-    ]);
-  }
+  function openTicket(key) { return openLibraryTicket({ api, signal }, key); }
   function drawSettings() {
     const settings = model.settings || {};
     const controls = {
@@ -316,7 +348,9 @@ async function library(ctx) {
     const fields = el('form', { class: 'form-grid', onSubmit: event => event.preventDefault() }, field('Type', kind), field('Titre', title), field('Texte de la contribution', body), field('Affecté à', assignee), field('État', status));
     const update = () => { const previous = status.value || item.status; const choices = kind.value === 'assignment' ? ['open', 'done'] : ['draft', 'published']; if (item.id && states[previous] && !choices.includes(previous)) choices.push(previous); status.replaceChildren(...choices.map(value => el('option', { value, text: states[value] }))); status.value = choices.includes(previous) ? previous : choices[0]; assignee.disabled = kind.value !== 'assignment'; };
     kind.addEventListener('change', update); update();
-    dialog(item.id ? 'Modifier la contribution' : 'Ajouter une contribution', el('div', {}, item.ticketKey ? el('p', { class: 'help', text: ticketLabel || 'Contribution liée à un ticket de la bibliothèque.' }) : null, fields), [
+    dialog(item.id ? 'Modifier la contribution' : 'Ajouter une contribution', el('div', {},
+      el('p', { class: 'notice', text: 'Destination : espace d’équipe. Cette contribution, même en brouillon, sera partagée lors de la synchronisation. Les notes personnelles se rédigent dans les fiches de l’écran Tickets.' }),
+      item.ticketKey ? el('p', { class: 'help', text: ticketLabel || 'Contribution liée à un ticket de la bibliothèque.' }) : null, fields), [
       { label: 'Enregistrer la contribution', primary: true, action: async close => {
         if (!fields.reportValidity()) return;
         await call('workspace.save', { item: { id: item.id, kind: kind.value, title: title.value, body: body.value, ticketKey: item.ticketKey || '', assignee: kind.value === 'assignment' ? assignee.value : '', status: status.value }, expectedRevision: item.revision });
@@ -331,17 +365,68 @@ async function library(ctx) {
     } }]);
   }
   async function showConflicts(op, args, tickets) {
-    const response = await call(op, args), conflicts = Array.isArray(response) ? response : response.items || [];
     const body = el('div', { class: 'library-detail' }, el('p', { class: 'help', text: 'Les deux versions restent conservées. Comparez leurs observations avant de relire le ticket ou d’enregistrer une nouvelle contribution.' }));
+    const versions = el('div'), pager = el('div', { class: 'library-pagination' }), previousOffsets = []; let offset = 0;
+    body.append(versions, pager);
     const documentText = document => tickets ? (document.detail?.sections || []).map(section => `${section.name}\n${(section.data?.rows || []).map(row => row.join('\n')).join('\n\n')}`).join('\n\n') : document.body;
-    for (const conflict of conflicts) body.append(el('details', { class: 'library-detail-section', open: conflicts.length === 1 },
-      el('summary', { text: `${formatDate(conflict.recordedAt)} · ${conflict.reason || 'Versions concurrentes'}` }),
+    const reasons = { 'concurrent-edit': 'Modifications concurrentes', 'same-version-different-content': 'Contenus différents pour la même version GLPI',
+      'incomparable-source-version': 'Versions GLPI non comparables', 'older-source-version': 'Ancienne version conservée', 'newer-partial-read': 'Nouvelle lecture partielle' };
+    async function load() {
+    const response = await call(op, { ...args, offset, limit: 5 }), conflicts = Array.isArray(response) ? response : response.items || [];
+    versions.replaceChildren();
+    for (const conflict of conflicts) versions.append(el('details', { class: 'library-detail-section', open: conflicts.length === 1 },
+      el('summary', { text: `${formatDate(conflict.recordedAt)} · ${reasons[conflict.reason] || 'Versions concurrentes'}` }),
+      !tickets ? toolbar(button('Comparer tous les champs', () => compareWorkspaceConflict(args.id, conflict.id), { icon: 'table' }),
+        button('Exporter les deux versions', () => exportWorkspaceConflict(args.id, conflict.id), { icon: 'download' })) : null,
       el('div', { class: 'library-conflict-pair' }, ...[['Version retenue', conflict.current], ['Version concurrente conservée', conflict.incoming]].map(([label, version]) =>
         el('section', {}, el('h3', { text: label }), el('p', { class: 'help', text: tickets ? `Modification GLPI : ${version.seed?.lastModifiedRaw || 'Non recueillie'} · Lecture : ${formatDate(version.readAt)}` : `${version.author || 'Auteur non précisé'} · ${formatDate(version.updatedAt)}` }),
           el('pre', { class: 'library-detail-text', text: documentText(version) || 'Aucun contenu recueilli.' }),
           button('Copier ce texte', () => call('app.copy', { text: documentText(version) || '' })))))));
-    if (!conflicts.length) body.append(empty('Aucune version concurrente disponible', 'Actualisez la bibliothèque pour retrouver son état courant.'));
+    if (!conflicts.length) versions.append(empty('Aucune version concurrente disponible', 'Actualisez la bibliothèque pour retrouver son état courant.'));
+    pager.replaceChildren();
+    if (!tickets && response.total > conflicts.length) pager.append(
+      button('Versions précédentes', async () => { offset = previousOffsets.pop() ?? 0; await load(); }, { disabled: offset === 0 }),
+      el('span', { text: `${response.total ? offset + 1 : 0}–${Math.min(response.total, offset + conflicts.length)} sur ${count(response.total)}` }),
+      button('Versions suivantes', async () => { previousOffsets.push(offset); offset += conflicts.length; await load(); }, { disabled: !conflicts.length || offset + conflicts.length >= response.total }));
+    }
+    await load();
     dialog('Versions conservées', body);
+  }
+  async function exportWorkspaceConflict(id, conflictId) {
+    const result = await call('workspace.conflict.export', { id, conflictId });
+    if (!result.cancelled) notify('Les deux versions complètes ont été exportées : ' + result.path);
+  }
+  async function compareWorkspaceConflict(id, conflictId) {
+    const review = await call('workspace.conflict.compare', { id, conflictId });
+    const comparison = review.comparison, fields = el('div'), pager = el('div', { class: 'library-pagination' }); let offset = 0;
+    const search = input('', { type: 'search', placeholder: 'Filtrer les champs ou les valeurs…', 'aria-label': 'Filtrer les différences des versions' });
+    const labels = { kind: 'Type', title: 'Titre', body: 'Texte', ticketKey: 'Ticket', assignee: 'Intervenant', status: 'État', author: 'Auteur', deleted: 'Retrait',
+      payload: 'Données', installation: 'Installation GLPI', tour: 'Tournée', scenario: 'Répartition', assignments: 'Propositions', technicians: 'Techniciens',
+      skills: 'Compétences', sectors: 'Secteurs', capacity: 'Capacité', availability: 'Disponibilités', exceptions: 'Exceptions', estimates: 'Estimations',
+      minutes: 'Durée en minutes', start: 'Début', end: 'Fin', date: 'Date', category: 'Catégorie', name: 'Nom', ticket: 'Ticket', notes: 'Notes' };
+    const fieldLabel = path => path.split('/').slice(1).map(part => { const key = part.replace(/~1/g, '/').replace(/~0/g, '~'); return labels[key] || key; }).join(' › ');
+    const value = (row, side) => {
+      const type = row[side + 'Type'], raw = row[side];
+      const shown = !type ? 'Champ absent' : type === 'null' ? 'Valeur nulle' : type === 'text' && raw === '' ? 'Texte vide' : type === 'boolean' ? (raw === 'true' ? 'Oui' : 'Non') : raw;
+      return el('div', {}, el('pre', { class: 'library-detail-text', text: shown }), row.truncated ? el('span', { class: 'help', text: 'Aperçu limité ; valeur entière dans l’export.' }) : null);
+    };
+    function paint() {
+      const query = search.value.toLocaleLowerCase('fr');
+      const rows = comparison.differences.filter(row => (row.path + ' ' + (row.current ?? '') + ' ' + (row.incoming ?? '')).toLocaleLowerCase('fr').includes(query));
+      fields.replaceChildren(table(rows.slice(offset, offset + 50), [
+        { label: 'Champ', render: row => el('div', {}, el('strong', { text: fieldLabel(row.path) }), el('code', { class: 'library-field-path', text: row.path }), el('span', { class: 'help', text: { added: 'Ajouté', removed: 'Retiré', changed: 'Modifié' }[row.change] || row.change })) },
+        { label: 'Version retenue', render: row => value(row, 'current') }, { label: 'Version concurrente', render: row => value(row, 'incoming') }
+      ]));
+      pager.replaceChildren(button('Différences précédentes', () => { offset = Math.max(0, offset - 50); paint(); }, { disabled: offset === 0 }),
+        el('span', { text: `${rows.length ? offset + 1 : 0}–${Math.min(rows.length, offset + 50)} sur ${count(rows.length)}` }),
+        button('Différences suivantes', () => { offset += 50; paint(); }, { disabled: offset + 50 >= rows.length }));
+    }
+    search.addEventListener('input', () => { offset = 0; paint(); }); paint();
+    dialog('Comparer les versions de la contribution', el('div', { class: 'library-detail library-version-comparison' },
+      el('p', { text: `${comparison.scanComplete ? '' : 'Au moins '}${count(comparison.differencesTotal)} différence(s) dans les champs et données conservés.` }),
+      el('p', { class: 'help', text: 'Comparaison en lecture seule des deux versions archivées. Les horaires, affectations, configurations et autres données structurées sont inclus.' }),
+      comparison.truncated ? el('p', { class: 'notice', text: 'L’aperçu est limité en nombre de champs ou en longueur. Exportez les deux versions pour examiner leurs contenus entiers.' }) : null,
+      search, fields, pager), [{ label: 'Exporter les deux versions complètes', action: () => exportWorkspaceConflict(id, conflictId) }]);
   }
   async function previewConfiguration(id) {
     const review = await call('workspace.configuration.preview', { id });
@@ -364,7 +449,8 @@ async function library(ctx) {
     } }]);
   }
   drawSummary(); await drawView();
-  if (ctx.params?.captureResult) drawOutcome(ctx.params.captureResult);
+  try { await refreshCapture(); } catch (error) { if (!signal?.aborted) showError(captureSummary, error); captureSummary.hidden = false; }
+  if (ctx.params?.captureResult && !latestCapture) drawOutcome(ctx.params.captureResult);
   return () => { disposed = true; searchVersion++; operation?.abort(); stopProgress(); stopLibrary(); signal?.removeEventListener('abort', abort); if (passwordInput) passwordInput.value = ''; };
 }
 

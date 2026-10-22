@@ -23,15 +23,19 @@ public sealed partial class PilotApplication
         });
         Register("workspace.conflicts", async (a, ct) =>
         {
-            var versions = await TeamWorkspace.ConflictsAsync(Text(a, "id", 80), ct).ConfigureAwait(false);
-            // Configuration payloads are retained in the database. The comparison view needs the textual business version only.
-            return versions.Take(5).Select(version => new
+            var id = Text(a, "id", 80); var offset = Number(a, "offset", 0, 0, 1_000_000); var limit = Number(a, "limit", 5, 1, 20);
+            var versions = await TeamWorkspace.ConflictsAsync(id, ct, offset, limit).ConfigureAwait(false);
+            // Lists stay small. A dedicated comparison reads the actual fields of one archived pair.
+            var items = versions.Select(version => new
             {
                 version.Id, version.Reason, version.RecordedAt,
-                current = new { version.Current.Author, version.Current.UpdatedAt, version.Current.Title, version.Current.Body },
-                incoming = new { version.Incoming.Author, version.Incoming.UpdatedAt, version.Incoming.Title, version.Incoming.Body }
+                current = new { version.Current.Kind, version.Current.Author, version.Current.UpdatedAt, version.Current.Title, version.Current.Body, version.Current.Deleted },
+                incoming = new { version.Incoming.Kind, version.Incoming.Author, version.Incoming.UpdatedAt, version.Incoming.Title, version.Incoming.Body, version.Incoming.Deleted }
             }).ToArray();
+            return new { items, total = await TeamWorkspace.ConflictCountAsync(id, ct).ConfigureAwait(false), offset, limit };
         });
+        Register("workspace.conflict.compare", CompareWorkspaceConflictAsync);
+        Register("workspace.conflict.export", ExportWorkspaceConflictAsync);
         Register("workspace.export", ExportWorkspaceAsync);
         Register("workspace.publishConfiguration", PublishWorkspaceConfigurationAsync);
         Register("workspace.configuration.preview", PreviewWorkspaceConfigurationAsync);

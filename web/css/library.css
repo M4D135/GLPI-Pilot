@@ -110,3 +110,12 @@
   .library-outcome-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .library-overview, .library-search, .library-result { padding: 14px; }
 }
+.library-version-comparison td { vertical-align: top; }
+.library-version-comparison td:first-child { min-width: 10rem; max-width: 22rem; }
+.library-field-path { display: block; margin-block: .35rem; font-size: .75rem; color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+.library-capture-summary { border-left: 3px solid var(--accent); }
+.library-capture-summary .library-outcome-heading .help { margin: 4px 0 0; }
+.library-capture-summary > p { margin: 10px 0; }
+.library-capture-summary .toolbar { margin-block: 8px; }
+.library-capture-message { margin: 0; min-width: 12rem; max-width: 48rem; white-space: normal; overflow-wrap: anywhere; }
+.library-capture-detail td { vertical-align: top; }

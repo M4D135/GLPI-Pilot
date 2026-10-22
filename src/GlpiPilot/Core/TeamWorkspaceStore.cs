@@ -135,9 +135,10 @@ public sealed class TeamWorkspaceStore
         await using var db = await Open(ct); await using var query = Command(db, null, "SELECT (SELECT COUNT(*) FROM gp_team_items WHERE deleted=0),(SELECT COUNT(*) FROM gp_team_outbox),(SELECT COUNT(*) FROM gp_team_conflicts)");
         await using var reader = await query.ExecuteReaderAsync(ct); await reader.ReadAsync(ct); return new(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
     }
-    public async Task<IReadOnlyList<TeamWorkspaceConflict>> ConflictsAsync(string itemId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<TeamWorkspaceConflict>> ConflictsAsync(string itemId, CancellationToken ct = default, int offset = 0, int limit = 20)
     {
-        await using var db = await Open(ct); await using var query = Command(db, null, "SELECT id,item_id,reason,recorded_at,current_json,incoming_json FROM gp_team_conflicts WHERE item_id=@id ORDER BY recorded_at DESC LIMIT 20", ("@id", itemId));
+        if (offset is < 0 or > 1000000 || limit is < 1 or > 20) throw new InvalidDataException("Pagination des versions hors limites.");
+        await using var db = await Open(ct); await using var query = Command(db, null, "SELECT id,item_id,reason,recorded_at,current_json,incoming_json FROM gp_team_conflicts WHERE item_id=@id ORDER BY recorded_at DESC,id DESC LIMIT @limit OFFSET @offset", ("@id", itemId), ("@limit", limit), ("@offset", offset));
         await using var reader = await query.ExecuteReaderAsync(ct); var result = new List<TeamWorkspaceConflict>();
         long bytes = 0;
         while (await reader.ReadAsync(ct))
@@ -148,6 +149,21 @@ public sealed class TeamWorkspaceStore
             result.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture), TeamWorkspaceCodec.Read(current), TeamWorkspaceCodec.Read(incoming)));
         }
         return result;
+    }
+    public async Task<long> ConflictCountAsync(string itemId, CancellationToken ct = default)
+    {
+        await using var db = await Open(ct);
+        await using var query = Command(db, null, "SELECT COUNT(*) FROM gp_team_conflicts WHERE item_id=@id", ("@id", itemId));
+        return Convert.ToInt64(await query.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+    }
+    public async Task<TeamWorkspaceConflict?> GetConflictAsync(string itemId, string conflictId, CancellationToken ct = default)
+    {
+        await using var db = await Open(ct);
+        await using var query = Command(db, null, "SELECT id,item_id,reason,recorded_at,current_json,incoming_json FROM gp_team_conflicts WHERE item_id=@item AND id=@conflict", ("@item", itemId), ("@conflict", conflictId));
+        await using var reader = await query.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return new(reader.GetString(0), reader.GetString(1), reader.GetString(2), DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture),
+            TeamWorkspaceCodec.Read(reader.GetString(4)), TeamWorkspaceCodec.Read(reader.GetString(5)));
     }
     internal async Task PrepareRemoteAsync(string identity, CancellationToken ct)
     {

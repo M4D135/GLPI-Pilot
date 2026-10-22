@@ -114,6 +114,7 @@ internal static partial class Program
 
         await Button("Lire le contenu conservé").ClickAsync();
         var modal = page.GetByRole(AriaRole.Dialog);
+        await modal.Locator(".library-detail:not([aria-busy])").WaitForAsync();
         Require((await modal.InnerTextAsync()).Contains(LibrarySolution)
             && (await modal.InnerTextAsync()).Contains(seed.Ticket.Url)
             && await modal.Locator("b").CountAsync() == 0,
@@ -124,7 +125,7 @@ internal static partial class Program
             "Opening a library citation reaches the real validated host operation with the corresponding ticket URL.");
         await modal.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
-        await Button("Ajouter une note").ClickAsync();
+        await Button("Ajouter une note d’équipe").ClickAsync();
         modal = page.GetByRole(AriaRole.Dialog);
         await modal.GetByRole(AriaRole.Textbox, new() { Name = "Titre", Exact = true }).FillAsync("Note d’équipe synthétique");
         await modal.GetByRole(AriaRole.Textbox, new() { Name = "Texte de la contribution", Exact = true }).FillAsync("Procédure locale <script>texte</script> à conserver.");

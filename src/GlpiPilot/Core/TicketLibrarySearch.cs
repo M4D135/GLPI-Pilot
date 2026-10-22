@@ -8,6 +8,13 @@ public static class TicketLibrarySearch
     public const int MaximumPageSize = 100;
     internal const int ChunkCharacters = 3000;
 
+    /// <summary>A whole numeric query can identify a ticket without rounding a large ID.</summary>
+    internal static string NumericIdentifier(string text)
+    {
+        var value = text.Trim();
+        return value.Length is > 0 and <= 20 && value.All(char.IsAsciiDigit) ? value.TrimStart('0') : "";
+    }
+
     /// <summary>Only literal Unicode word tokens reach MATCH; caller text cannot become FTS syntax.</summary>
     internal static string MatchQuery(string text)
     {

@@ -33,6 +33,7 @@ public sealed partial class PilotApplication
             ResolvedOnly = Flag(a, "resolvedOnly"), Offset = Number(a, "offset", 0, 0, 1_000_000), Limit = Number(a, "limit", 25, 1, 100)
         }, ct).ConfigureAwait(false));
         Register("library.ticket", async (a, ct) => await RequireLibraryTicketAsync(a, ct).ConfigureAwait(false));
+        RegisterLibraryResolutionOperations();
         Register("library.open", async (a, ct) =>
         {
             var document = await RequireLibraryTicketAsync(a, ct).ConfigureAwait(false);
@@ -41,6 +42,7 @@ public sealed partial class PilotApplication
         });
         Register("library.conflicts", LibraryConflictsAsync);
         Register("library.capture", CaptureLibraryAsync);
+        RegisterLibraryCaptureJournalOperations();
         Register("library.sync", (_, ct) => SynchronizeLibraryAsync(ct));
         Register("library.tick", AutomaticLibrarySyncAsync);
         Register("library.export", async (_, ct) =>

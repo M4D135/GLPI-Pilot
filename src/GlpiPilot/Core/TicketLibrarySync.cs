@@ -7,7 +7,7 @@ using NpgsqlTypes;
 
 namespace GlpiPilot.Core;
 
-internal sealed record TicketLibraryMutation(string Id, TicketLibraryDocument Document);
+internal sealed record TicketLibraryMutation(string Id, TicketLibraryDocument Document, string? RequestJson = null);
 internal sealed record TicketLibraryPushReceipt(long Revision, string Outcome, bool Conflict, TicketLibraryDocument Document);
 internal sealed record TicketLibraryChange(long Revision, TicketLibraryDocument Document, TicketLibraryDocument? Incoming, string Reason);
 
@@ -78,7 +78,7 @@ public sealed class TicketLibraryPostgresStore
     {
         await InitializeAsync(ct); TicketLibraryRules.Validate(mutation.Document);
         if (!Guid.TryParseExact(mutation.Id, "N", out var mutationId)) throw new InvalidDataException("Identifiant de mutation invalide.");
-        var requestHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(TicketLibraryRules.Serialize(mutation.Document))));
+        var requestHash = MutationRequestHash(mutation);
         await using var c = new NpgsqlConnection(_connectionString); await c.OpenAsync(ct);
         await using var tx = await c.BeginTransactionAsync(ct); await Lock(c, tx, ct);
         await using (var receiptCommand = Command(c, tx, "SELECT ticket_key,request_hash,receipt_json FROM glpi_pilot_library_receipts WHERE mutation_id=@id", ("id", mutationId)))
@@ -88,7 +88,9 @@ public sealed class TicketLibraryPostgresStore
             {
                 if (reader.GetString(0) != mutation.Document.Key || reader.GetString(1) != requestHash)
                     throw new InvalidDataException("Une mutation existante ne peut pas être réutilisée pour un autre contenu.");
-                return JsonSerializer.Deserialize<TicketLibraryPushReceipt>(reader.GetString(2), TicketLibraryRules.Json)!;
+                var previous = JsonSerializer.Deserialize<TicketLibraryPushReceipt>(reader.GetString(2), TicketLibraryRules.Json)
+                    ?? throw new InvalidDataException("Le reçu de synchronisation est invalide.");
+                return previous with { Document = TicketLibraryRules.Deserialize(TicketLibraryRules.Serialize(previous.Document)) };
             }
         }
         TicketLibraryDocument? current = null;
@@ -100,6 +102,7 @@ public sealed class TicketLibraryPostgresStore
             conflict = await Execute(c, tx, "INSERT INTO glpi_pilot_library_conflicts(conflict_id,ticket_key,reason,current_json,incoming_json) VALUES(@id,@key,@reason,@current,@incoming) ON CONFLICT(conflict_id) DO NOTHING", ct,
                 ("id", TicketLibraryStore.ConflictId(current, mutation.Document, merge.Outcome)), ("key", current.Key), ("reason", merge.Outcome), ("current", TicketLibraryRules.Serialize(current)), ("incoming", TicketLibraryRules.Serialize(mutation.Document))) > 0;
         var changed = current is null || current.ContentHash != merge.Document.ContentHash || current.DetailsCurrent != merge.Document.DetailsCurrent
+            || current.ConfirmationPending != merge.Document.ConfirmationPending || current.ConfirmedContentHash != merge.Document.ConfirmedContentHash || current.ConfirmationId != merge.Document.ConfirmationId
             || current.ReadAt != merge.Document.ReadAt || current.ReaderSignature != merge.Document.ReaderSignature;
         var revision = current?.CentralRevision ?? 0;
         if (changed || conflict)
@@ -121,6 +124,27 @@ public sealed class TicketLibraryPostgresStore
         await Execute(c, tx, "INSERT INTO glpi_pilot_library_receipts VALUES(@id,@key,@hash,@json)", ct,
             ("id", mutationId), ("key", mutation.Document.Key), ("hash", requestHash), ("json", TicketLibraryRules.Serialize(receipt)));
         await tx.CommitAsync(ct); return receipt;
+    }
+
+    private static string MutationRequestHash(TicketLibraryMutation mutation)
+    {
+        // The outbox is immutable. Re-serializing a 3.2.0 request after upgrading
+        // adds default proof fields and qualifies its old freshness flag, which
+        // must not change the identity of an already committed, unacknowledged UUID.
+        var request = mutation.RequestJson ?? TicketLibraryRules.Serialize(mutation.Document);
+        if (mutation.RequestJson is not null)
+        {
+            try
+            {
+                var original = TicketLibraryRules.Deserialize(request);
+                var current = TicketLibraryRules.Deserialize(TicketLibraryRules.Serialize(mutation.Document));
+                if (!string.Equals(TicketLibraryRules.Serialize(original), TicketLibraryRules.Serialize(current), StringComparison.Ordinal))
+                    throw new InvalidDataException("La requête immuable ne correspond pas au document à synchroniser.");
+            }
+            catch (JsonException)
+            { throw new InvalidDataException("La requête immuable de synchronisation est invalide."); }
+        }
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request)));
     }
 
     internal async Task<IReadOnlyList<TicketLibraryChange>> PullAsync(long afterRevision, int limit, CancellationToken ct)
@@ -223,7 +247,7 @@ public static class TicketLibrarySyncService
         {
             ct.ThrowIfCancellationRequested(); var json = reader.GetString(1); bytes += json.Length;
             if (result.Count > 0 && bytes > 32 * 1024 * 1024) break;
-            result.Add(new(reader.GetString(0), TicketLibraryRules.Deserialize(json)));
+            result.Add(new(reader.GetString(0), TicketLibraryRules.Deserialize(json), json));
         }
         return result;
     }, ct);

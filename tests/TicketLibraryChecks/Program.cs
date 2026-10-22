@@ -152,6 +152,28 @@ try
         var page = await store.SearchAsync(new() { Offset = 2, Limit = 1 }); Require(page.Total == 4 && page.Rows.Count == 1 && page.Offset == 2);
         Require((await store.SearchAsync(new() { Installation = "https://absent.example" })).Total == 0);
     });
+    await Check("A numeric lookup ranks its exact ticket before stronger content hits and preserves source filtering", async () =>
+    {
+        var store = Store("exact-identifier");
+        for (var i = 1000; i < 1030; i++)
+        {
+            var related = Seed(i.ToString()); related.Title = "42 42 42 42"; related.Category = "";
+            await store.ObserveSeedAsync(related);
+        }
+        var exact = Seed("42"); exact.Title = "Z " + string.Join(' ', Enumerable.Repeat("description détaillée du ticket", 60)); exact.Category = "";
+        await store.ObserveSeedAsync(exact);
+        var first = await store.SearchAsync(new() { Text = "42", Limit = 1 });
+        Require(first.Total == 31 && first.Rows.Single().Ticket.Id == "42");
+        Require((await store.SearchAsync(new() { Text = "42", Limit = 1, Offset = 1 })).Rows.Single().Ticket.Id != "42");
+        Require((await store.SearchAsync(new() { Text = " 00042 ", Limit = 1 })).Rows.Single().Ticket.Id == "42");
+        var other = Seed("42"); other.Ticket = new("42", "https://another-fixture.example/front/ticket.form.php?id=42");
+        await store.ObserveSeedAsync(other);
+        var both = await store.SearchAsync(new() { Text = "42", Limit = 2 });
+        Require(both.Rows.Count == 2 && both.Rows.All(row => row.Ticket.Id == "42") && both.Rows.Select(row => row.Installation).Distinct().Count() == 2);
+        var filtered = await store.SearchAsync(new() { Text = "42", Installation = "https://fixture.example/glpi", Limit = 1 });
+        Require(filtered.Total == 31 && filtered.Rows.Single().Ticket.Url == exact.Ticket.Url);
+        Require((await store.SearchAsync(new() { Text = "42", ResolvedOnly = true })).Total == 0);
+    });
     await Check("Global BM25 ranking selects the strongest match before limiting the first page", async () =>
     {
         var store = Store("ranking");
@@ -239,6 +261,7 @@ try
         await Task.WhenAll(store.SaveDetailAsync(a, Detail(a, "Ancienne"), Coverage(), "reader-1"), new TicketLibraryStore(store.DatabasePath).SaveDetailAsync(b, Detail(b, "Récente"), Coverage(), "reader-1"));
         Require((await store.GetAsync(a.Ticket))!.Detail!.Sections[0].Data.Rows[0][3] == "Récente");
     });
+    await TicketLibraryCaptureChecks.Run(root, Check);
     if (args.Contains("--postgres", StringComparer.Ordinal)) await TicketLibraryPostgresChecks.Run(root, Check);
     Console.WriteLine($"{passed}/{total} ticket library checks passed.");
     return passed == total ? 0 : 1;

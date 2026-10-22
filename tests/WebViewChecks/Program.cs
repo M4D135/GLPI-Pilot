@@ -18,6 +18,24 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--resolution-only"))
+            {
+                await CheckResolutionInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} ticket resolution WebView checks passed.");
+                return;
+            }
+            if (args.Contains("--library-workflows-only"))
+            {
+                await RunLibraryWorkflowsAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} library workflows WebView checks passed.");
+                return;
+            }
+            if (args.Contains("--palette-only"))
+            {
+                await CheckCommandPaletteInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} command palette WebView checks passed.");
+                return;
+            }
             if (args.Contains("--shared-operations-only"))
             {
                 await CheckSharedOperationsInterfaceAsync(args);
@@ -243,8 +261,8 @@ internal static partial class Program
         await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light'");
         Require(application.Settings.Theme == "light", "A real appearance form updates both persisted C# preferences and the shell.");
         await page.Keyboard.PressAsync("Control+k");
-        await page.GetByRole(AriaRole.Textbox, new() { Name = "Rechercher une commande" }).FillAsync("Relevé de données");
-        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Relevé de données", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync("Relevé de données");
+        await page.Locator(".command-palette [data-command-id='page:records']").ClickAsync();
         await page.Locator(".page-content[data-page=records]").WaitForAsync();
         Require(await page.GetByRole(AriaRole.Dialog).CountAsync() == 0, "The keyboard command palette navigates and restores focus without a native modal.");
         var captureArg = Array.IndexOf(args, "--screenshots");

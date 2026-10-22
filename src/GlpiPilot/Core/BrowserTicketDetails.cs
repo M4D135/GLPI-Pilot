@@ -560,6 +560,7 @@ public sealed partial class BrowserService
     {
         if (ReferenceEquals(_ticketPage, page)) _ticketPage = null;
         try { if (!page.IsClosed) await page.CloseAsync(new() { RunBeforeUnload = false }).WaitAsync(TimeSpan.FromSeconds(3)); }
-        catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+        { Log?.Invoke(ex is TimeoutException ? "FICHE · fermeture de l’onglet temporaire encore en attente." : "FICHE · fermeture de l’onglet temporaire non confirmée par le navigateur."); }
     }
 }
