@@ -32,7 +32,7 @@ dotnet publish tests/WindowsStartupChecks/WindowsStartupChecks.csproj `
   -o .\artifacts\webview-native-harness
 
 .\artifacts\webview-native-harness\WindowsStartupChecks.exe `
-  --pack .\artifacts\windows-ci\release\GLPI-Pilot_3.0.0_PROD_Windows-x64.zip `
+  --pack .\artifacts\windows-ci\release\GLPI-Pilot_3.0.1_PROD_Windows-x64.zip `
   --out .\artifacts\native-webview-evidence
 ```
 
@@ -44,9 +44,12 @@ Adapter le chemin du ZIP à la construction concernée. Les deux options `--pack
 2. **Commandes réelles** : passage au thème clair et à 125 %, contrôle de la largeur effective du viewport WebView2, retour à 100 % par `Ctrl+0`, chargement de la démonstration et calcul du dashboard C#.
 3. **Navigation et présentation** : ouverture de chaque page du menu, absence d’erreur de page, captures du dashboard clair et de l’accueil sombre, redimensionnement compact et absence de débordement horizontal.
 4. **Instance unique et mémorisation** : réduction de la fenêtre, second lancement qui rappelle l’instance existante, ajustement à 110 % par raccourci, fermeture normale et vérification des réglages sauvegardés.
-5. **Troisième lancement** : restauration du zoom à 110 % dans un nouveau processus, fermeture normale et vérification que le ZIP d’origine est inchangé.
+5. **Troisième lancement** : restauration du zoom à 110 % dans un nouveau processus, puis fermeture normale.
+6. **Pannes réelles du moteur d’affichage** : deux nouveaux lancements isolés, arrêt volontaire du renderer par `Page.crash`, puis du navigateur WebView2 par `Browser.crash`. Chaque scénario exige l’événement natif correspondant dans le journal, une fenêtre de diagnostic WinForms encore visible, une fermeture standard bornée et la préservation exacte des réglages enregistrés. L’archive PROD d’origine reste inchangée après tous les scénarios.
 
-Les trois fermetures passent par le dialogue de fermeture entre la page et l’hôte. Le harnais attend aussi jusqu’à 15 secondes l’arrêt des enfants WebView avant de réutiliser le profil avec un nouveau port CDP.
+Les trois premières fermetures passent par le dialogue de fermeture entre la page et l’hôte. Le harnais attend aussi jusqu’à 15 secondes l’arrêt des enfants WebView avant de réutiliser le profil avec un nouveau port CDP.
+
+Après une panne fatale du renderer ou du navigateur WebView2, la fenêtre affiche un diagnostic natif : elle ne dépend plus de JavaScript pour se fermer. Les traitements C# sont annulés et leur nettoyage est attendu ; aucune action métier n’est rejouée. Le panneau précise que les brouillons dont la sauvegarde n’était pas confirmée peuvent être perdus. Les incidents GPU ou utilitaires que le runtime sait récupérer sont journalisés sans arrêter l’application. Voir les [événements de processus WebView2 documentés par Microsoft](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-related-events).
 
 ## Isolation et nettoyage
 

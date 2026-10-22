@@ -22,6 +22,30 @@ display-limit POST through an existing option, full-range verification,
 conflicting or unrelated pagers, nonzero or missing URL offsets, and diagnostics
 that exclude fake private sentinels. No real ticket information is included.
 
+`glpi-cell-popup.html` adds synthetic result cells matching the public GLPI
+9.5.13 and 10.0.22 renderers. Long multivalue cells display their first item and
+a `fa-comments` marker, with the complete static list in its paired popup;
+they do not display a textual ellipsis. The table adapter reads the complete
+list only when marker IDs are unique, marker and popup are adjacent siblings
+inside the same cell, the wrapper classes and `fup-popup` structure match,
+the list uses direct `br` separators, and its first item exactly matches the
+whole displayed cell value. No tooltip is opened and no request is issued.
+Other hidden content, ordinary information/title tooltips, mismatched IDs or
+first items, duplicate IDs, and horizontal-rule popups remain excluded.
+Later items remain part of the extracted value, so a real difference there
+still reaches the C# native-export integrity check.
+
+The fixture also checks that status icons do not duplicate their adjacent
+labels, priority decoration does not add text, and visible IDs in titles are
+preserved. Sources for the rendered structure:
+
+- [GLPI 9.5.13 Search::showItem](https://github.com/glpi-project/glpi/blob/9.5.13/inc/search.class.php#L7389-L7406)
+- [GLPI 9.5.13 Html::showToolTip](https://github.com/glpi-project/glpi/blob/9.5.13/inc/html.class.php#L3682-L3714)
+- [GLPI 10.0.22 Search::showItem](https://github.com/glpi-project/glpi/blob/10.0.22/src/Search.php#L8898-L8918)
+- [GLPI 10.0.22 Html::showToolTip](https://github.com/glpi-project/glpi/blob/10.0.22/src/Html.php#L3612-L3645)
+- [GLPI 9.5.13 hidden popup CSS](https://github.com/glpi-project/glpi/blob/9.5.13/css/styles.scss#L294-L296)
+- [GLPI 10.0.22 hidden popup CSS](https://github.com/glpi-project/glpi/blob/10.0.22/css/legacy/includes/_styles.scss#L131-L133)
+
 ## Run on Windows
 
 Install Node.js, then run in PowerShell from this folder:

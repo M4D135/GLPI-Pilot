@@ -124,6 +124,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     method = "native-csv";
                     var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct);
                     Log?.Invoke("ÉCHANTILLON · " + check.Explanation);
+                    foreach (var diagnostic in check.Diagnostics) Log?.Invoke("ÉCHANTILLON DÉTAIL · " + diagnostic);
                     if (check.Available && !check.Matches)
                         throw new InvalidDataException(check.Explanation + " Le fichier natif reste conservé ; aucun relevé complet n’a été publié.");
                     if (!check.Available)
@@ -176,7 +177,14 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             if (method == "native-csv")
             {
                 var finalSample = ExtractionVerificationService.VerifyNativeSample(visibleAfter, data, settings.Dashboard, ct);
-                if (finalSample.Available && !finalSample.Matches)
+                Log?.Invoke("ÉCHANTILLON FINAL · " + finalSample.Explanation);
+                foreach (var diagnostic in finalSample.Diagnostics) Log?.Invoke("ÉCHANTILLON FINAL DÉTAIL · " + diagnostic);
+                if (!finalSample.Available)
+                {
+                    data.Complete = false; data.Status = "Export reçu — contrôle final de l’échantillon indisponible";
+                    data.Warnings.Add(finalSample.Explanation + " Le contrôle de l’échantillon n’est plus disponible après le transfert ; la couverture reste à vérifier.");
+                }
+                else if (!finalSample.Matches)
                 {
                     data.Complete = false; data.Status = "Export reçu — liste visible modifiée pendant l’opération";
                     data.Warnings.Add("L’échantillon visible après le transfert ne correspond plus entièrement au fichier reçu. La recherche a pu évoluer pendant le téléchargement ; la couverture reste à vérifier.");

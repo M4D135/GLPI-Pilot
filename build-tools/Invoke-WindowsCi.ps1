@@ -7,6 +7,8 @@ Portable suites exercise the real C# engines and local ES modules on synthetic d
 PackStartup then drives the actual packaged WinForms/WebView2 host, with its fixed
 runtime, through a loopback-only test endpoint available only in a guarded temporary
 profile. UpdateStartup exercises replacement and rollback on disposable pack copies.
+BuildPack also rebuilds the exported DEV sources outside Git with an empty child
+NuGet cache and a local feed, then verifies the rebuilt PROD through UpdateChecks.
 Neither native harness reads an existing application profile or signs in to GLPI.
 All child processes have an external deadline and must report a successful summary.
 #>
@@ -117,7 +119,10 @@ function Assert-PackContents {
                 'wad/sources/tests/WindowsStartupChecks/Program.cs',
                 'wad/sources/build-tools/Invoke-WindowsCi.ps1', 'wad/sources/web/index.html',
                 'wad/sources/src/GlpiPilot/Desktop/MainForm.cs', 'wad/sources/build-tools/WebView2Runtime.json',
-                'wad/sources/.github/workflows/windows.yml'
+                'wad/sources/.github/workflows/windows.yml', 'wad/sources/GLPI-Pilot.sources.json',
+                'wad/sources/build-tools/SourceProvenance.ps1', 'wad/sources/build-tools/Test-DevRebuild.ps1',
+                'wad/sources/tests/SourceProvenanceChecks/Program.ps1',
+                'wad/sources/tests/UpdateChecks/Program.cs', 'wad/sources/tests/UpdateChecks/UpdateChecks.csproj'
             )
         }
         foreach ($name in $required) { if ($entries -notcontains $name) { throw "Incomplete $Edition pack: $name is missing." } }
@@ -177,6 +182,8 @@ Push-Location $repository
 try {
     switch ($Stage) {
         'BclChecks' {
+            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'tests/SourceProvenanceChecks/Program.ps1')) `
+                -LogName 'source-provenance-checks.log' -TimeoutSeconds 180 -ExpectedPattern '\d+/\d+ source provenance checks passed\.'
             $suites = @(
                 @{ Project = 'StartupDiagnosticsChecks'; Log = 'startup-diagnostics-checks.log'; Summary = 'Startup diagnostics: 14 passed, 0 failed.' },
                 @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
@@ -216,7 +223,7 @@ try {
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
                 -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
-                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '82 native export DOM checks passed.'
+                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '92 native export DOM checks passed.'
         }
         'WebViewChecks' {
             Set-TestBrowser
@@ -239,10 +246,13 @@ try {
         }
         'BuildPack' {
             $release = Join-Path $OutputDirectory 'release'
+            . (Join-Path $PSScriptRoot 'SourceProvenance.ps1')
+            $buildProvenance = Resolve-GlpiBuildProvenance -SourceRoot $repository
+            $dotnetPath = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
             $runtimePath = & (Join-Path $PSScriptRoot 'Get-WebView2Runtime.ps1') -CacheDirectory (Join-Path $env:RUNNER_TEMP 'GLPI-WebView2-Cache')
             Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'tests/RuntimePackagingChecks/Program.ps1'), '-RuntimePath', $runtimePath) -LogName 'runtime-packaging-checks.log' -TimeoutSeconds 180 -ExpectedSummary '14/14 runtime packaging checks passed; offline only, no runtime launched.'
             if (-not $runtimePath -or -not (Test-Path -LiteralPath (Join-Path $runtimePath 'msedgewebview2.exe'))) { throw 'Verified fixed WebView2 runtime unavailable.' }
-            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'build.ps1'), '-OutputDirectory', $release, '-ValidationDirectory', $logs, '-RuntimePath', $runtimePath, '-AllowOnlineRestore') `
+            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repository 'build.ps1'), '-OutputDirectory', $release, '-ValidationDirectory', $logs, '-RuntimePath', $runtimePath, '-DotNetPath', $dotnetPath, '-AllowOnlineRestore') `
                 -LogName 'pack-build.log' -TimeoutSeconds 900
             $exeHashes = @{}; $hashLines = [Collections.Generic.List[string]]::new()
             foreach ($edition in @('PROD', 'DEV')) {
@@ -258,6 +268,8 @@ try {
             if ($exeHashes['PROD'] -ne $exeHashes['DEV']) { throw 'PROD and DEV do not contain the same executable.' }
             [IO.File]::WriteAllText((Join-Path $logs 'pack-sha256.txt'), (($hashLines -join "`n") + "`n"), $utf8)
             [IO.File]::WriteAllText((Join-Path $logs 'executable-sha256.txt'), ($exeHashes['PROD'] + "  GLPI-Pilot.exe`n"), $utf8)
+            Invoke-CheckedProcess -Executable (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'Test-DevRebuild.ps1'), '-DevPack', (Get-Pack -Edition DEV).FullName, '-RuntimePath', $runtimePath, '-DotNetPath', $dotnetPath, '-ExpectedCommit', $buildProvenance.Commit) `
+                -LogName 'dev-rebuild-checks.log' -TimeoutSeconds 1200 -ExpectedSummary '5/5 DEV rebuild checks passed; exported sources, isolated offline restore, no rebuilt pack published.'
         }
         'PackStartup' { Test-PackStartup }
         'UpdateStartup' {

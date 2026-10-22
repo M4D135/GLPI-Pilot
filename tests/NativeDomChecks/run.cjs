@@ -48,6 +48,9 @@ async function run() {
       return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
     }
     const name = path.basename(url.pathname);
+    if (name === 'glpi-cell-popup.html') {
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(__dirname, name), 'utf8') });
+    }
     if (['native-glpi10.html', 'native-glpi11.html', 'native-legacy.html'].includes(name)) {
       return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(project, 'tests/fixtures', name), 'utf8') });
     }
@@ -276,6 +279,35 @@ async function run() {
   state = await inspect('#legacy-results');
   ok(!state.supported && state.displayPlan?.value === '9999999', 'A missing native all-pages CSV option preserves the independently proven display-all fallback');
   equal(requests.length, 5, 'Only five explicitly executed fixture exports caused a download request');
+
+  const tableScript = fs.readFileSync(path.join(project, 'src/GlpiPilot/BrowserScripts/bridge.js'), 'utf8');
+  const popupFixture = async () => { await page.goto('http://glpi-native.test/fixtures/glpi-cell-popup.html'); await page.evaluate(tableScript); };
+  const readPopupTable = () => page.evaluate(() => window.__glpiPilot.readTable('#popup-results'));
+  await popupFixture();
+  await readPopupTable(); // Establish the adapter's normal table-key annotation.
+  const popupDom = await page.locator('html').innerHTML();
+  let values = await readPopupTable();
+  equal(values.rows.map(row => row.slice(0, 4)), [['101', 'Écran (101)', 'En attente', 'Haute'], ['102', 'Réseau (102)', 'En cours (attribué)', 'Moyenne']], 'Official GLPI status icons, priority decoration and title IDs retain their exact displayed values');
+  equal(values.rows.map(row => row[4]), ['Alice Exemple\nBob Exemple', 'Charlie Exemple\nDana Exemple'], 'Paired static GLPI 9.5 and 10 multivalue popups supply every actual item for native comparison');
+  equal(await page.locator('html').innerHTML(), popupDom, 'Reading paired multivalue popups does not change the DOM or open a tooltip');
+  ok(!JSON.stringify(values.rows).includes('CACHE'), 'Ticket-description and loading tooltips remain excluded');
+  await page.evaluate(() => { document.querySelector('#contenttooltip110').id = 'contenttooltip999'; });
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'A popup with another marker ID cannot replace the visible cell');
+  await popupFixture();
+  await page.evaluate(() => { document.querySelector('#contenttooltip110 .fup-popup a').textContent = 'Autre Exemple'; });
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'A mismatched first popup item cannot replace the visible value');
+  await popupFixture();
+  await page.evaluate(() => { document.querySelector('#tooltip110').className = 'fas fa-info pointer'; });
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'An ordinary information tooltip is never expanded into a result value');
+  await popupFixture();
+  await page.evaluate(() => { document.querySelectorAll('#contenttooltip110 br').forEach(br => br.replaceWith(document.createElement('hr'))); });
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'Horizontal-rule popups without a proven CSV item boundary remain unchanged');
+  await popupFixture();
+  await page.evaluate(() => { const content = document.querySelector('#contenttooltip110'); content.after(content.cloneNode(true)); });
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple', 'Duplicate popup IDs cannot choose a hidden source ambiguously');
+  await popupFixture();
+  await page.evaluate(() => { document.querySelectorAll('#contenttooltip110 .fup-popup a')[1].textContent = 'Bob Modifié'; });
+  equal((await readPopupTable()).rows[0][4], 'Alice Exemple\nBob Modifié', 'A changed later popup item remains in the compared data instead of being discarded');
   log(checks + ' native export DOM checks passed.');
 }
 

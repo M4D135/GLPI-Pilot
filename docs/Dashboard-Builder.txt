@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.0 — tableaux de bord WebView et atelier de requêtes
+GLPI Pilot 3.0.1 — tableaux de bord WebView et atelier de requêtes
 
 OUVRIR LE BON ESPACE
 La navigation Analyser contient Dashboard, Atelier de requêtes,

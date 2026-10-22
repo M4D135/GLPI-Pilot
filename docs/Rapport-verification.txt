@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.0 — protocole et preuves de vérification
+GLPI Pilot 3.0.1 — protocole et preuves de vérification
 Date : 22 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
@@ -43,7 +43,10 @@ Couverture complémentaire :
 - reconstruction des filtres et de l’identité personnelle dans les archives ;
 - DSL et citations de l’assistant, sans appel réel à un fournisseur ;
 - inventaires, archives de mise à jour, signature et restauration ;
-- sauvegarde des paramètres avant migration de version.
+- sauvegarde des paramètres avant migration de version et reprise des repères
+  du seul profil actif v2 dont le contexte correspond au JSON hérité.
+SourceProvenanceChecks ajoute les contrôles PowerShell du commit/arbre Git,
+de l’inventaire exporté, des sources altérées ou absentes et du dépôt parent.
 
 NAVIGATEUR GLPI ET DOM (BrowserChecks)
 BrowserChecks, AutomationChecks, TicketDetailChecks et NativeDomChecks.
@@ -52,6 +55,13 @@ Les tests incluent portée modifiée après SSO, réseau temporaire/durable,
 reprise valide/incompatible, export corrompu, annulation et divergence de
 cellules malgré des identifiants identiques. Les formulaires Select2 et
 éditeurs de texte sont testés sans écrire dans un portail réel.
+Le diagnostic des divergences est agrégé par positions et rôles de colonne,
+sans recopier valeurs, identifiants ou en-têtes libres. Les contrôles C1 ne sont
+pas convertis. Les ellipses, dates, cellules absentes, en-têtes ambigus et perte
+du rapprochement au contrôle final possèdent des régressions dédiées.
+Les popups multivalués statiques GLPI 9.5/10 correctement associés sont lus en
+entier : un élément ultérieur divergent reste refusé. La représentation des
+guillemets par csv_clean est reconnue dans le seul sens liste vers CSV.
 
 INTERFACE LOCALE ET PONT C# (WebViewChecks)
 WebViewChecks : shell complet, 25 espaces, thèmes, navigation, tableaux,
@@ -79,6 +89,12 @@ Le build utilise un cache NuGet explicitement fourni ou une restauration
 en ligne explicitement autorisée. Aucun repli réseau implicite en mode hors ligne.
 SHA-256 de tous les fichiers et commit source contrôlés. Aucun profil SSO,
 relevé, clé, réglage personnel ou cache de navigation n’est inclus.
+Les sources DEV sont extraites hors dépôt avec leur manifeste de provenance,
+puis réellement reconstruites avec le même SDK et runtime, un cache NuGet
+initialement vide et les seuls paquets locaux du premier build. Les deux
+nouveaux packs doivent garder la version et le commit et partager leur EXE ;
+le PROD reconstruit passe le vérificateur réel de mise à jour. Ces packs de
+test sont supprimés ; seuls les packs initiaux poursuivent la publication.
 La signature Authenticode est vérifiée lorsqu’un certificat est configuré.
 Sans certificat fourni, le journal indique NotConfigured et l’EXE est non signé.
 
@@ -91,6 +107,9 @@ Vérifications : fenêtre visible, runtime fixe du pack, interface locale prête
 fermeture normale, réglages inchangés sans interaction, démonstration,
 25 espaces, thèmes, petite fenêtre, instance unique et restauration minimisée.
 Zoom natif à 125 %, retour clavier à 100 % et reprise à 110 % après redémarrage.
+Deux scénarios provoquent réellement un crash du processus de rendu puis du
+navigateur WebView2 isolé : écran natif de récupération visible, fermeture
+Windows bornée sans réponse de la page et réglages enregistrés préservés.
 Le point de contrôle navigateur est uniquement accessible sur la boucle locale,
 avec une option de test et un profil temporaire vérifié ; il n’est pas activé
 au démarrage normal du produit. Les captures concernent des données fictives.
@@ -124,6 +143,7 @@ Artefact windows-checks-<run_id>-<tentative> :
 - webviewchecks.log, runtimesessionchecks.log, analyticsbridgechecks.log,
   workplacebridgechecks.log, terrainbridgechecks.log, terrain-webview-checks.log ;
 - web-preview/*.png, interface portable avec pont C# réel ;
+- source-provenance-checks.log et dev-rebuild-checks.log ;
 - runtime-packaging-checks.log, pack-build.log, pack-sha256.txt,
   executable-sha256.txt et état de signature ;
 - windows-startup-build.log, windows-startup-checks.log et native-webview/*,

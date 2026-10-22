@@ -90,7 +90,7 @@ jobs:
 
       - name: Construire les packs PROD et DEV (exe + wad)
         id: pack
-        timeout-minutes: 20
+        timeout-minutes: 40
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
 
       - name: Vérifier le démarrage, le zoom et sa mémorisation dans le pack PROD

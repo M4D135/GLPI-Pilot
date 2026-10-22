@@ -19,7 +19,8 @@ internal sealed class MainForm : Form, IPilotHost
     private readonly NotifyIcon _notification = new();
     private readonly bool _backupPrepared;
     private readonly string[] _args;
-    private bool _closing, _closed, _tick, _ready, _bootstrapped, _navigated, _placementChanged, _closeRequested, _closeReady;
+    private bool _closing, _closed, _tick, _ready, _bootstrapped, _navigated, _placementChanged, _closeRequested, _closeReady, _displayFailed;
+    private Task? _shutdown;
     private string _closeToken = "";
     public int ExitCode { get; private set; }
     private static readonly string[] HostOperations = { "app.ready", "app.closeReady", "host.screens", "host.screen", "host.editor" };
@@ -43,7 +44,7 @@ internal sealed class MainForm : Form, IPilotHost
         FormClosing += ClosingAsync;
         _timer.Tick += async (_, _) =>
         {
-            if (_tick || _closing || !_ready) return;
+            if (_tick || _closing || _displayFailed || !_ready) return;
             _tick = true;
             try { await Task.Run(() => _application.TickAsync(_lifetime.Token)); }
             catch (OperationCanceledException) { }
@@ -91,9 +92,9 @@ internal sealed class MainForm : Form, IPilotHost
             core.NewWindowRequested += (_, e) => e.Handled = true;
             core.PermissionRequested += (_, e) => { e.State = CoreWebView2PermissionState.Deny; e.Handled = true; };
             core.DownloadStarting += (_, e) => { e.Cancel = true; e.Handled = true; };
-            core.WebMessageReceived += (_, e) => { if (!_closing && IsLocal(e.Source)) _bridge.Receive(e.WebMessageAsJson); };
+            core.WebMessageReceived += (_, e) => { if (!_closing && !_displayFailed && IsLocal(e.Source)) _bridge.Receive(e.WebMessageAsJson); };
             core.NavigationCompleted += (_, e) => { _navigated = e.IsSuccess; if (!e.IsSuccess) ReportError(new IOException("Chargement de l’interface interrompu : " + e.WebErrorStatus)); };
-            core.ProcessFailed += (_, e) => ReportError(new IOException("Le moteur d’affichage a été interrompu : " + e.ProcessFailedKind));
+            core.ProcessFailed += (_, e) => ProcessFailed(e.ProcessFailedKind, e.Reason, e.ExitCode);
             _web.ZoomFactor = _application.Settings.InterfaceZoomPercent / 100d;
             StartupDiagnostics.Step("Chargement des modules de l’interface locale");
             core.Navigate("https://" + WebHost + "/index.html");
@@ -115,7 +116,7 @@ internal sealed class MainForm : Form, IPilotHost
             case "app.ready":
                 return await UiAsync(() =>
                 {
-                    if (!_bootstrapped || !_navigated) throw new InvalidOperationException("L’interface n’est pas encore initialisée.");
+                    if (_displayFailed || !_bootstrapped || !_navigated) throw new InvalidOperationException("L’interface n’est pas encore initialisée.");
                     if (!_ready)
                     {
                         _ready = true; StartupDiagnostics.MarkReady();
@@ -146,12 +147,21 @@ internal sealed class MainForm : Form, IPilotHost
     private void Publish(string name, object? data)
     {
         _bridge?.Publish(name, data);
-        if (name == "settings.changed") _ = UiAsync(() => { if (_web.CoreWebView2 is not null) _web.ZoomFactor = _application.Settings.InterfaceZoomPercent / 100d; return true; });
+        if (name == "settings.changed" && !_displayFailed) _ = UiAsync(() => { if (!_closing && !_displayFailed && _web.CoreWebView2 is not null) _web.ZoomFactor = _application.Settings.InterfaceZoomPercent / 100d; return true; });
     }
     private void Post(string json)
     {
-        if (_closing || IsDisposed || !IsHandleCreated) return;
-        try { BeginInvoke(() => { if (!_closing && _web.CoreWebView2 is not null) _web.CoreWebView2.PostWebMessageAsJson(json); }); }
+        if (_closing || _displayFailed || IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            BeginInvoke(() =>
+            {
+                if (_closing || _displayFailed || _web.CoreWebView2 is null) return;
+                try { _web.CoreWebView2.PostWebMessageAsJson(json); }
+                catch (Exception error) when (error is InvalidOperationException or System.Runtime.InteropServices.COMException)
+                { DisplayFailed("Le moteur d’affichage ne répond plus aux messages de l’application.", error); }
+            });
+        }
         catch (InvalidOperationException) when (_closing || IsDisposed) { }
     }
     private Task<T> UiAsync<T>(Func<T> action)
@@ -195,7 +205,67 @@ internal sealed class MainForm : Form, IPilotHost
     {
         AppPaths.AppendLog("Affichage : " + AppPaths.SafeError(error));
         if (!_ready) { ExitCode = 1; Program.ReportStartupFailure(error); Close(); }
-        else _bridge.Publish("app.error", new { message = AppPaths.SafeError(error) });
+        else if (!_displayFailed) _bridge.Publish("app.error", new { message = AppPaths.SafeError(error) });
+    }
+    private void ProcessFailed(CoreWebView2ProcessFailedKind kind, CoreWebView2ProcessFailedReason reason, int exitCode)
+    {
+        if (_closing || _closed) return;
+        var detail = kind + " · " + reason + " · code " + exitCode;
+        AppPaths.AppendLog("Incident du moteur d’affichage : " + detail);
+        if (_displayFailed) return;
+        if (kind is CoreWebView2ProcessFailedKind.BrowserProcessExited or CoreWebView2ProcessFailedKind.RenderProcessExited)
+            DisplayFailed("Le moteur d’affichage s’est arrêté.", new IOException(detail));
+    }
+    private void DisplayFailed(string message, Exception error)
+    {
+        if (_closing || _closed || _displayFailed) return;
+        _displayFailed = true; _navigated = false; _bootstrapped = false;
+        _closeRequested = false; _closeReady = false; _closeToken = "";
+        AppPaths.AppendLog("Affichage interrompu : " + AppPaths.SafeError(error));
+        if (!_ready) { ExitCode = 1; Program.ReportStartupFailure(error); Close(); return; }
+
+        // A failed renderer cannot display an error or acknowledge the draft
+        // handshake. Keep a native escape route; never replay a business action.
+        _web.Visible = false;
+        Text = "GLPI Pilot — affichage interrompu";
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(28), ColumnCount = 1, RowCount = 4,
+            BackColor = SystemColors.Window, ForeColor = SystemColors.WindowText, AccessibleName = "Affichage interrompu" };
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.Controls.Add(new Label { AutoSize = true, Text = message, Margin = new Padding(0, 0, 0, 20) }, 0, 0);
+        panel.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Les brouillons dont la sauvegarde n’a pas été confirmée peuvent être perdus.\n\nFermez GLPI Pilot puis relancez-le. Le diagnostic est conservé dans le journal de l’application.", Margin = new Padding(0, 0, 0, 20) }, 0, 1);
+        var status = new Label { AutoSize = true, Text = "Arrêt des traitements en cours…", Margin = new Padding(0, 0, 0, 20) };
+        panel.Controls.Add(status, 0, 2);
+        var close = new Button { AutoSize = true, Text = "Fermer l’application", Padding = new Padding(12, 6, 12, 6) };
+        close.Click += (_, _) => Close(); panel.Controls.Add(close, 0, 3);
+        Controls.Add(panel); panel.BringToFront(); AcceptButton = close; CancelButton = close; close.Focus();
+        _ = StopAfterDisplayFailureAsync(status);
+    }
+    private async Task StopAfterDisplayFailureAsync(Label status)
+    {
+        try
+        {
+            await ShutdownAsync();
+            if (!_closed && !status.IsDisposed) status.Text = "Les traitements sont arrêtés. Vous pouvez fermer l’application.";
+        }
+        catch (Exception error)
+        {
+            AppPaths.AppendLog("Arrêt après interruption de l’affichage : " + AppPaths.SafeError(error));
+            if (!_closed && !status.IsDisposed) status.Text = "L’arrêt a rencontré une erreur. Consultez le journal après avoir fermé l’application.";
+        }
+    }
+    private Task ShutdownAsync()
+    {
+        if (_shutdown is not null) return _shutdown;
+        _timer.Stop(); _lifetime.Cancel();
+        SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.PowerModeChanged -= PowerChanged;
+        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= NetworkChanged;
+        return _shutdown = StopServicesAsync();
+    }
+    private async Task StopServicesAsync()
+    {
+        try { await _bridge.DisposeAsync(); }
+        finally { await _application.DisposeAsync(); }
     }
     private void RestorePlacement()
     {
@@ -235,7 +305,7 @@ internal sealed class MainForm : Form, IPilotHost
     private async void ClosingAsync(object? sender, FormClosingEventArgs e)
     {
         if (_closed) return; e.Cancel = true; if (_closing) return;
-        if (!_closeReady && _ready && _web.CoreWebView2 is not null)
+        if (!_displayFailed && !_closeReady && _ready && _web.CoreWebView2 is not null)
         {
             if (_closeRequested) return;
             _closeRequested = true; _closeToken = Guid.NewGuid().ToString("N");
@@ -243,13 +313,9 @@ internal sealed class MainForm : Form, IPilotHost
             _ = WatchCloseHandshakeAsync(_closeToken); return;
         }
         _closing = true;
-        _timer.Stop(); _lifetime.Cancel();
-        SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.PowerModeChanged -= PowerChanged;
-        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= NetworkChanged;
         try
         {
-            await _bridge.DisposeAsync();
-            await _application.DisposeAsync();
+            await ShutdownAsync();
             if (_ready && _placementChanged)
             {
                 var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;

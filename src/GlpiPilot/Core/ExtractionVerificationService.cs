@@ -1,8 +1,13 @@
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace GlpiPilot.Core;
 
-public sealed record NativeSampleVerification(bool Available, bool Matches, int Sample, int Missing, string Explanation);
+public sealed record NativeSampleVerification(bool Available, bool Matches, int Sample, int Missing, string Explanation)
+{
+    // Counts and fixed role names only. Never store cell contents, IDs or free-form headers here.
+    public IReadOnlyList<string> Diagnostics { get; init; } = Array.Empty<string>();
+}
 
 /// <summary>Local acquisition checks. No credentials or downloaded values are logged.</summary>
 public static class ExtractionVerificationService
@@ -45,8 +50,10 @@ public static class ExtractionVerificationService
     public static NativeSampleVerification VerifyNativeSample(TableSnapshot visible, ExtractionResult downloaded,
         DashboardSettings settings, CancellationToken ct = default)
     {
-        var shownColumn = DashboardService.ResolveColumns(visible.Headers, settings).FirstOrDefault(x => x.Role == "id")?.Index;
-        var nativeColumn = DashboardService.ResolveColumns(downloaded.Headers, settings).FirstOrDefault(x => x.Role == "id")?.Index;
+        var shownRoles = DashboardService.ResolveColumns(visible.Headers, settings);
+        var nativeRoles = DashboardService.ResolveColumns(downloaded.Headers, settings);
+        var shownColumn = shownRoles.FirstOrDefault(x => x.Role == "id")?.Index;
+        var nativeColumn = nativeRoles.FirstOrDefault(x => x.Role == "id")?.Index;
         if (shownColumn is not int left || nativeColumn is not int right)
             return new(false, false, 0, 0, "Rapprochement d’identifiants indisponible : la colonne ID doit être présente et non ambiguë dans la liste et dans l’export.");
         var sample = new HashSet<string>(StringComparer.Ordinal);
@@ -61,9 +68,26 @@ public static class ExtractionVerificationService
         if (sample.Count == 0) return new(false, false, 0, 0, "La liste affichée ne fournit aucun identifiant à rapprocher.");
         var found = new HashSet<string>(StringComparer.Ordinal);
         var shownRows = visible.Rows.Where(row => left < row.Length && sample.Contains(NormalizeId(row[left]))).GroupBy(row => NormalizeId(row[left])).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        var comparable = visible.Headers.Select((header, index) => (Left: index, Right: downloaded.Headers.FindIndex(other => DashboardService.Normalize(other) == DashboardService.Normalize(header))))
-            .Where(pair => pair.Left != left && pair.Right >= 0).ToArray();
-        int comparedCells = 0, changedCells = 0;
+        var shownHeaders = ComparisonHeaders(visible.Headers);
+        var nativeHeaders = ComparisonHeaders(downloaded.Headers);
+        var comparable = new List<SampleColumn>();
+        var diagnostics = new List<string>();
+        var ambiguous = new List<int>();
+        for (var index = 0; index < shownHeaders.Length; index++)
+        {
+            if (index == left) continue;
+            var candidates = Enumerable.Range(0, nativeHeaders.Length).Where(i => nativeHeaders[i] == shownHeaders[index]).ToArray();
+            if (candidates.Length == 0) continue;
+            if (candidates.Length != 1 || shownHeaders.Count(header => header == shownHeaders[index]) != 1)
+            { ambiguous.Add(index + 1); continue; }
+            var nativeIndex = candidates[0];
+            var role = shownRoles.FirstOrDefault(role => role.Index == index && nativeRoles.Any(other => other.Role == role.Role && other.Index == nativeIndex))?.Role ?? "other";
+            comparable.Add(new(index, nativeIndex, role));
+        }
+        if (ambiguous.Count > 0)
+            return new(false, false, sample.Count, 0, "Rapprochement des valeurs indisponible : plusieurs en-têtes se confondent après normalisation. Le diagnostic indique les positions concernées sans recopier les en-têtes.")
+            { Diagnostics = new[] { "Colonnes liste ambiguës (positions à partir de 1) : " + string.Join(", ", ambiguous) + ". Aucun rapprochement par première occurrence." } };
+        diagnostics.Add($"Colonnes hors ID : liste={visible.Headers.Count - 1} ; CSV={downloaded.Headers.Count - 1} ; associées sans ambiguïté={comparable.Count}. Positions à partir de 1 ; rôles standard uniquement, aucun en-tête ni contenu recopié.");
         foreach (var row in downloaded.Rows)
         {
             ct.ThrowIfCancellationRequested();
@@ -74,24 +98,83 @@ public static class ExtractionVerificationService
                 {
                     foreach (var pair in comparable)
                     {
-                        if (pair.Left >= shownRows[id].Length || pair.Right >= row.Length) continue;
-                        var shown = shownRows[id][pair.Left].Trim(); var received = row[pair.Right].Trim();
-                        if (shown.Contains('…') || shown.EndsWith("...", StringComparison.Ordinal)) continue;
-                        comparedCells++;
-                        var same = System.Text.RegularExpressions.Regex.Replace(shown, @"\s+", " ") == System.Text.RegularExpressions.Regex.Replace(received, @"\s+", " ");
-                        if (!same && DashboardService.TryDate(shown, settings.DateCulture, TimeSpan.Zero, out var a) && DashboardService.TryDate(received, settings.DateCulture, TimeSpan.Zero, out var b)) same = a == b;
-                        if (!same) changedCells++;
+                        if (pair.Left >= shownRows[id].Length || pair.Right >= row.Length)
+                        { pair.Compared++; pair.Changed++; pair.MissingCells++; continue; }
+                        var shown = ComparableText(shownRows[id][pair.Left]); var received = ComparableText(row[pair.Right]);
+                        if (shown == received) { pair.Compared++; continue; }
+                        var controls = HasC1(shown) || HasC1(received);
+                        // An ellipsis inside ordinary text is data, not proof of truncation.
+                        // Even a terminal ellipsis only excludes a cell if the full CSV starts
+                        // with the entire displayed prefix. A different prefix must still fail.
+                        if (!controls && IsMatchingAbbreviation(shown, received)) { pair.Abbreviated++; continue; }
+                        pair.Compared++;
+                        // GLPI 9.5/10 Search::csv_clean emits two ASCII apostrophes
+                        // for each double quote. Compare that exact one-way export
+                        // representation only; do not rewrite either original cell.
+                        if (!controls && shown.Contains('"') && shown.Replace("\"", "''", StringComparison.Ordinal) == received)
+                        { pair.CsvQuotes++; continue; }
+                        DateTime a = default, b = default;
+                        var dates = !controls && IsDateRole(pair.Role)
+                            && DashboardService.TryDate(shown, settings.DateCulture, TimeSpan.Zero, out a)
+                            && DashboardService.TryDate(received, settings.DateCulture, TimeSpan.Zero, out b);
+                        if (dates && a == b) continue;
+                        pair.Changed++;
+                        if (controls) pair.Controls++;
+                        else if (shown.Length == 0 || received.Length == 0) pair.Empty++;
+                        else if (dates) pair.Dates++;
+                        else pair.Other++;
                     }
                 }
             }
             if (found.Count == sample.Count) break;
         }
         var missing = sample.Count - found.Count;
+        var comparedCells = comparable.Sum(column => column.Compared);
+        var changedCells = comparable.Sum(column => column.Changed);
+        var abbreviated = comparable.Sum(column => column.Abbreviated);
+        foreach (var column in comparable.Where(column => column.Changed > 0 || column.Abbreviated > 0 || column.CsvQuotes > 0))
+            diagnostics.Add($"Colonne liste {column.Left + 1} → CSV {column.Right + 1} ; rôle={column.Role} ; écarts={column.Changed}/{column.Compared} ; abrégées compatibles={column.Abbreviated} ; format guillemets CSV={column.CsvQuotes} ; avec contrôle C1={column.Controls} ; vide/non-vide={column.Empty} ; date/heure={column.Dates} ; cellule absente={column.MissingCells} ; autres={column.Other}.");
+        if (comparable.Any(column => column.Controls > 0))
+            diagnostics.Add("Les écarts contenant un contrôle C1 restent des divergences. Aucune conversion Windows-1252 ni substitution de ponctuation n’a été appliquée ; ces compteurs ne prouvent pas leur origine.");
         return new(true, missing == 0 && changedCells == 0, sample.Count, missing, changedCells > 0
-            ? $"Les identifiants de l’échantillon ont été rapprochés, mais {changedCells}/{comparedCells} valeurs comparables diffèrent entre la liste et l’export. La recherche a pu évoluer ; aucune valeur n’est inscrite au diagnostic."
+            ? $"{found.Count}/{sample.Count} identifiants de l’échantillon ont été rapprochés, mais {changedCells}/{comparedCells} valeurs comparables diffèrent entre la liste et l’export. L’affichage peut différer du CSV, ou la recherche peut avoir évolué. Le journal précise les colonnes et catégories d’écarts sans enregistrer les valeurs."
             : missing == 0
-            ? $"Les {sample.Count} identifiants et {comparedCells} valeurs comparables de l’échantillon correspondent à l’export. Les cellules visiblement abrégées sont exclues. Ce contrôle complète le comptage sans prouver à lui seul toute la recherche."
-            : $"{missing} identifiant(s) de la liste affichée manquent dans l’export sur un échantillon de {sample.Count}. Le fichier reçu peut correspondre à un autre périmètre ou à une recherche ayant évolué.");
+            ? $"Les {sample.Count} identifiants et {comparedCells} valeurs comparables de l’échantillon correspondent à l’export. {abbreviated} cellule(s) abrégée(s) au préfixe compatible sont exclues. Ce contrôle complète le comptage sans prouver à lui seul toute la recherche."
+            : $"{missing} identifiant(s) de la liste affichée manquent dans l’export sur un échantillon de {sample.Count}. Le fichier reçu peut correspondre à un autre périmètre ou à une recherche ayant évolué.")
+        { Diagnostics = diagnostics };
+    }
+
+    // U+0085 is both a C1 control and .NET whitespace. Do not let Trim/\s erase
+    // this evidence of an encoding problem, including at the start/end of a cell.
+    private static string ComparableText(string value) => Regex.Replace(value, @"[\t\n\v\f\r\p{Zs}\p{Zl}\p{Zp}]+", " ").Trim(' ');
+    private static string[] ComparisonHeaders(IReadOnlyList<string> headers)
+    {
+        var normalized = headers.Select(DashboardService.Normalize).ToArray();
+        return headers.Select((header, index) =>
+        {
+            // Both readers disambiguate repeated labels with " (2)". That suffix
+            // does not establish that the two exports ordered those fields alike.
+            var duplicate = Regex.Match(header, @"^(.*) \((?:[2-9]|[1-9][0-9]+)\)$");
+            var original = duplicate.Success ? DashboardService.Normalize(duplicate.Groups[1].Value) : "";
+            return duplicate.Success && normalized.Contains(original, StringComparer.Ordinal) ? original : normalized[index];
+        }).ToArray();
+    }
+    private static bool HasC1(string value) => value.Any(character => character is >= '\u0080' and <= '\u009f');
+    private static bool IsDateRole(string role) => role is "created" or "updated" or "resolved" or "closed" or "due" or "satisfaction-invited";
+    private static bool IsMatchingAbbreviation(string shown, string received)
+    {
+        var suffix = shown.EndsWith('…') ? 1 : shown.EndsWith("...", StringComparison.Ordinal) ? 3 : 0;
+        if (suffix == 0) return false;
+        var prefix = shown[..^suffix].TrimEnd(' ');
+        return prefix.Length > 0 && received.Length > prefix.Length && received.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    private sealed class SampleColumn(int left, int right, string role)
+    {
+        public int Left { get; } = left;
+        public int Right { get; } = right;
+        public string Role { get; } = role;
+        public int Compared, Changed, Abbreviated, CsvQuotes, Controls, Empty, Dates, MissingCells, Other;
     }
 
     private static string NormalizeId(string value)

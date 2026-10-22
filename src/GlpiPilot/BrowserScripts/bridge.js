@@ -2,7 +2,7 @@
   'use strict';
 
   // Reinstalling after every command is safe; a full navigation creates fresh state.
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.1';
   if (window.__glpiPilot?.version === VERSION) return VERSION;
   try { window.__glpiPilot?.cancelPick(); } catch (_) { /* Previous document adapter. */ }
 
@@ -106,7 +106,35 @@
       if (fallback && (!compact(text) || iconOnly) && node.parentElement && [...node.parentElement.childNodes].some(sibling => sibling !== node && (sibling.nodeType === Node.TEXT_NODE || sibling instanceof Element && visible(sibling)) && plain(sibling.textContent).includes(plain(fallback)))) value = '';
       return /^(DIV|P|LI)$/.test(node.tagName) ? '\n' + value + '\n' : value;
     }
-    return read(cell).replace(/\u00a0/g, ' ').split(/\r?\n/).map(s => s.replace(/[\t ]+/g, ' ').trim()).filter(Boolean).join('\n').trim();
+    const clean = text => text.replace(/\u00a0/g, ' ').split(/\r?\n/).map(s => s.replace(/[\t ]+/g, ' ').trim()).filter(Boolean).join('\n').trim();
+    const shown = clean(read(cell));
+    // GLPI 9.5/10 showItem abbreviates long multivalue cells to their first item,
+    // with no ellipsis. Html::showToolTip supplies the complete static list in a
+    // specifically paired fa-comments popup. Read that list only when its first
+    // item exactly proves the association with the displayed cell. Ordinary
+    // information/title tooltips and every unpaired hidden subtree stay excluded.
+    const markers = [...cell.children].filter(node => node.matches('span.fa-comments') && /^tooltip\d+$/.test(node.id) && visible(node));
+    if (shown && markers.length === 1) {
+      const marker = markers[0];
+      const content = marker.nextElementSibling;
+      if (content?.matches('div.invisible,div.tooltip-invisible') && content.id === 'content' + marker.id &&
+          all('#' + css(marker.id)).length === 1 && all('#' + css(content.id)).length === 1 && !visible(content) &&
+          content.children.length === 1 && content.firstElementChild.matches('div.fup-popup')) {
+        const popup = content.firstElementChild;
+        const breaks = all('br', popup);
+        if (breaks.length >= 2 && breaks.every(node => node.parentElement === popup) && !all('hr,' + TABLE, popup).length) {
+          const parts = [''];
+          for (const node of popup.childNodes) {
+            if (node instanceof Element && node.matches('br')) parts.push('');
+            else parts[parts.length - 1] += read(node);
+          }
+          const items = parts.map(clean);
+          if (items.at(-1) === '') items.pop(); // showItem appends a BR after every item.
+          if (items.length >= 2 && items.every(item => item && !item.includes('\n')) && items[0] === shown) return items.join('\n');
+        }
+      }
+    }
+    return shown;
   }
 
   function rowCells(row, table) {

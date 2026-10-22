@@ -160,9 +160,14 @@ public sealed class SourceProfile
     private static readonly string[] AcquisitionFields = { "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "ReconnectAttempts", "ResumePagination", "AutoSaveXlsx" };
     public void Capture(AppSettings settings)
     {
-        Url = settings.PortalUrl; Browser = settings.BrowserChannel; Mode = settings.AutoMode; ExportFolder = settings.ExportFolder;
-        Acquisition = AcquisitionFields.ToDictionary(name => name, name => Convert.ToString(typeof(AppSettings).GetProperty(name)!.GetValue(settings), System.Globalization.CultureInfo.InvariantCulture) ?? "", StringComparer.Ordinal);
+        Url = settings.PortalUrl; Browser = settings.BrowserChannel; Mode = settings.AutoMode;
+        CaptureAcquisition(settings);
         Interpretation = settings.Dashboard.Copy(); WorkspaceQueries = settings.Queries.Copy();
+    }
+    internal void CaptureAcquisition(AppSettings settings)
+    {
+        ExportFolder = settings.ExportFolder;
+        Acquisition = AcquisitionFields.ToDictionary(name => name, name => Convert.ToString(typeof(AppSettings).GetProperty(name)!.GetValue(settings), System.Globalization.CultureInfo.InvariantCulture) ?? "", StringComparer.Ordinal);
     }
     public void ApplyTo(AppSettings settings)
     {
@@ -317,9 +322,33 @@ public static class SettingsRecovery
             if (memory.Length + read > MaximumBytes) throw new InvalidDataException("Le fichier de réglages dépasse 4 Mio.");
             memory.Write(buffer, 0, read);
         }
-        var settings = JsonSerializer.Deserialize<AppSettings>(memory.ToArray(), new JsonSerializerOptions { MaxDepth = 32 })
+        using var document = JsonDocument.Parse(memory.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
+        var settings = document.RootElement.Deserialize<AppSettings>(new JsonSerializerOptions { MaxDepth = 32 })
             ?? throw new InvalidDataException("Les réglages sont absents.");
-        settings.Normalize(); return settings;
+        settings.Normalize();
+        RestoreLegacyActiveAcquisition(document.RootElement, settings);
+        return settings;
+    }
+    private static void RestoreLegacyActiveAcquisition(JsonElement document, AppSettings settings)
+    {
+        // v2 stored one global acquisition and source identities only. Do not infer legacy
+        // from an empty dictionary: an explicitly empty modern recipe must stay empty.
+        if (settings.ActiveSourceId.Length == 0 || !document.TryGetProperty(nameof(AppSettings.Sources), out var sources)
+            || sources.ValueKind != JsonValueKind.Array) return;
+        var active = settings.Sources.Where(source => source.Id == settings.ActiveSourceId).Take(2).ToArray();
+        if (active.Length != 1) return;
+        var originals = sources.EnumerateArray().Where(source => source.ValueKind == JsonValueKind.Object
+            && source.TryGetProperty(nameof(SourceProfile.Id), out var id) && id.ValueKind == JsonValueKind.String
+            && id.GetString() == settings.ActiveSourceId).Take(2).ToArray();
+        if (originals.Length != 1 || originals[0].TryGetProperty(nameof(SourceProfile.Acquisition), out _)) return;
+
+        string currentUrl;
+        try { currentUrl = TargetUrlPolicy.PersistedTarget(settings.PortalUrl); }
+        catch (InvalidOperationException) { return; }
+        // SamePage deliberately ignores search filters; that is not enough to establish
+        // which historical source owns the global recipe.
+        if (currentUrl.Length == 0 || !string.Equals(active[0].Url, currentUrl, StringComparison.Ordinal)) return;
+        active[0].CaptureAcquisition(settings);
     }
     public static AppSettings Load(string path)
     {

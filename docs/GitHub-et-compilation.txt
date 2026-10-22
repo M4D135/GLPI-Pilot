@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.0 — C# WinForms / WebView2, packs PROD et DEV
+GLPI Pilot 3.0.1 — C# WinForms / WebView2, packs PROD et DEV
 
 ARCHITECTURE ET DISTRIBUTION
 Le produit utilise .NET 10, un hôte C# WinForms minimal et une interface
@@ -17,6 +17,7 @@ Chaque ZIP contient exactement GLPI-Pilot.exe et wad à sa racine :
   wad/version.json               version et provenance de construction
   wad/SHA256SUMS.txt              empreintes de tous les fichiers du pack
   wad/sources/                   sources et tests, édition DEV seulement
+  wad/sources/GLPI-Pilot.sources.json  inventaire et commit des sources DEV
 PROD et DEV utilisent le même EXE. DEV comprend les sources C#, les pages
 web, les manifestes du runtime et les scripts nécessaires à la reconstruction.
 Aucun profil SSO, réglage personnel ou relevé métier n’est inclus.
@@ -32,7 +33,7 @@ Dépôt : https://github.com/M4D135/GLPI-Pilot
 Packs publiés : https://github.com/M4D135/GLPI-Pilot/releases
 Chaîne Windows : https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 GitHub Code > Download ZIP télécharge les sources, pas le pack exécutable.
-Lire docs/RELEASE-3.0.0.md et docs/Rapport-verification.txt pour le statut de
+Lire docs/RELEASE-3.0.1.md et docs/Rapport-verification.txt pour le statut de
 la livraison. Un EXE compilé ou un ZIP local ne prouve ni une exécution
 Windows réussie ni la publication d’une version validée.
 
@@ -40,7 +41,7 @@ DEPENDANCES EPINGLEES
   Microsoft.Web.WebView2 SDK : 1.0.4258.31
   WebView2 Fixed Version Runtime : 154.0.4258.62 x64
   Microsoft.Playwright : 1.63.0
-  SDK : .NET 10 stable ; respecter global.json lorsqu’il est présent
+  SDK : .NET 10 stable, 10.0.401 minimum selon la progression de global.json
   Shell de construction : PowerShell 7.2 ou ultérieur
 Le CAB officiel du runtime représente 308 020 625 octets. Il contient
 257 fichiers, soit 701 153 191 octets une fois extraits. Le pack ajoute
@@ -79,7 +80,7 @@ Dans PowerShell 7.2+, depuis la racine des sources transférées :
     -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
     -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
     -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-    -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.0'
+    -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.1'
 
 RuntimePath accepte le dossier contenant msedgewebview2.exe, ou un dossier
 parent contenant un unique runtime extrait. Le script détecte les chemins
@@ -102,6 +103,42 @@ OutputDirectory pour chaque construction. Le pack DEV se reconstruit depuis
 wad/sources avec les mêmes SDK, runtime et paquets locaux ; il ne contient
 pas un installateur du SDK ou un cache NuGet universel.
 
+PROVENANCE DES SOURCES ET RECONSTRUCTION DEV
+La construction d’une distribution exige l’un des deux états suivants :
+  - un dépôt Git dont la racine est celle des sources, avec un commit et
+    un arbre de travail propres, tous les fichiers distribués étant suivis ;
+  - les sources d’un pack DEV à partir de 3.0.1, accompagnées de leur
+    manifeste GLPI-Pilot.sources.json et sans modification de ces sources.
+Un téléchargement GitHub « Code > Download ZIP » ne contient ni .git ni ce
+manifeste ; utiliser un clone ou un pack DEV pour construire une distribution.
+
+build-tools/SourceProvenance.ps1 vérifie les sources avant publication et
+les contrôle de nouveau avant leur copie dans DEV. Le manifeste contient
+le commit Git, son arbre et le SHA-256 de chaque fichier copié. Il exclut
+sa propre entrée pour éviter une empreinte circulaire, ainsi que les sorties
+générées bin, obj, node_modules, artifacts et __pycache__. L’inventaire doit
+correspondre exactement aux fichiers exportés : un ajout, une suppression,
+une modification, un chemin ambigu, un lien ou une jonction provoque un refus.
+Les conversions de fins de ligne LF/CRLF reconnues par Git sont acceptées
+sur un dépôt propre ; les octets effectivement exportés sont ensuite figés
+par leurs empreintes, sans conversion supplémentaire.
+
+Depuis wad/sources, build.ps1 peut ainsi retrouver le commit original sans
+Git installé et le réutiliser dans wad/version.json après vérification de
+chaque source. Un dépôt Git placé dans un dossier parent ne fournit jamais
+ce commit. Un export DEV intact reste utilisable dans ce cas grâce à son
+manifeste indépendant. Si GITHUB_SHA est présent, il doit correspondre au
+commit vérifié ; cette variable seule ne constitue pas une provenance.
+
+Pour distribuer des sources modifiées, créer un nouveau commit dans leur
+propre dépôt, avec Git disponible, puis reconstruire. Ne pas réécrire le
+SHA dans le manifeste pour attribuer des changements à l’ancien commit.
+Le manifeste assure une cohérence locale entre l’inventaire et les sources ;
+il ne fournit ni signature d’éditeur ni preuve d’authenticité cryptographique.
+La confiance dans le pack initial dépend de son origine et des contrôles de
+publication. Une reconstruction conserve la provenance des sources, sans
+promettre un EXE bit pour bit identique à celui de la publication initiale.
+
 PREPARER LES DEPENDANCES SUR UNE MACHINE CONNECTEE
 La préparation suivante se fait sur un Windows autorisé à télécharger,
 avant transfert du cache vers la VM. Elle n’est jamais déclenchée implicitement
@@ -112,7 +149,7 @@ par le build hors ligne :
 
   $env:NUGET_PACKAGES = 'C:\GLPI-BuildCache\nuget-packages'
   .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-    -OutputDirectory '.\artifacts\release-3.0.0'
+    -OutputDirectory '.\artifacts\release-3.0.1'
 
 Le script de préparation utilise seulement l’URL Microsoft épinglée. Il
 refuse les redirections, limite le téléchargement à la taille attendue,
@@ -144,15 +181,30 @@ n’est utilisé pour le runtime WebView2.
 VERIFICATIONS ET CI WINDOWS
 .github/workflows/windows.yml décrit les étapes, réalisées par le script
 build-tools/Invoke-WindowsCi.ps1 :
-  BclChecks      moteurs métier, configurations, historique et mise à jour
+  BclChecks      provenance des sources, moteurs, configurations et mise à jour
   BrowserChecks  collecte, SSO simulé, exports et formulaires synthétiques
   WebViewChecks  opérations C# et interactions des modules web
-  BuildPack      runtime fixe vérifié, publication et packs PROD/DEV
+  BuildPack      runtime fixe, packs PROD/DEV et reconstruction DEV hors ligne
   PackStartup    vrai hôte WinForms/WebView2 extrait, thèmes, zoom, navigation
   UpdateStartup  remplacement/rollback de copies jetables du pack
 Les étapes de bureau nécessitent Windows et une session adaptée. Les gardes
 des harnais ne doivent pas être contournées pour présenter un essai comme
 une exécution du runner GitHub.
+
+BuildPack extrait les sources du DEV construit, sans métadonnées .git, puis
+les reconstruit avec un SDK et un runtime déjà présents et un dépôt local de
+paquets. Le cache NuGet de cette reconstruction est initialement vide. Le
+test vérifie le commit conservé, la version, l’identité des EXE PROD/DEV de
+la reconstruction et l’acceptation du nouveau pack par le moteur de mise à
+jour. Il ne contacte pas un serveur de signature. Seuls les packs originaux
+du run sont proposés à la publication ; le résultat de ce contrôle reste
+dans les journaux. Ce test ne prouve pas un essai dans la VM privée.
+
+Pour vérifier la provenance sans SDK, runtime, réseau ou lancement du produit :
+  pwsh -NoProfile -File tests/SourceProvenanceChecks/Program.ps1
+Ce harnais exige Git pour créer ses dépôts de test temporaires. Il contrôle
+notamment le commit propre, le refus des sources modifiées, l’export sans
+.git, le dépôt parent étranger, GITHUB_SHA, les fins de ligne et l’inventaire.
 
 Les pages terrain se vérifient avec leur moteur C# réel, sans dépendance npm
 supplémentaire si le pilote .NET de Playwright est fourni :

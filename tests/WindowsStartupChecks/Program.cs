@@ -109,6 +109,8 @@ internal sealed class WindowsWebViewFixture
                 Check((await page.Locator("#zoom-label").InnerTextAsync()).Contains("110", StringComparison.Ordinal), "The stored 110 percent zoom is restored in a new Windows process.");
                 await StopNormallyAsync(third);
             }
+            await CheckRuntimeCrashAsync(playwright, settingsPath, browser: false);
+            await CheckRuntimeCrashAsync(playwright, settingsPath, browser: true);
             Check(Digest(_pack) == archiveHash, "The original validated production ZIP remains unchanged.");
             success = true;
         }
@@ -171,14 +173,39 @@ internal sealed class WindowsWebViewFixture
         await Until(() => { page = browser.Contexts.SelectMany(context => context.Pages).FirstOrDefault(p => p.Url.StartsWith("https://glpi-pilot.local/", StringComparison.Ordinal)); return page is not null; });
         page!.SetDefaultTimeout(20000); await page.Locator("body[data-ready=true]").WaitForAsync(new() { Timeout = 60000 }); process.Refresh(); return page;
     }
-    private async Task StopNormallyAsync(Process process)
+    private async Task CheckRuntimeCrashAsync(IPlaywright playwright, string settingsPath, bool browser)
+    {
+        var settingsHash = Digest(settingsPath); var port = Port(); var process = Start(port);
+        await using var connected = await ConnectAsync(playwright, process, port);
+        var page = await ReadyPageAsync(connected, process);
+        var session = browser ? await connected.NewBrowserCDPSessionAsync() : await page.Context.NewCDPSessionAsync(page);
+        var kind = browser ? "BrowserProcessExited" : "RenderProcessExited";
+        // The documented CDP commands crash only this fixture's browser or
+        // renderer. A closed channel is expected; the native event is the proof.
+        var crash = session.SendAsync(browser ? "Browser.crash" : "Page.crash");
+        try { await crash.WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (PlaywrightException) { }
+        catch (TimeoutException)
+        { _ = crash.ContinueWith(static failed => { _ = failed.Exception; }, TaskContinuationOptions.OnlyOnFaulted); }
+        await Until(() =>
+        {
+            process.Refresh();
+            return !process.HasExited && process.MainWindowTitle == "GLPI Pilot — affichage interrompu"
+                && Directory.EnumerateFiles(Path.Combine(_state, "Logs"), "*.log")
+                    .Any(path => File.ReadAllText(path).Contains("Incident du moteur d’affichage : " + kind, StringComparison.Ordinal));
+        });
+        Check(Visible(process), kind + " leaves a visible native diagnostic after the real embedded process crashes.");
+        await StopNormallyAsync(process, kind + " permits a standard bounded native close without awaiting the dead page.");
+        Check(Digest(settingsPath) == settingsHash, kind + " preserves the exact saved synthetic settings.");
+    }
+    private async Task StopNormallyAsync(Process process, string message = "The native close handshake flushes the page and exits with code zero.")
     {
         process.Refresh(); if (!process.CloseMainWindow()) throw new InvalidOperationException("The window refused a standard close request.");
         await process.WaitForExitAsync(_deadline.Token).WaitAsync(TimeSpan.FromSeconds(25));
         // A disposed WebView control can return before its browser finishes
         // releasing the profile. The next launch must get its own CDP port.
         await WaitForRuntimeExitAsync();
-        Check(process.ExitCode == 0, "The native close handshake flushes the page and exits with code zero.");
+        Check(process.ExitCode == 0, message);
     }
     private bool IsOwnedRuntime(Process process)
     {

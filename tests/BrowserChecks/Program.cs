@@ -47,15 +47,30 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Automatique : export ambigu refusé sans lancer un repli", CheckAmbiguousNativeNoFallback),
     ("Automatique : export incomplet signalé et jamais remplacé silencieusement", CheckNativeIncomplete),
     ("Automatique : changement de contexte après le téléchargement signalé", CheckNativeScopeChange),
+    ("Automatique : identité illisible après transfert, couverture non certifiée", CheckNativeFinalSampleUnavailable),
     ("Échantillon : identifiants groupés normalisés, colonnes absentes non devinées", CheckSampleNormalization),
+    ("Échantillon : diagnostic de 33 écarts par colonne sans données privées", CheckSampleDiagnostics),
+    ("Échantillon : contrôles C1 conservés, espaces de présentation rapprochés", CheckSampleControls),
+    ("Échantillon : ponctuation et abréviations ne masquent pas une divergence", CheckSampleAbbreviations),
+    ("Échantillon : équivalence de date réservée aux colonnes de date", CheckSampleDates),
+    ("Échantillon : représentation native des guillemets limitée au format GLPI", CheckSampleCsvQuotes),
+    ("Échantillon : en-têtes ambigus et cellules absentes non devinés", CheckSampleAmbiguity),
     ("Reprise : pages conservées recontrôlées après annulation", () => CheckCheckpoint(false)),
     ("Reprise : page conservée modifiée, collecte redémarrée", () => CheckCheckpoint(true)),
     ("Reconnexion : expiration SSO puis reprise de la page exacte", () => CheckReconnect(false)),
     ("Reconnexion : changement de périmètre refusé après SSO", () => CheckReconnect(true)),
     ("Réseau : coupure transitoire et reprise sans doublons", () => CheckNetwork(false)),
     ("Réseau : tentatives épuisées et relevé partiel conservé", () => CheckNetwork(true)),
-    ("Échantillon : mêmes ID mais valeurs différentes refusées", CheckNativeWrongCells)
+    ("Échantillon : mêmes ID mais valeurs différentes refusées", CheckNativeWrongCells),
+    ("Échantillon : cellule GLPI multivaluée complète rapprochée du CSV", () => CheckNativeMultiValue(false)),
+    ("Échantillon : divergence après le premier élément multivalué refusée", () => CheckNativeMultiValue(true))
 };
+if (args.Length != 0)
+{
+    if (args.Length != 2 || args[0] != "--filter") { Console.Error.WriteLine("Usage: BrowserChecks [--filter <partie du nom>]"); return 2; }
+    checks = checks.Where(check => check.Name.Contains(args[1], StringComparison.OrdinalIgnoreCase)).ToList();
+    if (checks.Count == 0) { Console.Error.WriteLine("Aucune vérification ne correspond au filtre."); return 2; }
+}
 int failures = 0;
 try
 {
@@ -466,6 +481,17 @@ async Task CheckNativeScopeChange()
     True(run.Data.Warnings.Any(x => x.Contains("contexte de recherche", StringComparison.Ordinal)), "L’écart de contexte doit être visible.");
 }
 
+async Task CheckNativeFinalSampleUnavailable()
+{
+    var html = NativeHtml().Replace("</main>", "<script>document.querySelector('#native-csv-all').addEventListener('click',()=>{for(const row of document.querySelectorAll('#computer-rows tr')) row.children[1].textContent='Identité illisible';});</script></main>", StringComparison.Ordinal);
+    await using var h = await Open(html, NativeCsv());
+    var logs = new List<string>(); var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add;
+    var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+    True(!run.Data.Complete && run.Data.Warnings.Any(line => line.Contains("échantillon n’est plus disponible", StringComparison.Ordinal)), "Une identité non vérifiable après le transfert interdit un relevé complet.");
+    True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL · Rapprochement", StringComparison.Ordinal)), "Le journal doit expliquer l’indisponibilité du contrôle final.");
+    True(File.Exists(run.NativePath), "Le fichier natif reste conservé.");
+}
+
 Task CheckSampleNormalization()
 {
     var visible = new TableSnapshot { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "001 001", "A" }, new[] { "1\u202F002", "B" } } };
@@ -474,6 +500,107 @@ Task CheckSampleNormalization()
     True(check.Available && check.Matches && check.Sample == 2, "Les séparateurs de milliers doivent être reconnus sans modifier les cellules.");
     native.Headers[0] = "Sans identité";
     True(!ExtractionVerificationService.VerifyNativeSample(visible, native, new()).Available, "Aucun numéro ne doit être déduit d’une autre colonne.");
+    return Task.CompletedTask;
+}
+
+Task CheckSampleDiagnostics()
+{
+    // Synthetic values only. This reproduces the reported count, not the private export.
+    var headers = new List<string> { "ID", "Titre", "Statut", "Priorité", "Date d'ouverture", "Dernière modification", "Attribué à - Technicien", "Lieu", "Catégorie", "Entité", "Demandeur", "Urgence", "Impact", "En-tête privé synthétique" };
+    var visible = new TableSnapshot { Headers = headers };
+    var native = new ExtractionResult { Headers = headers.ToList() };
+    for (var index = 0; index < 20; index++)
+    {
+        var row = Enumerable.Range(0, headers.Count).Select(column => column == 0 ? (800100 + index).ToString() : $"Secret synthétique {index}/{column}").ToArray();
+        visible.Rows.Add(row); native.Rows.Add(row.ToArray());
+        native.Rows[index][1] = "Titre modifié confidentiel";
+        if (index < 13) native.Rows[index][13] = "Autre valeur confidentielle";
+    }
+    var check = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    True(check.Available && !check.Matches && check.Sample == 20 && check.Missing == 0, "Les bons ID ne doivent pas annuler les écarts de valeur.");
+    True(check.Explanation.Contains("33/260", StringComparison.Ordinal), "Le total des écarts doit rester exact.");
+    var diagnostic = check.Explanation + string.Join("\n", check.Diagnostics);
+    True(diagnostic.Contains("Colonne liste 2 → CSV 2 ; rôle=title ; écarts=20/20", StringComparison.Ordinal)
+        && diagnostic.Contains("Colonne liste 14 → CSV 14 ; rôle=other ; écarts=13/20", StringComparison.Ordinal), "Les positions et catégories doivent localiser les écarts.");
+    foreach (var secret in visible.Rows.Concat(native.Rows).SelectMany(row => row).Append(headers[^1]))
+        True(!diagnostic.Contains(secret, StringComparison.Ordinal), "Le diagnostic ne doit recopier ni ID, ni valeur, ni en-tête libre.");
+    return Task.CompletedTask;
+}
+
+NativeSampleVerification CompareCell(string shown, string received, string header = "Titre") =>
+    ExtractionVerificationService.VerifyNativeSample(
+        new TableSnapshot { Headers = new() { "ID", header }, Rows = new() { new[] { "123", shown } } },
+        new ExtractionResult { Headers = new() { "ID", header }, Rows = new() { new[] { "123", received } } }, new());
+
+Task CheckSampleControls()
+{
+    foreach (var (shown, received) in new[] { ("Début fin", "Début\u0085fin"), ("Texte", "\u0085Texte\u0085"), ("l’intervention", "l\u0092intervention"), ("a – b", "a \u0096 b") })
+    {
+        var check = CompareCell(shown, received);
+        True(!check.Matches && check.Diagnostics.Any(line => line.Contains("avec contrôle C1=1", StringComparison.Ordinal)), "Un contrôle C1 doit rester divergent et identifié, même si .NET le considère comme un espace.");
+    }
+    True(CompareCell("Début\u00a0fin\nligne", "Début\u202ffin\tligne").Matches, "Les espaces et retours de présentation restent équivalents.");
+    True(!CompareCell("22/10/2026 17:20", "\u00852026-10-22 17:20:00\u0085", "Date d'ouverture").Matches, "Le parseur de date ne doit pas effacer indirectement un contrôle C1.");
+    True(!CompareCell("Titre…", "Titre\u0085complet").Matches, "Un contrôle C1 divergent ne doit pas être masqué par une abréviation.");
+    var original = "l\u0092intervention";
+    var visible = new TableSnapshot { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "123", "l’intervention" } } };
+    var native = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "123", original } } };
+    _ = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    Equal(original, native.Rows[0][1]); Equal("l’intervention", visible.Rows[0][1]);
+    return Task.CompletedTask;
+}
+
+Task CheckSampleAbbreviations()
+{
+    True(!CompareCell("Avant…après", "Avant…autre").Matches, "Une ellipse au milieu d’un texte ne doit pas l’exclure du contrôle.");
+    True(!CompareCell("Autre titre…", "Titre complet").Matches, "Une abréviation dont le préfixe diffère reste incompatible.");
+    True(!CompareCell("…", "Une valeur arbitraire").Matches, "Une ellipse seule ne fournit aucun préfixe à vérifier.");
+    foreach (var shown in new[] { "Titre…", "Titre..." })
+    {
+        var abbreviated = CompareCell(shown, "Titre complet");
+        True(abbreviated.Matches && abbreviated.Diagnostics.Any(line => line.Contains("abrégées compatibles=1", StringComparison.Ordinal)), "Seule l’abréviation au préfixe compatible est signalée comme exclue.");
+    }
+    var identical = CompareCell("Texte…", "Texte…");
+    True(identical.Matches && identical.Explanation.Contains("et 1 valeurs", StringComparison.Ordinal), "Une ponctuation identique est réellement comparée, pas ignorée.");
+    return Task.CompletedTask;
+}
+
+Task CheckSampleDates()
+{
+    True(CompareCell("22/10/2026 17:20", "2026-10-22 17:20:00", "Date d'ouverture").Matches, "La même date reste comparable entre formats reconnus.");
+    var difference = CompareCell("22/10/2026 17:20", "2026-10-22 17:21:00", "Date d'ouverture");
+    True(!difference.Matches && difference.Diagnostics.Any(line => line.Contains("date/heure=1", StringComparison.Ordinal)), "Une minute différente ne doit pas être masquée.");
+    True(!CompareCell("22/10/2026", "2026-10-22").Matches, "Deux titres différents ne deviennent pas équivalents parce qu’ils ressemblent à des dates.");
+    return Task.CompletedTask;
+}
+
+Task CheckSampleCsvQuotes()
+{
+    // Search::csv_clean in the public GLPI 9.5.13 and 10.0.22 sources uses
+    // str_replace("\"", "''", value). This is not a general punctuation mapping.
+    var shown = "Demande \"Écran\" à préparer"; var received = "Demande ''Écran'' à préparer";
+    var check = CompareCell(shown, received);
+    True(check.Matches && check.Diagnostics.Any(line => line.Contains("format guillemets CSV=1", StringComparison.Ordinal)), "La représentation exacte des guillemets par l’export GLPI doit être rapprochée et comptée.");
+    True(!CompareCell(shown, "Demande ''Réseau'' à préparer").Matches, "Un mot changé doit toujours diverger avec le même format de guillemets.");
+    True(!CompareCell(received, shown).Matches, "La transformation d’export ne s’applique pas dans le sens inverse.");
+    True(!CompareCell("Texte ’typographique’", "Texte ''typographique''").Matches, "Les apostrophes typographiques ne doivent pas être assimilées à des guillemets.");
+    True(!CompareCell(shown, received + "\u0085").Matches, "Une représentation de guillemets ne doit pas masquer un contrôle C1.");
+    return Task.CompletedTask;
+}
+
+Task CheckSampleAmbiguity()
+{
+    var visible = new TableSnapshot { Headers = new() { "ID", "Code-A", "Code A" }, Rows = new() { new[] { "123", "Alpha", "Beta" } } };
+    var native = new ExtractionResult { Headers = new() { "ID", "Code A", "Code-A" }, Rows = new() { new[] { "123", "Beta", "Alpha" } } };
+    var ambiguous = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    True(!ambiguous.Available && !ambiguous.Matches && ambiguous.Diagnostics.Any(line => line.Contains("2, 3", StringComparison.Ordinal)), "Des en-têtes normalisés identiques ne doivent pas être liés par première occurrence.");
+    visible.Headers = new() { "ID", "Titre" }; native.Headers = new() { "ID", "Titre", "Titre (2)" };
+    var renamed = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    True(!renamed.Available && !renamed.Matches, "Le suffixe ajouté à un en-tête CSV dupliqué ne prouve pas quel champ correspond au premier titre visible.");
+    visible.Headers = new() { "ID", "Titre" }; native.Headers = new() { "ID", "Titre" };
+    native.Rows[0] = new[] { "123" };
+    var missing = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
+    True(missing.Available && !missing.Matches && missing.Diagnostics.Any(line => line.Contains("cellule absente=1", StringComparison.Ordinal)), "Une cellule absente ne doit pas être ignorée comme une valeur compatible.");
     return Task.CompletedTask;
 }
 
@@ -542,8 +669,46 @@ async Task CheckNetwork(bool permanent)
 async Task CheckNativeWrongCells()
 {
     await using var h = await Open(NativeHtml(), NativeCsv().Replace("P-MA-001", "Une autre valeur", StringComparison.Ordinal));
-    try { await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Valeurs natives incompatibles publiées"); }
+    var logs = new List<string>(); string? retained = null;
+    var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add; service.NativeFileSaved += path => retained = path;
+    try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Valeurs natives incompatibles publiées"); }
     catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.OrdinalIgnoreCase), "Les valeurs incompatibles doivent interrompre la certification, même avec les bons ID."); }
+    True(File.Exists(retained) && (await File.ReadAllTextAsync(retained!)).Contains("Une autre valeur", StringComparison.Ordinal), "Le fichier natif divergent doit rester intact.");
+    True(logs.Any(line => line.StartsWith("ÉCHANTILLON DÉTAIL · Colonne liste", StringComparison.Ordinal)), "Le diagnostic de colonne doit être présent dans le vrai parcours automatique.");
+    True(!string.Join("\n", logs).Contains("Une autre valeur", StringComparison.Ordinal), "La valeur divergente ne doit pas être inscrite au journal.");
+}
+
+async Task CheckNativeMultiValue(bool changed)
+{
+    // GLPI 9.5/10 Search::showItem + Html::showToolTip, with synthetic contents.
+    // Only the first value is visible; the full static popup is already in this cell.
+    var html = NativeHtml().Replace("</body>", """
+        <style>.tooltip-invisible { display:none }</style><script>
+        for (const row of document.querySelectorAll('#computer-rows tr')) {
+          const id = row.dataset.id; const cell = row.children[2]; const name = cell.textContent;
+          cell.innerHTML = `<a href='/front/computer.form.php?id=${id}'>${name}</a> <span id='tooltip${id}' class='fas fa-comments fa-fw'></span><div id='contenttooltip${id}' class='tooltip-invisible'><div class='fup-popup'><a href='/front/computer.form.php?id=${id}'>${name}</a><br>Annexe-${id}<br></div></div>`;
+        }
+        </script></body>
+        """, StringComparison.Ordinal);
+    var csv = NativeCsv().Replace("101;P-MA-001", "101;\"P-MA-001\nAnnexe-101\"", StringComparison.Ordinal)
+        .Replace("102;P-MA-002", "102;\"P-MA-002\nAnnexe-102\"", StringComparison.Ordinal);
+    if (changed) csv = csv.Replace("Annexe-101", "Annexe modifiée", StringComparison.Ordinal);
+    await using var h = await Open(html, csv);
+    var logs = new List<string>(); string? retained = null;
+    var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add; service.NativeFileSaved += path => retained = path;
+    if (changed)
+    {
+        try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Une divergence dans le second élément a été publiée"); }
+        catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.OrdinalIgnoreCase), "Tous les éléments doivent participer à la comparaison."); }
+        True(!string.Join("\n", logs).Contains("Annexe modifiée", StringComparison.Ordinal), "Le diagnostic ne doit pas exposer le contenu du popup ni du CSV.");
+    }
+    else
+    {
+        var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+        True(run.Data.Complete && run.Data.Rows[0][1] == "P-MA-001\nAnnexe-101", "La cellule complète doit être rapprochée sans retirer le second élément du CSV.");
+        True(logs.Any(line => line.StartsWith("ÉCHANTILLON · Les 2 identifiants et 2 valeurs", StringComparison.Ordinal)), "Les cellules complètes doivent être effectivement comparées, pas exclues.");
+    }
+    True(File.Exists(retained), "Le téléchargement natif est conservé."); Equal(csv, await File.ReadAllTextAsync(retained!));
 }
 
 static void Equal<T>(T expected, T actual)

@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GlpiPilot.Core;
 
 var root = Path.Combine(Path.GetTempPath(), "GLPI-Foundation-" + Guid.NewGuid().ToString("N"));
@@ -11,6 +12,20 @@ void Assert(bool condition, string message = "Assertion failed") { if (!conditio
 void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}; got {actual}"); }
 void Reject<T>(Action run) where T : Exception { try { run(); } catch (T) { return; } throw new Exception(typeof(T).Name + " expected"); }
 string FilePath(string suffix = ".json") => Path.Combine(root, Guid.NewGuid().ToString("N") + suffix);
+const string LegacySourceId = "11111111111111111111111111111111";
+string LegacySettingsFile(Action<JsonObject>? change = null)
+{
+    var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "settings-v2.0.0.json");
+    var directory = Path.Combine(root, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+    var path = Path.Combine(directory, "settings.json");
+    if (change is null) File.Copy(fixture, path);
+    else
+    {
+        var document = JsonNode.Parse(File.ReadAllText(fixture))!.AsObject();
+        change(document); File.WriteAllText(path, document.ToJsonString());
+    }
+    return path;
+}
 AppSettings Settings()
 {
     var value = new AppSettings { PortalUrl = "https://glpi.example.test/front/ticket.php?criteria%5B0%5D%5Bvalue%5D=all", History = new() { MaximumSnapshots = 50 } };
@@ -178,6 +193,78 @@ Check("Settings: version retention bounded and local defaults survive legacy loa
     Equal(30, SettingsRecovery.List(path).Count); Equal(135, SettingsRecovery.Load(path).MaxRows);
     path = FilePath(); File.WriteAllText(path, "{\"Theme\":\"light\",\"Dashboard\":null,\"Interface\":null}"); var migrated = SettingsRecovery.Load(path);
     Equal(100, migrated.InterfaceZoomPercent); Equal("balanced", migrated.Interface.Density); Assert(migrated.Dashboard.Layout.Boards.Count > 0);
+});
+Check("Settings: authentic v2 active source inherits its current acquisition without rewriting the file", () =>
+{
+    var path = LegacySettingsFile(); var original = File.ReadAllBytes(path);
+    using var document = JsonDocument.Parse(original);
+    Assert(!document.RootElement.GetProperty("Sources")[0].TryGetProperty("Acquisition", out _));
+    var settings = SettingsRecovery.Load(path); var source = settings.Sources.Single(s => s.Id == LegacySourceId);
+    foreach (var field in new[] { "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal" })
+        Equal(document.RootElement.GetProperty(field).ToString(), source.Acquisition[field]);
+    Equal("False", source.Acquisition["AutoSaveXlsx"]); Equal("45", source.Acquisition["ListTimeoutSeconds"]);
+    Equal(@"C:\GLPI-Fixture\Exports", source.ExportFolder); Equal("chrome", source.Browser); Equal("native", source.Mode);
+    Equal("light", settings.Theme); Equal(115, settings.InterfaceZoomPercent); Equal("compact", settings.Interface.Density); Equal("violet", settings.Interface.Accent);
+    Equal(19, settings.Dashboard.StaleDays); Equal("Technicien fictif", settings.Dashboard.PersonalTechnician);
+    Equal("Relevé par ville", settings.Queries.Queries.Single().Name); Equal(1, settings.Dashboard.Layout.Boards.Count);
+    Assert(source.Interpretation is null && source.WorkspaceQueries is null && !source.RestoreWorkspace);
+    Assert(original.AsSpan().SequenceEqual(File.ReadAllBytes(path))); Equal(0, SettingsRecovery.List(path).Count);
+});
+Check("Settings: v2 source reselect and rename preserve the recipe, and migration persists only once", () =>
+{
+    var path = LegacySettingsFile(); var original = File.ReadAllBytes(path); var settings = SettingsRecovery.Read(path);
+    var before = JsonSerializer.Serialize(settings); var selected = settings.Copy();
+    selected.Sources.Single(s => s.Id == LegacySourceId).ApplyTo(selected);
+    Assert(before == JsonSerializer.Serialize(selected), "Reselecting the legacy active source changed its saved settings.");
+    var renamed = selected.Sources.Single(s => s.Id == LegacySourceId).Copy(); renamed.Name = "Tickets renommés";
+    selected.Sources[selected.Sources.FindIndex(s => s.Id == LegacySourceId)] = renamed; renamed.ApplyTo(selected);
+    SettingsRecovery.Save(path, selected);
+    Assert(original.AsSpan().SequenceEqual(File.ReadAllBytes(SettingsRecovery.List(path).Single().Path)));
+    var persisted = SettingsRecovery.Read(path); Equal("Tickets renommés", persisted.Sources.Single(s => s.Id == LegacySourceId).Name);
+    persisted.TableSelector = "table.new-unsaved-recipe"; persisted.NativeSubmitSelector = "button.new-unsaved-recipe";
+    SettingsRecovery.Save(path, persisted); persisted = SettingsRecovery.Read(path);
+    persisted.Sources.Single(s => s.Id == LegacySourceId).ApplyTo(persisted);
+    Equal("table.fixture-tickets", persisted.TableSelector); Equal("button.fixture-download", persisted.NativeSubmitSelector);
+    Equal("#fixture-ready", persisted.ReadySelector); Equal("a.fixture-next", persisted.NextSelector); Equal(42, persisted.ExpectedTotal);
+});
+Check("Settings: legacy migration never copies the active recipe into another source", () =>
+{
+    foreach (var sameUrl in new[] { false, true })
+    {
+        var path = LegacySettingsFile(document => { if (sameUrl) document["Sources"]![1]!["Url"] = document["PortalUrl"]!.GetValue<string>(); });
+        var settings = SettingsRecovery.Read(path); var other = settings.Sources.Single(s => s.Id != LegacySourceId);
+        Equal(0, other.Acquisition.Count); Equal("", other.ExportFolder);
+        other.ApplyTo(settings); Equal("", settings.TableSelector); Equal("", settings.NativeSubmitSelector);
+    }
+});
+Check("Settings: legacy ownership requires one active source and the identical search URL", () =>
+{
+    foreach (var change in new Action<JsonObject>[] {
+        d => d["ActiveSourceId"] = "",
+        d => d["ActiveSourceId"] = "33333333333333333333333333333333",
+        d => d["Sources"]!.AsArray().Add(d["Sources"]![0]!.DeepClone()),
+        d => d["Sources"]![0]!["Url"] = "https://other.example.test/front/ticket.php",
+        d => d["Sources"]![0]!["Url"] = "https://glpi.example.test/front/computer.php",
+        d => d["Sources"]![0]!["Url"] = d["PortalUrl"]!.GetValue<string>().Replace("notold", "waiting", StringComparison.Ordinal),
+        d => d["PortalUrl"] = "",
+        d => d["PortalUrl"] = "not a URL" })
+    {
+        var settings = SettingsRecovery.Read(LegacySettingsFile(change));
+        Assert(settings.Sources.All(s => s.Acquisition.Count == 0 && s.ExportFolder.Length == 0));
+        Equal("table.fixture-tickets", settings.TableSelector);
+    }
+});
+Check("Settings: explicit empty, null or partial acquisition never triggers legacy capture", () =>
+{
+    foreach (var acquisition in new[] { "{}", "null", "{\"TableSelector\":\"table.explicit\"}" })
+    {
+        var path = LegacySettingsFile(document => document["Sources"]![0]!["Acquisition"] = JsonNode.Parse(acquisition));
+        var settings = SettingsRecovery.Read(path); var source = settings.Sources.Single(s => s.Id == LegacySourceId);
+        Equal(acquisition.Contains("TableSelector", StringComparison.Ordinal) ? 1 : 0, source.Acquisition.Count);
+        Equal("", source.ExportFolder); source.ApplyTo(settings);
+        Equal(acquisition.Contains("TableSelector", StringComparison.Ordinal) ? "table.explicit" : "", settings.TableSelector);
+        Equal("", settings.NativeSubmitSelector); Equal("", settings.ReadySelector);
+    }
 });
 Check("Configuration: new dashboards, parameters and local preferences round-trip", () =>
 {

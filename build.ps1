@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'build-tools/WebView2Runtime.ps1')
+. (Join-Path $PSScriptRoot 'build-tools/SourceProvenance.ps1')
 if (-not $DotNetPath) {
     if ($IsWindows -and (Test-Path -LiteralPath 'C:\DomeniaDev\dotnet\dotnet.exe' -PathType Leaf)) { $DotNetPath = 'C:\DomeniaDev\dotnet\dotnet.exe' }
     else {
@@ -27,6 +28,8 @@ $NuGetOfflineSource = @($NuGetOfflineSource | ForEach-Object {
     if ($_ -match '^[a-zA-Z][a-zA-Z0-9+.-]*://' -or -not (Test-Path -LiteralPath $_ -PathType Container)) { throw ('Source NuGet locale invalide : ' + $_) }
     [IO.Path]::GetFullPath($_)
 })
+$sourceProvenance = Resolve-GlpiBuildProvenance -SourceRoot $PSScriptRoot
+Write-Host ('Verified source provenance: ' + $sourceProvenance.Origin + ' ' + $sourceProvenance.Commit)
 $runtime = Test-WebView2Runtime $RuntimePath
 $project = Join-Path $PSScriptRoot 'src/GlpiPilot/GlpiPilot.csproj'
 [xml]$projectXml = Get-Content -LiteralPath $project -Raw -Encoding UTF8
@@ -54,6 +57,7 @@ foreach ($name in @(
     'licenses/microsoft.netcore.app.runtime.win-x64-LICENSE.TXT', 'licenses/microsoft.windowsdesktop.app.runtime.win-x64-LICENSE',
     'licenses/WebView2-SDK-LICENSE.txt', 'licenses/WebView2-FixedRuntime-LICENSE.html', 'web/index.html',
     '.github/workflows/windows.yml', 'build-tools/Invoke-WindowsCi.ps1', 'build-tools/Sign-Release.ps1',
+    'build-tools/SourceProvenance.ps1', 'build-tools/Test-DevRebuild.ps1', 'tests/SourceProvenanceChecks/Program.ps1',
     'build-tools/WebView2Runtime.json', 'build-tools/WebView2Runtime.files.sha256', 'build-tools/Get-WebView2Runtime.ps1'
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name) -PathType Leaf)) { throw ('Fichier requis absent : ' + $name) }
@@ -113,27 +117,7 @@ $dev = $roots['DEV']; $devWad = Join-Path $dev 'wad'
 New-Item -ItemType Directory -Path $dev -Force | Out-Null
 Get-ChildItem -LiteralPath $prod -Force | Copy-Item -Destination $dev -Recurse
 $sources = Join-Path $devWad 'sources'
-New-Item -ItemType Directory -Path $sources -Force | Out-Null
-foreach ($folder in @('src', 'tests', 'web', 'docs', 'support', 'licenses', '.github')) {
-    Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot $folder) -File -Recurse -Force |
-        Where-Object { $_.FullName -notmatch '[\\/](bin|obj|node_modules|artifacts|__pycache__|\.git)[\\/]' } |
-        ForEach-Object {
-            $relative = [IO.Path]::GetRelativePath($PSScriptRoot, $_.FullName)
-            $destination = Join-Path $sources $relative
-            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-            Copy-Item -LiteralPath $_.FullName -Destination $destination
-        }
-}
-$rootFiles = @('README.md', 'build.ps1', '.gitignore', 'global.json', 'NuGet.Config', 'nuget.config', 'Directory.Packages.props', 'package.json', 'package-lock.json')
-$rootFiles += @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Directory.Build.*' -File | ForEach-Object Name)
-foreach ($name in @($rootFiles | Select-Object -Unique)) {
-    $source = Join-Path $PSScriptRoot $name
-    if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination (Join-Path $sources $name) }
-}
-$toolsDestination = Join-Path $sources 'build-tools'
-New-Item -ItemType Directory -Path $toolsDestination -Force | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'build-tools') -File |
-    Where-Object { $_.Extension -in @('.py', '.ps1', '.sh', '.json', '.sha256') } | Copy-Item -Destination $toolsDestination
+Export-GlpiBuildSources -Provenance $sourceProvenance -Destination $sources
 if ($ValidationDirectory) {
     $validation = Join-Path $devWad 'validation'
     New-Item -ItemType Directory -Path $validation -Force | Out-Null
@@ -151,11 +135,7 @@ $playwrightVersion = $projectXml.SelectSingleNode('/Project/ItemGroup/PackageRef
 $webViewSdkVersion = $projectXml.SelectSingleNode('/Project/ItemGroup/PackageReference[@Include="Microsoft.Web.WebView2"]').GetAttribute('Version')
 $executableHash = (Get-FileHash -LiteralPath (Join-Path $prod 'GLPI-Pilot.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
 if ((Get-FileHash -LiteralPath (Join-Path $dev 'GLPI-Pilot.exe') -Algorithm SHA256).Hash.ToLowerInvariant() -ne $executableHash) { throw 'Les executables PROD et DEV sont differents.' }
-$sourceCommit = if ($env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$') { $env:GITHUB_SHA.ToLowerInvariant() } else { $null }
-if (-not $sourceCommit -and (Get-Command git -ErrorAction SilentlyContinue)) {
-    $commitResult = (& git -C $PSScriptRoot rev-parse HEAD 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -eq 0 -and $commitResult -match '^[a-fA-F0-9]{40}$') { $sourceCommit = $commitResult.ToLowerInvariant() }
-}
+$sourceCommit = $sourceProvenance.Commit
 $digests = [Collections.Generic.List[string]]::new()
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 foreach ($edition in @('PROD', 'DEV')) {

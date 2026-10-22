@@ -1,4 +1,4 @@
-# GLPI Pilot 3.0.0 — Windows x64
+# GLPI Pilot 3.0.1 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, gestion locale des techniciens, lecture des tickets, requêtes, lieux, tournées, historiques et alertes. Aucun accès API, base de données ou serveur GLPI n’est nécessaire.
 
@@ -36,6 +36,8 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 **Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
 ## Passage à la version 3
+
+La version **3.0.1** précise les divergences entre la liste GLPI et son export sans inscrire de données de tickets au diagnostic, protège la reprise des repères de collecte d'un profil 2.0, permet de fermer proprement l'application après une panne du moteur WebView2 et conserve une provenance vérifiable lors d'une reconstruction depuis les sources du pack DEV. Les [notes 3.0.1](docs/RELEASE-3.0.1.md) précisent ces corrections et leur validation.
 
 - Interface locale dans WebView2 : navigation, thèmes, densité, zoom, formulaires, tableaux paginés et dialogues utilisent les modules web du dépôt. Les opérations autorisées sont exposées par un pont C# fermé, avec annulation et événements d’état.
 - Paquet autonome avec runtime fixe Microsoft, contrôlé par une empreinte du CAB et les 257 empreintes de ses fichiers. La compilation peut utiliser exclusivement le SDK et les paquets NuGet déjà présents dans la VM hors ligne.
@@ -124,7 +126,8 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 ## Documentation
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
-- [Notes de version 3.0.0](docs/RELEASE-3.0.0.md)
+- [Notes de version 3.0.1](docs/RELEASE-3.0.1.md)
+- [Migration initiale vers WebView2 — version 3.0.0](docs/RELEASE-3.0.0.md)
 - [Architecture et contrat des opérations WebView](docs/WebView-contract.md)
 - [Compilation, caches hors ligne et chaîne Windows](docs/GitHub-et-compilation.txt)
 - [Dashboards, indicateurs et extraction](docs/Dashboards-et-extraction.md)
@@ -152,7 +155,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.0'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.1'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -168,7 +171,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.0.0'
+  -OutputDirectory '.\artifacts\release-3.0.1'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.
