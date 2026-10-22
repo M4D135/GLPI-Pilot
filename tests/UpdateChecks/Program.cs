@@ -168,6 +168,47 @@ Test("Signature policy distinguishes integrity unsigned valid publisher and reje
     Reject<InvalidDataException>(() => UpdateService.ValidateTrust(new("Valid", "Other", new string('d', 64)), new() { TrustedPublisherSha256 = pin }));
     Reject<InvalidDataException>(() => new UpdatePolicy { RequireSignature = true }.Validate());
 });
+Test("Signature responses distinguish an explicit unsigned result from a failed command", () =>
+{
+    var unsigned = JsonSerializer.Serialize(new UpdateSignature("NotSigned", "", ""));
+    Check(UpdateService.ParseSignatureResponse(0, unsigned, "").Status == "NotSigned");
+    try { UpdateService.ParseSignatureResponse(1, unsigned, "Synthetic module load failure\nHidden continuation"); throw new InvalidOperationException("A failed verifier was accepted."); }
+    catch (InvalidDataException error) { Check(error.Message.Contains("code de sortie 1") && error.Message.Contains("Synthetic module load failure") && !error.Message.Contains("Hidden continuation")); }
+    try { UpdateService.ParseSignatureResponse(1, "", new string('x', 20_000)); throw new InvalidOperationException("An oversized error was accepted."); }
+    catch (InvalidDataException error) { Check(error.Message.Length < 1200); }
+});
+Test("Signature response rejects invalid JSON incomplete certificates and oversized output", () =>
+{
+    Reject<InvalidDataException>(() => UpdateService.ParseSignatureResponse(0, "not JSON", ""));
+    Reject<InvalidDataException>(() => UpdateService.ParseSignatureResponse(0, "{}", ""));
+    Reject<InvalidDataException>(() => UpdateService.ParseSignatureResponse(0, JsonSerializer.Serialize(new UpdateSignature("Valid", "Publisher", "")), ""));
+    Reject<InvalidDataException>(() => UpdateService.ParseSignatureResponse(0, new string(' ', 16385), ""));
+    var pin = new string('c', 64);
+    var valid = UpdateService.ParseSignatureResponse(0, JsonSerializer.Serialize(new UpdateSignature("Valid", "Éditeur vérifié", pin)), "");
+    UpdateService.ValidateTrust(valid, new() { RequireSignature = true, TrustedPublisherSha256 = pin });
+});
+if (OperatingSystem.IsWindows())
+    Test("Native Windows signature check ignores incompatible inherited modules and refuses a missing file", () =>
+    {
+        var modules = NewDirectory("incompatible-powershell-modules");
+        foreach (var module in new[] { "Microsoft.PowerShell.Security", "Microsoft.PowerShell.Utility" })
+        {
+            var folder = Path.Combine(modules, module); Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, module + ".psd1"), "@{ ModuleVersion = '99.0'; PowerShellVersion = '99.0'; RootModule = 'incompatible.psm1' }", new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(folder, "incompatible.psm1"), "throw 'The incompatible inherited module must never load.'", new UTF8Encoding(false));
+        }
+        var previous = Environment.GetEnvironmentVariable("PSModulePath");
+        try
+        {
+            Environment.SetEnvironmentVariable("PSModulePath", modules);
+            var unsignedPath = Path.Combine(root, "unsigned-signature-fixture.ps1"); File.WriteAllText(unsignedPath, "# Unsigned data fixture. Never executed.\r\n", new UTF8Encoding(false));
+            var unsigned = UpdateService.CheckSignatureAsync(unsignedPath).GetAwaiter().GetResult();
+            Check(unsigned.Status == "NotSigned" && unsigned.CertificateSha256.Length == 0 && unsigned.Publisher.Length == 0);
+            Reject<InvalidDataException>(() => UpdateService.CheckSignatureAsync(Path.Combine(root, "missing-signature-fixture.exe")).GetAwaiter().GetResult());
+            Check(Environment.GetEnvironmentVariable("PSModulePath") == modules, "The verifier must isolate only its child environment.");
+        }
+        finally { Environment.SetEnvironmentVariable("PSModulePath", previous); }
+    });
 Test("Successful replacement verifies startup and keeps a complete independent backup", () =>
 {
     var value = Prepare(); var before = UpdateService.HashFile(Path.Combine(value.InstallRoot, "GLPI-Pilot.exe")); var checks = 0;
