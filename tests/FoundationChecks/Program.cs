@@ -207,6 +207,46 @@ Check("Settings: version retention bounded and local defaults survive legacy loa
     path = FilePath(); File.WriteAllText(path, "{\"Theme\":\"light\",\"Dashboard\":null,\"Interface\":null}"); var migrated = SettingsRecovery.Load(path);
     Equal(100, migrated.InterfaceZoomPercent); Equal("balanced", migrated.Interface.Density); Assert(migrated.Dashboard.Layout.Boards.Count > 0);
 });
+Check("Navigation: only stable routes and groups survive normalization; essential entries remain visible", () =>
+{
+    var preferences = new InterfacePreferences
+    {
+        NavigationOrder = new() { "library", "unknown", "home", "library", "Home", "", null! },
+        HiddenNavigation = new() { "home", "settings", "tickets", "tickets", "unknown" },
+        PinnedNavigation = new() { "day", "day", "help", "unknown" },
+        NavigationGroupOrder = new() { "work", "pinned", "work", "admin", "future", null! },
+        NavigationGroups = new() { ["library"] = "work", ["day"] = "workspace", ["unknown"] = "work", ["tickets"] = "pinned", ["help"] = "future", ["settings"] = null! }
+    };
+    preferences.Normalize();
+    Assert(preferences.NavigationOrder.SequenceEqual(new[] { "library", "home" }));
+    Assert(preferences.HiddenNavigation.SequenceEqual(new[] { "tickets" }));
+    Assert(preferences.PinnedNavigation.SequenceEqual(new[] { "day", "help" }));
+    Assert(preferences.NavigationGroupOrder.SequenceEqual(new[] { "work", "pinned", "admin" }));
+    Equal(2, preferences.NavigationGroups.Count); Equal("work", preferences.NavigationGroups["library"]);
+    var missing = JsonSerializer.Deserialize<InterfacePreferences>("{\"NavigationOrder\":null,\"HiddenNavigation\":null,\"PinnedNavigation\":null,\"NavigationGroupOrder\":null,\"NavigationGroups\":null}")!;
+    missing.Normalize(); Equal(0, missing.NavigationGroups.Count); Equal(0, missing.NavigationGroupOrder.Count); Equal(0, missing.NavigationOrder.Count);
+});
+Check("Navigation: local groups and order survive copy, restart and recovery without entering shared configuration", () =>
+{
+    var settings = Settings(); settings.Interface.NavigationOrder = new() { "library", "tickets", "home" };
+    settings.Interface.NavigationGroupOrder = new() { "work", "pinned", "collect", "workspace" };
+    settings.Interface.NavigationGroups = new() { ["library"] = "work", ["help"] = "workspace" };
+    settings.Interface.HiddenNavigation = new() { "queries" }; settings.Interface.PinnedNavigation = new() { "day" };
+    var copy = settings.Copy(); copy.Interface.NavigationGroups["library"] = "collect"; copy.Interface.NavigationGroupOrder.Reverse();
+    copy.Interface.NavigationOrder.Clear(); copy.Interface.PinnedNavigation.Clear(); copy.Interface.HiddenNavigation.Clear();
+    Equal("work", settings.Interface.NavigationGroups["library"]); Equal("work", settings.Interface.NavigationGroupOrder[0]);
+    Equal(3, settings.Interface.NavigationOrder.Count); Equal(1, settings.Interface.PinnedNavigation.Count); Equal(1, settings.Interface.HiddenNavigation.Count);
+    var path = FilePath(); SettingsRecovery.Save(path, settings); settings.Theme = "light"; SettingsRecovery.Save(path, settings);
+    var reopened = SettingsRecovery.Read(path); Equal("work", reopened.Interface.NavigationGroups["library"]);
+    Assert(reopened.Interface.NavigationGroupOrder.SequenceEqual(settings.Interface.NavigationGroupOrder));
+    File.WriteAllText(path, "{broken"); var recovered = SettingsRecovery.Load(path);
+    Equal("work", recovered.Interface.NavigationGroups["library"]); Assert(recovered.Interface.NavigationOrder.SequenceEqual(settings.Interface.NavigationOrder));
+    Equal("{broken", File.ReadAllText(path));
+    var sharedPath = FilePath(); ConfigurationTransferService.Export(sharedPath, settings);
+    Assert(!File.ReadAllText(sharedPath).Contains("NavigationGroups", StringComparison.Ordinal));
+    var imported = ConfigurationTransferService.Import(sharedPath, reopened);
+    Equal("work", imported.Interface.NavigationGroups["library"]); Assert(imported.Interface.NavigationGroupOrder.SequenceEqual(reopened.Interface.NavigationGroupOrder));
+});
 Check("Settings: authentic v2 active source inherits its current acquisition without rewriting the file", () =>
 {
     var path = LegacySettingsFile(); var original = File.ReadAllBytes(path);

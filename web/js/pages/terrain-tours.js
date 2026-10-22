@@ -1,5 +1,6 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, form, confirm, formatNumber, formatDate } from '../ui.js';
 import { page, pager, lookup, referenceField, details, facts, listText, readList, numberOrNull, minuteText, timeText, dayText, stateLabels, text } from './terrain-common.js';
+import { publishSharedOperation } from './shared-operations.js';
 
 export async function renderTours(ctx) {
   const p = page(ctx, 'Tournées et interventions', 'Préparez un panier, ordonnez les étapes et vérifiez les horaires, les compétences et les capacités déclarées avant le départ.');
@@ -124,6 +125,11 @@ export async function renderTours(ctx) {
     const actionBar = toolbar(
       button('Calculer le planning', p.act(async () => { await applyHeader(); await loadStops(); await loadSchedule(); }), { primary: true, disabled: !state.loaded }),
       button('Enregistrer la tournée', p.act(async () => { await applyHeader(); state = await p.call('terrain.tours.save', args()); paintSummary(); await paintEditor(); p.message('Tournée enregistrée localement.'); })),
+      button('Enregistrer et partager la tournée', p.act(async () => {
+        await applyHeader(); state = await p.call('terrain.tours.save', args()); paintSummary(); await paintEditor();
+        await publishSharedOperation(ctx, 'workspace.publishTour', { id: state.draft.id });
+      }), { icon: 'users' }),
+      button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' })),
       button('Dupliquer', p.act(duplicate)), button('Changer d’état', p.act(lifecycle), { disabled: !state.loaded }),
       button('Exporter le briefing HTML…', p.act(() => exportTour('html')), { disabled: !state.loaded }), button('Exporter le calendrier ICS…', p.act(() => exportTour('ics')), { disabled: !state.loaded })
     );

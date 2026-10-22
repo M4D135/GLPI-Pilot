@@ -70,7 +70,7 @@ public sealed partial class PilotApplication
             tickets = doc.Tickets.OrderByDescending(t => t.Pinned).ThenByDescending(t => t.LastOpenedAt).Select(p => new { p.Key, p.Id, p.Title, p.Pinned, p.QueueOrder, p.LastReadAt, p.LastOpenedAt, p.ReminderAt, p.SnoozedUntil, p.Offline }).ToArray(),
             doc.FavoriteSections, doc.DefaultSection, doc.SectionOrder, doc.GroupTimelineByDay, doc.ChecklistTemplates,
             doc.DesktopReminders, doc.DaySearch, doc.DayScope, doc.DaySelectedKey, doc.ActiveWorkspace,
-            autoRead = Settings.TicketDetails.AutoLoadOnSelection, personalTechnician = Settings.Dashboard.PersonalTechnician
+            autoRead = Settings.TicketDetails.AutoLoadOnSelection && Result?.Provenance is not { SourceKind: "local", Method: "ticket-library" }, personalTechnician = Settings.Dashboard.PersonalTechnician
         };
     }
     private object WorkSavePreferences(JsonElement a)

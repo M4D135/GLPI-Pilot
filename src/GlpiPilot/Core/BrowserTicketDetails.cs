@@ -101,12 +101,17 @@ public sealed partial class BrowserService
     }
 
     private async Task<TicketDetailResult> ReadTicketDetailsCoreAsync(TicketReference ticket, AppSettings settings, TicketDetailTab? requestedTab,
-        IProgress<ExtractionProgress>? progress, CancellationToken ct)
+        IProgress<ExtractionProgress>? progress, CancellationToken ct, TicketLibraryCoverage? libraryCoverage = null)
     {
         ArgumentNullException.ThrowIfNull(ticket);
         ArgumentNullException.ThrowIfNull(settings);
         var reference = ValidateTicketReference(ticket, settings);
         var options = settings.TicketDetails.Copy();
+        if (libraryCoverage != null)
+        {
+            options.IncludeAutoDetected = true; options.AutoReadTreatment = false;
+            options.MaxRowsPerSection = Math.Min(options.MaxRowsPerSection, Math.Clamp(settings.MaxRows, 1, 1000000));
+        }
         if (options.MaxRowsPerSection is < 1 or > 100000)
             throw new InvalidOperationException("La limite de lignes par section doit être comprise entre 1 et 100 000.");
         await _ticketReadGate.WaitAsync(ct);
@@ -137,7 +142,8 @@ public sealed partial class BrowserService
             var inspected = ready.Inspections;
             var result = new TicketDetailResult { Ticket = reference, ReadAt = DateTimeOffset.Now };
             result.Title = inspected.Where(item => item.Inspection.Ready).Select(item => item.Inspection.Title).FirstOrDefault(title => title.Length > 0) ?? "Fiche ticket";
-            result.Warnings.Add("Cette lecture couvre les sections visibles et les sections configurées. Les autres onglets et contenus masqués ne sont pas déclarés complets.");
+            if (libraryCoverage == null)
+                result.Warnings.Add("Cette lecture couvre les sections visibles et les sections configurées. Les autres onglets et contenus masqués ne sont pas déclarés complets.");
             result.Tabs = await DiscoverTicketTabsAsync(page, reference, ct);
             if (requestedTab != null)
             {
@@ -189,6 +195,8 @@ public sealed partial class BrowserService
                     await ReadDiscoveredTicketTabAsync(page, reference, options, result, treatment, progress, ct);
                 else if (treatment != null) treatment.Loaded = true;
             }
+            if (libraryCoverage != null)
+                await ReadLibraryConsultationTabsAsync(page, reference, settings, options, result, libraryCoverage, progress, ct);
             ct.ThrowIfCancellationRequested();
             EnsureTicketPageIdentity(page!, reference);
             if (result.Sections.Count == 0) result.Warnings.Add("Aucune section exploitable n’a été trouvée. Les sélecteurs peuvent être ajustés dans les réglages des tickets.");

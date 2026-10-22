@@ -1,4 +1,5 @@
 import { el, button, card, toolbar, input, select, field, table, dialog, confirm, formatDate } from '../ui.js';
+import { publishSharedOperation } from './shared-operations.js';
 
 export const call = (ctx, op, args = {}, options = {}) => ctx.api.call(op, args, { signal: ctx.signal, ...options });
 export const revision = ctx => ctx.state.session?.revision ?? 0;
@@ -69,8 +70,13 @@ export function personalEditor(ctx, personal, templates, onSaved) {
     ctx.notify('Travail personnel enregistré.', 'success'); if (onSaved) await onSaved(result);
   });
   return el('div', { class: 'work-personal-editor' },
-    note('Notes, rappels et listes restent sur ce poste. La copie hors connexion contient les seules rubriques effectivement lues.'),
+    note('Le travail personnel reste sur ce poste. « Enregistrer et partager la note » publie uniquement le texte de la note et sa référence de ticket dans l’espace d’équipe.'),
     toolbar(pinned.element, queued.element, offline.element), field('Mes notes', notes),
+    toolbar(button('Enregistrer et partager la note', run(ctx, async () => {
+      const saved = await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, notes: notes.value });
+      await publishSharedOperation(ctx, 'workspace.publishPersonalNote', { ticketKey: personal.key });
+      if (onSaved) await onSaved(saved);
+    }), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))),
     card('Liste de vérification', listRoot, toolbar(button('Ajouter une action', () => { if (checklist.length >= 40) { ctx.notify('La liste est limitée à 40 actions.', 'error'); return; } checklist.push({ text: '', done: false }); renderList(); }), template, button('Reprendre le modèle', () => { checklist.splice(0, checklist.length, ...(templates[template.value] || []).map(text => ({ text, done: false }))); renderList(); }))),
     el('div', { class: 'work-form-grid' }, field('Rappel personnel', reminder), field('Reporter jusqu’au', snooze), field('Motif du report', reason)),
     toolbar(button('Enregistrer mon travail', save, { primary: true }), button('Rappel traité', run(ctx, async () => { await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, acknowledge: true }); ctx.notify('Rappel marqué comme traité.'); })), button('Retirer le dossier conservé…', run(ctx, async () => { if (!await confirm('Retirer ce dossier ?', 'Les notes, le brouillon, la liste et la copie hors connexion de ce dossier seront retirés. Les reçus d’actions restent conservés.', 'Retirer le dossier')) return; await call(ctx, 'workplace.personal.remove', { ticketKey: personal.key, confirmed: true }); ctx.navigate('tickets'); }), { danger: true })));

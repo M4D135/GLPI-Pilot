@@ -12,7 +12,7 @@ public static class SourceMappingPolicy
     {
         if (historical) return SourceMappingTarget.ArchiveReadOnly;
         if (source == null) return SourceMappingTarget.CurrentConfiguration;
-        if (source.Provenance.SourceKind is "file" or "demo") return SourceMappingTarget.LocalResult;
+        if (source.Provenance.SourceKind is "file" or "demo" or "local") return SourceMappingTarget.LocalResult;
         if (!source.Provenance.SearchVerified || !source.Provenance.ScopeVerified) return SourceMappingTarget.Unavailable;
         try
         {
@@ -37,7 +37,7 @@ public sealed class LocalResultMappingStore
     public DashboardSettings? Get(ExtractionResult? source) => source != null && _settings.TryGetValue(source, out var settings) ? settings.Copy() : null;
     public void Set(ExtractionResult source, DashboardSettings settings)
     {
-        if (source.Provenance.SourceKind is not ("file" or "demo")) throw new InvalidDataException("Ces correspondances locales sont réservées aux fichiers importés et aux démonstrations.");
+        if (source.Provenance.SourceKind is not ("file" or "demo" or "local")) throw new InvalidDataException("Ces correspondances locales sont réservées aux imports, aux bibliothèques locales et aux démonstrations.");
         var copy = settings.Copy(); DashboardService.ValidateSettings(copy);
         _settings.Remove(source); _settings.Add(source, copy);
     }

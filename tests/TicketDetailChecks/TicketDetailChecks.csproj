@@ -6,6 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
     <Compile Include="../../src/GlpiPilot/Core/*.cs" Exclude="../../src/GlpiPilot/Core/ThemeService.cs" Link="Core/%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/bridge.js" LogicalName="TicketDetailChecks.BrowserScripts.bridge.js" />
     <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/native-export.js" LogicalName="TicketDetailChecks.BrowserScripts.native-export.js" />

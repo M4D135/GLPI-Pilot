@@ -4,7 +4,7 @@ using GlpiPilot.Core;
 using GlpiPilot.Runtime;
 using Microsoft.Playwright;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _passed;
     private static string _root = "";
@@ -18,6 +18,24 @@ internal static class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--shared-operations-only"))
+            {
+                await CheckSharedOperationsInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} shared operations WebView checks passed.");
+                return;
+            }
+            if (args.Contains("--navigation-only"))
+            {
+                await CheckNavigationInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} navigation WebView checks passed.");
+                return;
+            }
+            if (args.Contains("--library-only"))
+            {
+                await CheckLibraryInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} ticket library WebView checks passed.");
+                return;
+            }
             await CheckBridgeAsync();
             await CheckFoundationAsync();
             await CheckDivergenceReportAsync();

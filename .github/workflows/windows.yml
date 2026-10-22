@@ -1,4 +1,4 @@
-name: Windows — tests et packs PROD / DEV
+name: Windows et PostgreSQL — tests et packs PROD / DEV
 
 on:
   workflow_dispatch:
@@ -130,7 +130,10 @@ jobs:
           @"
           ## Validation Windows terminée
           - Contrôles des diagnostics, configurations, dashboards, dispositions, recherche, techniciens, villes, tournées et requêtes : exécutés avec succès.
+          - Bibliothèque SQLite et contributions d’équipe : persistance, versions, conflits et reprise contrôlés localement.
+          - Acquisition tous statuts, onglets de consultation, pagination et restauration de la recherche : contrôlées sur des pages synthétiques.
           - Interfaces locales HTML/CSS/ES modules : parcours et interactions contrôlés avec les vrais handlers C# et la CSP de production.
+          - Page Bibliothèque : parcours dédié et captures joints aux journaux.
           - Pack PROD extrait : vrai hôte WinForms/WebView2 visible, runtime fixe embarqué, handshake après premier rendu, profil synthétique isolé, fermeture normale.
           - Zoom natif réel à 125 %, remise à 100 %, fenêtre compacte et restauration de 110 % dans un nouveau processus.
           - Mise à jour réelle sur copies du pack : processus en cours et EXE verrouillé refusés, démarrage confirmé puis restauration après échec forcé.
@@ -152,10 +155,92 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  postgres:
+    name: PostgreSQL 17 · synchronisation réelle
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        # Official docker.io/library/postgres:17 OCI index; registry digest verified 2026-10-22.
+        image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+        env:
+          POSTGRES_DB: glpi_pilot_checks
+          POSTGRES_USER: glpi_pilot_checks
+          # Disposable CI service only; never a deployment credential.
+          POSTGRES_PASSWORD: glpi_pilot_ephemeral_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U glpi_pilot_checks -d glpi_pilot_checks"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      GLPI_PILOT_TEST_POSTGRES: 'Host=127.0.0.1;Port=5432;Database=glpi_pilot_checks;Username=glpi_pilot_checks;Password=glpi_pilot_ephemeral_ci;SSL Mode=Disable;GSS Encryption Mode=Disable;Include Error Detail=false'
+    steps:
+      - name: Récupérer les sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Installer le SDK .NET 10 stable
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: ga
+          architecture: x64
+      - name: Consigner le contexte et le moteur PostgreSQL réel
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/postgres-ci/logs
+          dotnet --info | tee artifacts/postgres-ci/logs/dotnet-info.log
+          printf 'Commit: %s\nRunner: %s / %s\nImage: %s / %s\n' "$GITHUB_SHA" "$RUNNER_OS" "$RUNNER_ARCH" "$ImageOS" "$ImageVersion" > artifacts/postgres-ci/logs/build-context.log
+          docker exec "$POSTGRES_CONTAINER" psql -U glpi_pilot_checks -d glpi_pilot_checks -Atc 'SHOW server_version;' | tee artifacts/postgres-ci/logs/postgres-version.log
+          grep -Eq '^17\.' artifacts/postgres-ci/logs/postgres-version.log
+      - name: Vérifier les échanges versionnés de la bibliothèque et de l’équipe
+        run: |
+          set -euo pipefail
+          timeout 300s dotnet run --project tests/TicketLibraryChecks/TicketLibraryChecks.csproj -c Release -- --postgres 2>&1 | tee artifacts/postgres-ci/logs/ticket-library-postgres-checks.log
+          timeout 300s dotnet run --project tests/SharedWorkspaceChecks/SharedWorkspaceChecks.csproj -c Release -- --postgres 2>&1 | tee artifacts/postgres-ci/logs/shared-workspace-postgres-checks.log
+          python3 - <<'PY'
+          import pathlib, re
+          root = pathlib.Path('artifacts/postgres-ci/logs')
+          suites = [('ticket-library-postgres-checks.log', 'ticket library', 37, 9), ('shared-workspace-postgres-checks.log', 'shared workspace', 20, 8)]
+          for name, label, expected_total, expected_postgres in suites:
+              report = (root / name).read_text(encoding='utf-8')
+              summaries = re.findall(r'^(\d+)/(\d+) ' + re.escape(label) + r' checks passed\.$', report, re.M)
+              if summaries != [(str(expected_total), str(expected_total))]:
+                  raise SystemExit(f'{name}: expected one {expected_total}/{expected_total} successful summary')
+              real = len(re.findall(r'^PASS PostgreSQL:', report, re.M))
+              if real != expected_postgres:
+                  raise SystemExit(f'{name}: expected {expected_postgres} real PostgreSQL scenarios, found {real}')
+              print(f'{name}: {summaries[0][0]}/{summaries[0][1]} checks, including {real} real PostgreSQL scenarios')
+          PY
+      - name: Résumé du résultat PostgreSQL
+        run: |
+          {
+            echo '## Validation PostgreSQL 17 terminée'
+            echo '- Serveur officiel éphémère, deux bases SQLite locales ou plus et échanges PostgreSQL réels.'
+            echo '- Versions, conflits, accusés de réception, reprise des curseurs et annulation contrôlés.'
+            echo '- Les schémas de test sont isolés ; aucun serveur ou identifiant de production utilisé.'
+            echo '- Les journaux PostgreSQL sont joints séparément aux preuves Windows.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Conserver les preuves PostgreSQL, même en cas d’échec
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: postgres-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/postgres-ci/logs/
+          if-no-files-found: warn
+          retention-days: 14
 
   release:
     name: Publier les deux packs Windows validés
-    needs: windows
+    needs: [windows, postgres]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10

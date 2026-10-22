@@ -1,0 +1,248 @@
+/* Domenia 2 visual language, adapted to GLPI Pilot's existing semantic controls.
+   Reference: M4D135/domenia-d120, v2/web/css/{tokens,motion,components,shell,layout}.css.
+   This layer changes surfaces and decoration, never table geometry, data or drag coordinates. */
+:root {
+  --brand-1: #066ddb; --brand-2: #6a5cff; --brand-3: #19c3b2; --brand-4: #ff7ab6;
+  --brand-gradient: linear-gradient(120deg, var(--brand-1), var(--brand-2) 55%, var(--brand-3));
+  --d-brand-action: linear-gradient(120deg, #075fc4, #604de0 58%, #087e78);
+  --d-glass: color-mix(in srgb, var(--surface) 84%, transparent);
+  --d-glass-nav: color-mix(in srgb, var(--nav-bg) 82%, transparent);
+  --d-glass-border: color-mix(in srgb, var(--border) 86%, transparent);
+  --d-highlight: #ffffff0b;
+  --d-shadow: 0 2px 3px #00000016, 0 8px 24px #00000012;
+  --d-shadow-hover: 0 16px 38px #00000028, 0 3px 10px #00000015;
+  --d-blue: #8bbeff; --d-violet: #c0b0ff; --d-teal: #72ddd0; --d-rose: #ffb6d5;
+  --d-glow: color-mix(in srgb, var(--brand-1) 24%, transparent);
+  --d-ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --d-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --d-ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --d-enter: 560ms;
+}
+:root[data-theme=light] {
+  --d-glass: color-mix(in srgb, var(--surface) 80%, transparent);
+  --d-glass-nav: color-mix(in srgb, var(--nav-bg) 76%, transparent);
+  --d-highlight: #ffffffd9;
+  --d-shadow: 0 2px 3px #17243a05, 0 8px 24px #17243a08;
+  --d-shadow-hover: 0 16px 38px #17243a13, 0 3px 10px #17243a08;
+  --d-blue: #075ebd; --d-violet: #6042c3; --d-teal: #087c73; --d-rose: #ad3674;
+}
+
+/* A single, slowly moving compositor layer under the transparent workspace. */
+body { isolation: isolate; background: var(--bg); }
+body::before {
+  content: ''; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(40vmax 40vmax at 15% 20%, color-mix(in srgb, var(--brand-1) 30%, transparent), transparent 60%),
+    radial-gradient(35vmax 35vmax at 85% 15%, color-mix(in srgb, var(--brand-2) 28%, transparent), transparent 60%),
+    radial-gradient(45vmax 45vmax at 70% 85%, color-mix(in srgb, var(--brand-3) 23%, transparent), transparent 60%),
+    radial-gradient(30vmax 30vmax at 20% 90%, color-mix(in srgb, var(--brand-4) 19%, transparent), transparent 60%);
+  filter: blur(30px) saturate(125%); opacity: .7;
+}
+:root[data-theme=light] body::before { opacity: .58; }
+.workspace { background: transparent; }
+.sidebar { background: var(--d-glass-nav); border-color: var(--d-glass-border); backdrop-filter: blur(18px) saturate(160%); }
+.topbar, .statusbar { background: var(--d-glass); border-color: var(--d-glass-border); backdrop-filter: blur(18px) saturate(160%); }
+.brand-mark { background: var(--brand-gradient); box-shadow: 0 6px 18px var(--d-glow), inset 0 1px #ffffff42; }
+.brand-mark::before { background: conic-gradient(var(--brand-1), var(--brand-2), var(--brand-3), var(--brand-4), var(--brand-1)); }
+.brand-name { letter-spacing: -.5px; }
+.search-command { box-shadow: inset 0 1px var(--d-highlight); transition: box-shadow 280ms var(--d-ease-out), border-color 160ms, background-color 160ms; }
+.search-command:hover, .search-command:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
+
+/* The six task groups have stable decorative colours; status colours keep their meaning. */
+.nav-section { --d-nav-tone: var(--d-blue); }
+.nav-section[data-nav-group=workspace] { --d-nav-tone: var(--d-rose); }
+.nav-section[data-nav-group=analyze] { --d-nav-tone: var(--d-violet); }
+.nav-section[data-nav-group=work], .nav-section[data-nav-group=terrain] { --d-nav-tone: var(--d-teal); }
+.nav-section[data-nav-group=pinned] { --d-nav-tone: var(--d-violet); }
+.nav-item { border-radius: 10px; transition: background-color 160ms, color 160ms, box-shadow 280ms var(--d-ease-out), border-color 160ms; }
+.nav-item > .icon {
+  width: 28px; height: 28px; padding: 5px; border-radius: 9px;
+  color: var(--d-nav-tone, var(--d-blue)); background: color-mix(in srgb, var(--d-nav-tone, var(--d-blue)) 11%, transparent);
+}
+.nav-item:hover { background: color-mix(in srgb, var(--surface-hover) 80%, transparent); }
+.nav-item[aria-current=page] {
+  color: var(--text); background: color-mix(in srgb, var(--accent-soft) 82%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--brand-1) 11%, transparent), inset 0 1px var(--d-highlight);
+}
+.nav-item[aria-current=page] > .icon { background: var(--d-brand-action); color: #fff; box-shadow: 0 3px 9px var(--d-glow); }
+.nav-item[aria-current=page]::before { background: var(--brand-gradient); }
+.nav-customize { background: color-mix(in srgb, var(--surface) 65%, transparent); }
+.navigation-group-card { background: var(--d-glass); border-color: var(--d-glass-border); box-shadow: var(--d-shadow); }
+
+/* Glass panels. Padding, sizing and all business layout rules remain in their own sheets. */
+:is(.page-content > .card, .page-content > .grid > .card, .metric,
+    .analytics-widget:not(.is-unavailable), .library-overview, .library-stat, .library-search,
+    .library-storage, .library-settings, .library-result, .library-progress, .library-outcome) {
+  background: var(--d-glass); border-color: var(--d-glass-border);
+  backdrop-filter: blur(14px) saturate(150%);
+  box-shadow: var(--d-shadow), inset 0 1px var(--d-highlight);
+  transition: box-shadow 280ms var(--d-ease-out), border-color 280ms var(--d-ease-out);
+}
+:is(.page-content > .card, .page-content > .grid > .card, .metric, .library-result, .library-stat):hover {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); box-shadow: var(--d-shadow-hover), inset 0 1px var(--d-highlight);
+}
+.analytics-widget:not(.is-dragging):not(.is-resizing):hover { box-shadow: var(--d-shadow-hover), inset 0 1px var(--d-highlight); }
+.card > .card { backdrop-filter: none; }
+.metric, .library-stat { position: relative; overflow: hidden; }
+.metric::before, .library-stat::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; pointer-events: none;
+  background: var(--brand-gradient); opacity: .75;
+}
+.metric:nth-child(2)::before, .library-stat:nth-child(2)::before { background: linear-gradient(90deg, var(--brand-2), var(--brand-4)); }
+.metric:nth-child(3)::before, .library-stat:nth-child(3)::before { background: linear-gradient(90deg, var(--brand-3), var(--brand-1)); }
+.card-heading > h2 { letter-spacing: -.3px; }
+.page-heading h1 { letter-spacing: -.8px; }
+.page-heading small { color: var(--accent); }
+.onboarding-step::before { background: var(--d-brand-action); color: #fff; box-shadow: 0 4px 10px var(--d-glow); }
+
+/* Hero: Domenia's coloured orbs and rotating, masked frame, all pointer-transparent. */
+.hero {
+  border-radius: 20px; background: color-mix(in srgb, var(--surface) 78%, transparent);
+  border-color: color-mix(in srgb, var(--brand-2) 30%, var(--border));
+  backdrop-filter: blur(20px) saturate(160%); box-shadow: var(--d-shadow), inset 0 1px var(--d-highlight);
+}
+.hero.domenia-decorated::before { display: none; }
+.hero h2 {
+  background: linear-gradient(105deg, var(--text) 8%, var(--accent) 56%, var(--d-violet) 88%);
+  background-clip: text; -webkit-background-clip: text; color: transparent;
+}
+.hero .badge.info { border-color: color-mix(in srgb, var(--brand-2) 26%, var(--border)); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.hero-icon { background: var(--d-brand-action); color: #fff; border-color: #ffffff24; box-shadow: 0 14px 32px var(--d-glow), inset 0 1px #ffffff45; }
+.domenia-orbs { position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.domenia-orb { position: absolute; border-radius: 50%; filter: blur(40px); opacity: .3; }
+.domenia-orb.a { width: 280px; height: 280px; right: -60px; top: -90px; background: var(--brand-2); }
+.domenia-orb.b { width: 220px; height: 220px; right: 22%; bottom: -120px; background: var(--brand-3); }
+.domenia-orb.c { width: 160px; height: 160px; left: 40%; top: -80px; background: var(--brand-4); opacity: .22; }
+.domenia-glow-ring {
+  position: absolute; inset: 0; z-index: 1; padding: 1px; border-radius: inherit; pointer-events: none; overflow: hidden;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.domenia-glow-ring::before {
+  content: ''; position: absolute; left: 50%; top: 50%; width: max(150%, 900px); aspect-ratio: 1;
+  background: conic-gradient(var(--brand-1), var(--brand-2), var(--brand-3), var(--brand-4), var(--brand-1));
+  transform: translate(-50%, -50%);
+}
+.quick-link {
+  --d-quick-tone: var(--d-blue); position: relative; isolation: isolate; overflow: hidden;
+  background: var(--d-glass); backdrop-filter: blur(14px) saturate(150%); border-color: var(--d-glass-border);
+  box-shadow: var(--d-shadow), inset 0 1px var(--d-highlight);
+  transition: transform 280ms var(--d-ease-spring), box-shadow 280ms var(--d-ease-out), border-color 160ms;
+}
+.quick-link:nth-child(2) { --d-quick-tone: var(--d-violet); }
+.quick-link:nth-child(3) { --d-quick-tone: var(--d-teal); }
+.quick-link > .icon { width: 36px; height: 36px; padding: 7px; border-radius: 11px; color: var(--d-quick-tone); background: color-mix(in srgb, var(--d-quick-tone) 12%, transparent); }
+.quick-link::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0;
+  background: radial-gradient(360px circle at var(--d-mx, 50%) var(--d-my, 50%), color-mix(in srgb, var(--d-quick-tone) 14%, transparent), transparent 65%);
+  transition: opacity 280ms var(--d-ease-out);
+}
+.quick-link:hover::before { opacity: 1; }
+
+/* Primary actions keep white text on the darker section of the Domenia gradient. */
+.button { transition: background-color 160ms, color 160ms, border-color 160ms, box-shadow 280ms var(--d-ease-out), transform 160ms var(--d-ease-spring); }
+.button.primary:not(:where([role=tab], .work-tabs .button, .work-open-tabs .button, .library-modes .button, .analytics-tabs .button)) {
+  position: relative; isolation: isolate; overflow: hidden; color: #fff;
+  background: var(--d-brand-action); background-size: 180% 100%; background-position: 0 0;
+  border-color: #ffffff1f; box-shadow: 0 5px 16px var(--d-glow), inset 0 1px #ffffff40;
+  transition: background-position 520ms var(--d-ease-out), transform 160ms var(--d-ease-spring), box-shadow 280ms var(--d-ease-out);
+}
+.button.primary:not(:where([role=tab], .work-tabs .button, .work-open-tabs .button, .library-modes .button, .analytics-tabs .button)):hover:not(:disabled) { background-position: 100% 0; box-shadow: 0 9px 23px var(--d-glow), inset 0 1px #ffffff45; }
+.button.primary:not(:where([role=tab], .work-tabs .button, .work-open-tabs .button, .library-modes .button, .analytics-tabs .button))::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, #ffffff24 50%, transparent 70%);
+  transform: translateX(-130%); transition: transform 700ms var(--d-ease-out);
+}
+.button.primary:hover:not(:disabled)::after { transform: translateX(130%); }
+/* Selection controls retain their existing selected-state backgrounds and semantics. */
+:is(.work-tabs, .work-open-tabs, .library-modes, .analytics-tabs) .button.primary {
+  background: var(--accent-soft); color: var(--accent); border-color: var(--border); box-shadow: inset 0 -2px var(--accent);
+}
+:is(.work-tabs, .work-open-tabs, .library-modes, .analytics-tabs) .button.primary::after { content: none; }
+.domenia-ripple {
+  position: absolute; border-radius: 50%; pointer-events: none; background: #ffffff52;
+  transform: scale(0); opacity: .7; animation: domenia-ripple 650ms var(--d-ease-out) forwards;
+}
+input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea {
+  box-shadow: inset 0 1px var(--d-highlight); transition: border-color 160ms, box-shadow 280ms var(--d-ease-out);
+}
+input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 17%, transparent); }
+.modal { background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(24px) saturate(160%); box-shadow: 0 26px 80px #0000004d, inset 0 1px var(--d-highlight); }
+.modal::backdrop { background: #050a1466; backdrop-filter: blur(6px); }
+.modal-heading { background: linear-gradient(110deg, color-mix(in srgb, var(--brand-1) 7%, transparent), color-mix(in srgb, var(--brand-2) 8%, transparent)); }
+.toast { backdrop-filter: blur(18px) saturate(150%); box-shadow: var(--d-shadow-hover); }
+
+/* Every animation starts from already visible content and remains purely decorative. */
+@keyframes domenia-aurora {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  33% { transform: translate3d(4vmax, -3vmax, 0) rotate(8deg) scale(1.06); }
+  66% { transform: translate3d(-3vmax, 4vmax, 0) rotate(-6deg) scale(1.03); }
+  100% { transform: translate3d(2vmax, 2vmax, 0) rotate(4deg) scale(1.08); }
+}
+@keyframes domenia-turn { to { transform: rotate(1turn); } }
+@keyframes domenia-ring { from { transform: translate(-50%, -50%) rotate(0turn); } to { transform: translate(-50%, -50%) rotate(1turn); } }
+@keyframes domenia-float-a { to { transform: translate(-60px, 50px) scale(1.15); } }
+@keyframes domenia-float-b { to { transform: translate(70px, -40px) scale(.9); } }
+@keyframes domenia-enter { from { opacity: .6; transform: translateY(14px) scale(.992); } to { opacity: 1; transform: none; } }
+@keyframes domenia-dialog { from { opacity: .6; transform: translateY(12px) scale(.975); } to { opacity: 1; transform: none; } }
+@keyframes domenia-nav-icon { 40% { transform: scale(1.15) rotate(-6deg); } }
+@keyframes domenia-ripple { to { transform: scale(3); opacity: 0; } }
+:root[data-domenia-motion=on] body::before { animation: domenia-aurora 38s var(--d-ease-in-out) infinite alternate; }
+:root[data-domenia-motion=on] .brand-mark::before { animation: domenia-turn 9s linear infinite; }
+:root[data-domenia-motion=on] .domenia-glow-ring::before { animation: domenia-ring 10s linear infinite; }
+:root[data-domenia-motion=on] .domenia-orb.a { animation: domenia-float-a 14s var(--d-ease-in-out) infinite alternate; }
+:root[data-domenia-motion=on] .domenia-orb.b { animation: domenia-float-b 17s var(--d-ease-in-out) infinite alternate; }
+:root[data-domenia-motion=on] .domenia-orb.c { animation: domenia-float-a 21s var(--d-ease-in-out) infinite alternate-reverse; }
+:root[data-domenia-motion=on] .page-enter > * { animation: domenia-enter var(--d-enter) var(--d-ease-out) both; }
+:root[data-domenia-motion=on] .page-enter > :nth-child(2) { animation-delay: 45ms; }
+:root[data-domenia-motion=on] .page-enter > :nth-child(3) { animation-delay: 90ms; }
+:root[data-domenia-motion=on] .page-enter > :nth-child(n+4) { animation-delay: 135ms; }
+:root[data-domenia-motion=on] .modal[open] { animation: domenia-dialog 420ms var(--d-ease-spring); }
+:root[data-domenia-motion=on] .nav-item[aria-current=page] > .icon { animation: domenia-nav-icon 520ms var(--d-ease-spring); }
+@media (hover: hover) and (pointer: fine) {
+  :root[data-domenia-motion=on] .quick-link:hover { transform: translateY(-3px); box-shadow: var(--d-shadow-hover); }
+  :root[data-domenia-motion=on] .quick-link:active { transform: translateY(0) scale(.99); }
+  :root[data-domenia-motion=on] .button.primary:not(:disabled):not(:where(table *, [role=tab], [role=tablist] *, .work-tabs *, .work-open-tabs *, .library-modes *, .analytics-widget-controls *, .navigation-handle)):hover { translate: 0 -1px; }
+  :root[data-domenia-motion=on] .button.primary:active { translate: none; }
+}
+
+/* No hidden content relies on a reveal callback. Reduced/hidden states stop CSS work outright. */
+:root[data-domenia-motion=off] *, :root[data-domenia-motion=off] *::before, :root[data-domenia-motion=off] *::after,
+:root[data-motion=reduce] *, :root[data-motion=reduce] *::before, :root[data-motion=reduce] *::after {
+  animation: none !important; transition: none !important; scroll-behavior: auto !important;
+}
+:root[data-domenia-motion=off] :is(.quick-link, .button, .quick-link > .icon, .nav-item > .icon, .brand-mark),
+:root[data-motion=reduce] :is(.quick-link, .button, .quick-link > .icon, .nav-item > .icon, .brand-mark) { translate: none !important; transform: none !important; }
+:root[data-domenia-motion=off] .domenia-ripple, :root[data-motion=reduce] .domenia-ripple { display: none; }
+:root[data-contrast=true] body::before,
+:root[data-contrast=true] :is(.domenia-orbs, .domenia-glow-ring, .domenia-ripple), :root[data-contrast=true] .quick-link::before { display: none; }
+:root[data-contrast=true] { --d-glass: var(--surface); --d-glass-nav: var(--nav-bg); --d-glass-border: currentColor; --d-shadow: none; --d-shadow-hover: none; --d-highlight: transparent; }
+:root[data-contrast=true] *, :root[data-contrast=true] *::before, :root[data-contrast=true] *::after { animation: none !important; transition: none !important; backdrop-filter: none !important; }
+:root[data-contrast=true] .hero { background: var(--surface); border-color: currentColor; }
+:root[data-contrast=true] .hero h2 { background: none; color: var(--text); }
+:root[data-contrast=true] .modal, :root[data-contrast=true] .toast { background: var(--surface); box-shadow: none; }
+:root[data-contrast=true] :is(.button.primary, .hero-icon, .brand-mark, .onboarding-step::before) { background: var(--accent-solid); color: #fff; box-shadow: none; }
+:root[data-contrast=true] :is(.nav-item > .icon, .quick-link > .icon) { color: currentColor; background: transparent; box-shadow: none; }
+:root[data-contrast=true] .nav-item[aria-current=page] { border-color: currentColor; box-shadow: none; }
+:root[data-contrast=true] .button.primary::after { content: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  :is(.quick-link, .button, .quick-link > .icon, .nav-item > .icon, .brand-mark) { translate: none !important; transform: none !important; }
+  .domenia-ripple { display: none; }
+}
+@media (forced-colors: active) {
+  *, *::before, *::after { animation: none !important; transition: none !important; backdrop-filter: none !important; box-shadow: none !important; }
+  body::before, .domenia-orbs, .domenia-glow-ring, .domenia-ripple, .quick-link::before, .brand-mark::before, .button.primary::after { display: none !important; }
+  .workspace, .sidebar, .topbar, .statusbar, .hero, .modal, .quick-link { background: Canvas; color: CanvasText; }
+  .hero h2 { color: CanvasText; background: none; }
+  :is(.hero-icon, .nav-item > .icon, .quick-link > .icon) { color: CanvasText; background: Canvas; }
+  .button.primary, .nav-item[aria-current=page] { color: HighlightText; background: Highlight; border-color: Highlight; }
+  .nav-item[aria-current=page] > .icon { color: HighlightText; background: transparent; }
+}
+@media print {
+  body::before, .domenia-orbs, .domenia-glow-ring, .domenia-ripple { display: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; backdrop-filter: none !important; box-shadow: none !important; }
+  .hero, .metric, .library-stat, .library-result { background: #fff; color: #111; }
+  .hero h2 { color: #111; background: none; }
+}

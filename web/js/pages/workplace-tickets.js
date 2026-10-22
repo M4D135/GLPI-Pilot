@@ -51,7 +51,8 @@ export async function renderTickets(ctx) {
     replaceChildren(reader, el('div', { class: 'work-ticket-heading' }, el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
       toolbar(badge(ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue'), ticket.personal.offline ? badge('Copie conservée') : null,
         button('Actualiser la fiche', run(ctx, async () => { current = await call(ctx, 'workplace.ticket.read', { ticketKey: key }); await showReader(); }), { disabled: !ticket.canRead }),
-        button('Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); }), { disabled: !ticket.canRead }))),
+        button('Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); }), { disabled: !ticket.canRead }),
+        button('Chercher des solutions similaires', () => ctx.navigate('library', { text: ticket.title || ticket.personal.title, resolvedOnly: true }), { icon: 'search' }))),
       !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(w => note(w)),
       ticket.changes ? note(ticket.changes.summary + (ticket.changes.rowComparisonComplete ? '' : ' Comparaison de lignes incomplète.')) : null,
       tabs(readerPages, readerPage, run(ctx, async page => { readerPage = page; await savePosition(); await showReader(); })), body);

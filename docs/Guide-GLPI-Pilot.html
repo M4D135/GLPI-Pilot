@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 3.1.1</div>
+    <div class="eyebrow">Guide de prise en main · Version 3.2.0</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -75,11 +75,22 @@
       <p>Le contrôle final de la recherche, du total et de l’échantillon reste actif. Le classeur automatique d’un résultat à vérifier porte <code>a-verifier</code> dans son nom ; le CSV natif conserve son nom et son contenu. Les textes complets des popups GLPI sont récupérés seulement si leur association au texte visible est vérifiée. Les signes inhabituels ne sont pas recodés automatiquement.</p>
       <p>La limite de lignes règle le volume chargé dans l’application, sans tronquer le CSV natif reçu. Un total absent ou invérifiable empêche de confirmer l’exhaustivité. Une recherche peut évoluer pendant la récupération : utiliser un tri stable, et conserver les mêmes critères jusqu’à la fin.</p>
     </section>
+    <section id="bibliotheque">
+      <h2>Bibliothèque, résolution et espace d’équipe</h2>
+      <p><strong>Bibliothèque de tickets → Aspirer tous les tickets</strong> lit l’index GLPI de tous les statuts accessibles, y compris résolus et clos, hors corbeille et dans les entités actives de la session. Les contenus des onglets consultables, suivis, tâches, solutions et historiques sont conservés en SQLite sur ce poste. Les pièces jointes restent des références ; leurs fichiers binaires ne sont pas téléchargés.</p>
+      <p>Dans <strong>Connexion</strong>, choisir le dossier local du cache et renseigner le fuseau d’affichage des dates GLPI, par exemple <code>Europe/Paris</code>, ainsi que l’ordre jour/mois/année si GLPI affiche ses dates de cette façon. La mise à jour réutilise les détails complets seulement lorsque la date de modification, sa précision et l’âge du cache le permettent. Une date absente ou ambiguë entraîne une relecture. <strong>Relire tous les contenus</strong> force cette relecture. Le bilan indique les lectures partielles ou à reprendre ; une interruption conserve le travail déjà enregistré.</p>
+      <p>La vue <strong>Résolution</strong> recherche dans les tickets résolus ou clos dont les détails complets restent actuels selon les observations conservées. Les extraits citent leur ticket, leur section et leur date de lecture. <strong>Exporter le corpus RAG</strong> crée un JSONL avec les documents complets et leurs fragments de texte sourcés. Aucun modèle externe n’est contacté par cette recherche.</p>
+      <p>La vue <strong>Équipe</strong> réunit commentaires, connaissances, notes, propositions d’affectation et publications de configurations ou de statistiques. Les configurations sont examinées avant application. Publier dans cet espace n’écrit pas dans GLPI.</p>
+      <p>Depuis <strong>Mon travail</strong> dans un ticket, utiliser <strong>Enregistrer et partager la note</strong>. Les écrans <strong>Tournées</strong> et <strong>Répartition</strong> proposent leur propre action d’enregistrement et de partage ; <strong>Techniciens</strong> permet de partager les compétences et capacités enregistrées. Dans <strong>Bibliothèque → Équipe → Examiner et reprendre</strong>, comparer la contribution avec le contenu du poste avant de l’appliquer. Une note s’ajoute au texte personnel, une tournée devient un nouveau brouillon, et le scénario ou les capacités précédents sont sauvegardés avant remplacement. Les favoris et notes personnelles des techniciens restent propres au poste.</p>
+      <p>Une connexion PostgreSQL facultative partage tickets et contributions entre postes, chacun conservant sa base locale. La synchronisation envoie et reçoit les modifications ; elle garde la file d’attente hors connexion et conserve les versions concurrentes. Elle peut être manuelle ou périodique lorsque l’application reste ouverte. Le mot de passe peut rester limité à la session ou être protégé par le compte Windows. La base commune doit être réservée à une équipe autorisée à consulter tout le corpus qu’elle reçoit.</p>
+      <p>Un cache SQLite actif reste sur un disque local. Les exports peuvent être déposés sur Samba ; le central utilise PostgreSQL. Un changement vers un dossier neuf copie la base et conserve l’ancienne. Les notes personnelles, tournées et répartitions restent locales tant que leur action de partage n’est pas utilisée. Le cache peut servir de relevé pour les outils locaux ; le lecteur ouvre alors les contenus déjà conservés et suspend sa lecture GLPI automatique. Voir <a href="Bibliotheque-et-partage.md">Bibliothèque et partage</a> pour le déploiement et le protocole.</p>
+    </section>
     <section id="interface">
       <h2>3. Adapter l’interface</h2>
       <p><strong>− / 100 % / +</strong> règle le zoom de 75 à 150 %, par pas de 5 %. Les raccourcis sont <kbd>Ctrl +</kbd>, <kbd>Ctrl −</kbd>, <kbd>Ctrl 0</kbd> et <kbd>Ctrl + molette</kbd>. Le zoom est mémorisé sur le poste. Le bouton soleil/lune choisit le thème clair ou sombre.</p>
       <p>Dans <strong>Configuration</strong>, régler séparément la densité des tableaux, la couleur d’accent, le contraste renforcé, la réduction des animations, le suivi du thème Windows et les colonnes figées. Le mode concentration F11 masque la navigation latérale. Ctrl + K permet de changer d’écran. Les dimensions de la fenêtre sont mémorisées lorsqu’elles changent.</p>
       <p>Le bouton <strong>Navigation</strong> réduit le menu en rail ou le déplie sur grand écran. Sur une fenêtre étroite, il ouvre un tiroir ; <kbd>Échap</kbd> le ferme et rend le focus au bouton. Les sous-onglets des tickets restent sur une barre défilante et l’onglet actif reste visible. Les éditeurs, la palette de commandes et l’import de configuration restent dans la fenêtre principale. La réduction des animations de l’application ou du système s’applique aux transitions.</p>
+      <p><strong>Personnaliser la navigation</strong> permet de masquer, épingler et déplacer les pages, de changer leur groupe et de réordonner les groupes. Les changements peuvent être annulés ou remis à zéro. <strong>Accueil</strong> et <strong>Réglages</strong> restent visibles ; la palette <kbd>Ctrl + K</kbd> ouvre aussi les pages masquées. La présentation reprend Domenia 2 : palette bleu/violet/turquoise/rose, surfaces translucides, fond animé et transitions. Le contraste renforcé et la réduction des animations restent prioritaires.</p>
     </section>
     <section id="tableau">
       <h2>4. Rechercher, filtrer, trier et importer</h2>
@@ -175,7 +186,7 @@
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 3.1.1 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 3.2.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

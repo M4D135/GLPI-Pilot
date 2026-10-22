@@ -25,7 +25,7 @@ public sealed partial class PilotApplication
     }
     private void EvaluateAlerts(CancellationToken ct)
     {
-        if (Result is null || IsHistorical || Result.Provenance.SourceKind is "demo" or "file") return;
+        if (Result is null || IsHistorical || IsLocalResult(Result)) return;
         var settings = EffectiveSettings; var snapshot = DashboardService.Calculate(Result, settings.Dashboard, ct: ct); QueryService.AppendDashboardQueries(snapshot, Result, settings.Dashboard, settings.Queries, ct);
         _alerts.Evaluate(Result, snapshot, ct, settings); Publish("alerts.changed", new { active = _alerts.Document.Incidents.Count(i => i.Active) });
     }
@@ -43,6 +43,8 @@ public sealed partial class PilotApplication
             try { await _handlers["workplace.reminders.check"](args, ct).ConfigureAwait(false); }
             catch (Exception error) when (error is not OperationCanceledException) { Log("Rappels : " + AppPaths.SafeError(error)); }
         }
+        if (_handlers.TryGetValue("library.tick", out var libraryTick))
+            await libraryTick(args, ct).ConfigureAwait(false);
         var policy = Settings.Automation.Copy(); var stamp = JsonSerializer.Serialize(policy, Json);
         if (_automaticPolicyStamp != stamp) { _nextAutomatic = null; _automaticPolicyStamp = stamp; }
         if (!policy.ScheduledExtraction || AutomationPolicy.IsQuiet(policy, DateTimeOffset.Now) || SessionLocked || EditorOpen) return new { skipped = true };

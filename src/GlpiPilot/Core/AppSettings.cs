@@ -267,6 +267,16 @@ public sealed class AutomationRecipeStep
 
 public sealed class InterfacePreferences
 {
+    // Stable route/group keys only. Labels and task-oriented defaults belong to the UI.
+    private static readonly HashSet<string> NavigationIds = new(StringComparer.Ordinal)
+    {
+        "home", "collect", "sources", "operations", "library", "records", "quality", "mapping",
+        "dashboard", "queries", "history", "populations", "assistant", "day", "tickets", "enrichment",
+        "technicians", "planning", "terrain-reference", "terrain-review", "tours", "updates",
+        "automation", "alerts", "settings", "help"
+    };
+    private static readonly HashSet<string> NavigationGroupIds = new(StringComparer.Ordinal)
+        { "pinned", "workspace", "collect", "analyze", "work", "terrain", "admin" };
     public string Density { get; set; } = "balanced";
     public bool FollowWindowsTheme { get; set; }
     public string Accent { get; set; } = "blue";
@@ -280,6 +290,8 @@ public sealed class InterfacePreferences
     public List<string> NavigationOrder { get; set; } = new();
     public List<string> HiddenNavigation { get; set; } = new();
     public List<string> PinnedNavigation { get; set; } = new();
+    public List<string> NavigationGroupOrder { get; set; } = new();
+    public Dictionary<string, string> NavigationGroups { get; set; } = new(StringComparer.Ordinal);
     public bool OnboardingCompleted { get; set; }
     public int FrozenColumns { get; set; } = 2;
     public double WindowWidth { get; set; }
@@ -287,7 +299,14 @@ public sealed class InterfacePreferences
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public bool WindowMaximized { get; set; }
-    public InterfacePreferences Copy() { var copy = (InterfacePreferences)MemberwiseClone(); copy.NavigationOrder = new(NavigationOrder ?? new()); copy.HiddenNavigation = new(HiddenNavigation ?? new()); copy.PinnedNavigation = new(PinnedNavigation ?? new()); copy.WindowPixelBounds = (WindowPixelBounds ?? Array.Empty<double>()).ToArray(); return copy; }
+    public InterfacePreferences Copy()
+    {
+        var copy = (InterfacePreferences)MemberwiseClone();
+        copy.NavigationOrder = new(NavigationOrder ?? new()); copy.HiddenNavigation = new(HiddenNavigation ?? new());
+        copy.PinnedNavigation = new(PinnedNavigation ?? new()); copy.NavigationGroupOrder = new(NavigationGroupOrder ?? new());
+        copy.NavigationGroups = new(NavigationGroups ?? new(), StringComparer.Ordinal);
+        copy.WindowPixelBounds = (WindowPixelBounds ?? Array.Empty<double>()).ToArray(); return copy;
+    }
     public void Normalize()
     {
         if (Density is not ("compact" or "balanced" or "comfortable")) Density = "balanced";
@@ -295,15 +314,22 @@ public sealed class InterfacePreferences
         if (ColorVision is not ("standard" or "deuteranopia" or "protanopia" or "tritanopia")) ColorVision = "standard";
         PreferredMonitor ??= "";
         if (WindowPixelBounds == null || WindowPixelBounds.Length != 4 || WindowPixelBounds.Any(v => !double.IsFinite(v)) || WindowPixelBounds[2] <= 0 || WindowPixelBounds[3] <= 0) WindowPixelBounds = Array.Empty<double>();
-        NavigationOrder = (NavigationOrder ?? new()).Where(value => value != null && value.Length <= 120).Distinct(StringComparer.Ordinal).Take(40).ToList();
-        HiddenNavigation = (HiddenNavigation ?? new()).Where(value => value != null && value.Length <= 120).Distinct(StringComparer.Ordinal).Take(40).ToList();
-        PinnedNavigation = (PinnedNavigation ?? new()).Where(value => value != null && value.Length <= 120).Distinct(StringComparer.Ordinal).Take(40).ToList();
+        NavigationOrder = NavigationList(NavigationOrder);
+        HiddenNavigation = NavigationList(HiddenNavigation).Where(value => value is not ("home" or "settings")).ToList();
+        PinnedNavigation = NavigationList(PinnedNavigation);
+        NavigationGroupOrder = (NavigationGroupOrder ?? new()).Where(value => value != null && NavigationGroupIds.Contains(value)).Distinct(StringComparer.Ordinal).Take(NavigationGroupIds.Count).ToList();
+        // Pinned is a view of PinnedNavigation, not a second assignment for the same route.
+        NavigationGroups = (NavigationGroups ?? new()).Where(pair => NavigationIds.Contains(pair.Key)
+            && pair.Value != null && pair.Value != "pinned" && NavigationGroupIds.Contains(pair.Value))
+            .Take(NavigationIds.Count).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         FrozenColumns = Math.Clamp(FrozenColumns, 0, 8);
         if (!double.IsFinite(WindowWidth) || WindowWidth < 0) WindowWidth = 0;
         if (!double.IsFinite(WindowHeight) || WindowHeight < 0) WindowHeight = 0;
         if (WindowLeft.HasValue && !double.IsFinite(WindowLeft.Value)) WindowLeft = null;
         if (WindowTop.HasValue && !double.IsFinite(WindowTop.Value)) WindowTop = null;
     }
+    private static List<string> NavigationList(List<string>? values) => (values ?? new())
+        .Where(value => value != null && NavigationIds.Contains(value)).Distinct(StringComparer.Ordinal).Take(NavigationIds.Count).ToList();
 }
 
 /// <summary>Atomic settings with bounded local versions. Browser sessions and ticket data are never included.</summary>

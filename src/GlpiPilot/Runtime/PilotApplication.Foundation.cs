@@ -31,7 +31,7 @@ public sealed partial class PilotApplication
         Register("sources.capture", (a, ct) => Task.FromResult<object?>(CaptureSource(a)));
         Register("sources.select", (a, ct) => { CheckRevision(a); var next = Settings.Copy(); var source = next.Sources.SingleOrDefault(s => s.Id == Text(a, "id", 80)) ?? throw new InvalidDataException("Source introuvable."); source.ApplyTo(next); next.ActiveSourceId = source.Id; CommitSettings(next); return Task.FromResult<object?>(Settings); });
         Register("sources.remove", (a, ct) => { CheckRevision(a); var id = Text(a, "id", 80); var next = Settings.Copy(); next.Sources.RemoveAll(s => s.Id == id); if (next.ActiveSourceId == id) next.ActiveSourceId = ""; CommitSettings(next); return Task.FromResult<object?>(Settings.Sources); });
-        Register("records.schema", (a, ct) => { var data = RequireResult(); if (IsHistorical || data.Provenance.SourceKind is "file" or "demo") return Task.FromResult<object?>(new { available = false }); var key = SnapshotStore.SourceKey(data); if (key.Length == 0) return Task.FromResult<object?>(new { available = false }); if (Flag(a, "accept")) { CheckRevision(a); _schemas.Accept(key, data.Headers); } return Task.FromResult<object?>(new { available = true, change = _schemas.Inspect(key, data.Headers), revision = Revision }); });
+        Register("records.schema", (a, ct) => { var data = RequireResult(); if (IsHistorical || IsLocalResult(data)) return Task.FromResult<object?>(new { available = false }); var key = SnapshotStore.SourceKey(data); if (key.Length == 0) return Task.FromResult<object?>(new { available = false }); if (Flag(a, "accept")) { CheckRevision(a); _schemas.Accept(key, data.Headers); } return Task.FromResult<object?>(new { available = true, change = _schemas.Inspect(key, data.Headers), revision = Revision }); });
         Register("records.import", ImportRecordsAsync);
         Register("records.list", RecordListAsync);
         Register("records.export", ExportRecordsAsync);
@@ -53,7 +53,7 @@ public sealed partial class PilotApplication
         Register("operations.list", (_, _) => Task.FromResult<object?>(new { entries = _journal.Entries, log = _logs.ToArray(), health = _health.Entries }));
         Register("operations.acknowledge", (a, ct) => { _journal.Acknowledge(Text(a, "id", 80)); return Task.FromResult<object?>(new { saved = true }); });
         Register("operations.cancel", (_, _) => Task.FromResult<object?>(CancelOperations()));
-        RegisterCollectionOperations(); RegisterAutomationOperations();
+        RegisterCollectionOperations(); RegisterAutomationOperations(); RegisterLibraryOperations();
     }
     private SourceProfile CaptureSource(JsonElement args)
     {

@@ -1,6 +1,6 @@
-# GLPI Pilot 3.1.1 — Windows x64
+# GLPI Pilot 3.2.0 — Windows x64
 
-**Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, gestion locale des techniciens, lecture des tickets, requêtes, lieux, tournées, historiques et alertes. Aucun accès API, base de données ou serveur GLPI n’est nécessaire.
+**Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
 La version 3 utilise un **hôte C# WinForms avec WebView2** et une interface locale HTML/CSS/JavaScript. Les calculs, la pagination, les validations, la persistance et les accès au navigateur restent en C#. Le runtime WebView2 fixe est livré dans le ZIP ; les pages de l’application n’ont besoin ni d’un site hébergé ni d’un téléchargement au premier lancement. Le modèle de migration est documenté dans le [contrat WebView](docs/WebView-contract.md), à partir de Domenia 2.
 
@@ -35,7 +35,25 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Nouveautés de la version 3.1.1
+## Nouveautés de la version 3.2.0
+
+**Le style reprend directement Domenia 2** : palette bleu, violet, turquoise et rose, surfaces translucides, fond animé et transitions de navigation. Les thèmes clair/sombre, le contraste renforcé et la réduction des animations restent disponibles. **Personnaliser la navigation** permet de masquer ou épingler les pages, déplacer les entrées et réordonner leurs groupes ; Accueil et Réglages restent visibles, et la palette ouvre aussi les pages dont le raccourci est masqué. Les groupes suivent les tâches : collecter, consulter et résoudre, piloter l’équipe, travailler sur le terrain, puis administrer le logiciel.
+
+**Bibliothèque de tickets** ajoute un cache SQLite local persistant et quatre vues : bibliothèque, résolution, équipe et connexion. **Aspirer tous les tickets** parcourt tous les statuts accessibles, y compris résolus et clos, hors corbeille et dans les entités actives de la session GLPI. Les descriptions, suivis, tâches, solutions, historiques et autres onglets consultables sont conservés avec leurs preuves de lecture ; les pièces jointes restent des références et métadonnées. Les limites du portail et les lectures partielles sont indiquées dans le bilan.
+
+Les mises à jour réutilisent les contenus complets lorsque la date de modification GLPI, sa précision, la signature du lecteur et l’âge du cache le permettent. Renseigner le **fuseau d’affichage des dates GLPI** dans Connexion pour interpréter une date sans décalage explicite. Une date absente ou ambiguë entraîne une relecture ; elle ne permet pas de déclarer une version plus récente qu’une autre. **Relire tous les contenus** force une nouvelle lecture. Les versions divergentes sont conservées.
+
+La vue **Résolution** recherche dans les tickets résolus ou clos dont le contenu est complet et encore actuel selon les observations conservées. Chaque résultat renvoie au ticket, à la section lue et à un extrait exact. **Exporter le corpus RAG** produit des documents complets et des fragments de texte sourcés en JSONL pour une indexation ultérieure. Cette recherche utilise l’index local de texte ; elle n’envoie pas les tickets à un modèle externe.
+
+L’**espace d’équipe** conserve commentaires, articles de connaissance, notes, propositions d’affectation, configurations de pilotage et statistiques. La synchronisation PostgreSQL est bidirectionnelle : chaque client garde sa copie SQLite, envoie ses mutations et reprend le journal central. Les tickets sont ordonnés par leur version GLPI ; les contributions utilisent une révision centrale. Les conflits et les retraits circulent vers les autres postes. La file d’attente survit aux interruptions. La synchronisation peut être manuelle ou périodique tant que l’application est ouverte.
+
+Les outils existants sont reliés à cet espace : **Enregistrer et partager la note** dans le lecteur, publication des **tournées**, des **répartitions** et des **compétences et capacités** des techniciens. **Examiner et reprendre** présente la comparaison avant application sur un autre poste. Les notes s’ajoutent au texte personnel, les tournées deviennent de nouveaux brouillons, et le scénario ou les capacités remplacés disposent d’une sauvegarde locale. Les favoris et notes privées des techniciens restent conservés. Ces échanges ne déclenchent pas d’affectation ou d’autre écriture GLPI.
+
+**Utiliser le cache comme relevé** alimente les écrans de statistiques et de travail avec les métadonnées conservées. Le lecteur ouvre les détails déjà présents dans la bibliothèque, sans relancer automatiquement GLPI, en gardant l’installation d’origine et la date d’observation.
+
+Le dossier du cache local est configurable ; un changement vers un dossier neuf utilise une copie cohérente et garde l’ancienne base. Un cache SQLite actif n’est pas partagé sur Samba. Les exports peuvent y être enregistrés ; la base commune est PostgreSQL. Le [guide bibliothèque et partage](docs/Bibliotheque-et-partage.md) décrit l’installation, les limites, le protocole de données et l’accès des autres outils. Les réglages personnels existants restent locaux tant qu’ils ne sont pas publiés explicitement dans l’espace d’équipe.
+
+### Diagnostic et présentation introduits en 3.1.1
 
 Le dashboard masque automatiquement les widgets sans données calculables, tout en conservant leur disposition. Le mode édition les réaffiche ; **Afficher les widgets indisponibles** mémorise le choix par tableau. Le widget Qualité devient un résumé compact et ses libellés sont en français. Les observations de présentation du CSV restent consultables dans **Détails des contrôles** et **Qualité du relevé**, sans bandeau permanent. Une réception réellement partielle, un problème d’identifiants ou de contexte reste signalé.
 
@@ -136,7 +154,9 @@ La limite de lignes de l’application peut réduire le volume chargé ; elle ne
 
 ## Données et partage
 
-Les données de travail résident dans `%LOCALAPPDATA%\GLPI-Pilot`, indépendamment du dossier de l’EXE : profil du navigateur, préférences, archives, cache facultatif, notes et tournées. Les exports vont dans le dossier choisi. La configuration partageable contient les définitions d’équipe et les adresses autorisées, pas la session SSO.
+Les données de travail résident par défaut dans `%LOCALAPPDATA%\GLPI-Pilot`, indépendamment du dossier de l’EXE : profil du navigateur, préférences, archives, notes et tournées. La bibliothèque SQLite réside dans le sous-dossier `Library`, ou dans le dossier local choisi dans **Bibliothèque → Connexion**. Les exports vont dans le dossier choisi. La configuration partageable contient les définitions d’équipe et les adresses autorisées, pas la session SSO. La connexion PostgreSQL et son mot de passe restent propres au poste ; leur mémorisation facultative utilise la protection du compte Windows.
+
+Une base centrale est réservée à une équipe autorisée à consulter l’ensemble du corpus qu’elle reçoit. Elle ne reproduit pas automatiquement les permissions GLPI de chaque utilisateur. L’espace d’équipe partage ses propres commentaires et affectations ; publier une contribution ne modifie pas le ticket dans GLPI.
 
 Dans **Mise à jour et retour arrière**, examiner la release officielle ou choisir un ZIP local, vérifier le pack puis confirmer son installation. L’assistant contrôle l’archive, son commit et chaque fichier, conserve une sauvegarde complète et exige un démarrage confirmé de l’interface. Après un échec, il restaure l’ancien pack ; si un fichier reste verrouillé, il conserve la sauvegarde et signale la récupération nécessaire. Aucun contrôle de release n’est lancé automatiquement au démarrage.
 
@@ -145,6 +165,8 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 ## Documentation
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
+- [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.2.0](docs/RELEASE-3.2.0.md)
 - [Notes de version 3.1.1](docs/RELEASE-3.1.1.md)
 - [Notes de version 3.1.0](docs/RELEASE-3.1.0.md)
 - [Historique — version 3.0.2](docs/RELEASE-3.0.2.md)
@@ -177,7 +199,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.1.1'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.2.0'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -193,12 +215,12 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.1.1'
+  -OutputDirectory '.\artifacts\release-3.2.0'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.
 
-Le [workflow Windows](.github/workflows/windows.yml) prévoit les moteurs C#, les pages branchées aux vrais services, les parcours navigateur synthétiques, puis les packs et le vrai hôte WinForms/WebView2. Les contrôles natifs vérifient thèmes, zoom, navigation, fermeture et mise à jour/rollback sur des copies temporaires. La promotion en Release n’utilise que les archives de ce run après réussite de ses étapes. Le détail des commandes, des caches et des prérequis figure dans [GitHub et compilation](docs/GitHub-et-compilation.txt).
+Le [workflow Windows et PostgreSQL](.github/workflows/windows.yml) prévoit les moteurs C#, les pages branchées aux vrais services, les parcours navigateur synthétiques, puis les packs et le vrai hôte WinForms/WebView2. Les contrôles natifs vérifient thèmes, zoom, navigation, fermeture et mise à jour/rollback sur des copies temporaires. Un second job vérifie la synchronisation contre un vrai serveur PostgreSQL 17 temporaire. La promotion en Release n’utilise que les archives de ce run après réussite des deux jobs. Le détail des commandes, des caches et des prérequis figure dans [GitHub et compilation](docs/GitHub-et-compilation.txt).
 
 Une compilation croisée ne prouve pas le fonctionnement de l’EXE sous Windows. Les résultats définitifs sont les journaux du [workflow associé au commit livré](https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml). Le portail d’entreprise et son SSO réel restent à confirmer dans cet environnement.
 
@@ -206,7 +228,7 @@ Une compilation croisée ne prouve pas le fonctionnement de l’EXE sous Windows
 
 Les données absentes restent indisponibles. Les dates sont calendaires ; un stock ou une estimation ne mesure pas la productivité d’un technicien. Les analyses historiques décrivent des observations et leurs incertitudes : une disparition n’est pas une résolution, une projection n’est pas un engagement de résultat.
 
-Les notes, tournées, corrections et scénarios restent locaux. Seule une action GLPI préparée dans l’assistant dédié puis confirmée explicitement peut écrire dans le portail, selon les droits du compte. Un résultat d’envoi ambigu est signalé et n’est jamais relancé automatiquement.
+Les notes personnelles, tournées, corrections et scénarios existants restent locaux. Les contributions créées dans l’espace d’équipe et les configurations ou statistiques qui y sont publiées se synchronisent lorsque le central est activé. Seule une action GLPI préparée dans l’assistant dédié puis confirmée explicitement peut écrire dans le portail, selon les droits du compte. Un résultat d’envoi ambigu est signalé et n’est jamais relancé automatiquement.
 
 Les services de routage, météo et génération externe sont désactivés tant qu’aucun fournisseur n’est configuré et autorisé. Le mode local de l’assistant repose sur des règles explicites et une synthèse extractive ; il n’est pas un modèle généraliste exécuté hors ligne. Une réponse externe doit respecter le schéma borné et citer des références présentes dans le contexte ; sa pertinence doit être relue avant usage.
 

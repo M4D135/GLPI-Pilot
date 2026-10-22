@@ -106,11 +106,19 @@ function Assert-PackContents {
         $required = @(
             'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
+            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md',
             'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
             'wad/version.json', 'wad/SHA256SUMS.txt',
             'wad/web/index.html', 'wad/web/js/app.js', 'wad/web/js/bridge.js', 'wad/web/css/app.css',
             'wad/runtime/webview2/msedgewebview2.exe', 'wad/runtime/webview2/msedge.dll',
-            'wad/licenses/WebView2-SDK-LICENSE.txt', 'wad/licenses/WebView2-FixedRuntime-LICENSE.html'
+            'wad/licenses/WebView2-SDK-LICENSE.txt', 'wad/licenses/WebView2-FixedRuntime-LICENSE.html',
+            'wad/licenses/Sqlite-Npgsql-NuGet-Notices.txt', 'wad/licenses/Microsoft-Data-Sqlite-MIT.txt',
+            'wad/licenses/Npgsql-PostgreSQL.txt', 'wad/licenses/SQLitePCLRaw-Apache-2.0.txt',
+            'wad/licenses/Microsoft-Extensions-ThirdPartyNotices.txt',
+            'wad/web/js/pages/library.js', 'wad/web/css/library.css',
+            'wad/web/js/navigation.js', 'wad/web/css/navigation.css',
+            'wad/web/js/domenia-motion.js', 'wad/web/css/domenia.css',
+            'wad/web/js/pages/shared-operations.js'
         )
         if ($Edition -eq 'DEV') {
             $required += @(
@@ -122,7 +130,19 @@ function Assert-PackContents {
                 'wad/sources/.github/workflows/windows.yml', 'wad/sources/GLPI-Pilot.sources.json',
                 'wad/sources/build-tools/SourceProvenance.ps1', 'wad/sources/build-tools/Test-DevRebuild.ps1',
                 'wad/sources/tests/SourceProvenanceChecks/Program.ps1',
-                'wad/sources/tests/UpdateChecks/Program.cs', 'wad/sources/tests/UpdateChecks/UpdateChecks.csproj'
+                'wad/sources/tests/UpdateChecks/Program.cs', 'wad/sources/tests/UpdateChecks/UpdateChecks.csproj',
+                'wad/sources/src/GlpiPilot/Core/BrowserTicketLibrary.cs',
+                'wad/sources/src/GlpiPilot/Core/TicketLibraryStore.cs',
+                'wad/sources/src/GlpiPilot/Core/TeamWorkspaceSyncService.cs',
+                'wad/sources/src/GlpiPilot/Core/TeamWorkspaceBusinessDocuments.cs',
+                'wad/sources/src/GlpiPilot/Runtime/PilotApplication.SharedOperations.cs',
+                'wad/sources/tests/TicketLibraryChecks/Program.cs', 'wad/sources/tests/TicketLibraryChecks/PostgresChecks.cs',
+                'wad/sources/tests/SharedWorkspaceChecks/Program.cs',
+                'wad/sources/tests/TicketLibraryAcquisitionChecks/Program.cs',
+                'wad/sources/tests/WebViewChecks/Program.Library.cs',
+                'wad/sources/tests/WebViewChecks/Program.Navigation.cs',
+                'wad/sources/tests/WebViewChecks/Program.SharedOperations.cs',
+                'wad/sources/tests/RuntimeSessionChecks/SharedOperationsChecks.cs'
             )
         }
         foreach ($name in $required) { if ($entries -notcontains $name) { throw "Incomplete $Edition pack: $name is missing." } }
@@ -202,7 +222,9 @@ try {
                 @{ Project = 'UpdateChecks'; Log = 'update-checks.log'; Summary = ''; Pattern = '\d+/\d+ update checks passed\.' },
                 @{ Project = 'LanguageAssistantChecks'; Log = 'language-assistant-checks.log'; Summary = ''; Pattern = '\d+/\d+ language assistant checks passed; synthetic handlers only, no provider contacted\.' },
                 @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '40/40' },
-                @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' }
+                @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' },
+                @{ Project = 'TicketLibraryChecks'; Log = 'ticket-library-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket library checks passed\.\r?$' },
+                @{ Project = 'SharedWorkspaceChecks'; Log = 'shared-workspace-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 shared workspace checks passed\.\r?$' }
             )
             foreach ($suite in $suites) {
                 $project = 'tests/' + $suite.Project + '/' + $suite.Project + '.csproj'
@@ -219,6 +241,8 @@ try {
             }
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/TicketDetailChecks/TicketDetailChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win') `
                 -LogName 'ticketdetailchecks.log' -TimeoutSeconds 180 -ExpectedSummary '32/32 contrôles de lecture de fiche réussis.'
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/TicketLibraryAcquisitionChecks/TicketLibraryAcquisitionChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win') `
+                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 180 -ExpectedSummary "20/20 contrôles d’acquisition de bibliothèque réussis."
             $driver = Join-Path $repository 'tests/AutomationChecks/bin/Release/net10.0/.playwright'
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
@@ -239,6 +263,12 @@ try {
                 }
                 Invoke-CheckedProcess -Executable 'dotnet' -Arguments $arguments -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 240 -ExpectedPattern $pattern
             }
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--library-only', '--screenshots', (Join-Path $logs 'library-preview')) `
+                -LogName 'ticket-library-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 ticket library WebView checks passed\.\r?$'
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--navigation-only', '--screenshots', (Join-Path $logs 'navigation-preview')) `
+                -LogName 'navigation-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '10/10 navigation WebView checks passed.'
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--shared-operations-only', '--screenshots', (Join-Path $logs 'shared-operations-preview')) `
+                -LogName 'shared-operations-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '8/8 shared operations WebView checks passed.'
             $driver = Join-Path $repository 'tests/TerrainBridgeChecks/bin/Release/net10.0/.playwright'
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') -Arguments @('tests/TerrainWebChecks/run.cjs') `

@@ -1,9 +1,24 @@
-GLPI Pilot 3.1.1 — composants redistribués
+GLPI Pilot 3.2.0 — composants redistribués
 
 .NET et Windows Desktop Runtime 10.0.13 : licences Microsoft .NET ci-jointes.
 Microsoft.Playwright 1.63.0 : licence MIT ci-jointe.
 Pilote JavaScript Playwright : licence et notices dans wad/.playwright/package.
 Node.js du pilote Playwright : licence dans wad/.playwright/node/LICENSE.
+
+Microsoft.Data.Sqlite et Microsoft.Data.Sqlite.Core 10.0.13 : licence MIT,
+texte dans Microsoft-Data-Sqlite-MIT.txt.
+SQLitePCLRaw.bundle_e_sqlite3, core, lib.e_sqlite3 et provider.e_sqlite3 2.1.13 :
+licence déclarée Apache-2.0, texte dans SQLitePCLRaw-Apache-2.0.txt.
+Npgsql 10.0.3 : licence PostgreSQL, texte dans Npgsql-PostgreSQL.txt.
+Microsoft.Extensions.DependencyInjection.Abstractions et
+Microsoft.Extensions.Logging.Abstractions 10.0.0 : licence MIT commune
+dans Microsoft-Data-Sqlite-MIT.txt et notices tierces originales dans
+Microsoft-Extensions-ThirdPartyNotices.txt.
+Les métadonnées, copyrights, sources officielles et empreintes des neuf
+archives NuGet sont détaillés dans Sqlite-Npgsql-NuGet-Notices.txt.
+Le serveur PostgreSQL reste un service externe facultatif ; il n’est pas
+redistribué dans les packs Windows. L’image PostgreSQL des tests CI n’est
+pas utilisée pour installer automatiquement un serveur sur les postes.
 
 Microsoft.Web.WebView2 SDK 1.0.4258.31 : licence Microsoft ci-jointe.
 Microsoft Edge WebView2 Runtime fixe 154.0.4258.62 x64 : runtime embarqué

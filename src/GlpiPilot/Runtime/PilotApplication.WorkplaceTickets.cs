@@ -9,7 +9,7 @@ public sealed partial class PilotApplication
     private void RegisterWorkplaceTickets()
     {
         WorkRegister("workplace.ticket.list", WorkTicketList);
-        WorkRegister("workplace.ticket.open", WorkTicketOpen);
+        Register("workplace.ticket.open", WorkTicketOpenAsync);
         WorkRegister("workplace.ticket.close", a => { var doc = WorkDocument().Copy(); var key = WorkPersonal(a).Key; doc.OpenTicketKeys.Remove(key); if (doc.ActiveTicketKey == key) doc.ActiveTicketKey = doc.OpenTicketKeys.LastOrDefault() ?? ""; WorkSave(doc); return WorkState(); });
         Register("workplace.ticket.read", WorkTicketReadAsync);
         Register("workplace.ticket.tab", WorkTicketTabAsync);
@@ -37,7 +37,7 @@ public sealed partial class PilotApplication
         var filtered = Enumerable.Range(0, data.Rows.Count).Where(i => search.Length == 0 || data.Rows[i].Any(cell => TicketReadingService.Contains(cell, search))).ToArray();
         return new { revision = Revision, total = filtered.Length, page, pageSize = size, saved = false, rows = filtered.Skip(page * size).Take(size).Select(i => new { rowIndex = i, id = Cell(i, "id"), title = Cell(i, "title"), status = Cell(i, "status"), assignee = Cell(i, "assignee"), due = Cell(i, "due") }).ToArray() };
     }
-    private object WorkTicketOpen(JsonElement a)
+    private async Task<object?> WorkTicketOpenAsync(JsonElement a, CancellationToken ct)
     {
         var doc = WorkDocument().Copy(); PersonalTicket p;
         if (a.TryGetProperty("rowIndex", out _))
@@ -49,7 +49,20 @@ public sealed partial class PilotApplication
             p = WorkplaceStore.Remember(doc, reference, titleCol is int col ? data.Rows[index][col] : "Ticket " + reference.Id);
         }
         else { var known = WorkPersonal(a); p = WorkplaceStore.Remember(doc, new(known.Id, known.Url), known.Title); }
-        WorkSave(doc); return WorkTicketView(p.Key);
+        if (Result?.Provenance is { SourceKind: "local", Method: "ticket-library" })
+        {
+            var preferences = new LibraryPreferencesStore().Load();
+            var library = new TicketLibraryStore(preferences.DatabasePath);
+            var cached = await library.GetAsync(new TicketReference(p.Id, p.Url), ct).ConfigureAwait(false);
+            if (cached?.Detail is { } detail)
+            {
+                detail.Warnings.Add(cached.DetailComplete && cached.DetailsCurrent
+                    ? "Contenu chargé depuis la bibliothèque locale ; la date affichée correspond à son observation dans GLPI."
+                    : "Contenu chargé depuis la bibliothèque locale ; sa couverture ou sa fraîcheur reste à recontrôler.");
+                WorkCache(detail);
+            }
+        }
+        ct.ThrowIfCancellationRequested(); WorkSave(doc); return WorkTicketView(p.Key);
     }
     private TicketDetailResult? WorkOptionalDetail(PersonalTicket p)
     {

@@ -72,6 +72,14 @@ public sealed partial class PilotApplication : IAsyncDisposable
                 // A local file remains attached to the interpretation that opened it, even
                 // when the user selects another GLPI profile for a future collection.
                 if ((_localMappings.Get(result) ?? (Locations is { } locations && ReferenceEquals(locations.Data, result) ? _localMappings.Get(locations.Source) : null)) is { } mapping) copy.Dashboard = mapping;
+                if (result.Provenance is { SourceKind: "local", Method: "ticket-library" })
+                {
+                    // Cached rows keep their own proven installation and canonical ID column.
+                    // Online reads/writes still validate against Settings and RequireCurrentResult.
+                    copy.PortalUrl = result.SourceUrl;
+                    copy.TicketDetails.IdColumn = "ID";
+                    copy.TicketDetails.UrlTemplate = "";
+                }
             }
             if (!IsHistorical) copy.Dashboard.PersonalTechnician = Settings.Dashboard.PersonalTechnician;
             return copy;
@@ -177,11 +185,11 @@ public sealed partial class PilotApplication : IAsyncDisposable
         var sameObservation = ReferenceEquals(previous, data) || locations is not null
             && (ReferenceEquals(locations.Source, previous) || Locations is not null && ReferenceEquals(locations.Source, Locations.Source));
         var nextContext = context?.Copy() ?? (sameObservation ? _resultContext?.Copy() : null) ?? Settings.Copy();
-        if (IsLocalResult(data) && _localMappings.Get(data) is null && data.Provenance.SourceKind is "file" or "demo")
+        if (IsLocalResult(data) && _localMappings.Get(data) is null)
         {
             var mapping = locations is not null ? _localMappings.Get(locations.Source) ?? (sameObservation ? _localMappings.Get(previous) : null) ?? nextContext.Dashboard : nextContext.Dashboard;
             _localMappings.Set(data, mapping);
-            if (locations is not null && locations.Source.Provenance.SourceKind is "file" or "demo" && _localMappings.Get(locations.Source) is null) _localMappings.Set(locations.Source, mapping);
+            if (locations is not null && IsLocalResult(locations.Source) && _localMappings.Get(locations.Source) is null) _localMappings.Set(locations.Source, mapping);
         }
         Result = data; Locations = locations; HistoricalDocument = historical;
         _resultContext = nextContext;

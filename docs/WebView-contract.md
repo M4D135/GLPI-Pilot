@@ -64,8 +64,40 @@ Les erreurs métier sont affichées ; pas de catch silencieux ni succès simulé
 - Workplace : `PilotApplication.Workplace*.cs`, pages `workplace.js` et CSS dédié. Tickets/lecteur/actions/documents, journée, enrichissement, techniciens/calendriers/scénarios. Définit `RegisterWorkplaceOperations()`.
 - Terrain : `PilotApplication.Terrain*.cs`, pages `terrain.js` et CSS dédié. Villes/règles/corrections/simulations, tournées/routage/météo/exports, assistant de mise à jour. Définit `RegisterTerrainOperations()`.
 - Socle : projet/hôte/pont, `PilotApplication.cs`, collecte/relevé/configuration/automatisations/alertes, shell/UI commune, empaquetage/CI.
+- Bibliothèque et équipe : `PilotApplication.Library*.cs` et `PilotApplication.SharedWorkspace.cs`, page `library.js`, moteurs `TicketLibrary*` et `TeamWorkspace*`. `RegisterFoundationOperations()` enregistre ce domaine après les opérations du socle.
 
 Les sources WPF sont retirées du projet et de cette arborescence. Leur état avant migration reste dans le commit historique `d9c6434b462bb3ad700a206c93c70fd52142bd5e`. Aucun écran de la version 3 ne dépend de WPF.
+
+## Bibliothèque locale et partage central — 3.2
+
+Le cache local SQLite et la base PostgreSQL commune possèdent des protocoles versionnés. Les accès aux fichiers, transactions, versions et connexions restent en C#. Les pages transmettent des objets bornés ; elles ne reçoivent ni chaîne de connexion ni secret mémorisé.
+
+| Famille d’opérations | Contrat |
+| --- | --- |
+| `library.get`, `library.search`, `library.ticket`, `library.conflicts` | État, recherche paginée, contenu du ticket et aperçus bornés des versions concurrentes. La recherche de solutions ne retient que les contenus complets et actuels de tickets résolus ou clos. |
+| `library.capture` | `mode: incremental` réutilise les contenus dont la version est prouvée inchangée ; `mode: all` relit les contenus. Le bilan expose périmètre, limites, lectures, réutilisations et échecs. |
+| `library.settings.save`, `library.folder.pick`, `library.connection.test` | Réglages propres au poste, dossier local et essai de connexion sans création de schéma. Le mot de passe saisi n’est jamais renvoyé. |
+| `library.sync`, `library.tick` | Échange explicite ou périodique lorsque l’application est ouverte ; file durable et reprise après interruption. Le tick évite les tâches au premier plan et la session verrouillée. |
+| `library.loadRecords`, `library.export`, `library.open` | Relevé local marqué comme tel, corpus JSONL avec citations et ouverture du ticket d’origine. Plusieurs installations ne sont pas fusionnées sans sélection de leur contexte. |
+| `workspace.list`, `workspace.get`, `workspace.save`, `workspace.remove`, `workspace.conflicts` | Liste paginée avec aperçu, lecture complète avant édition, mutations exigeant `expectedRevision`, retraits versionnés et conservation des conflits. |
+| `workspace.publishConfiguration`, `workspace.configuration.preview` | Publication des indicateurs, dashboards, requêtes et villes ; prévisualisation puis application par le jeton existant de `configuration.apply`. |
+| `workspace.publishStatistics`, `workspace.export` | Publication d’un état calculé et export des contributions. Les paramètres de connexion, le profil SSO et les préférences personnelles n’entrent pas dans ces documents. |
+| `workspace.publishPersonalNote`, `workspace.publishTour`, `workspace.publishDispatch`, `workspace.publishTechnicians` | Publication explicite du document enregistré dans l’outil concerné : note de ticket, tournée, scénario de répartition ou compétences et capacités. Types de transport dédiés, installation et références validées. |
+| `workspace.operation.preview`, `workspace.operation.apply` | Comparaison avec le document local, puis application avec un jeton à usage unique lié à la contribution, au contexte et à l’empreinte du fichier local. Le texte d’une note est ajouté ; une tournée devient une nouvelle copie brouillon ; un scénario ou des capacités remplacés disposent d’une sauvegarde locale. |
+
+Les dates locales GLPI nécessitent un `sourceTimeZone` explicite. `sourceDateOrder` vaut `dmy`, `mdy`, `ymd` ou une chaîne vide ; sans choix, une date jour/mois ambiguë ne permet pas de conclure qu’un ticket est inchangé. Les heures ambiguës ou inexistantes au changement d’heure ne deviennent pas des instants inventés. Une réinterprétation d’un même texte de date ne constitue pas une nouvelle version GLPI.
+
+L’événement `library.changed` invalide les vues de bibliothèque. Les publications de progression ne contiennent pas de titre, d’identifiant de ticket ou de contenu. Les pages conservent le bilan renvoyé après collecte, y compris lorsque l’opération démarre depuis la page Collecte GLPI.
+
+Un relevé issu de `ticket-library` conserve l’URL de liste de son installation et la colonne ID canonique dans ses réglages effectifs. Ces réglages de lecture ne modifient pas le portail actif de l’application. L’ouverture du lecteur charge les détails disponibles dans SQLite et suspend la lecture automatique GLPI pour ce relevé. Les opérations GLPI explicites conservent leurs contrôles de source ; une copie locale n’autorise pas une écriture dans le portail.
+
+Les documents opérationnels utilisent `glpi-pilot.business-document`, format 1, avec des structures distinctes pour `personal-note`, `tour`, `dispatch` et `technicians`. Les champs inconnus sont refusés. Les favoris, objectifs personnels, notes de technicien et notes de disponibilité sont exclus du transport de capacités et conservés à la réception. Les tournées reçues ne reprennent pas une validation d’exécution, les trajets ou la météo d’un autre poste. La réception de ces documents ne lance aucune action métier GLPI.
+
+## Navigation et thème Domenia — 3.2
+
+Les identifiants de route restent stables. Les préférences personnelles pilotent `NavigationOrder`, `HiddenNavigation`, `PinnedNavigation`, `NavigationGroupOrder` et `NavigationGroups`. Les clés de groupe sont `pinned`, `workspace`, `collect`, `analyze`, `work`, `terrain` et `admin`. Le C# normalise les identifiants et garde `home` et `settings` visibles. Une page masquée reste ouvrable dans la palette de commandes ; masquer son raccourci ne désactive pas une capacité métier.
+
+Le thème adapte les fichiers `v2/web/css/tokens.css`, `motion.css`, `components.css` et `shell.css` de Domenia 2 : palette bleu/violet/turquoise/rose, surfaces translucides, fond aurora et transitions. Les ressources restent locales et la CSP de production est conservée. Les effets respectent la réduction des animations de l’application ou du système, le contraste renforcé et la suspension lorsque le document est caché. Les animations décoratives ne pilotent ni la logique métier ni les déplacements de widgets.
 
 
 ## Révision et cycle de vie

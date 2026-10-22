@@ -232,6 +232,8 @@ Add("Busy events finish one operation before announcing the next", async f =>
     Check(events.Length == 4 && !events[1].GetProperty("busy").GetBoolean() && events[1].GetProperty("operation").GetString() == "test.first" && events[2].GetProperty("busy").GetBoolean());
 });
 
+tests.AddRange(LibraryRuntimeChecks.Create());
+tests.AddRange(SharedOperationsRuntimeChecks.Create());
 var chromium = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM");
 if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await SessionBrowserChecks.Create(chromium));
 else Console.WriteLine("SKIP Chromium checks: set GLPI_TEST_CHROMIUM to a local test browser.");

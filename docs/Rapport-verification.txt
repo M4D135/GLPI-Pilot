@@ -1,4 +1,4 @@
-GLPI Pilot 3.1.1 — protocole et preuves de vérification
+GLPI Pilot 3.2.0 — protocole et preuves de vérification
 Date : 22 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
@@ -11,7 +11,32 @@ https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 Une version déjà publiée pour un autre commit ne peut pas être remplacée.
 La présence des tests ou leur compilation ne constitue pas leur exécution.
 
-PERIMETRE DES VERIFICATIONS 3.1.1
+PERIMETRE DES VERIFICATIONS 3.2.0
+Nouvelles portes : TicketLibraryChecks (SQLite, ordre date_mod, cache,
+recherche avant pagination, fragments RAG et reprise de flux),
+SharedWorkspaceChecks (deux caches, mutations idempotentes, conflits,
+retraits et interruption), TicketLibraryAcquisitionChecks (Chromium,
+critère Tous réellement observé, pages et onglets consultables), et
+WebViewChecks --library-only (interface reliée aux vrais handlers).
+La navigation personnalisable et le thème adapté de Domenia disposent
+d’un parcours WebView dédié : groupes, visibilité, ordre, sauvegarde,
+annulation, accessibilité des pages masquées et réduction des animations.
+Le parcours --shared-operations-only relie les publications et réceptions
+de notes, tournées, répartitions et capacités aux vrais handlers C#.
+Les tests RuntimeSession couvrent aussi le déplacement cohérent de la
+base, le choix d’une base existante, le secret local, les dates ambiguës,
+les exports protégés, la séparation des installations GLPI et l’ouverture
+des contenus en cache depuis le lecteur sans nouvelle lecture GLPI.
+Les réceptions partagées vérifient les contextes, les documents modifiés
+depuis l’aperçu, les copies brouillons et la préservation du travail privé.
+Une porte PostgreSQL 17 exécute les échanges contre un vrai serveur
+temporaire distinct de GLPI, avec schémas synthétiques isolés et journaux.
+La publication dépend des deux jobs Windows et PostgreSQL. Leurs succès
+et les totaux exacts sont établis par les journaux du commit livré ;
+aucun serveur central privé ni portail d’entreprise n’est présumé testé.
+Voir docs/RELEASE-3.2.0.md et docs/Bibliotheque-et-partage.md.
+
+VERIFICATIONS CONSERVEES DEPUIS 3.1.1
 Les tests contrôlent le masquage automatique des widgets indisponibles,
 la visibilité des zéros valides, le retour en édition, la sauvegarde du choix,
 l’annulation et le transfert de la configuration. Les libellés de colonnes
@@ -80,12 +105,12 @@ Les nombres définitifs figurent dans les résumés des processus du workflow
 et doivent être lus sur le commit exact de la livraison.
 
 SUITES METIER OBLIGATOIRES (BclChecks)
-18 projets : StartupDiagnosticsChecks, StartupResilienceChecks,
+20 projets : StartupDiagnosticsChecks, StartupResilienceChecks,
 FoundationChecks, WorkplaceChecks, ConfigurationChecks, DashboardChecks,
 DashboardLayoutChecks, PreviewQueryChecks, TechnicianWorkloadChecks,
 CityDetectionChecks, TourPlanningChecks, QueryChecks, AnalyticsChecks,
 CompletionChecks, UpdateChecks, LanguageAssistantChecks, NativeImportChecks
-et ExportChecks.
+ExportChecks, TicketLibraryChecks et SharedWorkspaceChecks.
 
 Couverture complémentaire :
 - profils et identités isolés, correspondances locales et archives protégées ;
@@ -103,7 +128,8 @@ SourceProvenanceChecks ajoute les contrôles PowerShell du commit/arbre Git,
 de l’inventaire exporté, des sources altérées ou absentes et du dépôt parent.
 
 NAVIGATEUR GLPI ET DOM (BrowserChecks)
-BrowserChecks, AutomationChecks, TicketDetailChecks et NativeDomChecks.
+BrowserChecks, AutomationChecks, TicketDetailChecks,
+TicketLibraryAcquisitionChecks et NativeDomChecks.
 Les processus, codes de sortie et résumés sont contrôlés par le script CI.
 Les tests incluent portée modifiée après SSO, réseau temporaire/durable,
 reprise valide/incompatible, export corrompu, annulation et divergence de
@@ -129,7 +155,7 @@ vérifient qu’une version ancienne, future, absente ou contradictoire ne peut
 autoriser les transformations propres au convertisseur GLPI 10 étudié.
 
 INTERFACE LOCALE ET PONT C# (WebViewChecks)
-WebViewChecks : shell complet, 25 espaces, thèmes, navigation, tableaux,
+WebViewChecks : shell complet, 26 espaces, thèmes, navigation, tableaux,
 filtres, tri, colonnes, petite fenêtre et absence d’erreurs JavaScript/CSP.
 RuntimeSessionChecks : contexte des sources/imports/archives, formulaires
 périmés, sélection de page/table, annulation active et en attente, fermeture
@@ -170,7 +196,7 @@ préexistante. Le harnais peut être exécuté sur un bureau Windows interactif
 autorisé, sur le runner ou dans la VM de laboratoire.
 Vérifications : fenêtre visible, runtime fixe du pack, interface locale prête,
 fermeture normale, réglages inchangés sans interaction, démonstration,
-25 espaces, thèmes, petite fenêtre, instance unique et restauration minimisée.
+26 espaces, thèmes, petite fenêtre, instance unique et restauration minimisée.
 Zoom natif à 125 %, retour clavier à 100 % et reprise à 110 % après redémarrage.
 Deux scénarios provoquent réellement un crash du processus de rendu puis du
 navigateur WebView2 isolé : écran natif de récupération visible, fermeture
@@ -197,14 +223,14 @@ Les scénarios utilisent des copies du même binaire et des métadonnées de ver
 synthétiques ; ils ne démontrent pas toutes les migrations depuis une ancienne EXE.
 
 PUBLICATION
-Le job Release dépend de la réussite de toutes les étapes du job Windows.
+Le job Release dépend de la réussite des jobs Windows et PostgreSQL.
 Il promeut les ZIP exacts de ses artefacts, contrôle version, commit, empreinte
 EXE et identité des deux exécutables, puis joint les notes du commit testé.
 Aucun autre binaire local n’est substitué après la validation.
 
 PREUVES A CONSULTER
 Artefact windows-checks-<run_id>-<tentative> :
-- journaux des 18 suites métier et des suites navigateur/DOM ;
+- journaux des 20 suites métier et des suites navigateur/DOM ;
 - webviewchecks.log, runtimesessionchecks.log, analyticsbridgechecks.log,
   workplacebridgechecks.log, terrainbridgechecks.log, terrain-webview-checks.log ;
 - web-preview/*.png, interface portable avec pont C# réel ;
@@ -214,6 +240,9 @@ Artefact windows-checks-<run_id>-<tentative> :
 - windows-startup-build.log, windows-startup-checks.log et native-webview/*,
   preuves issues du vrai pack Windows avec le runtime WebView2 fourni ;
 - windows-update-build.log, windows-update-checks.log et windows-update/*.
+Artefact postgres-checks-<run_id>-<tentative> : version réelle du serveur,
+contexte du commit et journaux TicketLibraryChecks/SharedWorkspaceChecks
+exécutés avec le mode --postgres contre le service PostgreSQL 17.
 Les journaux sont conservés 14 jours, les artefacts de packs 30 jours.
 Les ZIP promus restent disponibles dans la Release de la version.
 

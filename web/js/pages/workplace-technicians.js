@@ -1,5 +1,6 @@
 import { el, replaceChildren, button, card, toolbar, input, select, field, form, dialog, confirm, badge } from '../ui.js';
 import { call, run, revision, note, pre, date, label, heading, dataTable, pager, tabs, checkbox, textArea, ticketButton } from './workplace-common.js';
+import { publishSharedOperation } from './shared-operations.js';
 
 const isoDay = (value = new Date()) => { const d = value instanceof Date ? value : new Date(value); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const nullableNumber = control => control.value === '' ? null : Number(control.value);
@@ -27,7 +28,8 @@ export async function renderTechnicians(ctx) {
     compareRoot.replaceChildren(rows.length ? card('Comparaison du même relevé', note('Une affectation multiple figure dans chaque périmètre concerné. Les effectifs inconnus et les capacités déclarées restent distincts.'), dataTable(rows, [{ key: 'name', label: 'Technicien' }, { key: 'total', label: 'Observés' }, { key: 'activeCount', label: 'Actifs' }, { key: 'overdueCount', label: 'En retard' }, { key: 'oldCount', label: 'Anciens actifs' }, { key: 'staleCount', label: 'Sans mouvement' }, { key: 'meanAgeDays', label: 'Âge moyen (j)', render: row => row.meanAgeDays?.toFixed(1) ?? '—' }, { key: 'meanInactivityDays', label: 'Inactivité moyenne (j)', render: row => row.meanInactivityDays?.toFixed(1) ?? '—' }, { key: 'capacityMinutes', label: 'Minutes déclarées' }])) : note('Cochez des techniciens pour comparer leurs charges observées.'));
   }
   ctx.root.replaceChildren(heading('Équipe', 'Charges calculées sur le relevé, compétences déclarées et capacités locales.'),
-    toolbar(search, favorite.element, field('Date de capacité', at), button('Appliquer', run(ctx, async () => { page = 0; await load(); }), { primary: true }), button('Organisation', () => ctx.navigate('planning')), button('Couverture sur 7 jours', run(ctx, () => showCoverage(ctx, at.value))), button('Exporter la charge CSV…', run(ctx, async () => { const result = await call(ctx, 'workplace.technicians.export', { revision: revision(ctx), date: at.value }); if (result.saved) ctx.notify('Export enregistré : ' + result.name); }))), intro, list, compareRoot);
+    toolbar(search, favorite.element, field('Date de capacité', at), button('Appliquer', run(ctx, async () => { page = 0; await load(); }), { primary: true }), button('Organisation', () => ctx.navigate('planning')), button('Couverture sur 7 jours', run(ctx, () => showCoverage(ctx, at.value))), button('Exporter la charge CSV…', run(ctx, async () => { const result = await call(ctx, 'workplace.technicians.export', { revision: revision(ctx), date: at.value }); if (result.saved) ctx.notify('Export enregistré : ' + result.name); }))),
+    toolbar(button('Partager les compétences et capacités', run(ctx, () => publishSharedOperation(ctx, 'workspace.publishTechnicians', { revision: revision(ctx) })), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))), intro, list, compareRoot);
   showComparison(); await load();
 }
 
@@ -102,6 +104,11 @@ export async function renderPlanning(ctx) {
     data = updated;
     if (!initialized) { name.value = data.name; at.value = data.date.slice(0, 10); initialized = true; }
     intro.replaceChildren(toolbar(field('Nom du scénario', name), field('Date du scénario', at), button('Enregistrer le scénario', run(ctx, async () => { await call(ctx, 'workplace.planning.save', { name: name.value, date: at.value }); recommendations = null; detail.replaceChildren(); await load(); ctx.notify('Scénario enregistré sur ce poste.'); }), { primary: true }), button('Exporter les propositions CSV…', run(ctx, async () => { const result = await call(ctx, 'workplace.planning.export', { revision: data.revision }); if (result.saved) ctx.notify('Propositions exportées : ' + result.name); })), button('Effacer les propositions…', run(ctx, async () => { if (!await confirm('Effacer les propositions locales ?', `${data.proposalTotal} proposition(s) seront retirées du scénario.`, 'Effacer')) return; await call(ctx, 'workplace.planning.save', { clear: true, confirmed: true }); await load(); }), { danger: true })), note(`Calcul sur le relevé ${data.historical ? 'historique' : 'courant'} · ${data.complete ? 'couverture complète' : 'couverture partielle ou non confirmée'}. Les propositions ne sont jamais appliquées à GLPI par cette page.`));
+    intro.append(toolbar(button('Enregistrer et partager la répartition', run(ctx, async () => {
+      await call(ctx, 'workplace.planning.save', { name: name.value, date: at.value });
+      await publishSharedOperation(ctx, 'workspace.publishDispatch', { revision: data.revision });
+      await load();
+    }), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))));
     draw();
   };
   function draw() {
