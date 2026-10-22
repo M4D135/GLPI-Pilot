@@ -2,7 +2,7 @@
   'use strict';
 
   // Reinstalling after every command is safe; a full navigation creates fresh state.
-  const VERSION = '1.1.3';
+  const VERSION = '1.1.4';
   if (window.__glpiPilot?.version === VERSION) return VERSION;
   try { window.__glpiPilot?.cancelPick(); } catch (_) { /* Previous document adapter. */ }
 
@@ -80,6 +80,29 @@
     if (!table || !visible(table)) throw new Error('Tableau introuvable ou masqué. Actualisez la liste des tableaux.');
     keyFor(table);
     return table;
+  }
+
+  function hasVerifiedCsvPresentationVersion() {
+    // The conversion below is verified for 10.0.22 only. Earlier GLPI 10
+    // releases and GLPI 9 use different CSV cleaning despite similar popups.
+    // Read the official About markup from the application header, never from
+    // ticket content. Its modal is normally hidden; no click is necessary.
+    const pages = all('body > div.page');
+    if (pages.length !== 1) return false;
+    const bars = all(':scope > header.navbar, :scope > aside.navbar', pages[0]);
+    if (!bars.length || bars.length > 2) return false;
+    const markers = bars.flatMap(bar => all('div.modal.fade[id^="about_modal_"][role="dialog"]', bar).map(modal => ({ bar, modal })));
+    if (!markers.length || markers.length > 4) return false;
+    return markers.every(({ bar, modal }) => {
+      if (!/^about_modal_\d+$/.test(modal.id) || modal.closest(TABLE + ',main,[role="main"],' + UI)) return false;
+      const trigger = all('a[id="show_' + modal.id + '"][href="#"]', bar);
+      const links = all(':scope > div.modal-dialog > div.modal-content > div.modal-body > p > a.copyright', modal);
+      if (trigger.length !== 1 || links.length !== 1) return false;
+      const link = links[0];
+      return !link.children.length && /^https?:\/\/glpi-project\.org\/$/.test(link.getAttribute('href') || '') &&
+        link.getAttribute('title') === 'Powered by Teclib and contributors' &&
+        /^GLPI 10\.0\.22 Copyright \(C\) 2015-20\d{2} Teclib' and contributors$/.test(compact(link.textContent));
+    });
   }
 
   function cellText(cell, evidence = null) {
@@ -383,7 +406,7 @@
   function parseTable(table, withRepresentations = false) {
     const warnings = new Set();
     const info = rowInfo(table);
-    const representationGrid = withRepresentations ? [] : null;
+    const representationGrid = withRepresentations && hasVerifiedCsvPresentationVersion() ? [] : null;
     const matrix = gridFor(info, warnings, representationGrid);
     const width = matrix.reduce((n, row) => Math.max(n, row.length), 0);
     const headers = [];

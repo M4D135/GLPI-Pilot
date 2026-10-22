@@ -281,7 +281,14 @@ async function run() {
   equal(requests.length, 5, 'Only five explicitly executed fixture exports caused a download request');
 
   const tableScript = fs.readFileSync(path.join(project, 'src/GlpiPilot/BrowserScripts/bridge.js'), 'utf8');
-  const popupFixture = async () => { await page.goto('http://glpi-native.test/fixtures/glpi-cell-popup.html'); await page.evaluate(tableScript); };
+  const setVersion = version => page.evaluate(version => {
+    document.querySelector('body > div.page')?.remove();
+    if (!version) return;
+    const root = document.createElement('div'); root.className = 'page';
+    root.innerHTML = `<header class="navbar"><a id="show_about_modal_100" href="#">À propos</a><div class="modal fade" id="about_modal_100" role="dialog" style="display:none"><div class="modal-dialog"><div class="modal-content"><div class="modal-body"><p><a href="http://glpi-project.org/" title="Powered by Teclib and contributors" class="copyright">GLPI ${version} Copyright (C) 2015-2025 Teclib' and contributors</a></p></div></div></div></div></header>`;
+    document.body.prepend(root);
+  }, version);
+  const popupFixture = async (version = null) => { await page.goto('http://glpi-native.test/fixtures/glpi-cell-popup.html'); await page.evaluate(tableScript); await setVersion(version); };
   const readPopupTable = () => page.evaluate(() => window.__glpiPilot.readTable('#popup-results'));
   await popupFixture();
   await readPopupTable(); // Establish the adapter's normal table-key annotation.
@@ -323,8 +330,8 @@ async function run() {
   // Search::giveItem creates each shortened span and its own static tooltip;
   // Search::showItem then copies the first complete triplet into an outer list
   // tooltip. Those two owners legitimately contain the same generated IDs.
-  const longTextFixture = async (hiddenClass = 'tooltip-invisible', delimiter = null) => {
-    await popupFixture();
+  const longTextFixture = async (hiddenClass = 'tooltip-invisible', delimiter = null, version = null) => {
+    await popupFixture(version);
     await page.evaluate(({ hiddenClass, delimiter }) => {
       const item = (prefix, full, id) => `<span id="text${id}">${prefix}&nbsp;(...)</span> <span id="tooltip${id + 100}" class="fas fa-comments fa-fw"></span><div id="contenttooltip${id + 100}" class="${hiddenClass}"><div class="fup-popup">${full}</div></div><script type="application/x-synthetic-tooltip">ignored</script>`;
       const first = item('Premier contenu', 'Premier contenu complet avec détail.', 401);
@@ -395,10 +402,10 @@ async function run() {
   });
   equal((await readPopupTable()).rows[0][4], 'Premier\ncontenu complet avec détail.\nDeuxième contenu complet avec détail.', 'Line breaks inside a proven long preview remain part of its first item rather than outer-list separators');
 
-  // GLPI 10 exports rich-text presentation through DataExport/RichText and
+  // GLPI 10.0.22 exports rich-text presentation through DataExport/RichText and
   // Html2Text. Project only the bounded, supported markup of the same cell.
   const readPopupProofs = () => page.evaluate(() => window.__glpiPilot.readTable('#popup-results', true));
-  await popupFixture();
+  await popupFixture('10.0.22');
   equal((await readPopupTable()).csvRepresentations, [], 'Ordinary pagination reads do not carry optional CSV representations');
   await page.evaluate(() => {
     document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<p><strong>Bonjour</strong> monde "exemple"</p><p><em>note</em></p><ul><li>Premier</li><li>Second</li></ul><hr><p>fin.</p>';
@@ -422,7 +429,7 @@ async function run() {
     equal((await readPopupProofs()).csvRepresentations[0][4], null, 'Unsupported or ambiguous Html2Text structure yields no projected equivalence');
   }
 
-  await longTextFixture();
+  await longTextFixture('tooltip-invisible', null, '10.0.22');
   await page.evaluate(() => { document.querySelector('#contenttooltip501 .fup-popup').innerHTML = 'Premier contenu <strong>formaté</strong> avec détail.'; });
   values = await readPopupProofs();
   equal([values.rows[0][4], values.csvRepresentations[0][4]?.text], ['Premier contenu formaté avec détail.', 'Premier contenu FORMATÉ avec détail.'], 'An exactly paired long-text popup supplies its own rich presentation after proving the visible prefix');
@@ -431,14 +438,14 @@ async function run() {
   equal([values.rows[0][4], values.csvRepresentations[0][4]], ['Premier contenu (...)', null], 'An unassociated popup cannot furnish a format equivalence for a shortened cell');
 
   for (const delimiter of ['br', 'hr']) {
-    await longTextFixture('tooltip-invisible', delimiter);
+    await longTextFixture('tooltip-invisible', delimiter, '10.0.22');
     values = await readPopupProofs();
     equal(values.csvRepresentations[0][4]?.text, `Premier contenu complet avec détail.<${delimiter}>Deuxième contenu complet avec détail.`, 'GLPI 10 ' + delimiter + ': inter-item export markers are preserved separately from rich-text formatting');
     await page.evaluate(() => { document.querySelector('#contenttooltip599 #contenttooltip501 .fup-popup').textContent = 'Premier contenu complet différent.'; });
     equal((await readPopupProofs()).csvRepresentations[0][4], null, 'GLPI 10 ' + delimiter + ': a different expanded first clone cannot justify an outer-list projection');
   }
 
-  await popupFixture();
+  await popupFixture('10.0.22');
   await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour\u0092</strong> monde\u0085'; });
   values = await readPopupProofs();
   equal([values.rows[0][4], values.csvRepresentations[0][4]?.text], ['Bonjour\u0092 monde\u0085', 'BONJOUR\u0092 monde\u0085'], 'Presentation evidence preserves exact C1 code points; the C# verifier may reject the alternative, never recode it');
@@ -456,6 +463,39 @@ async function run() {
   });
   values = await readPopupProofs();
   equal([values.rows.length, values.csvRepresentations.flat().filter(Boolean).length], [513, 512], 'A table-wide evidence budget keeps all rows but bounds optional representation records');
+
+  for (const version of [null, '9.5.13', '10.0.0', '10.0.21', '10.0.23', '10.0.22-rc1', '11.0.0']) {
+    await popupFixture(version);
+    await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour</strong>'; });
+    values = await readPopupProofs();
+    equal([values.rows[0][4], values.csvRepresentations], ['Bonjour', []], 'Unknown or unverified GLPI version ' + version + ' retains the cell without a 10.0.22 CSV projection');
+  }
+  await popupFixture('10.0.22');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour</strong>'; });
+  equal((await readPopupProofs()).csvRepresentations[0][4]?.text, 'BONJOUR', 'The official hidden About modal permits the exact verified 10.0.22 projection without clicking');
+  await page.evaluate(() => {
+    const copy = document.querySelector('body > .page > header').cloneNode(true);
+    copy.querySelector('#show_about_modal_100').id = 'show_about_modal_101'; copy.querySelector('#about_modal_100').id = 'about_modal_101';
+    const aside = document.createElement('aside'); aside.className = 'navbar'; aside.innerHTML = copy.innerHTML; document.querySelector('body > .page').append(aside);
+  });
+  equal((await readPopupProofs()).csvRepresentations[0][4]?.text, 'BONJOUR', 'Consistent official responsive header copies share the same proven version');
+  await page.evaluate(() => { document.querySelector('aside a.copyright').textContent = "GLPI 9.5.13 Copyright (C) 2015-2025 Teclib' and contributors"; });
+  equal((await readPopupProofs()).csvRepresentations, [], 'Contradictory official header markers cannot choose the favorable version');
+  await popupFixture('10.0.22');
+  await page.evaluate(() => {
+    document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour</strong>';
+    document.querySelector('#popup-results tbody tr td:last-child').append(document.querySelector('body > .page'));
+  });
+  equal((await readPopupProofs()).csvRepresentations, [], 'A copied application header inside ticket data cannot authorize a CSV projection');
+  await popupFixture('10.0.22');
+  await page.evaluate(() => { document.querySelector('a.copyright').href = 'https://unrelated.invalid/'; });
+  equal((await readPopupProofs()).csvRepresentations, [], 'The About text with a noncanonical publisher link is not a version proof');
+  await popupFixture('10.0.22');
+  await page.evaluate(() => {
+    document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour</strong>';
+    document.querySelector('#about_modal_100').removeAttribute('role');
+  });
+  equal((await readPopupProofs()).csvRepresentations, [], 'An incomplete About modal structure is not a version proof');
   log(checks + ' native export DOM checks passed.');
 }
 

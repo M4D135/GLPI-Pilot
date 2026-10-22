@@ -74,7 +74,8 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Format GLPI 10 : contrôle C1 jamais converti en ponctuation", () => CheckNativeFormattedCells("c1")),
     ("Format GLPI 10 : changement de casse sans balise toujours divergent", CheckNativePlainCase),
     ("Format GLPI 10 : représentation liée à la cellule et aux coordonnées exactes", CheckRepresentationBinding),
-    ("Format GLPI 10 : séparateurs exportés entre valeurs complètes", CheckNativeExportedSeparators)
+    ("Format GLPI 10 : séparateurs exportés entre valeurs complètes", CheckNativeExportedSeparators),
+    ("Format GLPI 10 : version absente ou non vérifiée sans équivalence de présentation", CheckNativeUnverifiedVersion)
 };
 if (args.Length != 0)
 {
@@ -784,7 +785,11 @@ async Task CheckNativeMultiValue(bool changed, bool exportedSeparator = false)
     var csv = NativeCsv().Replace("101;P-MA-001", "101;\"P-MA-001\nAnnexe-101\"", StringComparison.Ordinal)
         .Replace("102;P-MA-002", "102;\"P-MA-002\nAnnexe-102\"", StringComparison.Ordinal);
     if (changed) csv = csv.Replace("Annexe-101", "Annexe modifiée", StringComparison.Ordinal);
-    if (exportedSeparator) csv = csv.Replace("\nAnnexe", "<br>Annexe", StringComparison.Ordinal);
+    if (exportedSeparator)
+    {
+        csv = csv.Replace("\nAnnexe", "<br>Annexe", StringComparison.Ordinal);
+        html = WithOfficialGlpiVersion(html);
+    }
     await using var h = await Open(html, csv);
     var logs = new List<string>(); string? retained = null;
     var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add; service.NativeFileSaved += path => retained = path;
@@ -843,14 +848,18 @@ async Task CheckNativeRichCells(bool changed)
     Equal(csv, await File.ReadAllTextAsync(run.NativePath!));
 }
 
-string FormattedHtml(string tail = "fin.") => NativeHtml().Replace("</body>", """
+string WithOfficialGlpiVersion(string html, string version = "10.0.22") => html.Replace("<body>", """
+    <body><div class="page"><header class="navbar"><a id="show_about_modal_100" href="#">À propos</a><div class="modal fade" id="about_modal_100" role="dialog" style="display:none"><div class="modal-dialog"><div class="modal-content"><div class="modal-body"><p><a href="http://glpi-project.org/" title="Powered by Teclib and contributors" class="copyright">GLPI VERSION Copyright (C) 2015-2025 Teclib' and contributors</a></p></div></div></div></div></header></div>
+    """.Replace("VERSION", System.Net.WebUtility.HtmlEncode(version), StringComparison.Ordinal), StringComparison.Ordinal);
+
+string FormattedHtml(string tail = "fin.") => WithOfficialGlpiVersion(NativeHtml().Replace("</body>", """
     <style>.tooltip-invisible { display:none }</style><script>
     for (const row of document.querySelectorAll('#computer-rows tr')) {
       const id = Number(row.dataset.id) * 10;
       row.children[2].innerHTML = `<span id='text${id}'>Bonjour&nbsp;(...)</span> <span id='tooltip${id+1}' class='fas fa-comments'></span><div id='contenttooltip${id+1}' class='tooltip-invisible'><div class='fup-popup'><p><strong>Bonjour</strong> monde "exemple"</p><p><em>note</em></p><ul><li>Premier</li><li>Second</li></ul><hr><p>TAIL</p></div></div>`;
     }
     </script></body>
-    """.Replace("TAIL", System.Net.WebUtility.HtmlEncode(tail), StringComparison.Ordinal), StringComparison.Ordinal);
+    """.Replace("TAIL", System.Net.WebUtility.HtmlEncode(tail), StringComparison.Ordinal), StringComparison.Ordinal));
 
 string FormattedValue(string tail = "fin.") => "BONJOUR monde ''exemple''\n_note_\n* Premier\n* Second\n-------------------------\n" + tail;
 
@@ -882,6 +891,27 @@ async Task CheckNativePlainCase()
     await using var h = await Open(html, csv);
     var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
     True(!run.Data.Complete && run.Data.Quality!.InitialSample is { DifferentCells: 1, EquivalentFormatCells: 0 }, "La casse demeure significative lorsqu’aucune balise de la cellule ne justifie sa présentation CSV.");
+}
+
+async Task CheckNativeUnverifiedVersion()
+{
+    foreach (var version in new string?[] { null, "9.5.13", "10.0.0", "10.0.21", "11.0.0" })
+    {
+        var html = NativeHtml().Replace("</body>", """
+            <script>for (const row of document.querySelectorAll('#computer-rows tr')) row.children[2].innerHTML = '<strong>Bonjour</strong>';</script></body>
+            """, StringComparison.Ordinal);
+        if (version is not null) html = WithOfficialGlpiVersion(html, version);
+        var csv = "ID;Nom\r\n" + string.Join("\r\n", Enumerable.Range(101, 5).Select(id => id + ";BONJOUR")) + "\r\n";
+        await using var h = await Open(html, csv);
+        var sample = await h.Service.ReadVerificationSampleAsync(await Table(h), CancellationToken.None);
+        Equal(0, sample.CsvRepresentations.Count);
+        var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
+        True(!run.Data.Complete && run.Data.Quality is { ReceptionComplete: true, SampleIdentityVerified: true, RepresentationVerified: false }, "Sans preuve de version 10.0.22, une présentation riche ne certifie pas un changement de casse du CSV.");
+        True(run.Data.Quality!.InitialSample is { DifferentCells: 2, EquivalentFormatCells: 0 }, "La version absente ou non vérifiée conserve les deux différences de valeurs.");
+        Equal(csv, await File.ReadAllTextAsync(run.NativePath!));
+        var unchanged = new ExtractionResult { Headers = new() { "ID", "Nom" }, Rows = new() { new[] { "101", "Bonjour" }, new[] { "102", "Bonjour" } } };
+        True(ExtractionVerificationService.VerifyNativeSample(sample, unchanged, new()).Matches, "Le rapprochement exact ordinaire reste disponible sans projection de présentation.");
+    }
 }
 
 async Task CheckRepresentationBinding()

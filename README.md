@@ -39,7 +39,7 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 La version **3.1.0** réorganise l’interface suivant les principes de Domenia 2 : navigation dépliable ou réduite en rail, thèmes clair/sombre, surfaces mieux hiérarchisées, tableaux lisibles et animations désactivables. Les tickets n’affichent plus de `null` parasite et leurs identifiants restent entiers sur une ligne. Le dashboard dispose de **sections persistantes**, même vides, avec titre, description, couleur et visibilité ; widgets et sections se déplacent à la souris ou au clavier, avec redimensionnement visuel et annulation.
 
-Les états de **réception**, d’**identité de l’échantillon** et de **concordance des valeurs** sont désormais séparés : toutes les lignes peuvent avoir été reçues alors que des valeurs restent à vérifier. Les équivalences HTML/CSV de texte riche sont admises seulement lorsqu’une preuve issue de la cellule GLPI les explique exactement. Les données d’origine, les contrôles C1 et les réserves restantes sont conservés. Voir les [notes 3.1.0](docs/RELEASE-3.1.0.md) pour les conditions et la validation du commit livré.
+Les états de **réception**, d’**identité de l’échantillon** et de **concordance des valeurs** sont désormais séparés : toutes les lignes peuvent avoir été reçues alors que des valeurs restent à vérifier. Les équivalences HTML/CSV de texte riche exigent une version explicitement reconnue et une preuve issue de la cellule GLPI qui les explique exactement. Les données d’origine, les contrôles C1 et les réserves restantes sont conservés. Voir les [notes 3.1.0](docs/RELEASE-3.1.0.md) pour les conditions et la validation du commit livré.
 
 ### Migration et corrections précédentes
 

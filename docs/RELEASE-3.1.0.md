@@ -47,7 +47,7 @@ Un relevé de pagination déjà déclaré complet, avec des compteurs cohérents
 
 ## Des équivalences de texte riche prouvées par leur cellule
 
-L’adaptateur DOM **1.1.3** peut fournir une représentation CSV pour un sous-ensemble borné des rendus GLPI 10 : gras et titres, italiques, éléments de liste, séparateurs et contenu d’un popup associé. Cette représentation est liée à la ligne, à la colonne et au texte exact de la cellule lue. Le comparateur exige une correspondance exacte avec le CSV reçu ; une structure non prise en charge n’ajoute aucune équivalence.
+L’adaptateur DOM **1.1.4** peut fournir une représentation CSV pour un sous-ensemble borné des rendus **GLPI 10.0.22** : gras et titres, italiques, éléments de liste, séparateurs et contenu d’un popup associé. Cette représentation exige d’abord le marqueur officiel de cette version, correspondant au convertisseur étudié ; une autre version ou un marqueur absent ou contradictoire n’autorise pas ces règles. Elle est ensuite liée à la ligne, à la colonne et au texte exact de la cellule lue. Le comparateur exige une correspondance exacte avec le CSV reçu ; une structure non prise en charge n’ajoute aucune équivalence. Les autres versions conservent la collecte native et les règles habituelles de comparaison, avec leurs éventuelles réserves.
 
 Ce traitement explique uniquement les différences de présentation démontrées par le contenu DOM de la cellule. Il ne supprime pas globalement les underscores, les puces, la casse ou la ponctuation. Un mot changé, une preuve d’une autre cellule, un format inconnu ou un contrôle C1 divergent reste un écart. Les données importées et le fichier CSV natif ne sont pas réécrits.
 

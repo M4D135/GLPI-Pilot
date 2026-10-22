@@ -61,7 +61,7 @@ and column coordinates, the exact extracted source text and a projected CSV
 text; HTML never crosses the browser bridge. C# requires all those bindings
 and a full-text match. A declaration of compatibility is insufficient.
 
-This limited projection follows GLPI 10 `DataExport`/`RichText` and Html2Text
+This limited projection follows GLPI **10.0.22** `DataExport`/`RichText` and Html2Text
 4.3.1: uppercase for bold/headings, underscores for italics, stars for flat
 list items, 25 hyphens for an internal horizontal rule, and GLPI's exact quote
 conversion. A proven outer multivalue popup instead uses literal `<br>` or
@@ -71,12 +71,24 @@ Plain text never receives a case-insensitive alternative. A different tail
 remains a difference, and C1 controls are never recoded or used to authorize
 an alternative comparison.
 
+It is enabled only when the official About markup proves exactly **10.0.22**.
+The adapter reads the hidden `about_modal_<integer>` under
+`body > div.page > header.navbar` or `aside.navbar`, its associated About link,
+and the exact copyright link, title and version text. Responsive header copies
+must agree. The proof is read once per verification table read; it never opens
+the modal. A marker copied into ticket content is ignored. Absent, malformed,
+contradictory or unverified versions (including 9.5, 10.0.0, 10.0.21, 10.0.23,
+release-candidate suffixes and 11) produce no projected representation; normal
+text extraction and exact comparison remain available. GLPI 10.0.0 already
+normalizes some rich content differently before CSV conversion, so a broad
+10.x version range would be unjustified.
+
 Unknown tags, unassociated popups, unsupported hidden nodes, Html2Text override
 classes, nested lists, `ins`, isolated `li`, block breaks inside inline
 formatting and repeated format nesting produce no proof. Each cell is bounded to 4,096 visited nodes,
 depth 64 and 262,144 source/output characters; a table carries at most 512
 proofs and 4,194,304 combined source/output characters. Reaching a proof limit
-does not truncate the ordinary cell. The adapter version is 1.1.3. These
+does not truncate the ordinary cell. The adapter version is 1.1.4. These
 fixtures establish a bounded supported subset, not equivalence for every
 GLPI export or resolution of an unprovided private CSV.
 
@@ -100,6 +112,9 @@ preserved. Sources for the rendered structure:
 - [GLPI 10.0.22 CSV cleaning order](https://github.com/glpi-project/glpi/blob/10.0.22/src/Search.php#L8853-L8857)
 - [GLPI 10.0.22 DataExport normalization](https://github.com/glpi-project/glpi/blob/10.0.22/src/Toolbox/DataExport.php)
 - [GLPI 10.0.22 RichText presentation settings](https://github.com/glpi-project/glpi/blob/10.0.22/src/RichText/RichText.php#L103-L143)
+- [GLPI 10.0.22 official About modal and copyright](https://github.com/glpi-project/glpi/blob/10.0.22/templates/layout/parts/user_header.html.twig)
+- [GLPI 10.0.22 header and sidebar placement](https://github.com/glpi-project/glpi/blob/10.0.22/templates/layout/parts/page_header.html.twig)
+- [GLPI 10.0.0 earlier long-text conversion](https://github.com/glpi-project/glpi/blob/10.0.0/src/Search.php#L7045-L7070)
 - [Html2Text 4.3.1 ordered replacements and callbacks](https://github.com/mtibben/html2text/blob/4.3.1/src/Html2Text.php)
 
 ## Run on Windows

@@ -223,7 +223,7 @@ try {
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
                 -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
-                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '146 native export DOM checks passed.'
+                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '159 native export DOM checks passed.'
         }
         'WebViewChecks' {
             Set-TestBrowser

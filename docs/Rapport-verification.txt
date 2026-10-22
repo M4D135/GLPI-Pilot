@@ -109,6 +109,10 @@ devient pas une correspondance pour permettre l’import avec réserve.
 La représentation des guillemets par csv_clean est reconnue dans le seul
 sens liste vers CSV. Les variations de présentation RichText ne justifient
 pas de suppression générale de ponctuation, de casse ou de contrôles C1.
+Les règles de texte riche exigent une version reconnue par le marqueur
+officiel de l’application, en dehors des cellules. Des tests négatifs
+vérifient qu’une version ancienne, future, absente ou contradictoire ne peut
+autoriser les transformations propres au convertisseur GLPI 10 étudié.
 
 INTERFACE LOCALE ET PONT C# (WebViewChecks)
 WebViewChecks : shell complet, 25 espaces, thèmes, navigation, tableaux,

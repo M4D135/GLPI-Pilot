@@ -483,11 +483,14 @@ et les exigences des alertes ou historiques restent applicables. Les archives
 anciennes sans ces observations ne sont pas réinterprétées à partir de leurs
 avertissements.
 
-L’adaptateur DOM 1.1.3 ajoute une représentation CSV pour un sous-ensemble
-reconnu de texte riche GLPI 10. La preuve est attachée à la ligne, à la colonne
+L’adaptateur DOM 1.1.4 ajoute une représentation CSV pour un sous-ensemble
+reconnu de texte riche GLPI 10.0.22. La preuve est attachée à la ligne, à la colonne
 et au texte exact de la cellule : gras, italiques, listes et séparateurs ne
 sont admis que si leur rendu explique exactement la valeur reçue. Une
-structure inconnue n’ajoute pas d’équivalence. Un mot changé ou un contrôle C1
+version explicitement reconnue par son marqueur officiel est requise ; un
+marqueur absent, contradictoire ou désignant un autre convertisseur ne permet
+pas ces équivalences. Une structure inconnue n’ajoute pas d’équivalence.
+Un mot changé ou un contrôle C1
 divergent reste un écart ; aucune suppression globale de casse, de ponctuation
 ou de caractère n’est appliquée. Les données importées et le CSV natif restent
 intacts. Les [notes 3.1.0](RELEASE-3.1.0.md) indiquent la portée et les sources.
