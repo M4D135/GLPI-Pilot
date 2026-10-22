@@ -60,7 +60,7 @@ internal sealed class WindowsWebViewFixture
             {
                 var page = await ReadyPageAsync(connected, second); var errors = new List<string>(); page.PageError += (_, message) => errors.Add(message);
                 var width = await page.EvaluateAsync<double>("innerWidth");
-                await page.Locator(".nav-item[data-page=settings]").ClickAsync();
+                await NavigateAsync(page, "settings");
                 await page.GetByLabel("Zoom de l’interface (%)", new() { Exact = true }).FillAsync("125");
                 await page.GetByLabel("Thème", new() { Exact = true }).SelectOptionAsync("light");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
@@ -68,7 +68,7 @@ internal sealed class WindowsWebViewFixture
                 Check(await page.EvaluateAsync<double>("innerWidth") < width * .9, "The interface zoom changes native WebView2 scaling rather than just a displayed number.");
                 await page.Keyboard.PressAsync("Control+0"); await WaitForPageAsync(page, "document.querySelector('#zoom-label').innerText.includes('100')");
                 Check(Math.Abs(await page.EvaluateAsync<double>("innerWidth") - width) <= 2, "Ctrl 0 restores the actual web viewport to 100 percent.");
-                await page.Locator(".nav-item[data-page=home]").ClickAsync();
+                await NavigateAsync(page, "home");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Explorer la démonstration", Exact = true }).ClickAsync();
                 await page.Locator(".page-content[data-page=dashboard]").WaitForAsync();
                 await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
@@ -77,12 +77,11 @@ internal sealed class WindowsWebViewFixture
                 var routes = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)");
                 foreach (var route in routes)
                 {
-                    await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
-                    await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
+                    await NavigateAsync(page, route);
                     if (await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() > 0) throw new InvalidOperationException("Screen failure: " + route + " · " + await page.Locator(".page-content").InnerTextAsync());
                 }
                 Check(true, "Every feature screen opens inside the real Windows WebView2 host.");
-                await page.Locator(".nav-item[data-page=home]").ClickAsync();
+                await NavigateAsync(page, "home");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Thème", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
                 await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "home-dark.png"), FullPage = true });
@@ -205,6 +204,15 @@ internal sealed class WindowsWebViewFixture
             if (!active) return;
             await Task.Delay(100, timeout.Token);
         }
+    }
+    private static async Task NavigateAsync(IPage page, string route)
+    {
+        // A small VM desktop or higher Windows DPI can collapse the sidebar.
+        // Use its real opening control before selecting the requested screen.
+        if (!await page.Locator(".sidebar").IsVisibleAsync())
+            await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
+        await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
+        await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
     }
     // Poll from the test process: WaitForFunction injects eval, forbidden by the real app CSP.
     private static async Task WaitForPageAsync(IPage page, string expression, object? argument = null)
