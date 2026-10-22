@@ -158,16 +158,32 @@ function Resolve-GlpiBuildProvenance {
             if (-not $actual.ContainsKey($name)) { throw ('Source du commit manquante : ' + $name + '. Restaurez-la ou créez un nouveau commit.') }
         }
         $paths = @($actual.Keys | Sort-Object -CaseSensitive)
-        # Hash the actual worktree instead of trusting index stat/assume-unchanged
-        # flags. Git applies the checkout's text filters, including CRLF rules.
-        $blobs = Invoke-GlpiBuildGit -GitPath $git.Source -SourceRoot $root -Arguments @('hash-object', '--stdin-paths') -InputText (($paths -join "`n") + "`n")
-        $actualBlobs = @($blobs.Output.TrimEnd("`r", "`n").Split("`n") | ForEach-Object { $_.TrimEnd("`r") })
-        if ($blobs.Code -ne 0 -or $actualBlobs.Count -ne $paths.Count) { throw 'Impossible de comparer les sources au commit Git.' }
-        $inventory = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+        # Read the actual bytes instead of trusting index stat/assume-unchanged
+        # flags. Some existing blobs already contain CRLF: hash-object's clean
+        # filter would renormalize those even when checkout bytes equal HEAD.
+        $raw = Invoke-GlpiBuildGit -GitPath $git.Source -SourceRoot $root -Arguments @('hash-object', '--no-filters', '--stdin-paths') -InputText (($paths -join "`n") + "`n")
+        $rawBlobs = @($raw.Output.TrimEnd("`r", "`n").Split("`n") | ForEach-Object { $_.TrimEnd("`r") })
+        if ($raw.Code -ne 0 -or $rawBlobs.Count -ne $paths.Count) { throw 'Impossible de comparer les sources au commit Git.' }
+        $convertedPaths = [Collections.Generic.List[string]]::new()
         for ($index = 0; $index -lt $paths.Count; $index++) {
             $name = $paths[$index]
             if (-not $trackedBlobs.ContainsKey($name)) { throw ('Source absente du commit : ' + $name + '. Ajoutez-la à un nouveau commit avant la distribution.') }
-            if ($actualBlobs[$index] -cne $trackedBlobs[$name]) { throw ('Source Git modifiée : ' + $name + '. Créez un nouveau commit avant la distribution.') }
+            if ($rawBlobs[$index] -cnotmatch '^[a-f0-9]{40}$') { throw 'Empreinte Git brute invalide.' }
+            if ($rawBlobs[$index] -cne $trackedBlobs[$name]) { $convertedPaths.Add($name) }
+        }
+        # Only differing bytes need a second proof through Git's configured
+        # checkout conversions (for example, LF blobs checked out as CRLF).
+        if ($convertedPaths.Count -gt 0) {
+            $converted = Invoke-GlpiBuildGit -GitPath $git.Source -SourceRoot $root -Arguments @('hash-object', '--stdin-paths') -InputText (($convertedPaths -join "`n") + "`n")
+            $convertedBlobs = @($converted.Output.TrimEnd("`r", "`n").Split("`n") | ForEach-Object { $_.TrimEnd("`r") })
+            if ($converted.Code -ne 0 -or $convertedBlobs.Count -ne $convertedPaths.Count) { throw 'Impossible de comparer les sources converties au commit Git.' }
+            for ($index = 0; $index -lt $convertedPaths.Count; $index++) {
+                $name = $convertedPaths[$index]
+                if ($convertedBlobs[$index] -cne $trackedBlobs[$name]) { throw ('Source Git modifiée : ' + $name + '. Créez un nouveau commit avant la distribution.') }
+            }
+        }
+        $inventory = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+        foreach ($name in $paths) {
             $inventory.Add($name, (Get-FileHash -LiteralPath $actual[$name].FullName -Algorithm SHA256).Hash.ToLowerInvariant())
         }
         $value = [pscustomobject]@{ Root = $root; Commit = $head.Output.Trim(); Tree = $tree.Output.Trim(); Origin = 'Git'; Files = $inventory }

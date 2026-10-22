@@ -171,6 +171,44 @@ try {
     $crlfExport = Join-Path $temporary 'crlf-export'
     Export-GlpiBuildSources -Provenance $crlfIdentity -Destination $crlfExport
     Check ((Resolve-GlpiBuildProvenance -SourceRoot $crlfExport).Commit -ceq $crlfIdentity.Commit -and [IO.File]::ReadAllText((Join-Path $crlfExport 'README.md')).Contains("`r`n")) 'Clean Git CRLF conversion is accepted and the export retains its exact bytes'
+    # Legacy files may have been committed with CRLF (and a UTF-8 BOM) before
+    # core.autocrlf was enabled. A fresh Windows-style checkout keeps those
+    # exact bytes, although hash-object without --no-filters renormalizes them.
+    $legacyRoot = Join-Path $temporary 'legacy-crlf'
+    $legacyText = "Licence déjà conservée`r`nDeuxième ligne`r`n"
+    $legacyFiles = @('licenses/legacy-crlf.txt', 'licenses/legacy-bom-crlf.txt')
+    foreach ($name in $legacyFiles) { Put $legacyRoot $name $legacyText }
+    $bomUtf8 = [Text.UTF8Encoding]::new($true)
+    [IO.File]::WriteAllBytes((Join-Path $legacyRoot $legacyFiles[1]), [byte[]]($bomUtf8.GetPreamble() + $utf8.GetBytes($legacyText)))
+    Init-Git $legacyRoot; Commit $legacyRoot
+    $legacyCommit = Git $legacyRoot @('rev-parse', 'HEAD')
+    $legacyHashes = @{}
+    foreach ($name in $legacyFiles) { $legacyHashes[$name] = (Get-FileHash -LiteralPath (Join-Path $legacyRoot $name) -Algorithm SHA256).Hash.ToLowerInvariant() }
+    [void](Git $legacyRoot @('config', 'core.autocrlf', 'true'))
+    foreach ($name in $legacyFiles) { Remove-Item -LiteralPath (Join-Path $legacyRoot $name) }
+    [void](Git $legacyRoot @('checkout', '--', 'licenses'))
+    [void](Git $legacyRoot @('diff', '--quiet', 'HEAD', '--'))
+    foreach ($name in $legacyFiles) {
+        $headBlob = Git $legacyRoot @('rev-parse', ('HEAD:' + $name))
+        $rawBlob = Git $legacyRoot @('hash-object', '--no-filters', '--', $name)
+        $cleanBlob = Git $legacyRoot @('hash-object', '--', $name)
+        Check ($rawBlob -ceq $headBlob -and $cleanBlob -cne $headBlob) ('Fresh autocrlf checkout reproduces legacy raw/clean mismatch: ' + $name)
+    }
+    $legacyIdentity = Resolve-GlpiBuildProvenance -SourceRoot $legacyRoot
+    Check ($legacyIdentity.Commit -ceq $legacyCommit -and $legacyIdentity.Files.Count -eq $legacyFiles.Count) 'Byte-identical legacy CRLF and BOM sources retain the committed identity'
+    $legacyExport = Join-Path $temporary 'legacy-crlf-export'
+    Export-GlpiBuildSources -Provenance $legacyIdentity -Destination $legacyExport
+    $legacySnapshot = Resolve-GlpiBuildProvenance -SourceRoot $legacyExport
+    foreach ($name in $legacyFiles) {
+        Check ($legacySnapshot.Files[$name] -ceq $legacyHashes[$name]) ('DEV export preserves the original legacy bytes and BOM: ' + $name)
+    }
+    foreach ($name in $legacyFiles) {
+        [void](Git $legacyRoot @('update-index', '--assume-unchanged', $name))
+        [IO.File]::AppendAllText((Join-Path $legacyRoot $name), "Actual content change`r`n", $utf8)
+        Reject { Resolve-GlpiBuildProvenance -SourceRoot $legacyRoot } 'Source Git modifiée' ('Raw-blob acceptance still refuses a hidden legacy content change: ' + $name)
+        [void](Git $legacyRoot @('update-index', '--no-assume-unchanged', $name))
+        [void](Git $legacyRoot @('checkout', '--', $name))
+    }
     Put $source 'README.md' 'Changed after the initial provenance snapshot'
     Reject { Export-GlpiBuildSources -Provenance $original -Destination (Join-Path $temporary 'stale-export') } 'modifiées' 'Changed sources are rechecked before copying into DEV'
     Write-Host ($script:passed.ToString() + '/' + $script:passed + ' source provenance checks passed.')
