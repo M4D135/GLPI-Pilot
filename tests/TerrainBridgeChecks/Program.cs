@@ -22,9 +22,11 @@ try
     var beta = new CityDefinition { Id = "22222222222222222222222222222222", Name = "Beta", Latitude = 49, Longitude = 3 };
     var campus = new SiteDefinition { Id = "33333333333333333333333333333333", CityId = alpha.Id, Name = "Campus Nord", Latitude = 50.1, Longitude = 2.1,
         Contact = "Accueil", Equipment = "Adaptateur", Openings = new() { new() { Day = DayOfWeek.Monday, From = "08:00", Until = "12:00" }, new() { Day = DayOfWeek.Monday, From = "13:00", Until = "17:00" } } };
-    var settings = new AppSettings { Cities = new() { TitleColumn = "Résumé terrain", Cities = new() { alpha, beta }, Sites = new() { campus } } };
+    const string sourceUrl = "https://fixture.invalid/front/ticket.php";
+    var settings = new AppSettings { PortalUrl = sourceUrl, Cities = new() { TitleColumn = "Résumé terrain", Cities = new() { alpha, beta }, Sites = new() { campus } } };
     settings.Dashboard.ColumnMappings = new(StringComparer.Ordinal) { ["id"] = "ID", ["title"] = "Titre", ["status"] = "Statut", ["priority"] = "Priorité", ["assignee"] = "Technicien", ["due"] = "Échéance" };
-    var source = new ExtractionResult { Title = "Fixture terrain", SourceUrl = "https://fixture.invalid/front/ticket.php", Complete = true, ExtractedAt = DateTimeOffset.UtcNow,
+    var source = new ExtractionResult { Title = "Fixture terrain", SourceUrl = sourceUrl, Complete = true, ExtractedAt = DateTimeOffset.UtcNow,
+        Provenance = new() { SourceKind = "browser", RequestedUrl = sourceUrl, SearchVerified = true, ScopeVerified = true },
         Headers = new() { "ID", "Titre", "Résumé terrain", "Statut", "Priorité", "Technicien", "Échéance", "Lieu GLPI" },
         Rows = new() {
             new[] { "1", "Titre natif sans lieu", "Intervention Campus Nord", "En cours (attribué)", "Haute", "Alice", "2030-01-07 17:00", "Beta" },
@@ -69,8 +71,11 @@ try
     Check(simulated.GetProperty("match").GetProperty("state").GetInt32() != (int)CityMatchState.Matched, "promoted context is required, not an unconditional alias");
     var preview = await Call("terrain.reference.preview", new { draftVersion = Draft(draft), revision = Rev() });
     Check(preview.GetProperty("totalRows").GetInt32() == 4 && app.Settings.Cities.Buildings.Count == 0, "full-source preview does not persist the draft");
-    var alteredDashboard = app.Settings.Dashboard.Copy(); alteredDashboard.ColumnMappings["title"] = "Résumé terrain";
-    app.ChangeFixtureDashboard(alteredDashboard);
+    var alteredDashboard = app.EffectiveSettings.Dashboard.Copy(); alteredDashboard.ColumnMappings["title"] = "Résumé terrain";
+    var mappingRevision = Rev();
+    await Call("mapping.save", new { revision = mappingRevision, settings = alteredDashboard });
+    Check(ReferenceEquals(app.Result, source) && Rev() > mappingRevision && app.EffectiveSettings.Dashboard.ColumnMappings["title"] == "Résumé terrain",
+        "public mapping save changes effective interpretation and revision while preserving the extraction");
     await Reject(() => Call("terrain.reference.apply", new { token = preview.GetProperty("token").GetString(), confirmed = true }), "preview invalidated by mapping or interpretation change without a new extraction");
     preview = await Call("terrain.reference.preview", new { draftVersion = Draft(draft), revision = Rev() });
     draft = await Call("terrain.reference.apply", new { token = preview.GetProperty("token").GetString(), confirmed = true });

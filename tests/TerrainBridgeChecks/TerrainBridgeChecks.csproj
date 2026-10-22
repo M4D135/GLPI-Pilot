@@ -6,8 +6,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
     <Compile Include="../../src/GlpiPilot/Core/*.cs" Exclude="../../src/GlpiPilot/Core/ThemeService.cs" Link="Core/%(Filename)%(Extension)" />
-    <Compile Include="../../src/GlpiPilot/Runtime/PilotApplication.cs" Link="Runtime/PilotApplication.cs" />
-    <Compile Include="../../src/GlpiPilot/Runtime/PilotApplication.Terrain*.cs" Link="Runtime/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Runtime/*.cs" Link="Runtime/%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/bridge.js" Link="BrowserScripts/bridge.js" />
     <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/native-export.js" Link="BrowserScripts/native-export.js" />
     <EmbeddedResource Include="../../src/GlpiPilot/BrowserScripts/ticket-details.js" Link="BrowserScripts/ticket-details.js" />

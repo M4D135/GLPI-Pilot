@@ -2,15 +2,11 @@ using GlpiPilot.Core;
 
 namespace GlpiPilot.Runtime;
 
-// The dispatcher, terrain handlers, file stores and computation engines below are the production sources.
-// Only unrelated domains and native dialogs are replaced for this offline, isolated fixture.
+// All dispatchers, handlers, file stores and computation engines are production sources.
+// Only initial synthetic data loading and native dialogs are replaced by the fixture.
 public sealed partial class PilotApplication
 {
-    private void RegisterFoundationOperations() { }
-    private void RegisterAnalyticsOperations() { }
-    private void RegisterWorkplaceOperations() { }
     public void LoadFixture(ExtractionResult source, CityEnrichmentResult? locations = null, SnapshotDocument? history = null) => SetResult(source, locations, history);
-    public void ChangeFixtureDashboard(DashboardSettings value) => Settings.Dashboard = value;
 }
 
 public sealed class TerrainTestHost : IPilotHost
