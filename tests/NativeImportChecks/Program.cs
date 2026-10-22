@@ -45,7 +45,9 @@ var checks = new List<(string Name, Action Run)>
     ("Signes C1 en UTF-8 : hypothèse documentée sans correction silencieuse", CheckC1Typography),
     ("Annulation après inspection : aucun préambule vide ne masque la demande", CheckCancelledPreamble),
     ("Annulation finale : aucun résultat n’est publié après la demande", CheckCancelledPublication),
-    ("Préambule sep= : préfixes proches, lignes CR et en-têtes littéraux conservés", CheckPreamblePrefixes)
+    ("Préambule sep= : préfixes proches, lignes CR et en-têtes littéraux conservés", CheckPreamblePrefixes),
+    ("Qualité : réception, contrôles initiaux/finals et réserves restent indépendants", CheckQualityObservations),
+    ("Excel : réception complète qualifiée et contrôle d’identité indisponible explicites", CheckQualityInformation)
 };
 int failures = 0;
 try
@@ -164,6 +166,7 @@ void CheckUnknownTotal()
     True(!r.Complete, "Le nombre de lignes du fichier ne doit pas être utilisé comme total GLPI.");
     Equal<int?>(null, r.ExpectedTotal);
     True(r.Warnings.Any(w => w.Contains("Total GLPI inconnu", StringComparison.Ordinal)), "L’absence de vérification doit être expliquée.");
+    True(r.Quality is { SourceRows: 1, ExpectedRows: null, RowCountVerified: null, ReceptionComplete: false }, "Le comptage du CSV ne crée pas un total GLPI observé.");
 }
 
 void CheckUnconfirmedScope()
@@ -171,6 +174,7 @@ void CheckUnconfirmedScope()
     var r = Import("ID;Nom\n1;P1\n", 1, allPages: false);
     True(!r.Complete, "Un export de périmètre inconnu ne certifie pas Toutes les pages.");
     True(r.Scope.Contains("non confirmé", StringComparison.Ordinal), "Le périmètre doit être honnête.");
+    True(r.Quality is { RowCountVerified: true, AllPagesRequested: false, ReceptionComplete: false }, "Un nombre égal sans toutes les pages ne certifie pas la réception complète.");
 }
 
 void CheckCountMismatch()
@@ -178,6 +182,7 @@ void CheckCountMismatch()
     var r = Import("ID;Nom\n1;P1\n2;P2\n", 3);
     Equal(2, r.Rows.Count); True(!r.Complete, "Le total différent doit produire un résultat incomplet.");
     True(r.Warnings.Any(w => w.Contains("2 lignes pour 3", StringComparison.Ordinal)), "Le nombre du CSV et celui de GLPI doivent apparaître.");
+    True(r.Quality is { SourceRows: 2, ExpectedRows: 3, RowCountVerified: false, ReceptionComplete: false }, "Le déficit de lignes doit rester distinct d’un écart d’affichage.");
 }
 
 void CheckCap()
@@ -188,6 +193,7 @@ void CheckCap()
     Equal(1, r.Rows.Count); True(!r.Complete, "Un total égal à l’aperçu tronqué ne suffit pas.");
     True(r.Status.Contains("1 / 3", StringComparison.Ordinal), "Le nombre réel du fichier doit rester connu.");
     True(before.SequenceEqual(File.ReadAllBytes(path)), "Le CSV téléchargé doit rester intact.");
+    True(r.Quality is { SourceRows: 3, ExpectedRows: 1, RowCountVerified: false, ReceptionComplete: false }, "Le compte source entier, pas l’aperçu plafonné, doit figurer dans la qualité.");
     var exact = NativeCsvImportService.Read(path, source, 3, maxRows: 3);
     True(exact.Complete, "Atteindre exactement la limite sans ligne supplémentaire reste complet.");
 }
@@ -312,9 +318,49 @@ void CheckTextControls()
     var r = NativeCsvImportService.Read(path, source, 1, diagnostics: logs.Add);
     True(r.Complete, "Les contrôles textuels ne doivent pas retirer de lignes ni invalider un total concordant.");
     Equal("00042", r.Rows[0][0]); Equal(description, r.Rows[0][1]); Equal("De\u000Bscription", r.Headers[1]);
+    True(r.Quality is { UnusualControlCount: 42, C1ControlCount: 32, ReceptionComplete: true }, "Les contrôles du texte sont comptés sans invalider une réception de lignes exacte ni réencoder le CSV.");
     True(logs.Any(w => w.Contains("U+000B×2", StringComparison.Ordinal)) && logs.Any(w => w.Contains("U+009F×1", StringComparison.Ordinal)), "Tous les codes et nombres doivent rester dans le diagnostic.");
     True(r.Warnings.Any(w => w.Contains("caractère(s) de contrôle inhabituels", StringComparison.Ordinal) && !w.Contains("offset", StringComparison.Ordinal)), "L’avertissement utilisateur doit rester lisible, sans dump technique.");
     True(before.SequenceEqual(File.ReadAllBytes(path)), "Le CSV original doit rester strictement identique octet par octet.");
+}
+
+void CheckQualityObservations()
+{
+    var r = Import("ID;Nom\n1;Valeur synthétique\n", 1);
+    True(r.Quality is { SourceRows: 1, ExpectedRows: 1, AllPagesRequested: true, RowCountVerified: true,
+        FinalTotalVerified: null, InitialSample: null, FinalSample: null, ReceptionComplete: true }, "L’import isolé connaît la réception, pas des observations navigateur inventées.");
+    r.Complete = false;
+    r.Quality!.InitialSample = new() { IdentityVerified = true, RepresentationVerified = false, SampleSize = 1, ComparedCells = 1, DifferentCells = 1 };
+    r.Quality.FinalSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 1, ComparedCells = 1 };
+    r.Quality.FinalTotalVerified = true;
+    var serialized = System.Text.Json.JsonSerializer.Serialize(r);
+    var restored = System.Text.Json.JsonSerializer.Deserialize<ExtractionResult>(serialized)!;
+    True(!restored.Complete && restored.Quality is { ReceptionComplete: true, SampleIdentityVerified: true, RepresentationVerified: false }, "Une concordance finale ne doit pas effacer l’écart initial ni promouvoir Complete à true après stockage.");
+    True(!System.Text.Json.JsonSerializer.Serialize(restored.Quality).Contains("synthétique", StringComparison.Ordinal), "Les observations ne stockent que des compteurs et états, jamais des cellules.");
+    restored.Quality!.FinalTotalVerified = false;
+    True(!restored.Quality.ReceptionComplete, "Un total final différent invalide la réception complète par rapport au total courant.");
+    var legacy = System.Text.Json.JsonSerializer.Deserialize<ExtractionResult>("{\"Complete\":false}")!;
+    True(legacy.Quality is null && !legacy.Complete, "Les anciennes archives ne reçoivent pas de preuves fabriquées.");
+}
+
+void CheckQualityInformation()
+{
+    var r = Import("ID;Nom\n1;Valeur synthétique\n", 1);
+    r.Complete = false;
+    r.Quality!.InitialSample = new() { SampleSize = 1 };
+    r.Quality.FinalSample = new() { IdentityVerified = true, RepresentationVerified = false, SampleSize = 1, ComparedCells = 1, DifferentCells = 1 };
+    r.Warnings.Add("Réserve synthétique"); r.Warnings.Add("Réserve synthétique");
+    var path = Path.Combine(temporary, "qualified.xlsx"); ExportService.WriteXlsx(r, path);
+    using var zip = ZipFile.OpenRead(path);
+    using var stream = zip.GetEntry("xl/worksheets/sheet2.xml")!.Open();
+    var xml = XDocument.Load(stream); XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    var rows = xml.Descendants(ns + "row").Skip(1).Select(row => row.Elements(ns + "c")
+        .Select(cell => string.Concat(cell.Descendants(ns + "t").Select(text => text.Value))).ToArray())
+        .ToDictionary(row => row[0], row => row[1]);
+    Equal("Réception complète · contrôles à vérifier", rows["État"]);
+    Equal("Non disponible", rows["Identité de l’échantillon initial"]);
+    True(rows["Comparaison de l’échantillon final"].Contains("1/1 écarts", StringComparison.Ordinal), "Le XLSX conserve la réserve de comparaison.");
+    Equal(1, rows.Values.Count(value => value == "Réserve synthétique"));
 }
 
 void CheckC1Typography()

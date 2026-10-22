@@ -19,6 +19,8 @@ public static class WorkBrowserChecks
             ("Runtime ambiguous receipt blocks another preview until manual review", () => ActionCircuit(true)),
             ("Runtime enrichment reads only its limit and preserves untouched candidate status", Enrichment),
             ("WebView ticket reader renders real engine observations and restores filters", TicketPage),
+            ("WebView optional reader sections omit null placeholders while preserving literal user text", OptionalReaderContent),
+            ("WebView seven-digit ticket IDs stay horizontal and open the original source row", TicketIdentifierLayout),
             ("WebView notes checklist and reminder save through real handler", PersonalPage),
             ("WebView draft composition persists and clipboard uses actual stored text", DraftPage),
             ("WebView immediate navigation waits for its last draft save", DraftNavigation),
@@ -95,14 +97,14 @@ public static class WorkBrowserChecks
         public IPage Page { get; private set; } = null!;
         private IBrowserContext _context = null!;
         public List<string> Errors { get; } = new();
-        public async Task Start(string page, object? args = null)
+        public async Task Start(string page, object? args = null, TicketDetailResult? detail = null)
         {
-            Fixture.App.ReadFixture(WorkFixture.Detail()); _context = await _browser!.NewContextAsync(new() { ViewportSize = new() { Width = 1480, Height = 1050 } }); Page = await _context.NewPageAsync(); Page.PageError += (_, error) => Errors.Add(error);
+            Fixture.App.ReadFixture(detail ?? WorkFixture.Detail()); _context = await _browser!.NewContextAsync(new() { ViewportSize = new() { Width = 1480, Height = 1050 } }); Page = await _context.NewPageAsync(); Page.PageError += (_, error) => Errors.Add(error);
             var web = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../web"));
             await Page.RouteAsync("**/*", async route =>
             {
                 var uri = new Uri(route.Request.Url); if (uri.Host != "workplace-ui.test") { await route.AbortAsync(); return; }
-                if (uri.AbsolutePath == "/") { await route.FulfillAsync(new() { ContentType = "text/html", Body = "<!doctype html><html lang='fr'><meta charset='utf-8'><link rel='stylesheet' href='/css/app.css'><link rel='stylesheet' href='/css/workplace.css'><main id='root'></main><div id='notices'></div></html>" }); return; }
+                if (uri.AbsolutePath == "/") { await route.FulfillAsync(new() { ContentType = "text/html", Body = "<!doctype html><html lang='fr'><meta charset='utf-8'><link rel='stylesheet' href='/css/app.css'><link rel='stylesheet' href='/css/workplace.css'><main id='root' class='page-content'></main><div id='notices'></div></html>" }); return; }
                 var relative = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'); var path = Path.GetFullPath(Path.Combine(web, relative));
                 if (!path.StartsWith(web + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path)) { await route.FulfillAsync(new() { Status = 404, Body = "Not found" }); return; }
                 await route.FulfillAsync(new() { ContentType = path.EndsWith(".js", StringComparison.Ordinal) ? "text/javascript" : "text/css", Body = await File.ReadAllTextAsync(path) });
@@ -125,6 +127,11 @@ public static class WorkBrowserChecks
         }
         public async Task Navigate(string page, object? args = null)
         { await Page.EvaluateAsync("async ({page,args})=>await workNavigate(page,args)", new { page, args = args ?? new { } }); await Page.WaitForFunctionAsync("()=>workReady"); }
+        public async Task Capture(string name)
+        {
+            var folder = Environment.GetEnvironmentVariable("GLPI_TEST_WORKPLACE_SCREENSHOTS"); if (string.IsNullOrWhiteSpace(folder)) return;
+            Directory.CreateDirectory(folder); await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, name), FullPage = true });
+        }
         public async Task NoErrors() { Check(Errors.Count == 0, string.Join("\n", Errors)); Check(!await Page.EvaluateAsync<bool>("()=>workNotices.some(n=>n.tone==='error'||n.tone==='danger')"), await Page.EvaluateAsync<string>("()=>JSON.stringify(workNotices)")); }
         public async ValueTask DisposeAsync() { if (_context is not null) await _context.DisposeAsync(); await Fixture.DisposeAsync(); }
     }
@@ -136,6 +143,57 @@ public static class WorkBrowserChecks
         await ui.Page.WaitForFunctionAsync("()=>document.querySelector('.work-section-content')?.textContent.includes('Observation non datée')");
         Check(!await ui.Page.Locator(".work-section-content").InnerTextAsync().ContinueWith(t => t.Result.Contains("Préparer")));
         await ui.Navigate("tickets", new { ticketKey = await ui.Fixture.Key() }); Check(await ui.Page.GetByLabel("Type d’événement", new() { Exact = true }).InputValueAsync() == "Suivi"); await ui.NoErrors();
+    }
+    private static Task<int> NullTextNodes(IPage page) => page.EvaluateAsync<int>("""
+        () => { const walker = document.createTreeWalker(document.querySelector('.work-ticket-reader'), NodeFilter.SHOW_TEXT); let count = 0;
+          while (walker.nextNode()) if (walker.currentNode.nodeValue.trim() === 'null') count++; return count; }
+        """);
+    private static async Task OptionalReaderContent()
+    {
+        await using var ui = new UiSession(); var detail = WorkFixture.Detail();
+        detail.Sections[0].Data.Rows.Add(new[] { "Texte saisi littéralement", "null" });
+        await ui.Start("tickets", new { rowIndex = 0, revision = ui.Fixture.App.Revision }, detail);
+        Check(await NullTextNodes(ui.Page) == 0, "Absent reader notices and optional timeline blocks must not render null text nodes.");
+        await ui.Page.Locator(".work-reader-body select").First.SelectOptionAsync(new SelectOptionValue { Label = "Fiche (3)" });
+        await ui.Page.GetByRole(AriaRole.Cell, new() { Name = "Texte saisi littéralement", Exact = true }).WaitForAsync();
+        Check(await NullTextNodes(ui.Page) == 1 && await ui.Page.GetByRole(AriaRole.Cell, new() { Name = "null", Exact = true }).CountAsync() == 1,
+            "The literal user value null must remain present in its cell, without unrelated placeholders.");
+        await ui.Page.SetViewportSizeAsync(900, 900);
+        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Actions assistées", Exact = true }).ClickAsync();
+        await ui.Page.GetByLabel("Adaptateur de formulaire", new() { Exact = true }).WaitForAsync();
+        Check(await NullTextNodes(ui.Page) == 0, "An absent assisted-action warning must not appear as null.");
+        await ui.Page.EvaluateAsync("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        Check(await ui.Page.EvaluateAsync<bool>("""
+            () => { const nav = document.querySelector('.work-tabs'); const active = nav.querySelector('.primary');
+              const bounds = nav.getBoundingClientRect(), selected = active.getBoundingClientRect();
+              return selected.left >= bounds.left - 1 && selected.right <= bounds.right + 1; }
+            """), "The selected reader tab remains visible after the horizontal navigation is rebuilt.");
+        Check(await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Actions assistées", Exact = true }).GetAttributeAsync("aria-current") == "page",
+            "The selected reader tab also exposes its current state to assistive technology."); await ui.NoErrors();
+    }
+    private static async Task TicketIdentifierLayout()
+    {
+        await using var ui = new UiSession(); const string originalId = "8\u202f765\u202f432";
+        ui.Fixture.Source.Rows[0][0] = originalId; ui.Fixture.App.LoadFixture(ui.Fixture.Source);
+        var detail = WorkFixture.Detail(); detail.Ticket = new("8765432", WorkFixture.TicketUrl.Replace("42", "8765432", StringComparison.Ordinal));
+        await ui.Start("tickets", detail: detail);
+        var ticket = ui.Page.Locator(".work-ticket-browser tbody tr").First.GetByRole(AriaRole.Button);
+        Check(await ticket.InnerTextAsync() == "8765432", "A ticket identifier is a digit string, without numeric grouping separators.");
+        foreach (var width in new[] { 1480, 900 })
+        {
+            await ui.Page.SetViewportSizeAsync(width, 900);
+            Check(await ticket.EvaluateAsync<bool>("""
+                button => { const label = button.querySelector('span'); const range = document.createRange(); range.selectNodeContents(label);
+                  const rects = [...range.getClientRects()]; const cell = button.closest('td').getBoundingClientRect(); const bounds = button.getBoundingClientRect();
+                  return rects.length === 1 && rects[0].left >= bounds.left && rects[0].right <= bounds.right + 1 && bounds.left >= cell.left && bounds.right <= cell.right + 1; }
+                """), "A seven-digit ticket button must fit on one line within its column at desktop and compact widths.");
+        }
+        await ticket.ClickAsync(); await ui.Page.Locator(".work-ticket-heading h2").WaitForAsync();
+        Check((await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#8765432 ·", StringComparison.Ordinal)
+            && ui.Fixture.Source.Rows[0][0] == originalId, "Opening a display-normalized ID keeps the original source value and row identity.");
+        await ui.Page.SetViewportSizeAsync(1480, 900); await ui.Capture("tickets-desktop.png");
+        await ui.Page.SetViewportSizeAsync(900, 900); await ui.Capture("tickets-compact.png");
+        await ui.NoErrors();
     }
     private static async Task PersonalPage()
     {

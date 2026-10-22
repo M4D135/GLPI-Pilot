@@ -4,7 +4,7 @@
 dotnet run --project tests/NativeImportChecks/NativeImportChecks.csproj -c Release
 ```
 
-Les 34 contrôles couvrent le CSV téléchargé avant sa conversion automatique en Excel : UTF-8 avec ou sans BOM, UTF-16 LE/BE avec BOM, repli Windows-1252 signalé, séparateurs point-virgule/virgule/tabulation, guillemets doubles, champs multilignes, en-têtes uniques, doublons de données, séparateur terminal GLPI 10, limites d’import, erreurs de format, page de connexion HTML et conservation des valeurs texte jusqu’au XLSX. Les régressions de la version 1.1.2 couvrent également les contrôles C0/C1 dans les descriptions, les diagnostics sans contenu privé et un fichier synthétique de 831 lignes dépassant un mégaoctet.
+Les 40 contrôles couvrent le CSV téléchargé avant sa conversion automatique en Excel : UTF-8 avec ou sans BOM, UTF-16 LE/BE avec BOM, repli Windows-1252 signalé, séparateurs point-virgule/virgule/tabulation, guillemets doubles, champs multilignes, en-têtes uniques, doublons de données, séparateur terminal GLPI 10, limites d’import, erreurs de format, page de connexion HTML et conservation des valeurs texte jusqu’au XLSX. Les régressions de la version 1.1.2 couvrent également les contrôles C0/C1 dans les descriptions, les diagnostics sans contenu privé et un fichier synthétique de 831 lignes dépassant un mégaoctet.
 
 ## API
 
@@ -20,6 +20,10 @@ ExtractionResult NativeCsvImportService.Read(
 ```
 
 Le nombre de lignes du fichier ne devient jamais le total attendu de GLPI. `Complete` exige un choix toutes-pages confirmé, un total GLPI connu et concordant et l’absence de limite atteinte. Le nombre de pages parcourues vaut zéro pour cet import d’un fichier natif.
+
+`Quality` expose séparément le nombre de lignes source, le total attendu, le choix toutes-pages, le contrôle du comptage et les comptes de contrôles inhabituels/C1. Le parcours navigateur y ajoute ses observations initiale et finale : identités, cellules comparées, divergences et équivalences de format démontrées. La réception complète au total annoncé n’efface pas une réserve de comparaison et ne transforme pas `Complete=false` en un relevé historique comparable. Un total final différent invalide la réception complète. Les archives anciennes dépourvues de `Quality` restent sans ces observations ; les avertissements ne servent jamais à les reconstituer.
+
+Les tests conservent les deux observations après sérialisation, gardent une divergence initiale même si la comparaison finale est conforme, vérifient les limites réelles de lignes et le comptage des C1 sans conversion. La feuille Informations du XLSX distingue réception et comparaison ; une identité indisponible n’y affiche pas un compte d’identifiants rapprochés inventé. Les avertissements identiques sont dédupliqués.
 
 Toutes les lignes sont analysées même quand la limite d’aperçu est atteinte : le statut indique le nombre conservé et le nombre réel de lignes dans le fichier. Une erreur plus loin dans le CSV reste une erreur. Le fichier téléchargé est ouvert en lecture seule et n’est jamais modifié.
 

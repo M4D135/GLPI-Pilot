@@ -94,6 +94,37 @@ Test("Partial total downgrades low score despite enough columns", () =>
     var s = Sample(); s.Rows = new() { s.Rows[1] }; s.ExpectedTotal = 100; var d = Calc(s);
     Check(!d.Complete && d.Weather.State == "partial" && d.Warnings.Count > 0);
 });
+Test("Complete reception with representation reserves keeps usable counts and cautious weather/history", () =>
+{
+    var s = Sample(); s.Rows = new() { s.Rows[1] }; s.ExpectedTotal = 1; s.Complete = false;
+    s.Warnings = new() { "Réserve de comparaison synthétique", "Réserve de comparaison synthétique" };
+    s.Quality = new() { SourceRows = 1, ExpectedRows = 1, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true,
+        InitialSample = new() { IdentityVerified = true, RepresentationVerified = false, SampleSize = 1, ComparedCells = 1, DifferentCells = 1 },
+        FinalSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 1, ComparedCells = 1 } };
+    var d = Calc(s);
+    Check(d.ReceptionComplete && !d.Complete && d.ExpectedTotal == 1 && d.Quality == s.Quality);
+    Check(d.Warnings.Count(warning => warning == "Réserve de comparaison synthétique") == 1);
+    Check(d.Warnings.Any(warning => warning.StartsWith("Toutes les lignes annoncées", StringComparison.Ordinal))
+        && !d.Warnings.Any(warning => warning.StartsWith("Périmètre incomplet", StringComparison.Ordinal)));
+    Check(d.Weather.State == "partial" && d.Weather.Title.Contains("relevé à vérifier", StringComparison.Ordinal)
+        && !d.Weather.Title.Contains("données partielles", StringComparison.Ordinal));
+    var subset = DashboardService.CalculateSubset(s, new(), new[] { 0 }, "Vue synthétique", clock);
+    Check(subset.ReceptionComplete && !subset.Complete && subset.ExpectedTotal == 1);
+    var export = DashboardService.ToExport(subset);
+    Check(!export.Complete && export.Quality == s.Quality && export.Rows.Any(row => row[^1].Contains("réserves du relevé", StringComparison.Ordinal)));
+});
+Test("Changed final total and inconsistent receipt metadata cannot certify loaded coverage", () =>
+{
+    var s = Sample(); s.Complete = false;
+    s.Quality = new() { SourceRows = 6, ExpectedRows = 6, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = false };
+    Check(!Calc(s).ReceptionComplete);
+    s.Quality.FinalTotalVerified = true; s.Rows.RemoveAt(0);
+    Check(!Calc(s).ReceptionComplete);
+    s.Rows = Sample().Rows; s.Quality.ExpectedRows = 7;
+    Check(!Calc(s).ReceptionComplete);
+    s.Quality = null;
+    Check(!Calc(s).ReceptionComplete, "Legacy partial records do not infer quality from matching row counts.");
+});
 Test("Empty snapshot never claims fine weather", () =>
 {
     var s = Sample(); s.Rows.Clear(); s.ExpectedTotal = 0; var d = Calc(s); Check(d.Weather.State == "unknown" && d.RowCount == 0);

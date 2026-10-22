@@ -78,7 +78,7 @@ public static class CityDetectionService
             SourceUrl = source.SourceUrl, Title = source.Title, ExtractedAt = source.ExtractedAt,
             Pages = source.Pages, ExpectedTotal = source.ExpectedTotal, Scope = source.Scope,
             Complete = source.Complete, Warnings = new List<string>(source.Warnings), Status = source.Status,
-            Provenance = source.Provenance
+            Provenance = source.Provenance, Quality = source.Quality
         };
         var matcher = BuildMatcher(configuration, source.Headers, ct);
         var sourceKey = CityOverrideStore.SourceKey(source.SourceUrl);

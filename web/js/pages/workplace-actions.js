@@ -1,4 +1,4 @@
-import { el, button, card, toolbar, input, select, field, dialog, confirm, badge } from '../ui.js';
+import { el, replaceChildren, button, card, toolbar, input, select, field, dialog, confirm, badge } from '../ui.js';
 import { call, run, note, pre, date, textArea, checkbox, dataTable, personalEditor, textDialog, pager } from './workplace-common.js';
 
 const compositions = new Map();
@@ -77,7 +77,7 @@ export async function renderActions(ctx, root, ticket) {
       }) }
     ]);
   }
-  root.replaceChildren(note('Chaque envoi utilise un formulaire natif reconnu, un aperçu et une confirmation distincte. Aucun envoi n’est relancé automatiquement. Les droits sont ceux de votre session GLPI.'),
+  replaceChildren(root, note('Chaque envoi utilise un formulaire natif reconnu, un aperçu et une confirmation distincte. Aucun envoi n’est relancé automatiquement. Les droits sont ceux de votre session GLPI.'),
     !state.canWrite ? note('Chargez un relevé GLPI actuel et vérifié pour préparer une écriture. Les archives et imports gardent leurs données de référence.') : null,
     toolbar(button('Afficher la fiche GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey }); ctx.notify('Ouvrez le formulaire natif voulu dans la fiche, puis revenez l’inspecter.'); })),
       button('Inspecter le formulaire ouvert', run(ctx, async () => { state = await call(ctx, 'workplace.actions.inspect', { ticketKey }); updateChoices(); status.replaceChildren(note((state.candidates || []).length ? `${state.candidates.length} formulaire(s) reconnu(s).` : 'Aucun formulaire reconnu. Ouvrez dans GLPI un formulaire d’ajout de suivi, de tâche ou d’affectation.')); }), { disabled: !state.canWrite })),

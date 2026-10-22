@@ -202,11 +202,14 @@ void CheckEnvelope()
     // Version 3 is the current portable schema; future major versions stay refused.
     var current = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.0.0\",\"Settings\":{}}"), Sample());
     Equal(Sample().InterfaceZoomPercent, current.InterfaceZoomPercent);
+    var version31 = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.1.0\",\"Settings\":{}}"), Sample());
+    Equal(Sample().InterfaceZoomPercent, version31.InterfaceZoomPercent);
     foreach (string json in new[]
     {
         "{\"Schema\":\"wrong\",\"SchemaVersion\":1,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":2,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"4.0.0\",\"Settings\":{}}",
+        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.2.0\",\"Settings\":{}}",
         "{\"PortalUrl\":\"https://glpi.test/front/ticket.php\",\"portalurl\":\"https://other.test\"}",
         "{\"Dashboard\":{\"ColumnMappings\":{\"id\":\"ID\",\"ID\":\"Autre\"}}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));
@@ -396,7 +399,8 @@ void CheckLayoutsRoundTrip()
                 new() { Id = "note-one", Kind = "note", Title = "Consignes", Note = "Texte libre\nDeuxième ligne", Span = 8, Height = 320, Accent = "purple", Style = "accent", Hidden = true },
                 new() { Id = "status-bars", Kind = "distribution", SourceKey = "status", Span = 6, Height = 480, TopCount = 15, Presentation = "list", ShowDescription = false }
             } },
-            new() { Id = "board-empty", Name = "À personnaliser", Widgets = new() }
+            new() { Id = "board-empty", Name = "À personnaliser", Description = "Disposition partagée", Density = "compact", Widgets = new(),
+                Sections = new() { new() { Key = "empty-section", Title = "Interventions", Description = "À organiser", Accent = "teal", Hidden = true } } }
         }
     };
     string path = Path.Combine(temporary, "layout-roundtrip.json");
@@ -410,6 +414,8 @@ void CheckLayoutsRoundTrip()
     True(!board.Widgets[0].AutoHeight && board.Widgets[1].AutoHeight, "Les hauteurs automatique et minimale manuelle doivent être partagées.");
     Equal("Texte libre\nDeuxième ligne", board.Widgets[1].Note); True(board.Widgets[1].Hidden, "Un widget masqué reste dans la disposition.");
     Equal("list", board.Widgets[2].Presentation); Equal(15, board.Widgets[2].TopCount); True(!board.Widgets[2].ShowDescription, "L’option d’explication est conservée.");
+    var empty = imported.Dashboard.Layout.Boards[1]; Equal("compact", empty.Density); Equal("Disposition partagée", empty.Description);
+    Equal("empty-section", empty.Sections.Single().Key); Equal("À organiser", empty.Sections[0].Description); True(empty.Sections[0].Hidden, "Une section vide masquée doit être conservée.");
     var copied = imported.Copy(); copied.Dashboard.Layout.Boards[0].Widgets[0].Title = "Modifié";
     Equal("Ma charge", imported.Dashboard.Layout.Boards[0].Widgets[0].Title);
     True(!ReferenceEquals(copied.Dashboard.Layout.Boards[0].Widgets, imported.Dashboard.Layout.Boards[0].Widgets), "La disposition doit être copiée profondément.");
@@ -577,6 +583,8 @@ void CheckLayoutIdentity()
     Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(active: "absent")), Sample()));
     Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(new object[] { new { Id = " " } })), Sample()));
     Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(new object[] { new { Kind = "weather" } })), Sample()));
+    var duplicateSections = new object[] { new { Id = "b", Name = "Board", Widgets = Array.Empty<object>(), Sections = new[] { new { Key = "same", Title = "A" }, new { Key = "same", Title = "B" } } } };
+    Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(boards: duplicateSections)), Sample()));
 }
 
 void CheckLayoutTypes()
@@ -589,6 +597,8 @@ void CheckLayoutTypes()
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(new[] { widget })), Sample()));
     foreach (string json in new[] { "{\"Dashboard\":{\"Layout\":{\"Version\":2}}}", "{\"Dashboard\":{\"Layout\":{\"Boards\":null}}}", "{\"Dashboard\":{\"Layout\":{\"Script\":\"x\"}}}" })
         Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));
+    foreach (object section in new object[] { new { Key = "s", Title = "Section", Hidden = "true" }, new { Title = "Section" }, new { Key = "s", Title = "Section", Accent = "script" }, new { Key = "s", Title = "Section", Description = new string('x', 601) } })
+        Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(LayoutJson(boards: new object[] { new { Id = "b", Name = "Board", Widgets = Array.Empty<object>(), Sections = new[] { section } } })), Sample()));
 }
 
 static void Equal<T>(T expected, T actual)

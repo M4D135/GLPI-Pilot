@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.2 — C# WinForms / WebView2, packs PROD et DEV
+GLPI Pilot 3.1.0 — C# WinForms / WebView2, packs PROD et DEV
 
 ARCHITECTURE ET DISTRIBUTION
 Le produit utilise .NET 10, un hôte C# WinForms minimal et une interface
@@ -33,7 +33,7 @@ Dépôt : https://github.com/M4D135/GLPI-Pilot
 Packs publiés : https://github.com/M4D135/GLPI-Pilot/releases
 Chaîne Windows : https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 GitHub Code > Download ZIP télécharge les sources, pas le pack exécutable.
-Lire docs/RELEASE-3.0.2.md et docs/Rapport-verification.txt pour le statut de
+Lire docs/RELEASE-3.1.0.md et docs/Rapport-verification.txt pour le statut de
 la livraison. Un EXE compilé ou un ZIP local ne prouve ni une exécution
 Windows réussie ni la publication d’une version validée.
 
@@ -80,7 +80,7 @@ Dans PowerShell 7.2+, depuis la racine des sources transférées :
     -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
     -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
     -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-    -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.2'
+    -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.1.0'
 
 RuntimePath accepte le dossier contenant msedgewebview2.exe, ou un dossier
 parent contenant un unique runtime extrait. Le script détecte les chemins
@@ -149,7 +149,7 @@ par le build hors ligne :
 
   $env:NUGET_PACKAGES = 'C:\GLPI-BuildCache\nuget-packages'
   .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-    -OutputDirectory '.\artifacts\release-3.0.2'
+    -OutputDirectory '.\artifacts\release-3.1.0'
 
 Le script de préparation utilise seulement l’URL Microsoft épinglée. Il
 refuse les redirections, limite le téléchargement à la taille attendue,
@@ -198,6 +198,13 @@ de corruption, de mauvais échantillon initial et de contexte final restent
 distincts. Les fixtures DOM ciblent les demandeurs multiples et les textes
 GLPI abrégés, sans accès au portail privé. Consulter le rapport pour les
 résultats réellement obtenus avant de promouvoir les packs de cette version.
+
+La version 3.1.0 ajoute les contrôles du shell, des identifiants et composants
+de tickets, des sections persistantes, des déplacements/redimensionnements
+et de leur sauvegarde. Les états de réception et de concordance sont séparés ;
+les équivalences de texte riche sont liées à la cellule DOM exacte et gardent
+leurs contrôles négatifs. Les nombres de tests et les résultats Windows sont
+ceux des journaux du commit livré, sans déduction à partir des seules sources.
 
 BuildPack extrait les sources du DEV construit, sans métadonnées .git, puis
 les reconstruit avec un SDK et un runtime déjà présents et un dépôt local de

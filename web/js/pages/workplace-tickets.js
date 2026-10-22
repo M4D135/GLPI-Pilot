@@ -1,5 +1,5 @@
-import { el, button, card, toolbar, input, select, field, table, dialog, confirm, badge, empty } from '../ui.js';
-import { call, run, message, revision, note, pre, date, label, heading, dataTable, pager, tabs, personalEditor } from './workplace-common.js';
+import { el, replaceChildren, button, card, toolbar, input, select, field, table, dialog, confirm, badge, empty } from '../ui.js';
+import { call, run, message, revision, note, pre, date, label, heading, dataTable, pager, tabs, personalEditor, ticketButton } from './workplace-common.js';
 import { renderDraft, renderActions, renderInsights } from './workplace-actions.js';
 
 const readerPages = [
@@ -26,7 +26,7 @@ export async function renderTickets(ctx) {
   async function loadSource() {
     const result = await call(ctx, 'workplace.ticket.list', { revision: revision(ctx), saved: sourceSaved, search: searchText, page: sourcePage });
     if (disposed) return;
-    browser.replaceChildren(dataTable(result.rows, [{ key: 'id', label: 'Ticket', render: row => button(row.id || 'Ouvrir', run(ctx, () => open(row.ticketKey ? { ticketKey: row.ticketKey } : { rowIndex: row.rowIndex, revision: result.revision }))) }, { key: 'title', label: 'Titre' }, { key: 'status', label: 'État du relevé' }], { key: sourceSaved ? 'ticketKey' : 'rowIndex' }), pager(result.page, result.pageSize, result.total, run(ctx, async page => { sourcePage = page; await loadSource(); })));
+    browser.replaceChildren(dataTable(result.rows, [{ key: 'id', label: 'Ticket', width: '1%', render: row => ticketButton(row.id, run(ctx, () => open(row.ticketKey ? { ticketKey: row.ticketKey } : { rowIndex: row.rowIndex, revision: result.revision }))) }, { key: 'title', label: 'Titre' }, { key: 'status', label: 'État du relevé' }], { key: sourceSaved ? 'ticketKey' : 'rowIndex' }), pager(result.page, result.pageSize, result.total, run(ctx, async page => { sourcePage = page; await loadSource(); })));
   }
   async function open(args, allowAutoRead = true) {
     await sectionCleanup?.(); sectionCleanup = null;
@@ -48,7 +48,7 @@ export async function renderTickets(ctx) {
     await sectionCleanup?.(); sectionCleanup = null; const generation = ++sectionVersion;
     if (!current || disposed) return;
     const ticket = current; const body = el('div', { class: 'work-reader-body' }); const key = ticket.personal.key;
-    reader.replaceChildren(el('div', { class: 'work-ticket-heading' }, el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
+    replaceChildren(reader, el('div', { class: 'work-ticket-heading' }, el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
       toolbar(badge(ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue'), ticket.personal.offline ? badge('Copie conservée') : null,
         button('Actualiser la fiche', run(ctx, async () => { current = await call(ctx, 'workplace.ticket.read', { ticketKey: key }); await showReader(); }), { disabled: !ticket.canRead }),
         button('Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); }), { disabled: !ticket.canRead }))),
@@ -127,7 +127,7 @@ async function renderSections(ctx, root, ticket, state, savePosition, replaceTic
       return el('div', { class: 'work-timeline' }, ...[...groups.entries()].map(([day, entries]) => el('details', { open: true }, el('summary', { text: day + ` · ${entries.length} événement(s)` }), ...entries)));
     };
     const grid = () => table(result.rows, result.headers.map((header, index) => ({ key: String(index), label: header, render: row => el('span', { class: row.changed ? 'work-cell-changed' : '' }, el('span', { text: row.values[index] || '' }), row.truncatedColumns?.includes(index) ? fullText(row, index) : null) })), { key: 'index', selected: selectedRow, onSelect: row => { selectedRow = row.index; run(ctx, persist)(); }, maxRows: 100 });
-    list.replaceChildren(result.previousReadAt ? result.kind === 'timeline' && mode.value === '0' ? null : marker() : note('Première observation mémorisée.'),
+    replaceChildren(list, result.previousReadAt ? result.kind === 'timeline' && mode.value === '0' ? null : marker() : note('Première observation mémorisée.'),
       result.unreadableDates ? note(`${result.unreadableDates} événement(s) exclus du filtre de dates : date illisible.`) : null,
       result.kind === 'timeline' && mode.value === '0' ? renderTimeline() : grid(),
       pager(result.page, result.pageSize, result.total, run(ctx, async value => { page = value; selectedRow = page * 50; await persist(); await load(); })),
@@ -138,7 +138,7 @@ async function renderSections(ctx, root, ticket, state, savePosition, replaceTic
   mode.addEventListener('change', apply);
   grouped.addEventListener('change', run(ctx, async () => { state.groupTimelineByDay = grouped.checked; await call(ctx, 'workplace.preferences.save', { groupTimelineByDay: grouped.checked }); await load(); }));
   async function move(direction) { if (!selected) return; const index = ordered.indexOf(selected); const target = Math.max(0, Math.min(ordered.length - 1, index + direction)); [ordered[index], ordered[target]] = [ordered[target], ordered[index]]; state.sectionOrder = ordered.map(s => s.key); await call(ctx, 'workplace.preferences.save', { sectionOrder: state.sectionOrder }); sectionList.replaceChildren(...ordered.map(s => el('option', { value: s.key, text: s.name }))); sectionList.value = selected.key; }
-  root.replaceChildren(ticket.tabs?.some(t => !t.loaded) ? card('Onglets GLPI à lire', note('Chaque bouton charge seulement l’onglet de consultation découvert. Une lecture impossible conserve ses observations précédentes.'), toolbar(...ticket.tabs.filter(t => !t.loaded).map(tab => button(tab.name, run(ctx, async () => { const result = await call(ctx, 'workplace.ticket.tab', { ticketKey: key, tabKey: tab.key }); if (!result.loaded) ctx.notify(result.warnings.join('\n') || 'Cet onglet n’a pas pu être lu.', 'warning'); await replaceTicket(result.ticket); }))))) : null,
+  replaceChildren(root, ticket.tabs?.some(t => !t.loaded) ? card('Onglets GLPI à lire', note('Chaque bouton charge seulement l’onglet de consultation découvert. Une lecture impossible conserve ses observations précédentes.'), toolbar(...ticket.tabs.filter(t => !t.loaded).map(tab => button(tab.name, run(ctx, async () => { const result = await call(ctx, 'workplace.ticket.tab', { ticketKey: key, tabKey: tab.key }); if (!result.loaded) ctx.notify(result.warnings.join('\n') || 'Cet onglet n’a pas pu être lu.', 'warning'); await replaceTicket(result.ticket); }))))) : null,
     toolbar(sectionList, button('★ Favori', run(ctx, async () => { if (!selected) return; state.favoriteSections = state.favoriteSections.includes(selected.key) ? state.favoriteSections.filter(k => k !== selected.key) : [...state.favoriteSections, selected.key]; await call(ctx, 'workplace.preferences.save', { favoriteSections: state.favoriteSections }); ctx.notify(state.favoriteSections.includes(selected.key) ? 'Rubrique ajoutée aux favoris.' : 'Rubrique retirée des favoris.'); })), button('Ouvrir ici par défaut', run(ctx, async () => { if (selected) { state.defaultSection = selected.key; await call(ctx, 'workplace.preferences.save', { defaultSection: selected.key }); ctx.notify('Rubrique d’ouverture mémorisée.'); } })), button('↑', run(ctx, () => move(-1)), { title: 'Monter la rubrique' }), button('↓', run(ctx, () => move(1)), { title: 'Descendre la rubrique' })),
     toolbar(search, mode, el('label', { class: 'work-check' }, grouped, el('span', { text: 'Regrouper par jour' }))),
     el('details', {}, el('summary', { text: 'Filtres de chronologie' }), el('div', { class: 'work-form-grid' }, field('Type d’événement', type), field('Auteur', author), field('Du', from), field('Au', to))),
@@ -150,7 +150,7 @@ async function renderSections(ctx, root, ticket, state, savePosition, replaceTic
 async function renderIntelligence(ctx, root, ticket, savePosition) {
   const key = ticket.personal.key; const result = await call(ctx, 'workplace.ticket.intelligence', { ticketKey: key });
   const search = input(ticket.personal.readingPosition?.intelligenceSearch || '', { maxLength: 300, placeholder: 'Rechercher une solution recueillie' }); const related = el('div'); const recurrence = el('div');
-  const draw = () => { const rows = result.related.filter(row => !search.value || (row.title + ' ' + row.solution).toLocaleLowerCase('fr').includes(search.value.toLocaleLowerCase('fr'))); related.replaceChildren(dataTable(rows, [{ key: 'id', label: 'Ticket', render: row => button(row.id, () => ctx.navigate('tickets', { rowIndex: row.sourceIndex, revision: result.revision })) }, { key: 'title', label: 'Titre' }, { key: 'relationship', label: 'Rapprochement' }, { key: 'evidence', label: 'Critères' }, { key: 'solution', label: 'Solution effectivement recueillie', render: row => row.hasSolution ? el('details', {}, el('summary', { text: row.solutionSource + ' · ' + date(row.observedAt) }), pre(row.solution)) : note(row.solutionSource) }])); };
+  const draw = () => { const rows = result.related.filter(row => !search.value || (row.title + ' ' + row.solution).toLocaleLowerCase('fr').includes(search.value.toLocaleLowerCase('fr'))); related.replaceChildren(dataTable(rows, [{ key: 'id', label: 'Ticket', render: row => ticketButton(row.id, () => ctx.navigate('tickets', { rowIndex: row.sourceIndex, revision: result.revision })) }, { key: 'title', label: 'Titre' }, { key: 'relationship', label: 'Rapprochement' }, { key: 'evidence', label: 'Critères' }, { key: 'solution', label: 'Solution effectivement recueillie', render: row => row.hasSolution ? el('details', {}, el('summary', { text: row.solutionSource + ' · ' + date(row.observedAt) }), pre(row.solution)) : note(row.solutionSource) }])); };
   search.addEventListener('input', () => { draw(); }); search.addEventListener('change', run(ctx, () => savePosition({ intelligenceSearch: search.value })));
   const equipment = input('', { placeholder: 'Nom exact d’une colonne équipement, ou détection automatique', maxLength: 500 });
   root.replaceChildren(note(result.message), toolbar(search), related, card('Récurrences dans les relevés compatibles', note('Un identifiant observé dans plusieurs relevés reste un seul dossier. L’analyse est limitée à 20 relevés et 500 000 lignes.'), field('Colonne équipement', equipment), button('Analyser les récurrences', run(ctx, async () => {

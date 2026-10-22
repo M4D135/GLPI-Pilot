@@ -125,6 +125,23 @@ internal static class Program
         await page.GotoAsync("https://glpi-pilot.local/index.html");
         try { await page.Locator("body[data-ready=true]").WaitForAsync(); } catch { Console.WriteLine("BODY: " + await page.Locator("body").InnerTextAsync()); if (delivery.Exception is not null) Console.WriteLine(delivery.Exception); throw; }
         Require(await page.Locator(".hero").CountAsync() == 1 && application.Result is null, "The complete local shell boots against the real C# bridge without loading business data or opening a browser.");
+        Require(await page.EvaluateAsync<bool>("""
+            async () => {
+              const { el, replaceChildren } = await import('/js/ui.js'); let clicks = 0;
+              const action = el('button', { onClick: () => clicks++ }, 'Action'); const control = el('input', { value: 'Texte modifié' });
+              const root = el('div', {}, 'Ancien contenu'); replaceChildren(root, null, undefined, false, [0, ['null', action], control]); action.click();
+              return root.textContent === '0nullAction' && clicks === 1 && root.querySelector('input') === control && control.value === 'Texte modifié'
+                && el('div', {}, null, undefined, false, [0, 'null']).textContent === '0null';
+            }
+            """), "Optional UI children stay absent while literal null, zero, edit values and existing event handlers are preserved.");
+        Require(await page.EvaluateAsync<bool>("""
+            async () => {
+              const { ticketIdLabel } = await import('/js/pages/workplace-common.js');
+              const values = ['8765432', '8 765 432', '8\u00a0765\u00a0432', '8\u202f765\u202f432', '0 123 456', 'ABC 123', '12 34', '0012345', '12345678901234567890'];
+              const expected = ['8765432', '8765432', '8765432', '8765432', '0123456', 'ABC 123', '12 34', '0012345', '12345678901234567890'];
+              return values.every((value, index) => ticketIdLabel(value) === expected[index]);
+            }
+            """), "Ticket labels remove only proven decimal grouping and preserve leading zeroes, nonnumeric IDs and digit precision.");
         await page.GetByRole(AriaRole.Button, new() { Name = "Explorer la démonstration", Exact = true }).ClickAsync();
         await page.Locator(".page-content[data-page=dashboard]").WaitForAsync();
         await WaitForPageAsync(page, "document.querySelector('#content')?.getAttribute('aria-busy') === null");
@@ -160,7 +177,7 @@ internal static class Program
         await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
         await page.Locator(".nav-item[data-page='settings']").ClickAsync();
-        await page.GetByLabel("Thème", new() { Exact = true }).SelectOptionAsync("light");
+        await page.Locator(".page-content[data-page=settings]").GetByRole(AriaRole.Combobox, new() { Name = "Thème", Exact = true }).SelectOptionAsync("light");
         await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light'");
         Require(application.Settings.Theme == "light", "A real appearance form updates both persisted C# preferences and the shell.");
@@ -179,11 +196,77 @@ internal static class Program
             await page.Locator(".nav-item[data-page='dashboard']").ClickAsync(); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "dashboard-dark.png"), FullPage = true });
         }
+        async Task<string[]> QualityScreens(ExtractionResult data)
+        {
+            application.LoadQualityFixture(data); await delivery;
+            var observations = new List<string>();
+            foreach (var route in new[] { "home", "collect", "records", "quality" })
+            {
+                await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
+                await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
+                observations.Add(await page.Locator(".page-content").InnerTextAsync());
+            }
+            return observations.ToArray();
+        }
+        var received = QualityFixture();
+        var receivedScreens = await QualityScreens(received);
+        Require(receivedScreens.All(text => text.Contains("Réception complète") && text.Contains("Concordance à vérifier")
+            && !text.Contains("Réception partielle") && !text.Contains("Complétude à vérifier"))
+            && !received.Complete && await page.Locator(".source-status.warning").CountAsync() == 1
+            && (await page.Locator(".source-status").InnerTextAsync()).Contains("Réception complète · concordance à vérifier"),
+            "All four collection screens separate complete receipt from differing sample values without promoting the result to Complete.");
+        if (captureArg >= 0 && captureArg + 1 < args.Length)
+            await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetFullPath(args[captureArg + 1]), "quality-reception.png"), FullPage = true });
+        var partial = QualityFixture(); partial.ExpectedTotal = 6; partial.Quality!.ExpectedRows = 6; partial.Quality.RowCountVerified = false;
+        partial.Quality.InitialSample!.RepresentationVerified = partial.Quality.FinalSample!.RepresentationVerified = true;
+        partial.Quality.InitialSample.DifferentCells = partial.Quality.FinalSample.DifferentCells = 0;
+        var partialScreens = await QualityScreens(partial);
+        Require(partialScreens.All(text => text.Contains("Réception partielle") && !text.Contains("Réception complète"))
+            && (await Call(application, "records.quality")).GetProperty("completeness").GetString()!.Contains("4 / 6"),
+            "A real short source remains partial in every collection screen even when its sampled values agree.");
+        var undocumented = QualityFixture(); undocumented.Quality = null;
+        var undocumentedScreens = await QualityScreens(undocumented);
+        var undocumentedPartial = QualityFixture(); undocumentedPartial.Quality = null; undocumentedPartial.ExpectedTotal = 6;
+        var undocumentedPartialScreens = await QualityScreens(undocumentedPartial);
+        Require(undocumentedScreens.All(text => text.Contains("Réception non documentée") && text.Contains("Contrôle de concordance indisponible")
+            && !text.Contains("Réception complète") && !text.Contains("0 / 0"))
+            && undocumentedPartialScreens.All(text => text.Contains("Réception partielle") && text.Contains("Contrôle de concordance indisponible") && !text.Contains("Réception complète")),
+            "An older result reports unavailable controls without hiding a known short source or inventing success and zero counts.");
+        var uncheckedSample = QualityFixture(); uncheckedSample.Quality!.InitialSample = null; uncheckedSample.Quality.FinalSample = null;
+        var uncheckedScreens = await QualityScreens(uncheckedSample);
+        Require(uncheckedScreens.All(text => text.Contains("Réception complète") && text.Contains("Contrôle de concordance indisponible")
+            && text.Contains("Contrôle des identifiants indisponible")) && !uncheckedSample.Complete,
+            "Complete receipt with no sample keeps both identity and value comparisons explicitly unavailable.");
+        var paginated = QualityFixture(); paginated.Quality = null; paginated.Complete = true; paginated.Warnings.Clear();
+        paginated.Provenance.Method = "pagination"; paginated.Scope = "Recherche rechargée avec start=0, puis pages suivantes";
+        paginated.Status = "Total récupéré conforme au total annoncé";
+        var paginatedScreens = await QualityScreens(paginated);
+        Require(paginatedScreens.All(text => text.Contains("Relevé complet") && text.Contains("Contrôle de concordance indisponible")
+            && text.Contains("Contrôle des identifiants indisponible") && !text.Contains("Réception non documentée")
+            && !text.Contains("Réception partielle") && !text.Contains("Réception non confirmée"))
+            && (await page.Locator(".source-status").InnerTextAsync()).Contains("Relevé complet · détail des contrôles indisponible")
+            && await page.Locator(".source-status.warning").CountAsync() == 0 && paginated.Complete,
+            "A complete paginated result without native sample metadata remains complete while its detailed controls stay unavailable.");
         await page.SetViewportSizeAsync(900, 700);
         Require(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth + 1"), "The shell remains within the window at a compact viewport.");
         Require(errors.Count == 0, "All ES modules run without browser errors or CSP violations." + (errors.Count > 0 ? "\n" + string.Join("\n", errors) : ""));
         await delivery;
     }
+    private static ExtractionResult QualityFixture() => new()
+    {
+        Headers = new() { "ID", "Titre", "Statut" },
+        Rows = Enumerable.Range(1, 4).Select(i => new[] { i.ToString(), "Ticket synthétique " + i, "Nouveau" }).ToList(),
+        SourceUrl = "https://quality-fixture.invalid/front/ticket.php", Title = "Contrôles de réception synthétiques",
+        ExpectedTotal = 4, Complete = false, Status = "Contrôles de collecte à vérifier.",
+        Warnings = new() { "Réserve synthétique conservée avec le relevé." },
+        Provenance = new() { Method = "native-export", SourceKind = "glpi", SearchVerified = true, ScopeVerified = true },
+        Quality = new()
+        {
+            SourceRows = 4, ExpectedRows = 4, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true,
+            InitialSample = new() { IdentityVerified = true, RepresentationVerified = false, SampleSize = 2, ComparedCells = 2, DifferentCells = 1 },
+            FinalSample = new() { IdentityVerified = true, RepresentationVerified = false, SampleSize = 2, ComparedCells = 2, DifferentCells = 1 }
+        }
+    };
     // Poll from the test process: WaitForFunction injects eval, forbidden by the real app CSP.
     private static async Task WaitForPageAsync(IPage page, string expression, object? argument = null)
     {
@@ -206,5 +289,14 @@ internal static class Program
         public Task<byte[]> CapturePngAsync() => Page?.ScreenshotAsync() ?? Task.FromResult(Array.Empty<byte>());
         public async Task PrintPdfAsync(string path) { if (Page is null) throw new InvalidOperationException(); await Page.PdfAsync(new() { Path = path, PrintBackground = true }); }
         public Task<bool> NotifyAsync(string title, string message) => Task.FromResult(false);
+    }
+}
+
+namespace GlpiPilot.Runtime
+{
+    // Test-only admission of synthetic observations; the dispatcher and rendered pages remain real.
+    public sealed partial class PilotApplication
+    {
+        public void LoadQualityFixture(ExtractionResult data) => SetResult(data);
     }
 }

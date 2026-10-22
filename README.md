@@ -1,4 +1,4 @@
-# GLPI Pilot 3.0.2 — Windows x64
+# GLPI Pilot 3.1.0 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, gestion locale des techniciens, lecture des tickets, requêtes, lieux, tournées, historiques et alertes. Aucun accès API, base de données ou serveur GLPI n’est nécessaire.
 
@@ -35,7 +35,13 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Passage à la version 3
+## Nouveautés de la version 3.1
+
+La version **3.1.0** réorganise l’interface suivant les principes de Domenia 2 : navigation dépliable ou réduite en rail, thèmes clair/sombre, surfaces mieux hiérarchisées, tableaux lisibles et animations désactivables. Les tickets n’affichent plus de `null` parasite et leurs identifiants restent entiers sur une ligne. Le dashboard dispose de **sections persistantes**, même vides, avec titre, description, couleur et visibilité ; widgets et sections se déplacent à la souris ou au clavier, avec redimensionnement visuel et annulation.
+
+Les états de **réception**, d’**identité de l’échantillon** et de **concordance des valeurs** sont désormais séparés : toutes les lignes peuvent avoir été reçues alors que des valeurs restent à vérifier. Les équivalences HTML/CSV de texte riche sont admises seulement lorsqu’une preuve issue de la cellule GLPI les explique exactement. Les données d’origine, les contrôles C1 et les réserves restantes sont conservés. Voir les [notes 3.1.0](docs/RELEASE-3.1.0.md) pour les conditions et la validation du commit livré.
+
+### Migration et corrections précédentes
 
 La version **3.0.2** corrige une régression d’usage par rapport à la version 2.0 : un CSV déjà téléchargé et lu correctement pouvait rester inutilisable dans l’application parce que certaines valeurs différaient de leur affichage HTML. Lorsque les identifiants de l’échantillon correspondent, les lignes sont désormais disponibles pour le relevé, Excel, les dashboards et les villes, avec l’état **À vérifier** si des écarts subsistent. Les contrôles de périmètre restent actifs et le CSV natif reste intact. La lecture des demandeurs multiples et des textes GLPI abrégés par `(...)` est également corrigée. Les [notes 3.0.2](docs/RELEASE-3.0.2.md) précisent les conditions et les vérifications restantes.
 
@@ -63,13 +69,14 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 
 - Thèmes clair/sombre complets, bouton soleil/lune, suivi facultatif du thème Windows, cinq couleurs d’accent, contraste renforcé et réduction des animations.
 - Zoom **75–150 %**, boutons − / 100 % / + et raccourcis ; densité compacte, équilibrée ou confortable, colonnes figées et mémorisation de la fenêtre.
-- Navigation adaptée à la largeur, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre.
+- Navigation dépliable ou réduite en rail, tiroir sur fenêtre étroite, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre. Les commandes restent accessibles au clavier et respectent la réduction des animations de l’application ou du système.
 - Recherche, filtres par colonne et tri multiple calculés en C# sur **toutes les lignes chargées**, avec pages d’affichage bornées. Vues nommées mémorisant filtres, recherche, tri et présentation pour la structure du relevé.
 - Export complet ou export explicite de la vue filtrée ; import local CSV et XLSX. Le fichier natif reçu reste intact.
 
 ### Dashboard global et espace personnel
 
-- Dispositions indépendantes, modèles de départ, widgets déplaçables, redimensionnables, duplicables, masquables et verrouillables ; sections repliables et édition groupée.
+- Dispositions indépendantes, modèles de départ, widgets déplaçables, redimensionnables, duplicables, masquables et verrouillables ; sections persistantes et repliables avec titre, description, couleur et visibilité, y compris lorsqu’elles sont vides.
+- Poignées de déplacement et de redimensionnement à la souris ou au clavier, dimensions précises dans le formulaire, édition groupée et annulation/rétablissement. Les dispositions existantes au format 1 sont reprises sans supprimer leurs widgets ni leurs sections repliées.
 - Catalogue avec favoris persistants, disponibilité réelle des sondes, filtres communs et par widget, filtres croisés, contextes nommés et comparaison A/B.
 - Volumes, actifs, attentes, priorités, échéances, affectations, ancienneté, dates, lieux et couverture des données ; méthodes et effectifs accessibles.
 - Anneaux, jauges, histogrammes, matrices colorées, barres empilées, Pareto, boîtes statistiques, médiane/P90 et nuage âge × échéance.
@@ -117,6 +124,8 @@ Le moteur vérifie la recherche, le contexte observable, les totaux, les colonne
 
 Les textes complets présents dans les popups GLPI sont lus seulement lorsque leur structure et leur association au texte visible sont prouvées. Les abréviations non développées ne sont exclues du contrôle de valeur que dans les cas reconnus au préfixe compatible. Le contrôle final du contexte, du total et de l’échantillon reste actif ; une variation ou une vérification devenue indisponible empêche de certifier un relevé complet. Le classeur automatique d’un résultat à contrôler porte `a-verifier` dans son nom ; le CSV natif conserve son nom et ses octets. Un fichier local importé n’est pas certifié comme extraction exhaustive du portail.
 
+La **réception complète** décrit la récupération du fichier au total annoncé, lorsque cette observation existe. Elle ne certifie ni toutes les valeurs ni l’ensemble de la recherche. Les rapprochements d’identifiants et de valeurs portent sur un échantillon. Les anciennes archives dépourvues de ces observations ne reçoivent pas de nouvelle preuve par interprétation de leurs avertissements.
+
 La limite de lignes de l’application peut réduire le volume chargé ; elle ne tronque pas le CSV natif téléchargé. Une annulation ne déclenche pas d’annonce de réussite. Le diagnostic technique distingue les étapes sans inclure les cellules, cookies ou jetons de la session.
 
 ## Données et partage
@@ -130,7 +139,8 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 ## Documentation
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
-- [Notes de version 3.0.2](docs/RELEASE-3.0.2.md)
+- [Notes de version 3.1.0](docs/RELEASE-3.1.0.md)
+- [Historique — version 3.0.2](docs/RELEASE-3.0.2.md)
 - [Historique — version 3.0.1](docs/RELEASE-3.0.1.md)
 - [Migration initiale vers WebView2 — version 3.0.0](docs/RELEASE-3.0.0.md)
 - [Architecture et contrat des opérations WebView](docs/WebView-contract.md)
@@ -160,7 +170,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.0.2'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.1.0'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -176,7 +186,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.0.2'
+  -OutputDirectory '.\artifacts\release-3.1.0'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

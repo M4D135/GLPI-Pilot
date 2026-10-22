@@ -54,13 +54,31 @@ proven preview belong to that value rather than to the outer list. The
 specific generated `long_text > p.read_more > span.read_more_button` control
 is excluded inside a validated popup; literal ellipses remain in its content.
 
-Both `br` and `hr` preserve a newline boundary in the extracted text. This
-does not imitate native CSV punctuation or remove real characters to force
-agreement. In particular, GLPI 9.5 can remove an `hr` during CSV cleaning,
-whereas GLPI 10 can leave literal `<br>`/`<hr>` delimiters after normalization;
-rich-text conversion may also add Markdown-like punctuation. Such differences
-still reach the C# comparison. These fixtures prove the DOM extraction cases,
-not equivalence for every GLPI export or resolution of an unprovided CSV.
+Both `br` and `hr` preserve a newline boundary in the ordinary extracted text.
+Verification reads can additionally request a `glpi10-rich-text-v1`
+representation derived from the exact cell nodes. It contains only the row
+and column coordinates, the exact extracted source text and a projected CSV
+text; HTML never crosses the browser bridge. C# requires all those bindings
+and a full-text match. A declaration of compatibility is insufficient.
+
+This limited projection follows GLPI 10 `DataExport`/`RichText` and Html2Text
+4.3.1: uppercase for bold/headings, underscores for italics, stars for flat
+list items, 25 hyphens for an internal horizontal rule, and GLPI's exact quote
+conversion. A proven outer multivalue popup instead uses literal `<br>` or
+`<hr>` between items, because `Search::showItem` replaces its markers after
+text normalization. The original DOM text and native CSV remain unchanged.
+Plain text never receives a case-insensitive alternative. A different tail
+remains a difference, and C1 controls are never recoded or used to authorize
+an alternative comparison.
+
+Unknown tags, unassociated popups, unsupported hidden nodes, Html2Text override
+classes, nested lists, `ins`, isolated `li`, block breaks inside inline
+formatting and repeated format nesting produce no proof. Each cell is bounded to 4,096 visited nodes,
+depth 64 and 262,144 source/output characters; a table carries at most 512
+proofs and 4,194,304 combined source/output characters. Reaching a proof limit
+does not truncate the ordinary cell. The adapter version is 1.1.3. These
+fixtures establish a bounded supported subset, not equivalence for every
+GLPI export or resolution of an unprovided private CSV.
 
 The fixture also checks that status icons do not duplicate their adjacent
 labels, priority decoration does not add text, and visible IDs in titles are
@@ -80,6 +98,9 @@ preserved. Sources for the rendered structure:
 - [GLPI 10.0.22 generated read-more control](https://github.com/glpi-project/glpi/blob/10.0.22/src/RichText/RichText.php#L288-L327)
 - [GLPI 9.5.13 CSV cleaning order](https://github.com/glpi-project/glpi/blob/9.5.13/inc/search.class.php#L7370-L7375)
 - [GLPI 10.0.22 CSV cleaning order](https://github.com/glpi-project/glpi/blob/10.0.22/src/Search.php#L8853-L8857)
+- [GLPI 10.0.22 DataExport normalization](https://github.com/glpi-project/glpi/blob/10.0.22/src/Toolbox/DataExport.php)
+- [GLPI 10.0.22 RichText presentation settings](https://github.com/glpi-project/glpi/blob/10.0.22/src/RichText/RichText.php#L103-L143)
+- [Html2Text 4.3.1 ordered replacements and callbacks](https://github.com/mtibben/html2text/blob/4.3.1/src/Html2Text.php)
 
 ## Run on Windows
 

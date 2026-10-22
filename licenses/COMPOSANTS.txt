@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.0 — composants redistribués
+GLPI Pilot 3.1.0 — composants redistribués
 
 .NET et Windows Desktop Runtime 10.0.13 : licences Microsoft .NET ci-jointes.
 Microsoft.Playwright 1.63.0 : licence MIT ci-jointe.

@@ -53,6 +53,15 @@ public sealed class DashboardLayoutSettings
             if (board is null || !ValidText(board.Id, 96) || !ids.Add(board.Id) || !ValidText(board.Name, 120)
                 || board.Widgets is null || board.Widgets.Count > 60)
                 throw new InvalidDataException("Un tableau de bord possède un nom, un identifiant ou une liste de widgets incorrects.");
+            if (board.Description is null || board.Description.Length > 600 || board.Density is not ("comfortable" or "compact")
+                || board.Sections is null || board.Sections.Count > 60)
+                throw new InvalidDataException("La description, la densité ou les sections du dashboard sont invalides.");
+            var sectionKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var section in board.Sections)
+                if (section is null || section.Key is null || section.Key.Length > 80 || !sectionKeys.Add(section.Key)
+                    || !ValidText(section.Title, 120) || section.Description is null || section.Description.Length > 600
+                    || !DashboardWidgetSettings.Accents.Contains(section.Accent))
+                    throw new InvalidDataException("Une section possède un identifiant, un titre ou une présentation incorrects.");
             DashboardScopeFilter.ValidateList(board.Filters);
             DashboardScopeFilter.ValidateList(board.ComparisonFilters);
             if (board.CollapsedSections is null || board.CollapsedSections.Count > 60 || board.CollapsedSections.Any(x => x is null || x.Length > 80))
@@ -75,6 +84,11 @@ public sealed class DashboardLayoutSettings
                     || widget.HistogramBreaks.Count > 30 || widget.HistogramBreaks.Any(x => !double.IsFinite(x) || Math.Abs(x) > 1e9))
                     throw new InvalidDataException("Les filtres, sections ou tranches du widget sont invalides.");
             }
+            // Format 1 layouts without section metadata remain importable. Their text keys
+            // become stable section keys during normalization; renaming never reassigns widgets.
+            if (board.Sections.Select(s => s.Key).Concat(board.Widgets.Select(w => w.Section))
+                .Concat(board.CollapsedSections).Distinct(StringComparer.Ordinal).Count() > 60)
+                throw new InvalidDataException("Un tableau de bord peut contenir au maximum 60 sections.");
         }
         if (!ids.Contains(ActiveBoardId)) throw new InvalidDataException("Le tableau de bord actif est absent de la disposition.");
     }
@@ -176,13 +190,18 @@ public sealed class DashboardBoardSettings
 {
     public string Id { get; set; } = DashboardLayoutSettings.NewId();
     public string Name { get; set; } = "Mon tableau de bord";
+    public string Description { get; set; } = "";
+    public string Density { get; set; } = "comfortable";
+    public List<DashboardSectionSettings> Sections { get; set; } = new();
     public List<DashboardWidgetSettings> Widgets { get; set; } = new();
     public List<DashboardScopeFilter> Filters { get; set; } = new();
     public bool CrossFilterOnClick { get; set; }
     public bool ComparisonEnabled { get; set; }
     public List<DashboardScopeFilter> ComparisonFilters { get; set; } = new();
     public List<string> CollapsedSections { get; set; } = new();
-    public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
+    public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Description = Description, Density = Density,
+        Sections = Sections?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
+        Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
         Filters = DashboardScopeFilter.CopyList(Filters), CrossFilterOnClick = CrossFilterOnClick,
         ComparisonEnabled = ComparisonEnabled, ComparisonFilters = DashboardScopeFilter.CopyList(ComparisonFilters),
         CollapsedSections = new(CollapsedSections ?? new()) };
@@ -190,6 +209,8 @@ public sealed class DashboardBoardSettings
     {
         if (string.IsNullOrWhiteSpace(Id) || Id.Length > 96) Id = DashboardLayoutSettings.NewId();
         Name = string.IsNullOrWhiteSpace(Name) ? "Mon tableau de bord" : Name[..Math.Min(Name.Length, 120)];
+        Description = (Description ?? "")[..Math.Min(Description?.Length ?? 0, 600)];
+        if (Density is not ("comfortable" or "compact")) Density = "comfortable";
         Widgets = Widgets?.Where(x => x is not null).Take(60).ToList() ?? new();
         Filters ??= new(); ComparisonFilters ??= new();
         CollapsedSections = (CollapsedSections ?? new()).Where(x => x is not null && x.Length <= 80).Distinct(StringComparer.Ordinal).Take(60).ToList();
@@ -199,6 +220,38 @@ public sealed class DashboardBoardSettings
             widget.Normalize();
             if (!ids.Add(widget.Id)) { widget.Id = DashboardLayoutSettings.NewId(); ids.Add(widget.Id); }
         }
+        var sections = new List<DashboardSectionSettings>(); var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var section in Sections ?? new())
+        {
+            if (section is null || section.Key is null || section.Key.Length > 80 || !keys.Add(section.Key)) continue;
+            section.Normalize(); sections.Add(section);
+        }
+        foreach (var key in Widgets.Select(w => w.Section).Concat(CollapsedSections))
+            if (keys.Add(key)) sections.Add(new() { Key = key, Title = key.Length == 0 ? "Vue d’ensemble" : key });
+        if (sections.Count == 0) sections.Add(new() { Key = "", Title = "Vue d’ensemble" });
+        // When repairing malformed local settings, retain every section holding a widget.
+        var occupied = Widgets.Select(w => w.Section).ToHashSet(StringComparer.Ordinal);
+        var keep = sections.Where(s => occupied.Contains(s.Key)).Select(s => s.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var section in sections) if (keep.Count < 60) keep.Add(section.Key);
+        Sections = sections.Where(s => keep.Contains(s.Key)).ToList();
+        CollapsedSections = CollapsedSections.Where(keep.Contains).ToList();
+    }
+}
+
+/// <summary>Stable section identity, independent from its editable title and from its widgets.</summary>
+public sealed class DashboardSectionSettings
+{
+    public string Key { get; set; } = DashboardLayoutSettings.NewId();
+    public string Title { get; set; } = "Nouvelle section";
+    public string Description { get; set; } = "";
+    public string Accent { get; set; } = "blue";
+    public bool Hidden { get; set; }
+    public DashboardSectionSettings Copy() => (DashboardSectionSettings)MemberwiseClone();
+    internal void Normalize()
+    {
+        Title = string.IsNullOrWhiteSpace(Title) ? "Section" : Title[..Math.Min(Title.Length, 120)];
+        Description = (Description ?? "")[..Math.Min(Description?.Length ?? 0, 600)];
+        if (!DashboardWidgetSettings.Accents.Contains(Accent)) Accent = "blue";
     }
 }
 

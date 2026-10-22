@@ -2,7 +2,7 @@
   'use strict';
 
   // Reinstalling after every command is safe; a full navigation creates fresh state.
-  const VERSION = '1.1.2';
+  const VERSION = '1.1.3';
   if (window.__glpiPilot?.version === VERSION) return VERSION;
   try { window.__glpiPilot?.cancelPick(); } catch (_) { /* Previous document adapter. */ }
 
@@ -82,9 +82,10 @@
     return table;
   }
 
-  function cellText(cell) {
+  function cellText(cell, evidence = null) {
     const clean = text => text.replace(/\u00a0/g, ' ').split(/\r?\n/).map(s => s.replace(/[\t ]+/g, ' ').trim()).filter(Boolean).join('\n').trim();
     const expandedPreviews = new WeakSet();
+    const expandedSources = new WeakMap();
     function omitted(node) {
       if (node.matches('script,style,template,noscript,[hidden],[aria-hidden="true"],' + UI)) return true;
       const style = getComputedStyle(node);
@@ -130,7 +131,9 @@
       const prefix = shortened.slice(0, -6);
       if (!prefix) return null;
       const full = clean([...popup.childNodes].map(child => read(child, null, popup)).join(''));
-      return full.length > prefix.length && full.startsWith(prefix) ? full : null;
+      if (full.length <= prefix.length || !full.startsWith(prefix)) return null;
+      expandedSources.set(node, popup);
+      return full;
     }
     function read(node, owner = cell, popup = null) {
       if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
@@ -172,9 +175,10 @@
       const delimiter = directBreaks.some(node => node.matches('hr')) ? 'hr' : 'br';
       if (directBreaks.filter(node => node.matches(delimiter)).length < 2) continue;
       const parts = [''];
+      const groups = [[]];
       for (const node of popup.childNodes) {
-        if (node instanceof Element && node.matches(delimiter) && !omitted(node)) parts.push('');
-        else parts[parts.length - 1] += read(node, popup, popup);
+        if (node instanceof Element && node.matches(delimiter) && !omitted(node)) { parts.push(''); groups.push([]); }
+        else { parts[parts.length - 1] += read(node, popup, popup); groups[groups.length - 1].push(node); }
       }
       // A user item can itself contain a hidden fa-info card with BRs. Its
       // omitted subtree is not a separator or part of the exported value. BRs
@@ -189,10 +193,68 @@
       const breaks = structure.filter(node => node.matches(delimiter));
       if (breaks.length < 2 || breaks.some(node => node.parentElement !== popup)) continue;
       const items = parts.map(clean);
-      if (items.at(-1) === '') items.pop(); // showItem appends a separator after every item.
-      if (items.length >= 2 && items.every(Boolean) && items[0] === shown) candidates.push(items.join('\n'));
+      if (items.at(-1) === '') { items.pop(); groups.pop(); } // showItem appends a separator after every item.
+      if (items.length >= 2 && items.every(Boolean) && items[0] === shown) candidates.push({ text: items.join('\n'), popup, groups, delimiter });
     }
-    return candidates.length === 1 ? candidates[0] : shown;
+    const selected = candidates.length === 1 ? candidates[0] : null;
+    const value = selected ? selected.text : shown;
+    if (evidence && value.length <= 262144) {
+      const projected = csvProjection(selected);
+      if (projected !== null && projected !== value) Object.assign(evidence, { kind: 'glpi10-rich-text-v1', source: value, text: projected });
+    }
+    return value;
+
+    function csvProjection(selected) {
+      // GLPI 10 DataExport/RichText + Html2Text 4: a bounded subset, tied to
+      // these exact DOM nodes. Unsupported markup supplies no alternative.
+      // No HTML or hidden user-card content crosses the browser bridge.
+      let failed = false, changed = !!selected, visits = 0, characters = 0;
+      const allowed = new Set(['DIV', 'SPAN', 'P', 'A', 'B', 'STRONG', 'I', 'EM', 'UL', 'OL', 'LI', 'BR', 'HR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+      const block = new Set(['DIV', 'P', 'UL', 'OL', 'LI', 'BR', 'HR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+      const formatted = new Set(['B', 'STRONG', 'I', 'EM', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+      function project(node, popup = null, depth = 0, formats = []) {
+        if (failed) return '';
+        if (++visits > 4096 || depth > 64) { failed = true; return ''; }
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.nodeValue || '';
+          characters += text.length;
+          if (characters > 262144) failed = true;
+          return text;
+        }
+        if (!(node instanceof Element)) return '';
+        if (node.matches('script,style,div.invisible,div.tooltip-invisible') || readMoreControl(node, popup)) return '';
+        if (omitted(node) || !allowed.has(node.tagName) || node.tagName === 'LI' && !node.parentElement?.matches('ul,ol')) { failed = true; return ''; }
+        // Html2Text's ordered regular expressions do not treat arbitrary nested
+        // formatting like a recursive renderer. Keep that ambiguous subset out.
+        if (formats.includes(node.tagName) || formats.length && block.has(node.tagName) ||
+            [...node.classList].some(name => name === '_html2text_ignore' || name.startsWith('_html2text_link_'))) { failed = true; return ''; }
+        const expansion = expandedSources.get(node);
+        if (expansion) return [...expansion.childNodes].map(child => project(child, expansion, depth + 1, formats)).join('');
+        if (/^text\d+$/.test(node.id) && clean(node.textContent || '').endsWith(' (...)')) { failed = true; return ''; }
+        if (node.matches('[class*="fa-"],[class*="ti-"]') && !compact(node.textContent)) return '';
+        if ((node.hasAttribute('aria-label') || node.hasAttribute('title')) && !compact(node.textContent)) { failed = true; return ''; }
+        const nextFormats = formatted.has(node.tagName) ? formats.concat(node.tagName) : formats;
+        const text = [...node.childNodes].map(child => project(child, popup, depth + 1, nextFormats)).join('');
+        switch (node.tagName) {
+          case 'B': case 'STRONG': changed = true; return text.toUpperCase();
+          case 'H1': case 'H2': case 'H3': case 'H4': case 'H5': case 'H6': changed = true; return '\n' + text.toUpperCase() + '\n';
+          case 'I': case 'EM': changed = true; return '_' + text + '_';
+          case 'LI': changed = true; return '\n* ' + text + '\n';
+          case 'HR': changed = true; return '\n-------------------------\n';
+          case 'BR': return '\n';
+          case 'DIV': return '\n' + text;
+          case 'P': case 'UL': case 'OL': return '\n' + text + '\n';
+          default: return text;
+        }
+      }
+      const projected = selected
+        // Search::showItem replaces its inter-item markers after text conversion.
+        // These literal separators differ from an HR inside rich text content.
+        ? selected.groups.map(group => clean(group.map(node => project(node, selected.popup)).join(''))).join('<' + selected.delimiter + '>')
+        : [...cell.childNodes].map(node => project(node)).join('');
+      const normalized = clean(projected).replace(/"/g, "''");
+      return failed || !changed || normalized.length > 262144 ? null : normalized;
+    }
   }
 
   function rowCells(row, table) {
@@ -228,14 +290,17 @@
     return fallback;
   }
 
-  function gridFor(info, warnings) {
+  function gridFor(info, warnings, representations = null) {
     const pending = [];
     const matrix = [];
+    let proofCharacters = 0, proofCells = 0;
     for (let rowIndex = 0; rowIndex < info.rows.length; rowIndex++) {
       const output = [];
+      const representationRow = [];
       pending.forEach((span, index) => {
         if (span?.remaining > 0) {
           output[index] = span.value;
+          representationRow[index] = span.evidence;
           if (--span.remaining === 0) pending[index] = null;
         }
       });
@@ -249,13 +314,23 @@
         let remainingGroupRows = 0;
         for (let i = rowIndex; i < info.rows.length && info.rows[i].closest('thead,tbody,tfoot,[role="rowgroup"]') === group; i++) remainingGroupRows++;
         const rowSpan = cell.getAttribute('rowspan') === '0' ? remainingGroupRows : Math.min(remainingGroupRows, numberAttribute(cell, ['aria-rowspan', 'rowspan'], 1, info.rows.length, warnings));
-        const value = cellText(cell);
+        const evidence = representations && !info.headerIndices.has(rowIndex) && rowSpan === 1 && colSpan === 1 &&
+          proofCells < 512 && proofCharacters < 4194304 ? {} : null;
+        const value = cellText(cell, evidence);
+        let proof = evidence?.kind ? evidence : null;
+        if (proof) {
+          const size = proof.source.length + proof.text.length;
+          if (proofCharacters + size > 4194304) proof = null;
+          else { proofCharacters += size; proofCells++; }
+        }
         for (let offset = 0; offset < colSpan && col + offset < 256; offset++) {
           output[col + offset] = value;
-          if (rowSpan > 1) pending[col + offset] = { value, remaining: rowSpan - 1 };
+          representationRow[col + offset] = proof;
+          if (rowSpan > 1) pending[col + offset] = { value, evidence: proof, remaining: rowSpan - 1 };
         }
       }
       matrix.push(output);
+      if (representations) representations.push(representationRow);
     }
     return matrix;
   }
@@ -305,10 +380,11 @@
     return cells.length === 1 && /^(aucun(e)? (element|resultat|donnee|ticket|ordinateur)|pas de resultat|no (item|result|data|record)|nothing found)/.test(plain(cellText(cells[0])));
   }
 
-  function parseTable(table) {
+  function parseTable(table, withRepresentations = false) {
     const warnings = new Set();
     const info = rowInfo(table);
-    const matrix = gridFor(info, warnings);
+    const representationGrid = withRepresentations ? [] : null;
+    const matrix = gridFor(info, warnings, representationGrid);
     const width = matrix.reduce((n, row) => Math.max(n, row.length), 0);
     const headers = [];
     const used = new Set();
@@ -327,6 +403,7 @@
     }
     if (!info.headerIndices.size && info.rows.length) warnings.add('Aucun en-tête explicite : des noms de colonnes ont été générés.');
     const rows = [];
+    const csvRepresentations = [];
     const keys = [];
     info.rows.forEach((row, index) => {
       if (info.headerIndices.has(index) || !info.cells[index].length || isEmptyState(info.cells[index])) return;
@@ -338,6 +415,10 @@
         [...info.headerIndices].some(headerIndex => values.every((value, col) => compact(value) === compact(matrix[headerIndex]?.[col])));
       if (repeatedHeader) return;
       rows.push(values);
+      if (representationGrid) csvRepresentations.push(Array.from({ length: width }, (_, col) => {
+        const proof = representationGrid[index][col];
+        return proof ? { ...proof, row: rows.length - 1, column: col } : null;
+      }));
       keys.push(stableRowKey(row, values, headers));
     });
     const declaredRows = Number(table.getAttribute('aria-rowcount'));
@@ -347,7 +428,7 @@
     }
     if (all(TABLE, table).length) warnings.add('Le contenu des tableaux imbriqués a été exclu.');
     if (keys.some(k => !k)) warnings.add('Certaines lignes n’ont pas d’identifiant stable détectable ; leur déduplication automatique ne peut pas être garantie.');
-    return { headers, rows, keys, warnings: [...warnings], headerFingerprint: fingerprint(JSON.stringify(headers)), signature: fingerprint(JSON.stringify([headers, rows, keys])) };
+    return { headers, rows, keys, csvRepresentations, warnings: [...warnings], headerFingerprint: fingerprint(JSON.stringify(headers)), signature: fingerprint(JSON.stringify([headers, rows, keys])) };
   }
 
   function pagerOwner(root, inventory) {
@@ -473,9 +554,9 @@
     };
   }
 
-  function readTable(key) {
+  function readTable(key, withRepresentations = false) {
     const table = resolveTable(key);
-    return { ...parseTable(table), key: keyFor(table), selector: uniqueSelector(table), label: labelFor(table), next: getNext(keyFor(table)), expectedTotal: expectedCount(table), pageText: pageSummary(table) };
+    return { ...parseTable(table, withRepresentations), key: keyFor(table), selector: uniqueSelector(table), label: labelFor(table), next: getNext(keyFor(table)), expectedTotal: expectedCount(table), pageText: pageSummary(table) };
   }
 
   function clearHighlight() {

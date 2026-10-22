@@ -394,6 +394,68 @@ async function run() {
     document.querySelectorAll('[id="contenttooltip501"] .fup-popup').forEach(popup => { popup.innerHTML = 'Premier<br>contenu complet avec détail.'; });
   });
   equal((await readPopupTable()).rows[0][4], 'Premier\ncontenu complet avec détail.\nDeuxième contenu complet avec détail.', 'Line breaks inside a proven long preview remain part of its first item rather than outer-list separators');
+
+  // GLPI 10 exports rich-text presentation through DataExport/RichText and
+  // Html2Text. Project only the bounded, supported markup of the same cell.
+  const readPopupProofs = () => page.evaluate(() => window.__glpiPilot.readTable('#popup-results', true));
+  await popupFixture();
+  equal((await readPopupTable()).csvRepresentations, [], 'Ordinary pagination reads do not carry optional CSV representations');
+  await page.evaluate(() => {
+    document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<p><strong>Bonjour</strong> monde "exemple"</p><p><em>note</em></p><ul><li>Premier</li><li>Second</li></ul><hr><p>fin.</p>';
+  });
+  values = await readPopupProofs();
+  equal(values.rows[0][4], 'Bonjour monde "exemple"\nnote\nPremier\nSecond\nfin.', 'Rich-text proof generation leaves the normal displayed text unchanged');
+  equal(values.csvRepresentations[0][4], { row: 0, column: 4, kind: 'glpi10-rich-text-v1', source: values.rows[0][4], text: "BONJOUR monde ''exemple''\n_note_\n* Premier\n* Second\n-------------------------\nfin." }, 'The GLPI 10 projection records exact coordinates, source and presentation without exporting HTML');
+  const proofDom = await page.locator('html').innerHTML();
+  await readPopupProofs();
+  equal(await page.locator('html').innerHTML(), proofDom, 'Computing representations never rewrites the DOM or opens controls');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').textContent = 'Bonjour monde'; });
+  equal((await readPopupProofs()).csvRepresentations[0][4], null, 'Plain text has no fabricated uppercase or generic compatibility projection');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour</strong><pre>Texte préformaté</pre>'; });
+  equal((await readPopupProofs()).csvRepresentations[0][4], null, 'Unsupported PRE markup cannot supply a partly stripped CSV equivalence');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour</strong><span hidden>Texte masqué</span>'; });
+  equal((await readPopupProofs()).csvRepresentations[0][4], null, 'An unsupported hidden descendant prevents projection rather than silently changing semantics');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = 'avant<h2>titre</h2>après<div><strong>bloc</strong></div>suite'; });
+  equal((await readPopupProofs()).csvRepresentations[0][4]?.text, 'avant\nTITRE\naprès\nBLOCsuite', 'Html2Text heading boundaries and DIV opening-only boundary retain their exact distinction');
+  for (const unsupported of ['<strong>début<br>suite</strong>', '<strong>début<strong>milieu</strong>suite</strong>', '<ul><li>début<ul><li>suite</li></ul></li></ul>', '<strong>début</strong><a class="_html2text_link_inline" href="/target">suite</a>', '<strong>début</strong><span class="_html2text_ignore">suite</span>', '<ins>texte</ins>', '<li>texte</li>']) {
+    await page.evaluate(html => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = html; }, unsupported);
+    equal((await readPopupProofs()).csvRepresentations[0][4], null, 'Unsupported or ambiguous Html2Text structure yields no projected equivalence');
+  }
+
+  await longTextFixture();
+  await page.evaluate(() => { document.querySelector('#contenttooltip501 .fup-popup').innerHTML = 'Premier contenu <strong>formaté</strong> avec détail.'; });
+  values = await readPopupProofs();
+  equal([values.rows[0][4], values.csvRepresentations[0][4]?.text], ['Premier contenu formaté avec détail.', 'Premier contenu FORMATÉ avec détail.'], 'An exactly paired long-text popup supplies its own rich presentation after proving the visible prefix');
+  await page.evaluate(() => { document.querySelector('#contenttooltip501').id = 'contenttooltip999'; });
+  values = await readPopupProofs();
+  equal([values.rows[0][4], values.csvRepresentations[0][4]], ['Premier contenu (...)', null], 'An unassociated popup cannot furnish a format equivalence for a shortened cell');
+
+  for (const delimiter of ['br', 'hr']) {
+    await longTextFixture('tooltip-invisible', delimiter);
+    values = await readPopupProofs();
+    equal(values.csvRepresentations[0][4]?.text, `Premier contenu complet avec détail.<${delimiter}>Deuxième contenu complet avec détail.`, 'GLPI 10 ' + delimiter + ': inter-item export markers are preserved separately from rich-text formatting');
+    await page.evaluate(() => { document.querySelector('#contenttooltip599 #contenttooltip501 .fup-popup').textContent = 'Premier contenu complet différent.'; });
+    equal((await readPopupProofs()).csvRepresentations[0][4], null, 'GLPI 10 ' + delimiter + ': a different expanded first clone cannot justify an outer-list projection');
+  }
+
+  await popupFixture();
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>Bonjour\u0092</strong> monde\u0085'; });
+  values = await readPopupProofs();
+  equal([values.rows[0][4], values.csvRepresentations[0][4]?.text], ['Bonjour\u0092 monde\u0085', 'BONJOUR\u0092 monde\u0085'], 'Presentation evidence preserves exact C1 code points; the C# verifier may reject the alternative, never recode it');
+  await page.evaluate(() => { const cell = document.querySelector('#popup-results tbody tr td:last-child'); cell.innerHTML = '<strong></strong>'; cell.firstChild.textContent = 'x'.repeat(262145); });
+  values = await readPopupProofs();
+  equal([values.rows[0][4].length, values.csvRepresentations[0][4]], [262145, null], 'Oversized evidence is omitted while the ordinary cell text remains available');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<strong>mixte</strong>' + '<span>x</span>'.repeat(4100); });
+  values = await readPopupProofs();
+  equal([values.rows[0][4].length, values.csvRepresentations[0][4]], [4105, null], 'The evidence node budget rejects excessive markup without truncating the normal value');
+  await page.evaluate(() => { document.querySelector('#popup-results tbody tr td:last-child').innerHTML = '<span>'.repeat(65) + '<strong>mixte</strong>' + '</span>'.repeat(65); });
+  values = await readPopupProofs();
+  equal([values.rows[0][4], values.csvRepresentations[0][4]], ['mixte', null], 'Excessive markup depth produces no equivalence proof');
+  await page.evaluate(() => {
+    document.querySelector('#popup-results').innerHTML = '<thead><tr><th>ID</th><th>Nom</th></tr></thead><tbody>' + Array.from({ length: 513 }, (_, index) => `<tr><td>${index + 1}</td><td><strong>mixte</strong></td></tr>`).join('') + '</tbody>';
+  });
+  values = await readPopupProofs();
+  equal([values.rows.length, values.csvRepresentations.flat().filter(Boolean).length], [513, 512], 'A table-wide evidence budget keeps all rows but bounds optional representation records');
   log(checks + ' native export DOM checks passed.');
 }
 

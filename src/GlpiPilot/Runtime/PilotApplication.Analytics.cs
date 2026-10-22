@@ -186,7 +186,7 @@ public sealed partial class PilotApplication
     private static string AnalyticsDescribe(IEnumerable<DashboardScopeFilter> filters) => string.Join(" · ", filters.Select(f =>
         (f.Exclude ? "sauf " : "") + f.SourceKey + (f.Kind == "metric" ? "" : " = " + f.Value + (f.Kind == "date" ? " → " + f.Value2 : ""))));
     private static object AnalyticsMetric(DashboardMetric m) => new { m.Key, m.Label, m.Value, m.Unit, explanation = AnalyticsClip(m.Explanation), m.Sample, m.Tone, count = m.Rows.Length };
-    private static object AnalyticsSummary(DashboardSnapshot s) => new { s.CalculatedAt, s.ExtractedAt, s.RowCount, s.ExpectedTotal, s.Complete,
+    private static object AnalyticsSummary(DashboardSnapshot s) => new { s.CalculatedAt, s.ExtractedAt, s.RowCount, s.ExpectedTotal, s.Complete, s.ReceptionComplete, s.Quality,
         s.IsFiltered, s.ScopeLabel, s.SourceRowCount, s.SourceExpectedTotal, sourceUrl = AppPaths.SafeUrl(s.SourceUrl), s.Scope, s.Grain,
         columns = s.Columns, metrics = s.Metrics.Select(AnalyticsMetric).ToArray(), warnings = s.Warnings.Take(100).Select(w => AnalyticsClip(w)).ToArray(), weather = AnalyticsWeather(s.Weather) };
     private static object AnalyticsWeather(DashboardWeather w) => new { w.State, w.Title, w.Symbol, w.Score, w.MeasuredWeight, description = AnalyticsClip(w.Description),
@@ -259,7 +259,8 @@ public sealed partial class PilotApplication
     }
     private void AnalyticsPersistLayout(bool personal, DashboardLayoutSettings layout, bool remember = true)
     {
-        layout.Validate(); var journal = AnalyticsJournal(personal); var previous = AnalyticsLayout(personal).Copy();
+        layout.Validate(); layout.Normalize(); layout.Validate();
+        var journal = AnalyticsJournal(personal); var previous = AnalyticsLayout(personal).Copy();
         if (JsonSerializer.Serialize(layout, Json) == journal.Expected) return;
         var rollback = Settings.Copy();
         if (personal) Settings.Dashboard.PersonalLayout = layout.Copy(); else Settings.Dashboard.Layout = layout.Copy();
@@ -286,7 +287,7 @@ public sealed partial class PilotApplication
     }
     private async Task<object?> AnalyticsExportLayoutAsync(JsonElement args, CancellationToken ct)
     {
-        var layout = AnalyticsLayout(Flag(args, "personal")).Copy(); layout.Validate();
+        var layout = AnalyticsLayout(Flag(args, "personal")).Copy(); layout.Normalize(); layout.Validate();
         var path = await Host.SaveFileAsync("Exporter la disposition", "Disposition JSON (*.json)|*.json", "GLPI-disposition.json");
         if (path is null) return new { cancelled = true };
         ct.ThrowIfCancellationRequested(); await File.WriteAllTextAsync(path, JsonSerializer.Serialize(layout, Json), ct); return new { path };
@@ -297,7 +298,7 @@ public sealed partial class PilotApplication
         if (path is null) return new { cancelled = true };
         if (new FileInfo(path).Length > 2 * 1024 * 1024) throw new InvalidDataException("Disposition limitée à 2 Mio.");
         var layout = JsonSerializer.Deserialize<DashboardLayoutSettings>(await File.ReadAllTextAsync(path, ct), Json) ?? throw new InvalidDataException("Disposition vide.");
-        layout.Validate(); return new { layout, preview = true };
+        layout.Validate(); layout.Normalize(); layout.Validate(); return new { layout, preview = true };
     }
 
     private static DashboardSnapshot AnalyticsSnapshot(AnalyticsRun run, JsonElement args)

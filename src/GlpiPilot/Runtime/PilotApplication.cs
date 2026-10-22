@@ -261,7 +261,8 @@ public sealed partial class PilotApplication : IAsyncDisposable
         rows = Result?.Rows.Count ?? 0, columns = Result?.Headers.Count ?? 0, complete = Result?.Complete ?? false,
         date = Result?.ExtractedAt, historical = IsHistorical, demo = Result?.Provenance.SourceKind == "demo",
         status = Result?.Status ?? "Configurez une source ou explorez la démonstration.", warnings = Result?.Warnings,
-        source = Result is null ? "" : AppPaths.SafeUrl(Result.SourceUrl), provenance = Result?.Provenance
+        source = Result is null ? "" : AppPaths.SafeUrl(Result.SourceUrl), provenance = Result?.Provenance,
+        quality = Result?.Quality, expectedTotal = Result?.ExpectedTotal
     };
     private static string Text(JsonElement args, string name, int max = 8192, string fallback = "")
     {

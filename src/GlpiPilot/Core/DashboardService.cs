@@ -70,6 +70,9 @@ public static class DashboardService
         if (selectedRows?.Any(i => i < 0 || i >= data.Rows.Count) == true)
             throw new ArgumentOutOfRangeException(nameof(sourceRows), "Le périmètre contient une ligne absente du relevé.");
         var sourceComplete = data.Complete && (!data.ExpectedTotal.HasValue || data.ExpectedTotal == data.Rows.Count);
+        var receptionComplete = data.Quality is { } quality
+            ? quality.ReceptionComplete && quality.SourceRows == data.Rows.Count && quality.ExpectedRows == data.ExpectedTotal
+            : sourceComplete;
         var columns = ResolveColumns(data.Headers, settings);
         var index = columns.ToDictionary(x => x.Role, x => x.Index);
         bool Has(string key) => index[key].HasValue;
@@ -77,7 +80,8 @@ public static class DashboardService
         var result = new DashboardSnapshot
         {
             CalculatedAt = now, ExtractedAt = data.ExtractedAt, RowCount = selectedRows?.Length ?? data.Rows.Count,
-            ExpectedTotal = selectedRows is null ? data.ExpectedTotal : sourceComplete ? selectedRows.Length : null, Complete = sourceComplete,
+            ExpectedTotal = selectedRows is null ? data.ExpectedTotal : receptionComplete ? selectedRows.Length : null, Complete = sourceComplete,
+            ReceptionComplete = receptionComplete, Quality = data.Quality,
             SourceUrl = data.SourceUrl, Scope = selectedRows is null ? data.Scope : data.Scope + " · " + scopeLabel, Columns = columns,
             IsFiltered = selectedRows is not null, ScopeLabel = scopeLabel,
             SourceRowCount = data.Rows.Count, SourceExpectedTotal = data.ExpectedTotal,
@@ -85,7 +89,9 @@ public static class DashboardService
             Warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToList()
         };
         result.RecalculateScope = (rows, label, cancellation) => CalculateSubset(data, settings, rows, label, now, cancellation);
-        if (!result.Complete) result.Warnings.Add("Périmètre incomplet ou non confirmé : les statistiques décrivent uniquement les lignes récupérées.");
+        if (!result.Complete) result.Warnings.Add(receptionComplete
+            ? "Toutes les lignes annoncées sont chargées. Les réserves de contrôle restent à vérifier avant une comparaison historique."
+            : "Périmètre incomplet ou non confirmé : les statistiques décrivent uniquement les lignes récupérées.");
         if (data.ExpectedTotal.HasValue && data.ExpectedTotal != data.Rows.Count)
             result.Warnings.Add($"Total annoncé {data.ExpectedTotal:N0} ; lignes récupérées {data.Rows.Count:N0}.");
         foreach (var col in columns.Where(x => x.State is "ambiguous" or "missing-override"))
@@ -645,13 +651,16 @@ public static class DashboardService
         var weight = signals.Sum(s => s.Weight);
         if (weight == 0) return new("unknown", "Météo indéterminée", "◌", null, 0, "Les colonnes d’échéance, priorité, affectation ou dates manquent pour évaluer les actifs.", signals);
         var score = signals.Sum(s => s.Weight * (100d * s.Count / s.Sample)) / weight;
-        var sufficient = snapshot.Complete && identityClean && unknown == 0 && weight >= formula.TotalWeight * formula.MinimumWeightPercent / 100d
+        var signalsSufficient = identityClean && unknown == 0 && weight >= formula.TotalWeight * formula.MinimumWeightPercent / 100d
             && signals.All(s => s.Sample >= Math.Ceiling(active * formula.MinimumCoveragePercent / 100d));
+        var sufficient = snapshot.Complete && signalsSufficient;
         var state = score >= formula.StormThreshold ? "storm" : score >= formula.RainThreshold ? "rain" : score >= formula.WatchThreshold ? "watch" : "sun";
         var title = state switch { "storm" => "Orage · vigilance forte", "rain" => "Pluie · points à traiter", "watch" => "Vigilance · situation à surveiller", _ => "Soleil · peu de signaux détectés" };
         if (!sufficient)
         {
-            title = score < formula.WatchThreshold ? "Météo partielle · données à compléter" : title + " · données partielles";
+            title = snapshot.ReceptionComplete && signalsSufficient
+                ? title + " · relevé à vérifier"
+                : score < formula.WatchThreshold ? "Météo partielle · données à compléter" : title + " · données partielles";
             if (score < formula.WatchThreshold) state = "partial";
         }
         var symbol = state switch { "sun" => "☀", "watch" => "⛅", "rain" => "☂", "storm" => "ϟ", _ => "◌" };
@@ -769,12 +778,12 @@ public static class DashboardService
         {
             Headers = new() { "Rubrique", "Indicateur", "Valeur", "Unité", "Échantillon / dénominateur", "Explication" },
             SourceUrl = snapshot.SourceUrl, ExtractedAt = snapshot.CalculatedAt, Title = "Bilan du relevé GLPI", Scope = snapshot.Scope,
-            Complete = snapshot.Complete, Warnings = new(snapshot.Warnings), Status = $"Bilan de {snapshot.RowCount:N0} {snapshot.Grain}"
+            Complete = snapshot.Complete, Quality = snapshot.Quality, Warnings = new(snapshot.Warnings), Status = $"Bilan de {snapshot.RowCount:N0} {snapshot.Grain}"
         };
         void Add(params string[] values) => data.Rows.Add(values);
         Add("Périmètre", "Calcul", snapshot.CalculatedAt.ToString("O"), "", "", "Calcul local sur les lignes du relevé uniquement.");
         Add("Périmètre", "Extraction", snapshot.ExtractedAt.ToString("O"), "", "", snapshot.Scope);
-        Add("Périmètre", snapshot.IsFiltered ? "Lignes du périmètre vérifié" : "Total annoncé", snapshot.ExpectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "Non disponible", "lignes", "", snapshot.Complete ? "Relevé source complet confirmé" : "Relevé source incomplet ou non confirmé");
+        Add("Périmètre", snapshot.IsFiltered ? "Lignes du périmètre vérifié" : "Total annoncé", snapshot.ExpectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "Non disponible", "lignes", "", snapshot.Complete ? "Relevé source complet confirmé" : snapshot.ReceptionComplete ? "Toutes les lignes annoncées sont reçues ; les réserves du relevé restent à vérifier" : "Relevé source incomplet ou non confirmé");
         if (snapshot.IsFiltered)
         {
             Add("Périmètre", "Vue sélectionnée", snapshot.ScopeLabel, "", "", "Toutes les valeurs de ce bilan sont recalculées sur ce périmètre du relevé.");

@@ -11,7 +11,7 @@ public sealed partial class BrowserService
 {
     public async Task<TableSnapshot> ReadVerificationSampleAsync(TableChoice table, CancellationToken ct)
     {
-        var (_, snapshot, _) = await ReadAsync(table, "", ct);
+        var (_, snapshot, _) = await ReadAsync(table, "", ct, withRepresentations: true);
         return snapshot;
     }
 

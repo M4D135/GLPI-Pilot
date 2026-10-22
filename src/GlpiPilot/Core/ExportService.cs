@@ -311,7 +311,7 @@ public static class ExportService
             ("Tri observé", string.IsNullOrEmpty(data.Provenance.ObservedSort) ? "Non exposé par la page" : data.Provenance.ObservedSort),
             ("Reprise", data.Provenance.Resumed ? $"Pages conservées depuis {data.Provenance.ResumeStartedAt:O} ; contrôles du périmètre et des pages limites effectués" : "Nouvelle collecte"),
             ("Durées par étape (s)", string.Join(" ; ", data.Provenance.StageSeconds.Select(pair => pair.Key + "=" + pair.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)))),
-            ("État", data.Complete ? "Complet pour le périmètre demandé" : "Partiel / exhaustivité non confirmée"),
+            ("État", data.Complete ? "Complet pour le périmètre demandé" : data.Quality?.ReceptionComplete == true ? "Réception complète · contrôles à vérifier" : "Partiel / exhaustivité non confirmée"),
             ("Détail", data.Status),
             ("Pages lues", data.Pages.ToString(Invariant)),
             ("Lignes exportées", data.Rows.Count.ToString(Invariant)),
@@ -319,7 +319,25 @@ public static class ExportService
             ("Total annoncé", data.ExpectedTotal?.ToString(Invariant) ?? "Non renseigné"),
             ("Type des cellules", "Texte : les identifiants, zéros initiaux et valeurs commençant par = sont conservés sans exécution de formule.")
         };
-        for (int i = 0; i < data.Warnings.Count; i++) values.Add(($"Avertissement {i + 1}", data.Warnings[i]));
+        if (data.Quality is { } quality)
+        {
+            static string CheckState(bool? value) => value == true ? "Confirmé" : value == false ? "Écart constaté" : "Non disponible";
+            values.Add(("Lignes du CSV source", quality.SourceRows?.ToString(Invariant) ?? "Non renseigné"));
+            values.Add(("Total attendu à l’import", quality.ExpectedRows?.ToString(Invariant) ?? "Non renseigné"));
+            values.Add(("Comptage de réception", CheckState(quality.RowCountVerified)));
+            values.Add(("Total attendu confronté au total final", CheckState(quality.FinalTotalVerified)));
+            values.Add(("Contrôles inhabituels du CSV", quality.UnusualControlCount.ToString(Invariant)));
+            values.Add(("Dont contrôles C1", quality.C1ControlCount.ToString(Invariant)));
+            foreach (var (label, sample) in new[] { ("initial", quality.InitialSample), ("final", quality.FinalSample) })
+            {
+                if (sample is null) continue;
+                values.Add(($"Identité de l’échantillon {label}", CheckState(sample.IdentityVerified) + (sample.IdentityVerified.HasValue
+                    ? $" ; {sample.SampleSize - sample.MissingSampleIds}/{sample.SampleSize} identifiants rapprochés" : "")));
+                values.Add(($"Comparaison de l’échantillon {label}", CheckState(sample.RepresentationVerified) + $" ; {sample.DifferentCells}/{sample.ComparedCells} écarts ; {sample.EquivalentFormatCells} équivalences de format démontrées"));
+            }
+        }
+        var warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToArray();
+        for (int i = 0; i < warnings.Length; i++) values.Add(($"Avertissement {i + 1}", warnings[i]));
         var prepared = values.Select(v => (Key: PrepareText(v.Key, counters), Value: PrepareText(v.Value, counters))).ToList();
         prepared.Add(("Cellules tronquées", counters.Truncated.ToString(Invariant)));
         prepared.Add(("Cellules nettoyées", counters.Cleaned.ToString(Invariant)));

@@ -47,6 +47,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Automatique : export ambigu refusé sans lancer un repli", CheckAmbiguousNativeNoFallback),
     ("Automatique : export incomplet signalé et jamais remplacé silencieusement", CheckNativeIncomplete),
     ("Automatique : changement de contexte après le téléchargement signalé", CheckNativeScopeChange),
+    ("Qualité : un total final modifié invalide la réception complète sans perdre le CSV", CheckNativeFinalTotalChanged),
     ("Automatique : identité illisible après transfert, couverture non certifiée", CheckNativeFinalSampleUnavailable),
     ("Échantillon : identifiants groupés normalisés, colonnes absentes non devinées", CheckSampleNormalization),
     ("Échantillon : diagnostic de 33 écarts par colonne sans données privées", CheckSampleDiagnostics),
@@ -62,11 +63,18 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Réseau : coupure transitoire et reprise sans doublons", () => CheckNetwork(false)),
     ("Réseau : tentatives épuisées et relevé partiel conservé", () => CheckNetwork(true)),
     ("Échantillon : mêmes ID, valeurs différentes importées avec réserve", CheckNativeWrongCells),
-    ("Échantillon : 788 lignes et 32 écarts disponibles, CSV intact et Excel qualifié", CheckNativeReviewableSample),
+    ("Échantillon : 788 lignes et 32 écarts disponibles, CSV intact et Excel qualifié", () => CheckNativeReviewableSample(32)),
+    ("Qualité : 788 lignes reçues, 20 identités, 17 écarts et 215 C1 conservés", () => CheckNativeReviewableSample(17)),
     ("Échantillon : cellule GLPI multivaluée complète rapprochée du CSV", () => CheckNativeMultiValue(false)),
     ("Échantillon : divergence après le premier élément multivalué non certifiée", () => CheckNativeMultiValue(true)),
     ("Échantillon : demandeurs imbriqués et textes longs GLPI entièrement rapprochés", () => CheckNativeRichCells(false)),
-    ("Échantillon : fin de texte long modifiée conservée sans certification", () => CheckNativeRichCells(true))
+    ("Échantillon : fin de texte long modifiée conservée sans certification", () => CheckNativeRichCells(true)),
+    ("Format GLPI 10 : présentation riche réellement rapprochée du CSV", () => CheckNativeFormattedCells("equal")),
+    ("Format GLPI 10 : modification réelle conservée comme divergence", () => CheckNativeFormattedCells("changed")),
+    ("Format GLPI 10 : contrôle C1 jamais converti en ponctuation", () => CheckNativeFormattedCells("c1")),
+    ("Format GLPI 10 : changement de casse sans balise toujours divergent", CheckNativePlainCase),
+    ("Format GLPI 10 : représentation liée à la cellule et aux coordonnées exactes", CheckRepresentationBinding),
+    ("Format GLPI 10 : séparateurs exportés entre valeurs complètes", CheckNativeExportedSeparators)
 };
 if (args.Length != 0)
 {
@@ -485,6 +493,23 @@ async Task CheckNativeScopeChange()
     True(run.Data.Status.Contains("périmètre", StringComparison.Ordinal) && run.Data.Warnings.Any(x => x.Contains("valeurs comparables diffèrent", StringComparison.Ordinal)), "Les écarts de valeurs initiaux ne doivent ni empêcher le contrôle final ni masquer le périmètre modifié.");
 }
 
+async Task CheckNativeFinalTotalChanged()
+{
+    foreach (var initiallyObserved in new[] { true, false })
+    {
+        var html = NativeHtml().Replace("</main>", "<script>document.querySelector('#native-csv-all').addEventListener('click',()=>{document.querySelector('#page-summary').textContent='Affichage de 1 à 2 sur 6 éléments';});</script></main>", StringComparison.Ordinal);
+        if (!initiallyObserved) html = html.Replace("</body>", "<script>document.querySelector('#page-summary').textContent='';</script></body>", StringComparison.Ordinal);
+        var csv = NativeCsv().Replace("P-MA-001", "Valeur différente", StringComparison.Ordinal);
+        await using var h = await Open(html, csv);
+        var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
+        Equal(5, run.Data.Rows.Count);
+        True(!run.Data.Complete && run.Data.Quality is { RowCountVerified: true, FinalTotalVerified: false, ReceptionComplete: false,
+            InitialSample.DifferentCells: 1, FinalSample.DifferentCells: 1 }, "Un nombre reçu égal au total initial ne certifie pas la couverture quand GLPI annonce ensuite un autre total.");
+        True(run.Data.Status.Contains(initiallyObserved ? "total GLPI modifié" : "total GLPI différent du total attendu", StringComparison.Ordinal), "La réserve de total conserve sa priorité et distingue une observation initiale d’un total seulement configuré.");
+        Equal(csv, await File.ReadAllTextAsync(run.NativePath!));
+    }
+}
+
 async Task CheckNativeFinalSampleUnavailable()
 {
     var html = NativeHtml().Replace("</main>", "<script>document.querySelector('#native-csv-all').addEventListener('click',()=>{for(const row of document.querySelectorAll('#computer-rows tr')) row.children[1].textContent='Identité illisible';});</script></main>", StringComparison.Ordinal);
@@ -494,6 +519,8 @@ async Task CheckNativeFinalSampleUnavailable()
     True(!run.Data.Complete && run.Data.Warnings.Any(line => line.Contains("échantillon n’est plus disponible", StringComparison.Ordinal)), "Une identité non vérifiable après le transfert interdit un relevé complet.");
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL · Rapprochement", StringComparison.Ordinal)), "Le journal doit expliquer l’indisponibilité du contrôle final.");
     True(File.Exists(run.NativePath), "Le fichier natif reste conservé.");
+    True(run.Data.Quality is { ReceptionComplete: true, InitialSample.IdentityVerified: true, FinalSample.IdentityVerified: null,
+        SampleIdentityVerified: null, RepresentationVerified: null }, "L’identité finale illisible reste indisponible sans annuler le compte de réception ni inventer une seconde observation positive.");
 }
 
 Task CheckSampleNormalization()
@@ -502,6 +529,8 @@ Task CheckSampleNormalization()
     var native = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "1002", "B" }, new[] { "1001", "A" } } };
     var check = ExtractionVerificationService.VerifyNativeSample(visible, native, new());
     True(check.Available && check.Matches && check.Sample == 2, "Les séparateurs de milliers doivent être reconnus sans modifier les cellules.");
+    native.Headers[1] = "Autre colonne";
+    True(ExtractionVerificationService.VerifyNativeSample(visible, native, new()).Observation() is { IdentityVerified: true, ComparedCells: 0, RepresentationVerified: null }, "L’identité seule ne crée pas une comparaison de valeurs observée.");
     native.Headers[0] = "Sans identité";
     True(!ExtractionVerificationService.VerifyNativeSample(visible, native, new()).Available, "Aucun numéro ne doit être déduit d’une autre colonne.");
     return Task.CompletedTask;
@@ -691,7 +720,7 @@ async Task CheckNativeWrongCells()
     Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
 }
 
-async Task CheckNativeReviewableSample()
+async Task CheckNativeReviewableSample(int changedCells)
 {
     // Synthetic equivalent of the reported shape, with no original headers,
     // identities, addresses or contents. Keep the native export authoritative.
@@ -702,9 +731,10 @@ async Task CheckNativeReviewableSample()
     var displayed = rows.Take(20).Select(row => row.ToArray()).ToArray();
     displayed[0][1] = "Bureau \"Exemple\""; rows[0][1] = "Bureau ''Exemple''";
     for (var index = 0; index < 2; index++) rows[index][6] += " modifié";
-    for (var index = 0; index < 14; index++) rows[index][10] += index < 2 ? "\u0092modifié" : " modifié";
-    for (var index = 0; index < 6; index++) rows[index][11] += " modifié";
-    for (var index = 0; index < 10; index++) rows[index][12] += index == 0 ? "\u0085modifié" : " modifié";
+    for (var index = 0; index < (changedCells == 17 ? 5 : 14); index++) rows[index][10] += index < 2 ? "\u0092modifié" : " modifié";
+    for (var index = 0; index < (changedCells == 17 ? 4 : 6); index++) rows[index][11] += " modifié";
+    for (var index = 0; index < (changedCells == 17 ? 6 : 10); index++) rows[index][12] += index == 0 ? "\u0085modifié" : " modifié";
+    if (changedCells == 17) for (var index = 20; index < 232; index++) rows[index][10] += "\u0092contrôle synthétique";
     string H(string value) => System.Net.WebUtility.HtmlEncode(value);
     var markup = "<thead><tr><th><input type='checkbox' aria-label='Tout sélectionner'></th>" + string.Concat(headers.Select(header => "<th>" + H(header) + "</th>")) + "</tr></thead><tbody id='computer-rows'>"
         + string.Concat(displayed.Select(row => "<tr><td><input type='checkbox'></td>" + string.Concat(row.Select(value => "<td>" + H(value) + "</td>")) + "</tr>")) + "</tbody>";
@@ -720,7 +750,16 @@ async Task CheckNativeReviewableSample()
     Equal(788, run.Data.Rows.Count); Equal(788, run.Data.ExpectedTotal);
     True(!run.Data.Complete && run.Data.Provenance.ScopeVerified && run.Data.Provenance.Method == "native-csv", "L'export validé par ses ID doit être chargé avec une réserve de valeurs, sans repli ni certification abusive.");
     True(run.Cities is { Applied: true, MatchedCount: 788 }, "L'enrichissement des villes doit rester disponible et conserver la réserve du relevé.");
-    True(logs.Any(line => line.Contains("32/260 valeurs comparables diffèrent", StringComparison.Ordinal)), "Le scénario doit réellement reproduire 32 écarts sur 260 comparaisons.");
+    True(logs.Any(line => line.Contains($"{changedCells}/260 valeurs comparables diffèrent", StringComparison.Ordinal)), "Le scénario doit réellement reproduire le nombre d’écarts sur 260 comparaisons.");
+    True(run.Data.Quality is { SourceRows: 788, ExpectedRows: 788, ReceptionComplete: true, FinalTotalVerified: true,
+        SampleIdentityVerified: true, RepresentationVerified: false }, "La réception et les identités restent confirmées sans certifier une représentation divergente.");
+    foreach (var sample in new[] { run.Data.Quality!.InitialSample, run.Data.Quality.FinalSample })
+    {
+        True(sample is { IdentityVerified: true, RepresentationVerified: false, SampleSize: 20, MissingSampleIds: 0, ComparedCells: 260, EquivalentFormatCells: 1 }, "Les deux observations conservent l’identité et l’équivalence exacte de guillemets.");
+        Equal(changedCells, sample!.DifferentCells);
+    }
+    Equal(changedCells == 17 ? 215L : 3L, run.Data.Quality.C1ControlCount);
+    Equal(run.Data.Warnings.Count, run.Data.Warnings.Distinct(StringComparer.Ordinal).Count());
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON FINAL ·", StringComparison.Ordinal)) && logs.Any(line => line.Contains("contrôle avant/après=identique", StringComparison.Ordinal)), "Les contrôles finaux doivent être exécutés malgré les écarts d'affichage.");
     True(File.Exists(run.ExcelPath) && Path.GetFileName(run.ExcelPath!).StartsWith("GLPI-a-verifier-", StringComparison.Ordinal), "L'export Excel doit être fourni avec son statut explicite.");
     var nativeBytes = await File.ReadAllBytesAsync(run.NativePath!);
@@ -730,7 +769,7 @@ async Task CheckNativeReviewableSample()
     Equal("Page 1 sur 40", await h.Page.Locator("#page-number").InnerTextAsync());
 }
 
-async Task CheckNativeMultiValue(bool changed)
+async Task CheckNativeMultiValue(bool changed, bool exportedSeparator = false)
 {
     // GLPI 9.5/10 Search::showItem + Html::showToolTip, with synthetic contents.
     // Only the first value is visible; the full static popup is already in this cell.
@@ -745,6 +784,7 @@ async Task CheckNativeMultiValue(bool changed)
     var csv = NativeCsv().Replace("101;P-MA-001", "101;\"P-MA-001\nAnnexe-101\"", StringComparison.Ordinal)
         .Replace("102;P-MA-002", "102;\"P-MA-002\nAnnexe-102\"", StringComparison.Ordinal);
     if (changed) csv = csv.Replace("Annexe-101", "Annexe modifiée", StringComparison.Ordinal);
+    if (exportedSeparator) csv = csv.Replace("\nAnnexe", "<br>Annexe", StringComparison.Ordinal);
     await using var h = await Open(html, csv);
     var logs = new List<string>(); string? retained = null;
     var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add; service.NativeFileSaved += path => retained = path;
@@ -752,16 +792,23 @@ async Task CheckNativeMultiValue(bool changed)
     {
         var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
         True(!run.Data.Complete && run.Data.Warnings.Any(line => line.Contains("valeurs comparables diffèrent", StringComparison.Ordinal)), "Le second élément doit participer à la comparaison sans rendre le CSV entier inaccessible.");
-        Equal("P-MA-001\nAnnexe modifiée", run.Data.Rows[0][1]);
+        Equal("P-MA-001" + (exportedSeparator ? "<br>" : "\n") + "Annexe modifiée", run.Data.Rows[0][1]);
         True(!string.Join("\n", logs).Contains("Annexe modifiée", StringComparison.Ordinal), "Le diagnostic ne doit pas exposer le contenu du popup ni du CSV.");
     }
     else
     {
         var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
-        True(run.Data.Complete && run.Data.Rows[0][1] == "P-MA-001\nAnnexe-101", "La cellule complète doit être rapprochée sans retirer le second élément du CSV.");
+        True(run.Data.Complete && run.Data.Rows[0][1] == "P-MA-001" + (exportedSeparator ? "<br>" : "\n") + "Annexe-101", "La cellule complète doit être rapprochée sans retirer le second élément du CSV.");
+        if (exportedSeparator) Equal(2, run.Data.Quality!.InitialSample!.EquivalentFormatCells);
         True(logs.Any(line => line.StartsWith("ÉCHANTILLON · Les 2 identifiants et 2 valeurs", StringComparison.Ordinal)), "Les cellules complètes doivent être effectivement comparées, pas exclues.");
     }
     True(File.Exists(retained), "Le téléchargement natif est conservé."); Equal(csv, await File.ReadAllTextAsync(retained!));
+}
+
+async Task CheckNativeExportedSeparators()
+{
+    await CheckNativeMultiValue(false, exportedSeparator: true);
+    await CheckNativeMultiValue(true, exportedSeparator: true);
 }
 
 async Task CheckNativeRichCells(bool changed)
@@ -794,6 +841,73 @@ async Task CheckNativeRichCells(bool changed)
     True(logs.Any(line => line.StartsWith("ÉCHANTILLON ·", StringComparison.Ordinal) && line.Contains(changed ? "1/6 valeurs comparables diffèrent" : "6 valeurs comparables", StringComparison.Ordinal)), "Les textes complets doivent être comparés sans exclusion pour abréviation ni perte des demandeurs suivants.");
     True(!string.Join('\n', logs).Contains("FICHE PRIVEE", StringComparison.Ordinal) && !run.Data.Rows.SelectMany(row => row).Any(value => value.Contains("FICHE PRIVEE", StringComparison.Ordinal)), "Les fiches utilisateur imbriquées ne deviennent jamais des valeurs de ticket ni du diagnostic.");
     Equal(csv, await File.ReadAllTextAsync(run.NativePath!));
+}
+
+string FormattedHtml(string tail = "fin.") => NativeHtml().Replace("</body>", """
+    <style>.tooltip-invisible { display:none }</style><script>
+    for (const row of document.querySelectorAll('#computer-rows tr')) {
+      const id = Number(row.dataset.id) * 10;
+      row.children[2].innerHTML = `<span id='text${id}'>Bonjour&nbsp;(...)</span> <span id='tooltip${id+1}' class='fas fa-comments'></span><div id='contenttooltip${id+1}' class='tooltip-invisible'><div class='fup-popup'><p><strong>Bonjour</strong> monde "exemple"</p><p><em>note</em></p><ul><li>Premier</li><li>Second</li></ul><hr><p>TAIL</p></div></div>`;
+    }
+    </script></body>
+    """.Replace("TAIL", System.Net.WebUtility.HtmlEncode(tail), StringComparison.Ordinal), StringComparison.Ordinal);
+
+string FormattedValue(string tail = "fin.") => "BONJOUR monde ''exemple''\n_note_\n* Premier\n* Second\n-------------------------\n" + tail;
+
+string FormattedCsv(string firstTail = "fin.") => "ID;Nom\r\n" + string.Join("\r\n", Enumerable.Range(101, 5).Select(id =>
+    id + ";\"" + FormattedValue(id == 101 ? firstTail : "fin.") + "\"")) + "\r\n";
+
+async Task CheckNativeFormattedCells(string variation)
+{
+    var html = FormattedHtml(variation == "c1" ? "fin’." : "fin.");
+    var csv = FormattedCsv(variation == "changed" ? "autre fin." : variation == "c1" ? "fin\u0092." : "fin.");
+    if (variation == "c1") csv = csv.Replace("fin.", "fin\u0092.", StringComparison.Ordinal);
+    await using var h = await Open(html, csv);
+    var logs = new List<string>(); var service = new AutomaticExtractionService(h.Service); service.Log += logs.Add;
+    var run = await service.RunAsync(NativeSettings(), null, CancellationToken.None);
+    Equal(variation == "equal", run.Data.Complete); Equal(5, run.Data.Rows.Count);
+    True(run.Data.Quality is { ReceptionComplete: true, SampleIdentityVerified: true }, "La réception et les ID sont indépendants de la représentation des cellules.");
+    Equal(variation == "equal", run.Data.Quality!.RepresentationVerified);
+    Equal(variation == "equal" ? 2 : variation == "changed" ? 1 : 0, run.Data.Quality.InitialSample!.EquivalentFormatCells);
+    Equal(variation == "equal" ? 0 : variation == "changed" ? 1 : 2, run.Data.Quality.InitialSample.DifferentCells);
+    Equal(csv, await File.ReadAllTextAsync(run.NativePath!));
+    True(logs.Any(line => line.Contains("format HTML/CSV prouvé=", StringComparison.Ordinal)) || variation == "c1", "La preuve de format est comptée, pas un simple indicateur d’acceptation.");
+    True(!string.Join('\n', logs).Contains("BONJOUR", StringComparison.Ordinal) && !string.Join('\n', logs).Contains("exemple''", StringComparison.Ordinal), "Le contenu des représentations ne traverse pas le journal.");
+}
+
+async Task CheckNativePlainCase()
+{
+    var html = NativeHtml().Replace("P-MA-001", "Nom synthétique", StringComparison.Ordinal);
+    var csv = NativeCsv().Replace("P-MA-001", "NOM SYNTHÉTIQUE", StringComparison.Ordinal);
+    await using var h = await Open(html, csv);
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
+    True(!run.Data.Complete && run.Data.Quality!.InitialSample is { DifferentCells: 1, EquivalentFormatCells: 0 }, "La casse demeure significative lorsqu’aucune balise de la cellule ne justifie sa présentation CSV.");
+}
+
+async Task CheckRepresentationBinding()
+{
+    await using var h = await Open(FormattedHtml());
+    var visible = await h.Service.ReadVerificationSampleAsync(await Table(h), CancellationToken.None);
+    var downloaded = new ExtractionResult { Headers = new() { "ID", "Nom" }, Rows = new() { new[] { "101", FormattedValue() }, new[] { "102", FormattedValue() } } };
+    var proof = visible.CsvRepresentations[0][2]!;
+    True(proof is { Kind: "glpi10-rich-text-v1", Row: 0, Column: 2 } && proof.Source == visible.Rows[0][2], "La preuve réelle doit venir de la même cellule et conserver son texte exact.");
+    NativeSampleVerification Verify() => ExtractionVerificationService.VerifyNativeSample(visible, downloaded, new());
+    True(Verify().Matches, "La représentation produite par le navigateur doit expliquer les deux cellules.");
+    foreach (var invalid in new[]
+    {
+        new CsvCellRepresentation { Kind = proof.Kind, Row = 1, Column = 2, Source = proof.Source, Text = proof.Text },
+        new CsvCellRepresentation { Kind = proof.Kind, Row = 0, Column = 3, Source = proof.Source, Text = proof.Text },
+        new CsvCellRepresentation { Kind = proof.Kind, Row = 0, Column = 2, Source = "Autre cellule", Text = proof.Text },
+        new CsvCellRepresentation { Kind = "declared-compatible", Row = 0, Column = 2, Source = proof.Source, Text = proof.Text },
+        new CsvCellRepresentation { Kind = proof.Kind, Row = 0, Column = 2, Source = proof.Source, Text = new string('x', 262145) },
+        new CsvCellRepresentation { Kind = proof.Kind, Row = 0, Column = 2, Source = proof.Source, Text = proof.Text + "\u0085" }
+    })
+    {
+        visible.CsvRepresentations[0][2] = invalid;
+        True(!Verify().Matches, "Une projection étrangère, non reconnue, surdimensionnée ou contenant un contrôle C1 ne peut masquer une différence.");
+    }
+    visible.CsvRepresentations[0][2] = proof;
+    True(Verify().Matches, "Le contrôle négatif ne modifie ni la preuve d’origine ni les données.");
 }
 
 static void Equal<T>(T expected, T actual)

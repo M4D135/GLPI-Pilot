@@ -29,7 +29,8 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> LayoutProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "CatalogRecent", "FilterPresets" };
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Name", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
+    { "Id", "Name", "Description", "Density", "Sections", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
+    private static readonly HashSet<string> DashboardSectionProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Title", "Description", "Accent", "Hidden" };
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks" };
     private static readonly HashSet<string> MappingKeys = new(StringComparer.OrdinalIgnoreCase)
@@ -108,7 +109,7 @@ public static class ConfigurationTransferService
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor == 0)))
+                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor is >= 0 and <= 1)))
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);
@@ -415,6 +416,17 @@ public static class ConfigurationTransferService
         {
             RequireProperties(board, BoardProperties);
             JsonText(board, "Id", 96, required: true); JsonText(board, "Name", 120, required: true);
+            JsonText(board, "Description", 600); JsonEnum(board, "Density", "comfortable", "compact");
+            var sectionKeys = new HashSet<string>(StringComparer.Ordinal);
+            ValidateObjectList(board, "Sections", 60, DashboardSectionProperties, section =>
+            {
+                JsonText(section, "Key", 80); JsonText(section, "Title", 120, true); JsonText(section, "Description", 600);
+                if (Find(section, "Key") is not { ValueKind: JsonValueKind.String } key || !sectionKeys.Add(key.GetString()!))
+                    throw Invalid("Les sections doivent posséder des clés présentes et uniques.");
+                if (Find(section, "Hidden") is { } hidden && hidden.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    throw Invalid("La visibilité d’une section doit valoir vrai ou faux.");
+                JsonEnum(section, "Accent", DashboardWidgetSettings.Accents);
+            });
             ValidateFilters(board, "Filters"); ValidateFilters(board, "ComparisonFilters");
             ValidateStringList(board, "CollapsedSections", 60, 80);
             var boardId = Find(board, "Id")!.Value.GetString()!;
@@ -432,6 +444,7 @@ public static class ConfigurationTransferService
                 JsonEnum(widget, "StackedMode", "volume", "percent"); JsonRange(widget, "HistoryPeriodDays", 1, 3650);
                 if (JsonThreshold(widget, "ParetoThresholdPercent") is double pareto && (pareto < 1 || pareto > 100)) throw Invalid("Le seuil de Pareto doit être compris entre 1 et 100.");
                 JsonText(widget, "Section", 80); ValidateFilters(widget, "Filters");
+                sectionKeys.Add(Find(widget, "Section")?.GetString() ?? "");
                 if (Find(widget, "HistogramBreaks") is { } breaks)
                 {
                     if (breaks.ValueKind != JsonValueKind.Array || breaks.GetArrayLength() > 30 || breaks.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var number) || !double.IsFinite(number) || Math.Abs(number) > 1e9))
@@ -451,6 +464,9 @@ public static class ConfigurationTransferService
                     if (Find(widget, boolean) is { } value && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                         throw Invalid("Une option de widget doit valoir vrai ou faux.");
             }
+            if (Find(board, "CollapsedSections") is { } collapsed)
+                foreach (var key in collapsed.EnumerateArray()) sectionKeys.Add(key.GetString()!);
+            if (sectionKeys.Count > 60) throw Invalid("Un tableau de bord peut contenir au maximum 60 sections.");
         }
         if (Find(layout, "ActiveBoardId") is { ValueKind: JsonValueKind.String } active &&
             !string.IsNullOrEmpty(active.GetString()) && !boardIds.Contains(active.GetString()!))

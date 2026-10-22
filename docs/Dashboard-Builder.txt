@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.2 — tableaux de bord WebView et atelier de requêtes
+GLPI Pilot 3.1.0 — tableaux de bord WebView et atelier de requêtes
 
 OUVRIR LE BON ESPACE
 La navigation Analyser contient Dashboard, Atelier de requêtes,
@@ -20,6 +20,14 @@ le bandeau est replié.
 Voir les lignes du périmètre ouvre le détail paginé du calcul courant.
 Cliquer une cellule permet d’examiner sa valeur brute et son interprétation.
 Le lien d’un ticket conserve l’identité de sa ligne et la révision du relevé.
+
+Depuis 3.1.0, la réception des lignes et la concordance des valeurs sont
+présentées séparément lorsqu’elles sont documentées. Réception complète
+signifie que le fichier toutes-pages a été reçu au total annoncé, sans
+contradiction du total final ; cela ne certifie pas toutes ses valeurs.
+Les contrôles d’identifiants et de valeurs portent sur un échantillon.
+Une ancienne archive sans ces observations ne reçoit pas de nouvelle
+preuve à partir de ses avertissements.
 
 RELEVE NATIF A VERIFIER
 Depuis 3.0.2, un CSV valide dont les identifiants concordent reste disponible
@@ -55,9 +63,16 @@ Modifier le dashboard ouvre le mode édition ; Quitter l’édition le referme.
 + Widget ouvre le catalogue : recherche, famille, Disponibles seulement,
 favoris et éléments récents. Les sources indisponibles restent explicites.
 Ajouter insère le widget ; Enregistrer les favoris conserve les choix.
-Chaque carte propose Régler, des flèches ↑ / ↓ et une case de sélection.
-Glisser une carte sur une autre la déplace avant cette cible. Les flèches
-fournissent une alternative au glisser-déposer.
+Chaque carte propose Régler, une poignée de déplacement et une case de
+sélection. Glisser la poignée déplace le widget avant ou après une cible,
+ou vers la zone de dépôt d’une section. Cliquer la poignée ouvre le choix
+de la section et de la position. Au clavier, les flèches haut/bas changent
+l’ordre dans la section et gauche/droite changent de section.
+
+La poignée en bas à droite règle visuellement les dimensions. Au clavier,
+gauche/droite changent la largeur et haut/bas la hauteur ; Maj augmente
+le pas vertical. Échap annule le redimensionnement en cours. Une modification
+enregistrée entre dans l’historique Annuler/Rétablir de la disposition.
 
 Régler permet de choisir type, source, titre, section, largeur sur 12 colonnes,
 hauteur, style, accent, présentation et nombre de catégories de 3 à 30.
@@ -69,9 +84,14 @@ suppression. Le verrou protège les déplacements et les actions groupées.
 Les notes sont du texte, sans exécution de HTML ni de code.
 
 SECTIONS ET MODIFICATIONS GROUPEES
-Renseigner Section dans les cartes les regroupe sous un titre repliable.
-L’état replié est mémorisé. En édition, Section ↑ / Section ↓ déplace le bloc ;
-les sections contenant un widget verrouillé doivent être déverrouillées.
+En édition, + Section crée un bloc indépendant, conservé même sans widget.
+Régler la section choisit son titre, sa description, sa couleur d’accent,
+sa visibilité et sa position. Le titre peut changer sans modifier l’identité
+de la section ni les liens de ses widgets. L’état replié est mémorisé.
+La poignée de section déplace le bloc à la souris ou avec les flèches.
+Une section masquée reste accessible en édition. La supprimer déplace ses
+widgets vers une autre section ; cette action exige de déverrouiller les
+widgets concernés. Au moins une section est conservée.
 Sélectionner plusieurs cartes expose largeur, hauteur, section, style commun
 et accent commun. Aligner la sélection applique ces valeurs et organise les
 retours à la ligne. Masquer la sélection conserve les définitions.
@@ -82,12 +102,17 @@ ORGANISER ET ECHANGER LES DISPOSITIONS
 Autres actions > + Tableau de bord propose neuf modèles : Vide, Pilotage,
 Opérations, Personnel, Équipe, Échéances, Qualité, Géographie et Analyse.
 Chaque espace accepte au plus 12 tableaux de bord de 60 widgets chacun.
-En édition, Nom et organisation permet Renommer, Dupliquer ou Supprimer ;
+En édition, Disposition > Nom et organisation permet de changer le nom,
+la description et la densité, de Dupliquer ou de Supprimer le tableau ;
 au moins un tableau de bord est conservé.
 Exporter la disposition écrit ses définitions JSON. Importer une disposition
 ouvre un fichier puis un aperçu ; Remplacer cette disposition est une action
 explicite sur l’espace global ou personnel concerné. Les définitions importées
 sont validées avant écriture, sans exécution de script ni de requête externe.
+Le format de disposition reste 1. Les anciennes sections déduites des widgets
+sont reprises en sections explicites sans perdre l’ordre, les widgets masqués
+ou l’état replié. Les sections vides et leurs propriétés sont désormais
+enregistrées et échangées avec la disposition.
 
 PERIMETRES ET COMPARAISON
 Filtres et comparaison règle les filtres communs A et le périmètre B.

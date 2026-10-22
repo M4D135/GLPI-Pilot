@@ -17,6 +17,41 @@ public sealed class ExtractionResult
     public List<string> Warnings { get; set; } = new();
     public string Status { get; set; } = "";
     public ExtractionProvenance Provenance { get; set; } = new();
+    // Absent in older archives. Never infer these observations from a warning's wording.
+    public ExtractionQuality? Quality { get; set; }
+}
+
+/// <summary>Independent receipt and comparison observations; no cell contents or identifiers.</summary>
+public sealed class ExtractionQuality
+{
+    public long? SourceRows { get; set; }
+    public int? ExpectedRows { get; set; }
+    public bool? AllPagesRequested { get; set; }
+    public bool? RowCountVerified { get; set; }
+    public bool? FinalTotalVerified { get; set; }
+    public long UnusualControlCount { get; set; }
+    public long C1ControlCount { get; set; }
+    public ExtractionSampleObservation? InitialSample { get; set; }
+    public ExtractionSampleObservation? FinalSample { get; set; }
+
+    // This describes receipt only. It does not certify scope, source values, history or alerts.
+    public bool ReceptionComplete => AllPagesRequested == true && RowCountVerified == true && FinalTotalVerified != false;
+    public bool? SampleIdentityVerified => Together(InitialSample?.IdentityVerified, FinalSample?.IdentityVerified);
+    public bool? RepresentationVerified => Together(InitialSample?.RepresentationVerified, FinalSample?.RepresentationVerified);
+
+    private static bool? Together(bool? initial, bool? final) => initial == false || final == false
+        ? false : initial == true && final == true ? true : null;
+}
+
+public sealed class ExtractionSampleObservation
+{
+    public bool? IdentityVerified { get; set; }
+    public bool? RepresentationVerified { get; set; }
+    public int SampleSize { get; set; }
+    public int MissingSampleIds { get; set; }
+    public int ComparedCells { get; set; }
+    public int DifferentCells { get; set; }
+    public int EquivalentFormatCells { get; set; }
 }
 
 public sealed class ExtractionProvenance

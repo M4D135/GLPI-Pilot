@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 3.0.2</div>
+    <div class="eyebrow">Guide de prise en main · Version 3.1.0</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -69,7 +69,8 @@
       <h3>Méthodes et contrôle du résultat</h3>
       <p>L’export CSV <strong>toutes les pages</strong> est prioritaire. Si cette commande est indisponible, le logiciel peut utiliser une option d’affichage complet existante puis, si autorisé, parcourir la pagination depuis la première page. La recherche, les totaux, les colonnes et un échantillon d’identifiants sont contrôlés.</p>
       <div class="callout"><p><strong>Un transfert corrompu ou ambigu interrompt la collecte.</strong> Il ne déclenche pas un changement silencieux de méthode. Le fichier reçu reste intact. Un relevé partiel porte son état et ses avertissements ; une annulation n’est pas annoncée comme une réussite.</p></div>
-      <p><strong>À vérifier ne signifie pas que les lignes sont inutilisables.</strong> En 3.0.2, lorsque le CSV est valide et que les identifiants de l’échantillon concordent, des différences avec l’affichage GLPI n’empêchent plus de consulter le relevé, de produire le classeur Excel ou d’utiliser les dashboards et les villes. L’état reste <strong>À vérifier</strong> et les avertissements précisent les limites. Un identifiant attendu absent au premier contrôle ou un CSV corrompu reste un motif de refus.</p>
+      <p><strong>À vérifier ne signifie pas que les lignes sont inutilisables.</strong> Depuis 3.0.2, lorsque le CSV est valide et que les identifiants de l’échantillon concordent, des différences avec l’affichage GLPI n’empêchent plus de consulter le relevé, de produire le classeur Excel ou d’utiliser les dashboards et les villes. L’état reste <strong>À vérifier</strong> et les avertissements précisent les limites. Un identifiant attendu absent au premier contrôle ou un CSV corrompu reste un motif de refus.</p>
+      <p>Depuis 3.1.0, le bilan sépare la <strong>réception des lignes</strong>, l’<strong>identité de l’échantillon</strong> et la <strong>concordance de ses valeurs</strong>. Toutes les lignes peuvent être reçues au total annoncé alors que des valeurs restent à vérifier. Une réception complète ne prouve pas que toute la recherche ou toutes ses valeurs concordent. Une ancienne archive sans ces observations ne reçoit pas de nouveaux constats à partir de ses avertissements.</p>
       <p>Le contrôle final de la recherche, du total et de l’échantillon reste actif. Le classeur automatique d’un résultat à vérifier porte <code>a-verifier</code> dans son nom ; le CSV natif conserve son nom et son contenu. Les textes complets des popups GLPI sont récupérés seulement si leur association au texte visible est vérifiée. Les signes inhabituels ne sont pas recodés automatiquement.</p>
       <p>La limite de lignes règle le volume chargé dans l’application, sans tronquer le CSV natif reçu. Un total absent ou invérifiable empêche de confirmer l’exhaustivité. Une recherche peut évoluer pendant la récupération : utiliser un tri stable, et conserver les mêmes critères jusqu’à la fin.</p>
     </section>
@@ -77,7 +78,7 @@
       <h2>3. Adapter l’interface</h2>
       <p><strong>− / 100 % / +</strong> règle le zoom de 75 à 150 %, par pas de 5 %. Les raccourcis sont <kbd>Ctrl +</kbd>, <kbd>Ctrl −</kbd>, <kbd>Ctrl 0</kbd> et <kbd>Ctrl + molette</kbd>. Le zoom est mémorisé sur le poste. Le bouton soleil/lune choisit le thème clair ou sombre.</p>
       <p>Dans <strong>Configuration</strong>, régler séparément la densité des tableaux, la couleur d’accent, le contraste renforcé, la réduction des animations, le suivi du thème Windows et les colonnes figées. Le mode concentration F11 masque la navigation latérale. Ctrl + K permet de changer d’écran. Les dimensions de la fenêtre sont mémorisées lorsqu’elles changent.</p>
-      <p>La navigation s’adapte à la largeur. Les tableaux et formulaires disposent de sous-onglets ; les éditeurs de colonnes, la palette de commandes et l’import de configuration restent dans la fenêtre principale.</p>
+      <p>Le bouton <strong>Navigation</strong> réduit le menu en rail ou le déplie sur grand écran. Sur une fenêtre étroite, il ouvre un tiroir ; <kbd>Échap</kbd> le ferme et rend le focus au bouton. Les sous-onglets des tickets restent sur une barre défilante et l’onglet actif reste visible. Les éditeurs, la palette de commandes et l’import de configuration restent dans la fenêtre principale. La réduction des animations de l’application ou du système s’applique aux transitions.</p>
     </section>
     <section id="tableau">
       <h2>4. Rechercher, filtrer, trier et importer</h2>
@@ -88,7 +89,9 @@
     </section>
     <section id="dashboard">
       <h2>5. Construire et explorer les dashboards</h2>
-      <p>Les dashboards global et personnel ont des dispositions indépendantes. Ajouter des widgets depuis le catalogue, puis les déplacer, redimensionner, dupliquer, masquer ou verrouiller. Organiser des sections repliables et utiliser l’édition groupée. Les favoris du catalogue sont conservés.</p>
+      <p>Les dashboards global et personnel ont des dispositions indépendantes. Cliquer sur <strong>Modifier le dashboard</strong> pour ajouter des widgets depuis le catalogue, les déplacer, redimensionner, dupliquer, masquer ou verrouiller. Les favoris du catalogue et l’édition groupée sont conservés.</p>
+      <p><strong>+ Section</strong> crée une section qui subsiste même vide. <strong>Régler la section</strong> définit son titre, sa description, sa couleur, sa position et sa visibilité. Les sections masquées restent accessibles en édition. Les anciens tableaux sont repris en conservant leurs widgets, leur ordre et leur état replié.</p>
+      <p>Utiliser les poignées pour déplacer widgets ou sections. Au clavier, haut/bas change l’ordre du widget dans sa section et gauche/droite change sa section. La poignée de redimensionnement répond aussi aux flèches ; <kbd>Maj</kbd> augmente le pas vertical et <kbd>Échap</kbd> annule le geste en cours. <strong>Régler</strong> conserve les dimensions précises et la hauteur automatique. Les commandes d’annulation et de rétablissement sont dans <strong>Autres actions</strong>.</p>
       <p>Les filtres communs s’appliquent aux widgets compatibles. Chaque widget peut ajouter ses propres conditions. Activer les filtres croisés pour filtrer le dashboard en cliquant sur une catégorie ; <strong>Réinitialiser</strong> retire les filtres communs et croisés. La comparaison A/B affiche deux périmètres issus de la même source. Les contextes nommés mémorisent les filtres indépendamment de la disposition.</p>
       <p>Les visualisations comprennent indicateurs, anneaux, jauges, histogrammes, matrices, barres empilées, Pareto, quantiles, boîtes statistiques et nuage ancienneté/échéance. Les méthodes, champs disponibles et effectifs accompagnent les mesures. Un champ absent reste indisponible.</p>
       <p>Les indices de « météo » décrivent la santé du relevé : échéances, qualité, localisation ou synthèse. Leurs poids et seuils se règlent dans la configuration du dashboard. Ils ne sont pas des prévisions climatiques. Les durées sont calendaires et ne prouvent pas à elles seules le respect d’un SLA GLPI.</p>
@@ -171,7 +174,7 @@
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 3.0.2 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 3.1.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

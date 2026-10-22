@@ -44,6 +44,8 @@ public sealed class DashboardSnapshot
     public int RowCount { get; init; }
     public int? ExpectedTotal { get; init; }
     public bool Complete { get; init; }
+    public bool ReceptionComplete { get; init; }
+    public ExtractionQuality? Quality { get; init; }
     public bool IsFiltered { get; init; }
     public string ScopeLabel { get; init; } = "Équipe entière";
     public int SourceRowCount { get; init; }

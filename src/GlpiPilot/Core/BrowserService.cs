@@ -291,7 +291,7 @@ public sealed partial class BrowserService : IAsyncDisposable
         return frame;
     }
 
-    private async Task<(IFrame Frame, TableSnapshot Snapshot, string Key)> ReadAsync(TableChoice original, string nextSelector, CancellationToken ct)
+    private async Task<(IFrame Frame, TableSnapshot Snapshot, string Key)> ReadAsync(TableChoice original, string nextSelector, CancellationToken ct, bool withRepresentations = false)
     {
         var frame = await ResolveFrameAsync(original, ct);
         var inspection = await ReadJsonAsync<Inspection>(frame, "() => window.__glpiPilot.inspect()", null, ct);
@@ -300,7 +300,7 @@ public sealed partial class BrowserService : IAsyncDisposable
         var exact = matching.Where(t => t.Selector == original.Selector).ToList();
         var table = exact.Count == 1 ? exact[0] : matching.Count == 1 ? matching[0] : null;
         if (table == null) throw new InvalidOperationException("Le tableau a changé ou plusieurs tableaux correspondent. Analyse et sélectionne à nouveau le tableau.");
-        var snapshot = await ReadJsonAsync<TableSnapshot>(frame, "key => window.__glpiPilot.readTable(key)", table.Key, ct);
+        var snapshot = await ReadJsonAsync<TableSnapshot>(frame, "args => window.__glpiPilot.readTable(args.key, args.withRepresentations)", new { key = table.Key, withRepresentations }, ct);
         if (snapshot.Headers.Count == 0) throw new InvalidOperationException("Le tableau n’a pas de colonnes exploitables.");
         if (!string.IsNullOrWhiteSpace(nextSelector))
             snapshot.Next = await ReadJsonAsync<NextControl?>(frame, "args => window.__glpiPilot.getNext(args.key, args.selector)", new { key = table.Key, selector = nextSelector }, ct);

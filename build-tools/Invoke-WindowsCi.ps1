@@ -190,8 +190,8 @@ try {
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '\d+/\d+ Foundation checks passed\.' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '39/39 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '112/112' },
-                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '29/29 checks passed.' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '114/114' },
+                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '34/34 checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
                 @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '35/35' },
                 @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '91/91' },
@@ -201,7 +201,7 @@ try {
                 @{ Project = 'CompletionChecks'; Log = 'completion-checks.log'; Summary = '44/44 Completion checks passed.' },
                 @{ Project = 'UpdateChecks'; Log = 'update-checks.log'; Summary = ''; Pattern = '\d+/\d+ update checks passed\.' },
                 @{ Project = 'LanguageAssistantChecks'; Log = 'language-assistant-checks.log'; Summary = ''; Pattern = '\d+/\d+ language assistant checks passed; synthetic handlers only, no provider contacted\.' },
-                @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '38/38' },
+                @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '40/40' },
                 @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' }
             )
             foreach ($suite in $suites) {
@@ -223,7 +223,7 @@ try {
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
                 -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
-                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '120 native export DOM checks passed.'
+                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '146 native export DOM checks passed.'
         }
         'WebViewChecks' {
             Set-TestBrowser

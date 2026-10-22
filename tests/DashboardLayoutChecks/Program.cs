@@ -136,6 +136,47 @@ Test("Weather formula and priority matrix copy independently from presentation",
     var invalid = new DashboardWeatherSettings { WatchThreshold = 60, RainThreshold = 40 }; Invalid(invalid.Validate);
     invalid.Normalize(); invalid.Validate(); Assert(invalid.WatchThreshold == 10);
 });
+Test("Legacy section labels migrate without losing order hidden widgets or collapse state", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0];
+    board.Widgets.Add(new() { Id = "one", Section = "Urgences" });
+    board.Widgets.Add(new() { Id = "two", Section = "Terrain", Hidden = true }); board.CollapsedSections.Add("Terrain");
+    layout.Validate(); layout.Normalize(); layout.Validate();
+    Assert(board.Sections.Select(s => s.Key).SequenceEqual(new[] { "Urgences", "Terrain" }));
+    board.Sections[0].Title = "À traiter aujourd’hui"; layout.Normalize();
+    Assert(board.Widgets[0].Section == "Urgences" && board.Sections[0].Title == "À traiter aujourd’hui" && board.CollapsedSections.Single() == "Terrain");
+});
+Test("Empty sections descriptions colours visibility and density persist independently", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0]; board.Description = "Organisation locale"; board.Density = "compact";
+    board.Sections.Add(new() { Key = "empty", Title = "À organiser", Description = "Aucun widget encore", Accent = "teal", Hidden = true });
+    var copy = layout.Copy(); copy.Boards[0].Sections[0].Title = "Copie";
+    Assert(board.Sections[0].Title == "À organiser");
+    var roundTrip = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(layout))!; roundTrip.Normalize(); roundTrip.Validate();
+    Assert(roundTrip.Boards[0].Sections.Single().Hidden && roundTrip.Boards[0].Sections[0].Description == "Aucun widget encore" && roundTrip.Boards[0].Density == "compact");
+});
+Test("Imported section metadata rejects duplicate identities unsafe styles and oversize text", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0]; board.Sections.Add(new() { Key = "stable", Title = "Section" });
+    board.Sections.Add(board.Sections[0].Copy()); Invalid(layout.Validate); board.Sections.RemoveAt(1);
+    board.Sections[0].Accent = "url(external)"; Invalid(layout.Validate); board.Sections[0].Accent = "blue";
+    board.Sections[0].Description = new('x', 601); Invalid(layout.Validate); board.Sections[0].Description = "";
+    board.Density = "arbitrary"; Invalid(layout.Validate);
+});
+Test("Section capacity includes legacy widget references and local repair retains occupied sections", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0];
+    board.Sections = Enumerable.Range(0, 60).Select(i => new DashboardSectionSettings { Key = "empty-" + i }).ToList();
+    board.Widgets.Add(new() { Section = "occupied" }); Invalid(layout.Validate);
+    layout.Normalize(); layout.Validate(); Assert(board.Sections.Count == 60 && board.Sections.Any(section => section.Key == "occupied"));
+});
+Test("Default section identity is stable through repeated normalization and JSON", () =>
+{
+    var layout = Layout("overview"); layout.Normalize(); var before = JsonSerializer.Serialize(layout);
+    layout.Normalize(); Assert(JsonSerializer.Serialize(layout) == before);
+    var roundTrip = JsonSerializer.Deserialize<DashboardLayoutSettings>(before)!; roundTrip.Normalize(); roundTrip.Validate();
+    Assert(roundTrip.Boards[0].Sections.Single().Key == "" && JsonSerializer.Serialize(roundTrip) == before);
+});
 var failures = 0;
 foreach (var (name, run) in checks) { try { run(); Console.WriteLine("PASS " + name); } catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex.Message); } }
 Console.WriteLine($"{checks.Count - failures}/{checks.Count} checks passed.");

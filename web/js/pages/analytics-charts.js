@@ -14,8 +14,10 @@ export function widgetContent(ctx, widget, activate, more) {
   if (!data) return empty('Source indisponible', `La source « ${setting.sourceKey} » n’est pas calculable dans ce relevé. Modifiez le widget ou les correspondances de colonnes.`);
   const body = el('div', { class: `analytics-widget-body kind-${setting.kind}` });
   if (setting.kind === 'metric') {
-    const metric = el('button', { class: 'analytics-metric-value', text: number(data.value), title: 'Voir les lignes contributrices', onClick: () => activate({ kind: 'metric', key: data.key }) });
-    body.append(metric, caption(data.unit), badge(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`));
+    const unavailable = data.value == null || !Number.isFinite(data.value);
+    const metric = el('button', { class: `analytics-metric-value${unavailable ? ' is-unavailable' : ''}`, text: unavailable ? '—' : number(data.value),
+      disabled: unavailable, 'aria-label': unavailable ? 'Donnée indisponible' : undefined, title: unavailable ? 'Cette mesure ne peut pas être calculée sur ce relevé.' : 'Voir les lignes contributrices', onClick: () => activate({ kind: 'metric', key: data.key }) });
+    body.append(metric, caption(unavailable ? 'Donnée indisponible' : data.unit), badge(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`));
     if (setting.presentation === 'gauge' && data.value != null) {
       const maximum = setting.targetValue ?? (data.unit === '%' ? 100 : null);
       if (maximum > 0) body.append(gauge(data.value, maximum, `Objectif ${number(maximum, data.unit)}`));
@@ -32,9 +34,13 @@ export function widgetContent(ctx, widget, activate, more) {
     body.append(distribution(ctx, data, setting, bucket => activate({ kind: setting.kind, key: data.key, label: bucket.label })));
     if (data.truncated) body.append(command(ctx, `Toutes les catégories (${formatNumber(data.totalBuckets)})`, () => more('distribution', data.key)));
   } else if (setting.kind === 'weather') {
-    body.append(el('div', { class: 'analytics-weather-state' }, el('span', { text: data.symbol, 'aria-hidden': 'true' }), el('strong', { text: data.title })),
-      caption(data.score == null ? 'Couverture insuffisante pour un indice.' : `Indice descriptif ${number(data.score)} / 100`), caption(data.description));
-    body.append(table(data.signals, [{ key: 'label', label: 'Signal' }, { key: 'count', label: 'Tickets' }, { key: 'sample', label: 'Échantillon' }, { key: 'weight', label: 'Poids' }, { key: 'explanation', label: 'Définition' }], { maxRows: 30 }));
+    const states = { sun: 'Situation calme', watch: 'Vigilance', rain: 'Points à traiter', storm: 'Vigilance forte', partial: 'Lecture à compléter', unknown: 'Données insuffisantes' };
+    body.append(el('div', { class: 'analytics-weather-state' }, el('span', { text: data.symbol, 'aria-hidden': 'true' }),
+      el('div', {}, el('strong', { text: states[data.state] || data.title }), caption(data.score == null ? 'Couverture insuffisante pour un indice.' : `Indice descriptif ${number(data.score)} / 100`))));
+    if (data.signals?.length) body.append(el('div', { class: 'analytics-weather-signals' }, ...data.signals.map(signal => el('div', {},
+      el('strong', { text: formatNumber(signal.count) }), el('span', { text: signal.label }), el('small', { text: `sur ${formatNumber(signal.sample)}` })))));
+    if (setting.showDescription) body.append(details('Méthode, échantillons et limites', caption(data.title), caption(data.description),
+      table(data.signals, [{ key: 'label', label: 'Signal' }, { key: 'count', label: 'Tickets' }, { key: 'sample', label: 'Échantillon' }, { key: 'weight', label: 'Poids' }, { key: 'explanation', label: 'Définition' }], { maxRows: 30 })));
   } else if (setting.kind === 'timeline') {
     body.append(timeline(data));
   } else if (setting.kind === 'attention') {

@@ -32,7 +32,14 @@ Les tests de vues personnelles contrôlent les effectifs, l’absence de statut,
 les noms proches, le technicien mémorisé absent d’un relevé, les références aux
 lignes originales pour toutes les interactions et le bilan exporté. Un relevé
 source incomplet reste incomplet dans chaque vue ; aucun total personnel
-inconnu n’est inventé. Les 54 vérifications restent fondées sur des données
+inconnu n’est inventé. Les vérifications restent fondées sur des données
 synthétiques, sans reprendre les personnes ou les tickets des captures.
+
+Les régressions de réception distinguent les lignes réellement reçues de la
+concordance avec l’affichage GLPI. Un reçu complet avec des réserves conserve
+ses comptes exacts et ses sous-ensembles, avec une météo « relevé à vérifier »
+et `Complete=false`. Le bilan conserve les observations et réserves. Une
+ancienne archive partielle, des compteurs incohérents ou un total GLPI final
+modifié n’acquièrent pas une réception complète par déduction.
 
 Ces tests ne lancent aucune interface graphique et n’accèdent à aucun portail réel. Les opérations C# et pages WebView sont vérifiées séparément dans [AnalyticsBridgeChecks](../AnalyticsBridgeChecks), puis le pack natif dans [WindowsStartupChecks](../WindowsStartupChecks/README.md).

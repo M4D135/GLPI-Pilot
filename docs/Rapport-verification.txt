@@ -1,4 +1,4 @@
-GLPI Pilot 3.0.2 — protocole et preuves de vérification
+GLPI Pilot 3.1.0 — protocole et preuves de vérification
 Date : 22 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
@@ -10,6 +10,26 @@ constitue la preuve de validation Windows :
 https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 Une version déjà publiée pour un autre commit ne peut pas être remplacée.
 La présence des tests ou leur compilation ne constitue pas leur exécution.
+
+PERIMETRE DES VERIFICATIONS 3.1.0
+La refonte du shell couvre navigation dépliable/rail/tiroir, focus clavier,
+thèmes clair/sombre et réduction des animations. Les contrôles des tickets
+vérifient les identifiants entiers sur une ligne, la pagination, l’onglet actif
+visible et l’absence de null parasite ; le texte utilisateur littéral reste
+conservé. Les pages sont exercées avec leurs styles et modules réels.
+
+Le dashboard couvre les sections persistantes et vides, titre/description/
+accent/visibilité, ordre et reprise des anciennes dispositions au format 1.
+Les opérations de déplacement et de redimensionnement doivent conserver
+les verrouillages, la sauvegarde/relecture et l’annulation/rétablissement.
+
+Les observations de réception, d’identifiants et de valeurs sont distinctes.
+Une équivalence HTML/CSV de texte riche doit provenir de la cellule exacte ;
+un mot changé, une preuve étrangère ou un contrôle C1 divergent reste un écart.
+Le CSV reçu ne change pas. Les fixtures ne prouvent ni la cause ni la résolution
+des écarts d’un portail privé. Les résultats Windows et les nombres exacts
+sont ceux des journaux du commit livré ; aucun succès Windows n’est déduit
+des contrôles locaux. Voir docs/RELEASE-3.1.0.md.
 
 REGRESSION D’IMPORT CORRIGEE EN 3.0.2
 Par rapport au parcours 2.0, la comparaison ajoutée en version 3 pouvait
@@ -24,7 +44,7 @@ Le parcours corrigé a ensuite réussi localement sur cette fixture : 788
 lignes chargées et enrichies pour les villes, CSV natif inchangé, classeur
 disponible avec a-verifier dans son nom, Complete=false, réserve de concordance
 et contrôle final maintenus. Les contrôles C1 du fichier sont conservés.
-La validation Windows de 3.0.2 est à lire dans les journaux du commit livré ;
+La validation Windows est à lire dans les journaux du commit livré ;
 aucun total de tests ni succès Windows n’est déduit de ce test local.
 Un mauvais échantillon d’identifiants au contrôle initial et un CSV corrompu
 restent refusés. Le contrôle final reste actif : une variation du contexte,

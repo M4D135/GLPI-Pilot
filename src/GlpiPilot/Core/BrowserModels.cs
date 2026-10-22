@@ -53,6 +53,9 @@ public sealed class TableSnapshot
 {
     [JsonPropertyName("headers")] public List<string> Headers { get; set; } = new();
     [JsonPropertyName("rows")] public List<string[]> Rows { get; set; } = new();
+    // Ephemeral, cell-aligned proof used only for the native export comparison.
+    // Neither the source text nor its projection enters ExtractionQuality or logs.
+    [JsonPropertyName("csvRepresentations")] public List<CsvCellRepresentation?[]> CsvRepresentations { get; set; } = new();
     [JsonPropertyName("keys")] public List<string> Keys { get; set; } = new();
     [JsonPropertyName("signature")] public string Signature { get; set; } = "";
     [JsonPropertyName("warnings")] public List<string> Warnings { get; set; } = new();
@@ -62,6 +65,15 @@ public sealed class TableSnapshot
     [JsonPropertyName("headerFingerprint")] public string HeaderFingerprint { get; set; } = "";
     [JsonPropertyName("selector")] public string Selector { get; set; } = "";
     [JsonPropertyName("label")] public string Label { get; set; } = "";
+}
+
+public sealed class CsvCellRepresentation
+{
+    [JsonPropertyName("row")] public int Row { get; set; } = -1;
+    [JsonPropertyName("column")] public int Column { get; set; } = -1;
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("source")] public string Source { get; set; } = "";
+    [JsonPropertyName("text")] public string Text { get; set; } = "";
 }
 
 public sealed class PickResult

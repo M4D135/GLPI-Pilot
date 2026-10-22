@@ -123,6 +123,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                         settings.MaxRows, true, ct, diagnostics: message => Log?.Invoke(message)), ct);
                     method = "native-csv";
                     var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct);
+                    data.Quality!.InitialSample = check.Observation();
                     Log?.Invoke("ÉCHANTILLON · " + check.Explanation);
                     foreach (var diagnostic in check.Diagnostics) Log?.Invoke("ÉCHANTILLON DÉTAIL · " + diagnostic);
                     // A wrong sample identifies a different file. Value differences
@@ -164,7 +165,11 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             data.Warnings.Add("Le contrôle final du tableau est indisponible. Les lignes déjà lues sont conservées avec une couverture non confirmée. " + AppPaths.SafeError(error));
         }
         var stableScope = scopeEvidence.Fingerprint.Length > 0 && scopeEvidence.Fingerprint == afterScope.Fingerprint;
-        var totalChanged = visibleBefore?.ExpectedTotal is int initialTotal && visibleAfter?.ExpectedTotal is int finalTotal && initialTotal != finalTotal;
+        var referenceTotal = visibleBefore?.ExpectedTotal ?? data.ExpectedTotal;
+        var totalChanged = referenceTotal is int initialTotal && visibleAfter?.ExpectedTotal is int finalTotal && initialTotal != finalTotal;
+        if (data.Quality is { } quality)
+            quality.FinalTotalVerified = referenceTotal.HasValue && visibleAfter?.ExpectedTotal is int observedFinal
+                ? referenceTotal.Value == observedFinal : null;
         if (!stableScope)
         {
             data.Complete = false;
@@ -175,12 +180,16 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         {
             if (totalChanged)
             {
-                data.Complete = false; data.Status = "Extraction à vérifier — total GLPI modifié";
-                data.Warnings.Add("Le total GLPI a changé entre le début et la fin de l’extraction. Les données sont conservées avec une couverture non confirmée.");
+                data.Complete = false;
+                var observedInitially = visibleBefore?.ExpectedTotal.HasValue == true;
+                data.Status = observedInitially ? "Extraction à vérifier — total GLPI modifié" : "Extraction à vérifier — total GLPI différent du total attendu";
+                data.Warnings.Add((observedInitially ? "Le total GLPI a changé entre le début et la fin de l’extraction."
+                    : "Le total GLPI final diffère du total attendu utilisé pour cette extraction.") + " Les données sont conservées avec une couverture non confirmée.");
             }
             if (method == "native-csv")
             {
                 var finalSample = ExtractionVerificationService.VerifyNativeSample(visibleAfter, data, settings.Dashboard, ct);
+                data.Quality!.FinalSample = finalSample.Observation();
                 Log?.Invoke("ÉCHANTILLON FINAL · " + finalSample.Explanation);
                 foreach (var diagnostic in finalSample.Diagnostics) Log?.Invoke("ÉCHANTILLON FINAL DÉTAIL · " + diagnostic);
                 if (!finalSample.Available)
@@ -211,6 +220,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             ObservedSort = observedSort, Resumed = data.Provenance.Resumed, ResumeStartedAt = data.Provenance.ResumeStartedAt,
             StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
         };
+        data.Warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToList();
         if (nativePath != null) primaryPath = nativePath;
         else if (data.Headers.Count > 0)
         {

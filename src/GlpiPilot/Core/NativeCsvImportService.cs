@@ -54,7 +54,13 @@ public static class NativeCsvImportService
             ExtractedAt = DateTimeOffset.Now,
             Scope = allPagesRequested ? "Export natif GLPI : toutes les pages" : "Export natif GLPI : périmètre non confirmé",
             ExpectedTotal = expectedTotal,
-            Pages = 0
+            Pages = 0,
+            Quality = new()
+            {
+                ExpectedRows = expectedTotal, AllPagesRequested = allPagesRequested,
+                UnusualControlCount = text.UnusualControlCount,
+                C1ControlCount = text.UnusualControls.Where(pair => pair.Key is >= '\u0080' and <= '\u009f').Sum(pair => pair.Value.Count)
+            }
         };
         if (encoding.Fallback)
             result.Warnings.Add("Le fichier n’est pas un UTF-8 valide : lecture de repli en Windows-1252. Vérifie les accents dans l’aperçu.");
@@ -101,6 +107,8 @@ public static class NativeCsvImportService
         if (renamed) result.Warnings.Add("Les en-têtes vides ou en double ont reçu un nom unique. Les valeurs et les lignes sont conservées.");
 
         bool capped = sourceRows > result.Rows.Count;
+        result.Quality!.SourceRows = sourceRows;
+        result.Quality.RowCountVerified = expectedTotal.HasValue ? sourceRows == expectedTotal.Value && !capped : null;
         if (capped)
             result.Warnings.Add($"Limite d’import atteinte : {result.Rows.Count:N0} lignes chargées sur {sourceRows:N0} présentes dans le CSV. Le fichier natif complet est conservé.");
         if (!allPagesRequested)

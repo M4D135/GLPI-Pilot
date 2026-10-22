@@ -1,7 +1,7 @@
 # Dashboards et fiabilité de l’extraction
 
 Ce document décrit les capacités intégrées à l’interface WebView locale de
-GLPI Pilot 3. Les pages Dashboard, Atelier de requêtes, Historique et analyses,
+GLPI Pilot 3.1. Les pages Dashboard, Atelier de requêtes, Historique et analyses,
 Effectifs datés et Assistant de langage appellent les moteurs C#. Les calculs
 reposent sur les colonnes du relevé accessible à l’utilisateur. Un champ absent,
 ambigu ou illisible reste indisponible ; il n’est pas remplacé par une valeur
@@ -15,8 +15,10 @@ composition propose aussi :
 
 - vingt niveaux d’annulation/rétablissement par disposition, conservés pendant
   la session, accessibles dans **Autres actions** ;
-- des sections nommées et repliables, dont l’état est mémorisé, déplaçables comme
-  un bloc dans le tableau de bord ;
+- des sections persistantes, même vides, avec titre, description, accent et
+  visibilité ; leur repli est mémorisé et elles se déplacent comme un bloc ;
+- des poignées de déplacement et de redimensionnement, utilisables à la souris
+  ou au clavier, avec choix précis de position et de dimensions dans les dialogues ;
 - la sélection de plusieurs widgets pour modifier leur section, leur style,
   leurs dimensions ou les aligner en lignes ; les widgets verrouillés restent
   protégés de ces modifications ;
@@ -28,6 +30,14 @@ composition propose aussi :
 - une remise à zéro et une commande pour retrouver les lignes correspondantes ;
 - jusqu’à 30 contextes de filtres nommés, enregistrés dans la disposition ;
 - une comparaison entre deux périmètres A et B du même relevé.
+
+La disposition reste au format 1. Les anciens libellés de section sont repris
+en sections explicites sans supprimer leurs widgets, les éléments masqués ou
+l’état replié. Une section possède une identité stable : changer son titre ne
+déplace pas ses widgets. En édition, **+ Section** crée un bloc vide et
+**Régler la section** permet de le modifier ou le masquer. Les sections masquées
+restent accessibles en édition. Les modifications enregistrées participent à
+l’annulation/rétablissement de la session.
 
 Les filtres proposent une valeur de répartition, une population d’indicateur ou
 une période datée. Les conditions d’exclusion sont disponibles. Les dates
@@ -461,6 +471,26 @@ ni de convertir les contrôles C1 en signes typographiques. Ces différences
 restent signalées lorsque leur équivalence n’est pas prouvée. Les sources
 publiques et la portée des corrections figurent dans les
 [notes 3.0.2](RELEASE-3.0.2.md).
+
+### Réception et représentations prouvées en 3.1.0
+
+Les observations structurées séparent la réception, les identifiants de
+l’échantillon et la concordance de ses valeurs. Un fichier toutes-pages au
+total annoncé, sans contradiction du total final, peut être entièrement reçu
+alors que la concordance reste à vérifier ou indisponible. Cette réception
+ne certifie pas le périmètre complet ni toutes les valeurs. `Complete=false`
+et les exigences des alertes ou historiques restent applicables. Les archives
+anciennes sans ces observations ne sont pas réinterprétées à partir de leurs
+avertissements.
+
+L’adaptateur DOM 1.1.3 ajoute une représentation CSV pour un sous-ensemble
+reconnu de texte riche GLPI 10. La preuve est attachée à la ligne, à la colonne
+et au texte exact de la cellule : gras, italiques, listes et séparateurs ne
+sont admis que si leur rendu explique exactement la valeur reçue. Une
+structure inconnue n’ajoute pas d’équivalence. Un mot changé ou un contrôle C1
+divergent reste un écart ; aucune suppression globale de casse, de ponctuation
+ou de caractère n’est appliquée. Les données importées et le CSV natif restent
+intacts. Les [notes 3.1.0](RELEASE-3.1.0.md) indiquent la portée et les sources.
 
 ### Contrôle final maintenu
 

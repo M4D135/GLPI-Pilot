@@ -7,6 +7,17 @@ export const run = (ctx, action) => async (...args) => { try { return await acti
 export const note = text => el('p', { class: 'work-note', text });
 export const pre = text => el('pre', { class: 'work-text', text: text || 'Aucune donnée recueillie.' });
 export const label = value => value == null || value === '' ? '—' : String(value);
+export function ticketIdLabel(value) {
+  const text = String(value ?? '').trim();
+  // GLPI may display thousands separators in a numeric ID. This is only a
+  // label: preserve leading zeroes, other identifiers and the original row.
+  return /^\d{1,3}(?:[ \u00a0\u202f]\d{3})+$/.test(text) ? text.replace(/[ \u00a0\u202f]/g, '') : text;
+}
+export function ticketButton(value, handler, options = {}) {
+  const text = ticketIdLabel(value);
+  const control = button(text || 'Ouvrir', handler, { title: text ? 'Ouvrir le ticket ' + text : 'Ouvrir le ticket', ...options });
+  control.classList.add('work-ticket-id'); return control;
+}
 export const date = value => value ? formatDate(value) : '—';
 export function heading(title, detail = '') { return el('header', { class: 'work-heading' }, el('h1', { text: title }), detail ? note(detail) : null); }
 export function checkbox(value, text) { const control = el('input', { type: 'checkbox' }); control.checked = !!value; return { control, element: el('label', { class: 'work-check' }, control, el('span', { text })) }; }
@@ -17,7 +28,18 @@ export function pager(page, pageSize, total, change) {
   return toolbar(button('Précédent', () => change(page - 1), { disabled: page === 0 }), el('span', { class: 'work-page-count', text: `${total.toLocaleString('fr-FR')} résultat(s) · page ${page + 1} / ${last + 1}` }), button('Suivant', () => change(page + 1), { disabled: page >= last }));
 }
 export function tabs(items, current, choose) {
-  return el('nav', { class: 'work-tabs', 'aria-label': 'Pages de cet espace' }, ...items.map(item => button(item.label, () => choose(item.key), { primary: item.key === current })));
+  const navigation = el('nav', { class: 'work-tabs', 'aria-label': 'Pages de cet espace' }, ...items.map(item => button(item.label, () => choose(item.key), { primary: item.key === current, attributes: { 'aria-current': item.key === current ? 'page' : null } })));
+  requestAnimationFrame(() => {
+    if (!navigation.isConnected) return;
+    const active = navigation.querySelector('[aria-current="page"]'); if (!active) return;
+    const bounds = navigation.getBoundingClientRect(), item = active.getBoundingClientRect();
+    const left = bounds.left + navigation.clientLeft, right = left + navigation.clientWidth;
+    // Reveal only this horizontal navigation; the reader/page scroll positions
+    // belong to the user's saved reading state and must not move with it.
+    if (item.left < left) navigation.scrollLeft += item.left - left;
+    else if (item.right > right) navigation.scrollLeft += item.right - right;
+  });
+  return navigation;
 }
 export function toLocalInput(value) {
   if (!value) return '';

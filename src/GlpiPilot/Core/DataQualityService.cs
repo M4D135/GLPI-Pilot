@@ -29,8 +29,7 @@ public static class DataQualityService
         var dashboard = DashboardService.Calculate(data, settings, data.ExtractedAt, ct);
         var report = new DataQualityReport
         {
-            Completeness = data.Complete && (!data.ExpectedTotal.HasValue || data.ExpectedTotal == data.Rows.Count) ? (data.ExpectedTotal.HasValue ? $"Complétude : {data.Rows.Count:N0} / {data.ExpectedTotal:N0} lignes, extraction confirmée." : $"Complétude déclarée ; total indépendant indisponible ({data.Rows.Count:N0} lignes).")
-                : $"Complétude à vérifier · {data.Rows.Count:N0} lignes chargées, total attendu {(data.ExpectedTotal?.ToString("N0") ?? "inconnu")}.",
+            Completeness = DescribeReception(data, dashboard.ReceptionComplete),
             Coverage = $"Couverture : {dashboard.Columns.Count(column => column.Index.HasValue)} / {dashboard.Columns.Count} rôles reconnus."
         };
         report.UnavailableRoles.AddRange(dashboard.Columns.Where(column => !column.Index.HasValue).Select(column => column.Label + " : " + column.State));
@@ -88,6 +87,23 @@ public static class DataQualityService
         }
         report.Interpretation = $"Interprétation : {invalidTotal:N0} valeurs non interprétables ; {report.IssueCount:N0} points à examiner. Aucune cellule source n’a été corrigée automatiquement.";
         return report;
+    }
+    private static string DescribeReception(ExtractionResult data, bool receptionComplete)
+    {
+        var quality = data.Quality;
+        var legacyComplete = quality is null && data.Complete && receptionComplete;
+        var receipt = data.ExpectedTotal is { } total && data.Rows.Count < total ? "Réception partielle"
+            : legacyComplete ? "Relevé complet" : quality is null ? "Réception non documentée" : receptionComplete ? "Réception complète" : "Réception non confirmée";
+        var rows = data.ExpectedTotal is { } expected ? $"{data.Rows.Count:N0} / {expected:N0} lignes chargées"
+            : $"{data.Rows.Count:N0} lignes chargées ; total attendu indisponible";
+        var comparison = quality?.RepresentationVerified switch
+        {
+            true => "Concordance vérifiée sur l’échantillon.",
+            false => "Concordance à vérifier sur l’échantillon.",
+            _ => "Contrôle de concordance indisponible."
+        };
+        var detail = quality is null ? legacyComplete ? "Détail des contrôles de réception indisponible. " : "Contrôles de réception indisponibles. " : "";
+        return $"{receipt} · {rows}. {detail}{comparison}";
     }
     private static string CanonicalId(string value)
     {

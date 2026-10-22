@@ -1,10 +1,14 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, dialog, call, command, heading, caption, details, choices, clone, uuid,
   number, formatNumber, formatDate, rowDialog, pager, filterEditor, checkbox, nullableNumber, textArea, sparkline, error } from './analytics-ui.js';
 import { widgetContent } from './analytics-charts.js';
+import { ensureSections, moveDashboardWidget, moveDashboardSection, bindDashboardLayout } from './analytics-layout.js';
 
 const kindNames = { metric: 'Indicateur', distribution: 'Répartition', weather: 'Météo', timeline: 'Chronologie', attention: 'Points d’attention', quality: 'Qualité',
   note: 'Note', matrix: 'Matrice', histogram: 'Histogramme', boxplot: 'Boîtes à moustaches', scatter: 'Nuage de points', history: 'Historique', map: 'Carte locale' };
 const presetNames = { empty: 'Vide', overview: 'Pilotage', operations: 'Opérations', personal: 'Personnel', team: 'Équipe', deadlines: 'Échéances', quality: 'Qualité', geography: 'Géographie', analysis: 'Analyse' };
+const accentNames = { blue: 'Bleu', teal: 'Turquoise', green: 'Vert', orange: 'Ambre', red: 'Rouge', purple: 'Violet', slate: 'Neutre' };
+const styleNames = { surface: 'Carte', outline: 'Contour', accent: 'Accent', minimal: 'Sans cadre' };
+const namedChoices = (values, names) => values.map(value => ({ value, label: names[value] || value }));
 
 export async function renderDashboard(ctx) {
   const cleanup = heading(ctx, 'Tableaux de bord', 'Indicateurs calculés sur le relevé actif, périmètres reproductibles et observations historiques traçables.');
@@ -14,38 +18,80 @@ export async function renderDashboard(ctx) {
   const model = await call(ctx, 'dashboard.get', Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined)));
   if (ctx.signal.aborted) return cleanup;
   loading.remove(); ctx.analyticsRevision = model.revision;
-  const layout = model.layout; const board = layout.boards.find(b => b.id === model.boardId); const personal = model.technicianKey.length > 0;
+  const layout = model.layout; let board = layout.boards.find(b => b.id === model.boardId); const personal = model.technicianKey.length > 0;
+  ensureSections(board); let savedLayout = clone(layout); let saving = false;
   const runArgs = { runId: model.runId, revision: model.revision }; const selected = new Set();
   const go = extra => ctx.navigate('dashboard', { ...params, boardId: board.id, editing, ...extra });
-  const persist = async () => { await call(ctx, 'dashboard.layout.save', { personal, layout }); go({}); };
+  const persist = async (focus = null) => {
+    if (saving) throw new Error('L’enregistrement précédent est encore en cours.');
+    saving = true; ctx.root.dataset.ready = 'false'; ctx.root.setAttribute('aria-busy', 'true');
+    const lockedUi = [boardHost, editorHost, selectionHost, controls, ...document.querySelectorAll('dialog')].map(node => ({ node, wasInert: node.inert }));
+    for (const { node } of lockedUi) node.inert = true;
+    const positions = new Map([...boardHost.querySelectorAll('[data-widget-id]')].map(node => [node.dataset.widgetId, node.getBoundingClientRect()]));
+    historyController?.abort(); let committed = false;
+    try {
+      await call(ctx, 'dashboard.layout.save', { personal, layout }); committed = true;
+      const fresh = await call(ctx, 'dashboard.get', { ...params, boardId: board.id });
+      if (ctx.signal.aborted) return;
+      Object.assign(model, fresh); Object.assign(layout, fresh.layout); board = layout.boards.find(item => item.id === fresh.boardId); ensureSections(board);
+      Object.assign(runArgs, { runId: fresh.runId, revision: fresh.revision }); savedLayout = clone(layout); historyData = null;
+      for (const id of selected) if (!board.widgets.some(widget => widget.id === id && !widget.hidden)) selected.delete(id);
+      list.replaceChildren(...layout.boards.map(item => el('option', { value: item.id, text: item.name, selected: item.id === board.id })));
+      undoControl.disabled = !fresh.layoutHistory.undo; redoControl.disabled = !fresh.layoutHistory.redo;
+      provenance.querySelector('summary strong').textContent = `${board.name}${personal ? ` · ${model.technicianKey}` : ''}`;
+      cross.control.checked = board.crossFilterOnClick; draw(); editStatus.textContent = 'Disposition enregistrée';
+      if (document.documentElement.dataset.motion !== 'reduce' && !matchMedia('(prefers-reduced-motion: reduce)').matches) for (const node of boardHost.querySelectorAll('[data-widget-id]')) {
+        const before = positions.get(node.dataset.widgetId); if (!before) continue; const after = node.getBoundingClientRect();
+        if (before.left !== after.left || before.top !== after.top) node.animate([{ transform: `translate(${before.left - after.left}px, ${before.top - after.top}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)' });
+      }
+    } catch (reason) {
+      if (!committed) { Object.assign(layout, clone(savedLayout)); board = layout.boards.find(item => item.id === model.boardId); draw(); }
+      editStatus.textContent = committed ? 'Disposition enregistrée ; actualisez le calcul.' : 'Modification non enregistrée';
+      throw reason;
+    } finally {
+      saving = false; ctx.root.dataset.ready = 'true'; ctx.root.removeAttribute('aria-busy');
+      for (const { node, wasInert } of lockedUi) node.inert = wasInert;
+    }
+    if (focus) {
+      const nodes = boardHost.querySelectorAll(focus.kind === 'widget' ? '[data-widget-id]' : '[data-section-key]');
+      const node = [...nodes].find(item => (focus.kind === 'widget' ? item.dataset.widgetId : item.dataset.sectionKey) === focus.key);
+      node?.querySelector(focus.action === 'resize' ? '[data-resize-widget]' : '[data-drag-kind]')?.focus({ preventScroll: true });
+    }
+    if (board.widgets.some(widget => !widget.hidden && (widget.kind === 'history' || widget.kind === 'metric' && widget.showMiniHistory))) void loadHistory();
+  };
   const list = select(layout.boards.map(b => ({ value: b.id, label: b.name })), board.id);
   list.addEventListener('change', async () => { try { layout.activeBoardId = list.value; await call(ctx, 'dashboard.layout.save', { personal, layout }); go({ boardId: list.value }); } catch (reason) { error(ctx, reason); } });
   const people = select([{ value: '', label: 'Équipe entière' }, ...model.roster.map(t => ({ value: t.key, label: `${t.name} · ${formatNumber(t.count)} lignes` }))], model.technicianKey);
   people.addEventListener('change', () => go({ technicianKey: people.value, boardId: undefined, crossFilters: [] }));
   const editControl = button(editing ? 'Quitter l’édition' : 'Modifier le dashboard', () => { editing = !editing; draw(); });
-  const organization = details('Autres actions', toolbar(command(ctx, 'Actualiser', () => go({})), command(ctx, '+ Tableau de bord', () => newBoardDialog(ctx, personal, go)),
-    command(ctx, 'Annuler la modification', async () => { const result = await call(ctx, 'dashboard.layout.undo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.undo }),
-    command(ctx, 'Rétablir la modification', async () => { const result = await call(ctx, 'dashboard.layout.redo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.redo })));
+  const undoControl = command(ctx, 'Annuler la modification', async () => { const result = await call(ctx, 'dashboard.layout.undo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.undo });
+  const redoControl = command(ctx, 'Rétablir la modification', async () => { const result = await call(ctx, 'dashboard.layout.redo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.redo });
+  const organization = details('Autres actions', toolbar(command(ctx, 'Actualiser', () => go({})), command(ctx, '+ Tableau de bord', () => newBoardDialog(ctx, personal, go)), undoControl, redoControl));
   const controls = toolbar(field('Disposition', list), field('Périmètre personnel', people), editControl,
     command(ctx, 'Filtres et comparaison', () => filtersDialog()), command(ctx, 'Exporter', () => exportDialog()), organization);
   controls.classList.add('analytics-primary-toolbar', 'no-print');
+  const received = model.snapshot.receptionComplete === true || model.snapshot.complete;
+  const receiptLabel = received ? 'Réception complète' : 'Réception partielle ou non confirmée';
   const provenance = el('details', { class: 'analytics-provenance print-provenance', 'aria-label': 'Provenance du tableau de bord' },
     el('summary', {}, el('strong', { text: `${board.name}${personal ? ` · ${model.technicianKey}` : ''}` }),
       el('span', { text: `${formatNumber(model.snapshot.rowCount)} / ${formatNumber(model.snapshot.sourceRowCount)} lignes · ${formatDate(model.snapshot.extractedAt)}` }),
-      badge(model.snapshot.complete ? 'Relevé complet' : 'Incomplet / non confirmé', model.snapshot.complete ? 'success' : 'warning'),
+      badge(receiptLabel, received ? 'success' : 'warning'),
+      !model.snapshot.complete && received ? badge('Contrôles à vérifier', 'warning') : null,
       model.historical ? badge('Archive') : ctx.state.session?.demo ? badge('Démonstration', 'warning') : null,
       model.commonFilters.length ? badge(`${model.commonFilters.length} filtre(s)`) : null),
     el('strong', { text: 'GLPI Pilot · provenance de ce calcul' }),
-    caption(`Relevé : ${formatDate(model.snapshot.extractedAt)} · calcul : ${formatDate(model.snapshot.calculatedAt)} · ${formatNumber(model.snapshot.rowCount)} / ${formatNumber(model.snapshot.sourceRowCount)} lignes · ${model.snapshot.complete ? 'extraction complète' : 'extraction incomplète / non confirmée'}`),
+    caption(`Relevé : ${formatDate(model.snapshot.extractedAt)} · calcul : ${formatDate(model.snapshot.calculatedAt)} · ${formatNumber(model.snapshot.rowCount)} / ${formatNumber(model.snapshot.sourceRowCount)} lignes dans ce périmètre · ${receiptLabel.toLocaleLowerCase()}`),
     caption(`${model.snapshot.scopeLabel} · ${model.snapshot.sourceUrl || 'source locale'}`),
     caption(`Total annoncé dans la source : ${model.snapshot.sourceExpectedTotal == null ? 'inconnu' : formatNumber(model.snapshot.sourceExpectedTotal)} lignes.`),
+    qualitySummary(model.snapshot.quality),
     caption(`Filtres communs : ${describeFilters(model.commonFilters) || 'aucun'}`),
     ...board.widgets.filter(w => !w.hidden && w.filters?.length).map(w => caption(`Widget ${w.title || w.sourceKey} : ${describeFilters(w.filters)}`)),
     model.historical ? badge('Archive · règles et dénominateurs conservés') : null);
   const warnings = el('details', { class: 'analytics-warnings no-print', hidden: !model.snapshot.warnings.length },
-    el('summary', {}, el('strong', { text: `${model.snapshot.warnings.length} réserve(s)` }), el('span', { text: model.snapshot.warnings[0] ?? '' })),
+    el('summary', {}, el('strong', { text: `${model.snapshot.warnings.length} point(s) à vérifier` }), el('span', { text: 'Afficher le détail des contrôles' })),
     ...model.snapshot.warnings.map(text => caption(text, 'warning')));
   const boardHost = el('div', { class: 'analytics-board-host' }); const editorHost = el('div', { class: 'analytics-editor-toolbar no-print' });
+  const editStatus = el('span', { class: 'analytics-edit-status', role: 'status', 'aria-live': 'polite', text: '' });
   const selectionHost = el('div', { class: 'analytics-selection-toolbar no-print' }); const status = el('div', { class: 'analytics-history-status no-print', role: 'status' });
   const cross = checkbox('Cliquer une catégorie pour filtrer les widgets', board.crossFilterOnClick);
   cross.control.addEventListener('change', () => { board.crossFilterOnClick = cross.control.checked; persist().catch(reason => error(ctx, reason)); });
@@ -88,10 +134,12 @@ export async function renderDashboard(ctx) {
   }
   function draw() {
     editControl.textContent = editing ? 'Quitter l’édition' : 'Modifier le dashboard';
+    editControl.setAttribute('aria-pressed', String(editing));
     editorHost.replaceChildren(); selectionHost.replaceChildren(); boardHost.replaceChildren();
     editorHost.hidden = !editing; selectionHost.hidden = !editing;
+    boardHost.classList.toggle('is-editing', editing); boardHost.dataset.density = board.density || 'comfortable';
     if (editing) {
-      editorHost.append(toolbar(command(ctx, '+ Widget', () => catalogDialog()), command(ctx, 'Nom et organisation', () => boardDialog()),
+      const transfer = details('Disposition', toolbar(command(ctx, 'Nom et organisation', () => boardDialog()),
         command(ctx, 'Importer une disposition', async () => {
           const preview = await call(ctx, 'dashboard.layout.import'); if (preview.cancelled) return;
           dialog('Vérifier la disposition importée', el('div', {}, caption(`${preview.layout.boards.length} tableaux de bord remplaceraient la disposition ${personal ? 'personnelle' : 'globale'}.`),
@@ -99,77 +147,126 @@ export async function renderDashboard(ctx) {
           [{ label: 'Remplacer cette disposition', primary: true, action: async close => { await call(ctx, 'dashboard.layout.save', { personal, layout: preview.layout }); close(); go({ boardId: preview.layout.activeBoardId }); } }]);
         }), command(ctx, 'Exporter la disposition', async () => { const r = await call(ctx, 'dashboard.layout.export', { personal }); if (!r.cancelled) ctx.notify(`Disposition exportée : ${r.path}`); }),
         command(ctx, 'Widgets masqués', () => hiddenDialog())));
+      editorHost.append(toolbar(el('strong', { class: 'analytics-edit-label', text: 'Personnaliser' }), command(ctx, '+ Widget', () => catalogDialog()),
+        command(ctx, '+ Section', () => sectionDialog()), transfer, editStatus),
+        el('p', { class: 'analytics-edit-help', id: 'dashboard-edit-help', text: 'Glissez les poignées pour déplacer. Étirez le coin pour redimensionner. Au clavier : ↑ ↓ pour l’ordre, ← → pour changer de section ; les flèches du coin règlent la taille.' }));
       drawBulk();
     }
-    const groups = [...new Set(board.widgets.filter(w => !w.hidden).map(w => w.section || ''))];
+    if (board.description) boardHost.append(caption(board.description, 'analytics-board-description'));
+    const groups = ensureSections(board).filter(section => editing || !section.hidden);
     for (const section of groups) {
-      const widgets = board.widgets.filter(w => !w.hidden && (w.section || '') === section);
-      const grid = el('div', { class: 'analytics-board', 'aria-label': section || board.name });
+      const widgets = board.widgets.filter(widget => !widget.hidden && (widget.section || '') === section.key);
+      const expanded = !board.collapsedSections.includes(section.key);
+      const gridId = `dashboard-section-${uuid()}`;
+      const grid = el('div', { class: 'analytics-board', id: gridId, 'aria-label': section.title, hidden: !expanded });
+      const sectionRoot = el('section', { class: `analytics-board-section accent-${section.accent || 'blue'}${section.hidden ? ' is-hidden-section' : ''}`, 'data-section-key': section.key });
+      const sectionHeader = el('header', { class: 'analytics-section-heading' });
+      if (editing) sectionHeader.append(button('⠿', null, { title: 'Glisser la section ou utiliser les flèches du clavier', attributes: {
+        class: 'button analytics-drag-handle', draggable: true, 'data-drag-kind': 'section', 'aria-label': `Déplacer la section ${section.title}`, 'aria-describedby': 'dashboard-edit-help' } }));
+      const toggle = button(section.title, async () => {
+        board.collapsedSections = board.collapsedSections.filter(key => key !== section.key); if (expanded) board.collapsedSections.push(section.key);
+        await persist();
+      }, { attributes: { class: 'button analytics-section-toggle', 'aria-expanded': String(expanded), 'aria-controls': gridId } });
+      toggle.prepend(el('span', { class: 'analytics-section-chevron', text: '›', 'aria-hidden': 'true' }));
+      toggle.append(el('span', { class: 'analytics-section-count', text: String(widgets.length), 'aria-label': `${widgets.length} widgets` }));
+      sectionHeader.append(toggle);
+      if (section.hidden) sectionHeader.append(badge('Section masquée', 'warning'));
+      if (editing) sectionHeader.append(toolbar(command(ctx, 'Régler la section', () => sectionDialog(section)),
+        command(ctx, '+ Widget ici', () => catalogDialog(section.key))));
+      sectionRoot.append(sectionHeader);
+      if (section.description && expanded) sectionRoot.append(caption(section.description, 'analytics-section-description'));
       for (const setting of widgets) {
-        const widget = model.widgets.find(w => w.id === setting.id); if (!widget) continue;
+        const widget = model.widgets.find(item => item.id === setting.id); if (!widget) continue;
         if (setting.startNewRow) grid.append(el('div', { class: 'analytics-new-row', 'aria-hidden': 'true' }));
-        const header = el('div', { class: 'analytics-widget-heading' }, el('h2', { text: widgetTitle(widget, model.catalog) }));
+        const title = widgetTitle(widget, model.catalog);
+        const header = el('div', { class: 'analytics-widget-heading' });
+        if (editing) header.append(button('⠿', () => moveDialog(setting), { disabled: setting.locked, title: 'Glisser ou choisir une position', attributes: {
+          class: 'button analytics-drag-handle', draggable: !setting.locked, 'data-drag-kind': 'widget', 'aria-label': `Déplacer ${title}`, 'aria-describedby': 'dashboard-edit-help' } }));
+        header.append(el('h2', { text: title }));
         const controls = el('div', { class: 'analytics-widget-controls no-print' });
         if (editing) {
-          const check = checkbox('Sélectionner', selected.has(setting.id)); check.control.setAttribute('aria-label', `Sélectionner ${widgetTitle(widget, model.catalog)}`);
+          const check = checkbox('', selected.has(setting.id)); check.control.setAttribute('aria-label', `Sélectionner ${title}`);
           check.control.addEventListener('change', () => { if (check.control.checked) selected.add(setting.id); else selected.delete(setting.id); drawBulk(); });
-          controls.append(check.element, command(ctx, 'Régler', () => widgetDialog(setting)),
-            command(ctx, '↑', () => moveWidget(setting, -1), { disabled: setting.locked, title: 'Déplacer avant le widget précédent' }),
-            command(ctx, '↓', () => moveWidget(setting, 1), { disabled: setting.locked, title: 'Déplacer après le widget suivant' }));
-        } else controls.append(command(ctx, 'Lignes', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: setting.id, kind: 'scope' }, widgetTitle(widget, model.catalog))));
+          controls.append(check.element, command(ctx, 'Régler', () => widgetDialog(setting)));
+        } else controls.append(command(ctx, 'Lignes', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: setting.id, kind: 'scope' }, title)));
         header.append(controls);
         const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}`,
-          style: { '--span': setting.span, '--widget-height': `${setting.height}px` }, 'data-widget-id': setting.id, 'data-auto-height': setting.autoHeight,
-          draggable: editing && !setting.locked }, header,
+          style: { '--span': setting.span, '--widget-height': `${setting.height}px` }, 'data-widget-id': setting.id, 'data-auto-height': setting.autoHeight }, header,
           caption(`${formatNumber(widget.rowCount)} lignes · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key)));
-        article.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', setting.id); event.dataTransfer.effectAllowed = 'move'; });
-        article.addEventListener('dragover', event => { if (editing && !setting.locked) event.preventDefault(); });
-        article.addEventListener('drop', async event => {
-          if (!editing || setting.locked) return; event.preventDefault();
-          const id = event.dataTransfer.getData('text/plain'); const source = board.widgets.find(w => w.id === id);
-          if (!source || source.locked || source === setting) return;
-          board.widgets.splice(board.widgets.indexOf(source), 1); source.section = setting.section;
-          board.widgets.splice(board.widgets.indexOf(setting), 0, source); try { await persist(); } catch (reason) { error(ctx, reason); }
-        });
+        if (editing) article.append(el('div', { class: 'analytics-widget-edit-footer no-print' },
+          el('span', { text: setting.locked ? 'Position verrouillée' : `${setting.span} / 12 · ${setting.autoHeight ? 'hauteur auto' : `${setting.height} px`}` }),
+          setting.locked ? null : button('↘', () => widgetDialog(setting), { title: 'Étirer pour redimensionner, utiliser les flèches ou ouvrir les dimensions', attributes: {
+            class: 'button analytics-resize-handle', 'data-resize-widget': setting.id, 'aria-label': `Redimensionner ${title}`, 'aria-describedby': 'dashboard-edit-help' } })));
         grid.append(article);
       }
-      if (groups.length === 1 && section === '') boardHost.append(grid);
-      else {
-        const expanded = !board.collapsedSections.includes(section);
-        const fold = el('details', { class: 'analytics-board-section', open: expanded }, el('summary', {}, el('strong', { text: `${section || 'Général'} · ${widgets.length}` })), grid);
-        if (editing) fold.firstElementChild.append(toolbar(command(ctx, 'Section ↑', async () => moveSection(section, -1)), command(ctx, 'Section ↓', async () => moveSection(section, 1))));
-        fold.addEventListener('toggle', () => {
-          const wasOpen = !board.collapsedSections.includes(section); if (wasOpen === fold.open) return;
-          board.collapsedSections = board.collapsedSections.filter(s => s !== section); if (!fold.open) board.collapsedSections.push(section);
-          call(ctx, 'dashboard.layout.save', { personal, layout }).then(() => go({})).catch(reason => error(ctx, reason));
-        }); boardHost.append(fold);
-      }
+      if (editing) grid.append(el('div', { class: `analytics-drop-zone${widgets.length ? ' has-widgets' : ''}`, 'data-drop-section': section.key },
+        el('span', { text: widgets.length ? 'Déposer un widget ici' : 'Glissez un widget dans cette section' }),
+        widgets.length ? null : command(ctx, 'Choisir un widget', () => catalogDialog(section.key))));
+      else if (!widgets.length) grid.append(caption('Cette section ne contient pas de widget visible.', 'analytics-section-empty'));
+      sectionRoot.append(grid); boardHost.append(sectionRoot);
     }
-    if (!groups.length) boardHost.append(empty('Ce dashboard ne contient aucun widget visible', 'Passez en édition pour choisir des indicateurs dans le catalogue.'));
+    if (!groups.length) boardHost.append(empty('Toutes les sections sont masquées', 'Passez en édition pour choisir celles à afficher.'));
     if (historyData) displayHistory(historyData);
   }
-  async function moveWidget(widget, delta) {
-    const index = board.widgets.indexOf(widget); const next = index + delta; if (next < 0 || next >= board.widgets.length || board.widgets[next].locked) return;
-    [board.widgets[index], board.widgets[next]] = [board.widgets[next], board.widgets[index]]; await persist();
+  function sectionChoices() { return ensureSections(board).map(section => ({ value: section.key, label: `${section.title}${section.hidden ? ' · masquée' : ''}` })); }
+  function moveDialog(widget) {
+    if (widget.locked) return;
+    const section = select(sectionChoices(), widget.section); const position = select([]);
+    const update = () => position.replaceChildren(el('option', { value: '', text: 'À la fin de la section' }),
+      ...board.widgets.filter(item => !item.hidden && item.id !== widget.id && item.section === section.value).map(item => el('option', { value: item.id, text: `Avant ${item.title || kindNames[item.kind] + ' · ' + item.sourceKey}` })));
+    section.addEventListener('change', update); update();
+    dialog('Déplacer le widget', el('div', {}, field('Section de destination', section), field('Position', position)), [
+      { label: 'Déplacer', primary: true, action: async close => { if (moveDashboardWidget(board, widget.id, section.value, position.value || null)) await persist({ kind: 'widget', key: widget.id, action: 'move' }); close(); } }
+    ]);
   }
-  async function moveSection(section, delta) {
-    const sections = [...new Set(board.widgets.map(w => w.section || ''))]; const index = sections.indexOf(section); const next = index + delta;
-    if (next < 0 || next >= sections.length) return;
-    if (board.widgets.some(w => w.locked && [section, sections[next]].includes(w.section || ''))) throw new Error('Déverrouillez les widgets de ces sections avant de les déplacer.');
-    [sections[index], sections[next]] = [sections[next], sections[index]];
-    board.widgets.sort((a, b) => sections.indexOf(a.section || '') - sections.indexOf(b.section || '')); await persist();
+  function sectionDialog(original = null) {
+    const section = clone(original || { key: uuid(), title: 'Nouvelle section', description: '', accent: 'blue', hidden: false });
+    const title = input(section.title, { maxLength: 120 }); const description = textArea(section.description, 3); description.maxLength = 600;
+    const accent = select(namedChoices(model.catalog.accents, accentNames), section.accent);
+    const hidden = checkbox('Masquer cette section et ses widgets en lecture', section.hidden);
+    const position = select([{ value: '__end__', label: 'À la fin' }, ...sectionChoices().filter(item => item.value !== section.key).map(item => ({ value: item.value, label: `Avant ${item.label}` }))], '__end__');
+    if (original) { const index = board.sections.indexOf(original); if (board.sections[index + 1]) position.value = board.sections[index + 1].key; }
+    const read = () => Object.assign(section, { title: title.value.trim(), description: description.value, accent: accent.value, hidden: hidden.control.checked });
+    const actions = [{ label: 'Enregistrer la section', primary: true, action: async close => {
+      read(); if (!section.title) throw new Error('Donnez un titre à la section.');
+      if (!original && board.sections.length >= 60) throw new Error('Ce tableau contient déjà 60 sections.');
+      if (original) {
+        const index = board.sections.findIndex(item => item.key === original.key); if (index < 0) throw new Error('Cette section n’est plus disponible.');
+        board.sections[index] = section;
+      } else board.sections.push(section);
+      if (position.value !== '__end__') moveDashboardSection(board, section.key, position.value);
+      else { board.sections.splice(board.sections.indexOf(section), 1); board.sections.push(section); }
+      await persist({ kind: 'section', key: section.key, action: 'move' }); close();
+    } }];
+    const body = el('div', {}, el('div', { class: 'analytics-form-grid' }, field('Titre de la section', title), field('Couleur de la section', accent), field('Position de la section', position)),
+      field('Description de la section', description), hidden.element);
+    if (original) {
+      const destination = select(sectionChoices().filter(item => item.value !== section.key));
+      const count = board.widgets.filter(widget => widget.section === section.key).length;
+      const explanation = count ? field('Déplacer ses widgets vers', destination, `${count} widgets conservés, y compris ceux qui sont masqués.`) : caption('Cette section est vide.');
+      body.append(details('Retirer cette section', explanation, command(ctx, 'Supprimer la section', async () => {
+        if (board.sections.length === 1) throw new Error('Conservez au moins une section.');
+        if (board.widgets.some(widget => widget.section === section.key && widget.locked)) throw new Error('Déverrouillez les widgets de cette section avant de les déplacer.');
+        for (const widget of board.widgets.filter(item => item.section === section.key)) widget.section = destination.value;
+        board.sections = board.sections.filter(item => item.key !== section.key); board.collapsedSections = board.collapsedSections.filter(key => key !== section.key);
+        await persist(); modal.close();
+      }, { danger: true })));
+    }
+    const modal = dialog(original ? 'Modifier la section' : 'Créer une section', body, actions);
   }
   function drawBulk() {
+    selectionHost.hidden = !editing || selected.size === 0;
     const span = select([3, 4, 6, 8, 9, 12].map(v => ({ value: String(v), label: `${v} / 12 colonnes` })), '4');
-    const height = input(320, { type: 'number', min: 160, max: 960, step: 20 }); const section = input('');
-    const style = select([{ value: '', label: 'Conserver les styles' }, ...model.catalog.styles.map(value => ({ value, label: value }))]);
-    const accent = select([{ value: '', label: 'Conserver les accents' }, ...model.catalog.accents.map(value => ({ value, label: value }))]);
+    const height = input(320, { type: 'number', min: 160, max: 960, step: 20 }); const section = select([{ value: '__keep__', label: 'Conserver les sections' }, ...sectionChoices()], '__keep__');
+    const style = select([{ value: '', label: 'Conserver les styles' }, ...namedChoices(model.catalog.styles, styleNames)]);
+    const accent = select([{ value: '', label: 'Conserver les accents' }, ...namedChoices(model.catalog.accents, accentNames)]);
     selectionHost.replaceChildren(toolbar(caption(`${selected.size} widgets sélectionnés`), field('Largeur', span), field('Hauteur', height), field('Section', section), field('Style commun', style), field('Accent commun', accent),
       command(ctx, 'Aligner la sélection', async () => {
         const chosen = board.widgets.filter(w => selected.has(w.id) && !w.locked); let sum = 0;
         for (const widget of chosen) {
-          widget.span = Number(span.value); widget.height = Number(height.value); widget.section = section.value;
+          widget.span = Number(span.value); widget.height = Number(height.value); widget.autoHeight = false;
+          if (section.value !== '__keep__') widget.section = section.value;
           if (style.value) widget.style = style.value; if (accent.value) widget.accent = accent.value;
           widget.startNewRow = sum === 0 || sum + widget.span > 12; sum = widget.startNewRow ? widget.span : sum + widget.span;
         }
@@ -177,9 +274,11 @@ export async function renderDashboard(ctx) {
       }, { disabled: selected.size === 0 }), command(ctx, 'Masquer la sélection', async () => { for (const widget of board.widgets) if (selected.has(widget.id) && !widget.locked) widget.hidden = true; await persist(); }, { disabled: selected.size === 0 })));
   }
   function boardDialog() {
-    const name = input(board.name); const message = el('div', { role: 'alert' });
-    dialog('Organiser ce tableau de bord', el('div', {}, field('Nom', name), message), [
-      { label: 'Renommer', primary: true, action: async close => { board.name = name.value; await persist(); close(); } },
+    const name = input(board.name, { maxLength: 120 }); const description = textArea(board.description || '', 3); description.maxLength = 600;
+    const density = select([{ value: 'comfortable', label: 'Aérée' }, { value: 'compact', label: 'Compacte' }], board.density || 'comfortable');
+    const message = el('div', { role: 'alert' });
+    dialog('Organiser ce tableau de bord', el('div', {}, field('Nom', name), field('Description du tableau', description), field('Densité du tableau', density), message), [
+      { label: 'Enregistrer', primary: true, action: async close => { board.name = name.value; board.description = description.value; board.density = density.value; await persist(); close(); } },
       { label: 'Dupliquer', action: async close => { const copy = clone(board); copy.id = uuid(); copy.name = `${name.value} · copie`.slice(0, 120); copy.widgets.forEach(w => w.id = uuid()); layout.boards.push(copy); layout.activeBoardId = copy.id; await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ boardId: copy.id }); } },
       { label: 'Supprimer ce tableau', danger: true, action: async close => {
         if (layout.boards.length === 1) { message.textContent = 'Conservez au moins un tableau de bord.'; return; }
@@ -189,7 +288,9 @@ export async function renderDashboard(ctx) {
   }
   function hiddenDialog() {
     const hidden = board.widgets.filter(w => w.hidden);
-    dialog('Widgets masqués', hidden.length ? table(hidden, [{ key: 'title', label: 'Widget', render: w => w.title || w.sourceKey }, { key: 'show', label: 'Action', render: w => command(ctx, 'Réafficher', async () => { w.hidden = false; await persist(); }) }]) : empty('Aucun widget masqué'));
+    const modal = dialog('Widgets masqués', hidden.length ? table(hidden, [{ key: 'title', label: 'Widget', render: w => w.title || w.sourceKey }, { key: 'show', label: 'Action', render: w => command(ctx, 'Réafficher', async () => {
+      const widget = board.widgets.find(item => item.id === w.id); if (!widget) throw new Error('Ce widget n’est plus disponible.'); widget.hidden = false; await persist(); modal.close();
+    }) }]) : empty('Aucun widget masqué'));
   }
   function filtersDialog() {
     const common = filterEditor(model.catalog, board.filters); const compare = checkbox('Comparer avec un second périmètre indépendant', board.comparisonEnabled);
@@ -206,7 +307,7 @@ export async function renderDashboard(ctx) {
       await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ crossFilters: [] });
     } }]);
   }
-  function catalogDialog() {
+  function catalogDialog(sectionKey = null) {
     const search = input('', { placeholder: 'Rechercher une source ou une définition' }); const kind = select([{ value: '', label: 'Tous les types' }, ...Object.entries(kindNames).map(([value, label]) => ({ value, label }))]);
     const available = checkbox('Disponibles seulement', true); const favorite = checkbox('Favoris uniquement'); const recent = checkbox('Récemment utilisés'); const itemsHost = el('div', { class: 'analytics-catalog' });
     const modal = dialog('Catalogue de widgets', el('div', {}, toolbar(search, kind, available.element, favorite.element, recent.element), itemsHost));
@@ -221,7 +322,7 @@ export async function renderDashboard(ctx) {
           button(fav ? '★' : '☆', () => { layout.catalogFavorites = fav ? layout.catalogFavorites.filter(f => f !== token) : [...layout.catalogFavorites, token]; render(); }, { title: 'Favori du catalogue' }),
           command(ctx, 'Ajouter', async () => {
             if (board.widgets.length >= 60) throw new Error('Cette disposition contient déjà 60 widgets.');
-            const widget = newWidget(entry.kind, entry.key); board.widgets.push(widget);
+            const widget = newWidget(entry.kind, entry.key); widget.section = sectionKey ?? ensureSections(board).find(section => !section.hidden)?.key ?? board.sections[0].key; board.widgets.push(widget);
             layout.catalogRecent = [token, ...layout.catalogRecent.filter(t => t !== token)].slice(0, 30); await persist(); modal.close();
           }));
       }));
@@ -232,10 +333,10 @@ export async function renderDashboard(ctx) {
   }
   function widgetDialog(original) {
     const widget = clone(original); const kind = select(choices(Object.entries(kindNames).map(([key, label]) => ({ key, label }))), widget.kind);
-    const source = select([], widget.sourceKey); const title = input(widget.title); const section = input(widget.section);
-    const span = select([3, 4, 6, 8, 9, 12].map(value => ({ value: String(value), label: `${value} / 12` })), String(widget.span));
+    const source = select([], widget.sourceKey); const title = input(widget.title, { maxLength: 180 }); const section = select(sectionChoices(), widget.section);
+    const span = select(Array.from({ length: 10 }, (_, index) => index + 3).map(value => ({ value: String(value), label: `${value} / 12` })), String(widget.span));
     const height = input(widget.height, { type: 'number', min: 160, max: 960, step: 20 }); const top = input(widget.topCount, { type: 'number', min: 3, max: 30 });
-    const style = select(choices(model.catalog.styles), widget.style); const accent = select(choices(model.catalog.accents), widget.accent); const presentation = select(choices(model.catalog.presentations), widget.presentation);
+    const style = select(namedChoices(model.catalog.styles, styleNames), widget.style); const accent = select(namedChoices(model.catalog.accents, accentNames), widget.accent); const presentation = select(choices(model.catalog.presentations), widget.presentation);
     const stacking = select([{ value: 'percent', label: 'Pourcentage' }, { value: 'volume', label: 'Volume' }], widget.stackedMode); const pareto = input(widget.paretoThresholdPercent, { type: 'number', min: .1, max: 100, step: .1 });
     const automatic = checkbox('Hauteur automatique', widget.autoHeight); const row = checkbox('Commencer une nouvelle ligne', widget.startNewRow);
     const description = checkbox('Afficher les définitions et limites', widget.showDescription); const mini = checkbox('Mini-historique sur l’indicateur', widget.showMiniHistory);
@@ -261,9 +362,17 @@ export async function renderDashboard(ctx) {
       field('Largeur', span), field('Hauteur', height), field('Top catégories', top), field('Style', style), field('Accent', accent), field('Présentation', presentation),
       field('Empilage', stacking), field('Seuil de Pareto (%)', pareto), field('Fenêtre historique (jours)', period), field('Bornes histogramme séparées par ;', breaks), target.element, warning.element, critical.element),
       toolbar(automatic.element, row.element, description.element, mini.element, locked.element, hidden.element, lower.element), field('Note', note), details('Filtres propres à ce widget', filters.element)), [
-      { label: 'Enregistrer', primary: true, action: async close => { board.widgets[board.widgets.indexOf(original)] = read(); await persist(); close(); } },
+      { label: 'Enregistrer', primary: true, action: async close => {
+        read(); if (original.locked && widget.locked && (widget.section !== original.section || widget.span !== original.span || widget.height !== original.height || widget.autoHeight !== original.autoHeight || widget.startNewRow !== original.startNewRow))
+          throw new Error('Déverrouillez le widget pour modifier sa position ou ses dimensions.');
+        const index = board.widgets.findIndex(item => item.id === original.id); if (index < 0) throw new Error('Ce widget n’est plus disponible.');
+        board.widgets[index] = widget; await persist(); close();
+      } },
       { label: 'Dupliquer', action: async close => { const copy = read(); copy.id = uuid(); copy.locked = false; board.widgets.push(copy); await persist(); close(); } },
-      { label: 'Supprimer', danger: true, action: async close => { if (original.locked) throw new Error('Déverrouillez ce widget avant de le supprimer.'); board.widgets.splice(board.widgets.indexOf(original), 1); await persist(); close(); } }
+      { label: 'Supprimer', danger: true, action: async close => {
+        const index = board.widgets.findIndex(item => item.id === original.id); if (index < 0) throw new Error('Ce widget n’est plus disponible.');
+        if (board.widgets[index].locked) throw new Error('Déverrouillez ce widget avant de le supprimer.'); board.widgets.splice(index, 1); await persist(); close();
+      } }
     ]);
   }
   function exportDialog() {
@@ -292,28 +401,37 @@ export async function renderDashboard(ctx) {
       const widget = board.widgets.find(w => w.id === item.id); if (!widget) continue;
       const article = [...boardHost.querySelectorAll('[data-widget-id]')].find(node => node.dataset.widgetId === item.id); if (!article) continue;
       const host = widget.kind === 'history' ? article.querySelector('.analytics-history-mount') : article.querySelector('[data-history-widget]');
-      const content = el('div', { class: widget.kind === 'history' ? 'analytics-history-mount' : 'analytics-mini-history', 'data-history-widget': item.id }, sparkline(item.history, widget.kind === 'metric'));
+      const content = el('div', { class: widget.kind === 'history' ? 'analytics-history-mount' : 'analytics-mini-history', 'data-history-widget': item.id });
+      const observed = item.history?.points?.some(point => point.comparable && point.value != null && Number.isFinite(point.value));
+      if (widget.kind === 'history' || observed) content.append(sparkline(item.history, widget.kind === 'metric'));
+      else content.append(caption('Historique : aucune observation comparable.'));
       if (item.comparison && widget.kind === 'metric') {
         const c = item.comparison;
-        content.append(caption(`Deux fenêtres de ${c.periodDays} j · ${c.beforeSamples}/${c.afterSamples} observations · ${c.breaks} rupture(s)`),
-          caption(c.delta == null ? 'Comparaison indisponible : une fenêtre ne contient pas d’observation exploitable.' : `Moyennes observées : ${number(c.before)} → ${number(c.after)} · Δ ${number(c.delta, item.history?.unit)}`),
-          details('Méthode', caption(c.note), caption(item.history?.explanation ?? '')));
+        if (c.delta != null) content.append(caption(`Moyennes : ${number(c.before)} → ${number(c.after)} · Δ ${number(c.delta, item.history?.unit)}`));
+        if (widget.showDescription) content.append(details('Observations historiques',
+          caption(`Deux fenêtres de ${c.periodDays} j · ${c.beforeSamples}/${c.afterSamples} observations · ${c.breaks} rupture(s)`),
+          c.delta == null ? caption('Une fenêtre ne contient pas d’observation exploitable ; la variation reste indisponible.') : null,
+          caption(c.note), caption(item.history?.explanation ?? '')));
       }
       if (host) host.replaceWith(content); else article.append(content);
     }
   }
   async function loadHistory() {
-    historyController?.abort(); historyController = new AbortController();
-    status.replaceChildren(caption('Relecture des mêmes filtres et identités sur les archives comparables…'), button('Annuler les mini-historiques', () => historyController.abort()));
+    historyController?.abort(); const controller = new AbortController(); historyController = controller;
+    status.replaceChildren(caption('Relecture des mêmes filtres et identités sur les archives comparables…'), button('Annuler les mini-historiques', () => controller.abort()));
     try {
-      const result = await ctx.api.call('dashboard.history', runArgs, { signal: AbortSignal.any([ctx.signal, historyController.signal]) });
-      if (ctx.signal.aborted) return; historyData = result; displayHistory(result);
+      const activeRun = runArgs.runId;
+      const result = await ctx.api.call('dashboard.history', { ...runArgs }, { signal: AbortSignal.any([ctx.signal, controller.signal]) });
+      if (ctx.signal.aborted || controller !== historyController || activeRun !== runArgs.runId) return; historyData = result; displayHistory(result);
       status.replaceChildren(caption('Mini-historiques recalculés · archives comparables, ruptures conservées.'), command(ctx, 'Recalculer l’historique', loadHistory));
     } catch (reason) {
-      if (ctx.signal.aborted) return;
+      if (ctx.signal.aborted || controller !== historyController) return;
       status.replaceChildren(caption(reason.name === 'AbortError' ? 'Calcul historique annulé ; les indicateurs du relevé restent disponibles.' : `Historique indisponible : ${reason.message}`), command(ctx, 'Réessayer l’historique', loadHistory));
     }
   }
+  bindDashboardLayout({ host: boardHost, getBoard: () => board, canEdit: () => editing && !saving,
+    commit: async focus => { try { await persist(focus); } catch (reason) { error(ctx, reason); } },
+    announce: text => { editStatus.textContent = text; }, signal: ctx.signal });
   draw();
   if (board.widgets.some(w => !w.hidden && (w.kind === 'history' || w.kind === 'metric' && w.showMiniHistory))) void loadHistory();
   return () => { historyController?.abort(); cleanup(); };
@@ -322,6 +440,21 @@ export async function renderDashboard(ctx) {
 function newWidget(kind, sourceKey) { return { id: uuid(), kind, sourceKey, title: '', span: kind === 'metric' ? 3 : 6, height: kind === 'metric' ? 220 : 380, autoHeight: true,
   startNewRow: false, stackedMode: 'percent', paretoThresholdPercent: 80, showMiniHistory: true, historyPeriodDays: 7, style: 'surface', accent: 'blue', presentation: 'bars', topCount: 8,
   showDescription: true, hidden: false, locked: false, note: '', targetValue: null, warningValue: null, criticalValue: null, lowerIsBetter: true, section: '', filters: [], histogramBreaks: [1, 7, 14, 30, 90] }; }
+function qualitySummary(quality) {
+  if (!quality) return null;
+  const observations = [['Avant le transfert', quality.initialSample], ['Après le transfert', quality.finalSample]].filter(([, sample]) => sample);
+  const sample = observations.find(([, value]) => value.representationVerified === false)?.[1] ?? observations.at(-1)?.[1];
+  const item = (title, value, tone = '') => el('div', { class: `analytics-quality-fact ${tone}` }, el('span', { text: title }), el('strong', { text: value }));
+  return el('div', { class: 'analytics-quality-receipt' }, el('div', { class: 'analytics-quality-facts' },
+    item('Lignes reçues', `${quality.sourceRows == null ? 'Nombre inconnu' : formatNumber(quality.sourceRows)}${quality.expectedRows == null ? '' : ` / ${formatNumber(quality.expectedRows)}`}`, quality.receptionComplete ? 'success' : 'warning'),
+    item('Identifiants de l’échantillon', sample?.identityVerified == null ? 'Contrôle indisponible' : `${sample.sampleSize - sample.missingSampleIds} / ${sample.sampleSize} rapprochés`, quality.sampleIdentityVerified === false ? 'warning' : ''),
+    item('Comparaison des valeurs', sample?.representationVerified == null ? 'Contrôle indisponible' : sample.differentCells ? `${sample.differentCells} / ${sample.comparedCells} à vérifier` : `${sample.comparedCells} concordantes`, quality.representationVerified === false ? 'warning' : ''),
+    item('Caractères de contrôle', quality.unusualControlCount ? `${formatNumber(quality.unusualControlCount)} conservés dans la source` : 'Aucun détecté', quality.unusualControlCount ? 'warning' : '')),
+    observations.length ? details('Détail des deux contrôles', table(observations.map(([phase, value]) => ({ phase,
+      ids: value.identityVerified == null ? 'Indisponible' : `${value.sampleSize - value.missingSampleIds} / ${value.sampleSize}`,
+      values: value.representationVerified == null ? 'Indisponible' : `${value.differentCells} écarts / ${value.comparedCells}`,
+      formats: value.equivalentFormatCells })), [{ key: 'phase', label: 'Contrôle' }, { key: 'ids', label: 'Identifiants rapprochés' }, { key: 'values', label: 'Valeurs comparées' }, { key: 'formats', label: 'Formats équivalents prouvés' }])) : null);
+}
 function describeFilters(filters = []) { return filters.map(f => `${f.exclude ? 'sauf ' : ''}${f.sourceKey}${f.kind === 'metric' ? '' : ` = ${f.value}${f.kind === 'date' ? ` → ${f.value2}` : ''}`}`).join(' · '); }
 function catalogEntries(catalog) {
   return [...catalog.metrics.map(m => ({ ...m, kind: 'metric' })), ...catalog.distributions.map(m => ({ ...m, kind: 'distribution' })),
