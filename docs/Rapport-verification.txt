@@ -38,6 +38,10 @@ de la palette, tandis que les écrans d’analyse restent accessibles.
 Les transitions SSO vérifient les formulaires visibles, iframes et popups
 liés au portail suivi, les redirections passives, le retour discret,
 l’annulation et le respect des choix manuels d’affichage.
+La fermeture des onglets temporaires couvre une annulation pendant la
+navigation et un premier appel de fermeture volontairement bloqué. Le
+recours doit fermer uniquement la cible possédée, préserver la recherche
+et la fiche conservée, puis permettre une reprise depuis le bilan durable.
 Les fixtures du dépôt sont synthétiques. Les captures et configurations
 métier privées ne font pas partie des sources ni des packs publics.
 Les résultats définitifs, nombres de contrôles et SHA-256 sont ceux du

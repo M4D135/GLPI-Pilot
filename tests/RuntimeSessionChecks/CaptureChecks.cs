@@ -19,7 +19,8 @@ internal static class LibraryCaptureRuntimeChecks
         {
             ("Real library capture counts failed and partial attempts and retries only currently accessible failures", TargetedRetry),
             ("Real final GLPI index failure leaves received bodies unconfirmed until a successful explicit retry", FailedFinal),
-            ("Cancelling after the last real ticket read commits a durable report without confirming its bodies", CancelFinal)
+            ("Cancelling after the last real ticket read commits a durable report without confirming its bodies", CancelFinal),
+            ("A stalled close recovers only the owned temporary target and preserves the search and detail pages", StalledTemporaryClose)
         };
     }
     public static async Task DisposeAsync() { if (_browser is not null) await _browser.DisposeAsync(); _playwright?.Dispose(); }
@@ -108,6 +109,28 @@ internal static class LibraryCaptureRuntimeChecks
         glpi.PauseIndexNumber = 0;
         var retry = await f.Call("library.capture", new { mode = "retry", runId = report.GetProperty("runId").GetString() });
         Require(retry.GetProperty("retryCount").GetInt32() == 0 && retry.GetProperty("finalScopeVerified").GetBoolean());
+    }
+    private static async Task StalledTemporaryClose()
+    {
+        await using var glpi = await TicketLibraryCaptureBrowserFixture.OpenAsync(_browser!, SessionFixture.SourceA);
+        var detail = await glpi.Context.NewPageAsync(); await detail.GotoAsync(Seed("43").Ticket.Url);
+        foreach (var stallStopLoading in new[] { false, true })
+        {
+            var temporary = await glpi.Context.NewPageAsync(); await temporary.GotoAsync(SessionFixture.SourceA);
+            var trace = new TicketCleanupTrace(temporary, stallStopLoading);
+            // Withhold the first close and optionally the renderer's stop command.
+            // Recovery still closes a real Chromium target and must observe it gone.
+            await glpi.Service.CloseTicketCleanupFixtureAsync(trace.Page, own: true).WaitAsync(TimeSpan.FromSeconds(9));
+            Require(temporary.IsClosed && glpi.Context.Pages.Count == 2 && trace.CloseCalls == 1,
+                "A stalled close left its real temporary target alive.");
+            Require(trace.Commands.SequenceEqual(["Target.getTargetInfo", "Page.stopLoading", "Target.closeTarget"]) && trace.DetachCalls == 1,
+                "The recovery must attempt stop and close on the attached target, then detach its CDP session.");
+            Require(glpi.Context.Pages.Contains(glpi.Page) && glpi.Context.Pages.Contains(detail)
+                && glpi.Page.Url == SessionFixture.SourceA && detail.Url == Seed("43").Ticket.Url,
+                "Temporary cleanup changed the retained search or ticket detail page.");
+        }
+        await glpi.Service.CloseTicketCleanupFixtureAsync(glpi.Page, own: false);
+        Require(!glpi.Page.IsClosed && glpi.Context.Pages.Count == 2, "Cleanup accepted a page not owned by the ticket flow.");
     }
     private static async Task Refuse(Func<Task> action)
     { try { await action(); } catch (Exception e) when (e is InvalidOperationException or InvalidDataException) { return; } throw new InvalidOperationException("Expected refusal."); }

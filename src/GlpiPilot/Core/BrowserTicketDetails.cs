@@ -558,9 +558,84 @@ public sealed partial class BrowserService
     }
     private async Task CloseTicketPageAsync(IPage page)
     {
+        // This cleanup may only close pages explicitly created/owned by the
+        // ticket flow, never the user's search or another browser tab.
+        if (!_ticketPages.ContainsKey(page)) return;
         if (ReferenceEquals(_ticketPage, page)) _ticketPage = null;
-        try { if (!page.IsClosed) await page.CloseAsync(new() { RunBeforeUnload = false }).WaitAsync(TimeSpan.FromSeconds(3)); }
-        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
-        { Log?.Invoke(ex is TimeoutException ? "FICHE · fermeture de l’onglet temporaire encore en attente." : "FICHE · fermeture de l’onglet temporaire non confirmée par le navigateur."); }
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Closed(object? _, IPage __) => closed.TrySetResult();
+        page.Close += Closed;
+        try
+        {
+            if (page.IsClosed) return;
+            using (var budget = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+            {
+                var close = page.CloseAsync(new() { RunBeforeUnload = false });
+                // The browser action can complete after our bounded wait. Its
+                // failure must remain observed even when recovery closes it.
+                _ = close.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                try
+                {
+                    await close.WaitAsync(budget.Token);
+                    if (!page.IsClosed) await closed.Task.WaitAsync(budget.Token);
+                }
+                catch (Exception ex) when (ex is PlaywrightException or OperationCanceledException or TimeoutException) { }
+            }
+            if (page.IsClosed) return;
+            // Cancellation of GotoAsync's WaitAsync does not cancel Chromium's
+            // navigation. A target can remain alive while its first close is
+            // pending: stop that exact owned target, close it, and observe the
+            // page-closed event before releasing the ticket operation gate.
+            await RecoverTicketPageCloseAsync(page, closed.Task);
+            if (!page.IsClosed) Log?.Invoke("FICHE · fermeture de l’onglet temporaire non confirmée par le navigateur.");
+        }
+        finally { page.Close -= Closed; }
+    }
+    private static async Task RecoverTicketPageCloseAsync(IPage page, Task closed)
+    {
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        ICDPSession? session = null;
+        Task<ICDPSession>? pending = null;
+        try
+        {
+            if (page.IsClosed) return;
+            pending = page.Context.NewCDPSessionAsync(page);
+            session = await pending.WaitAsync(budget.Token);
+            var response = await session.SendAsync("Target.getTargetInfo").WaitAsync(budget.Token);
+            if (response is not { } information || !information.TryGetProperty("targetInfo", out var target)
+                || !target.TryGetProperty("targetId", out var id) || id.ValueKind != System.Text.Json.JsonValueKind.String
+                || id.GetString() is not { Length: > 0 } targetId) return;
+            var stop = session.SendAsync("Page.stopLoading");
+            _ = stop.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            try { await stop.WaitAsync(TimeSpan.FromSeconds(1), budget.Token); }
+            catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
+            // A stalled renderer must not consume the whole recovery budget:
+            // target closure is a separate browser command and is still tried.
+            budget.Token.ThrowIfCancellationRequested();
+            if (!page.IsClosed)
+                await session.SendAsync("Target.closeTarget", new() { ["targetId"] = targetId }).WaitAsync(budget.Token);
+            if (!page.IsClosed) await closed.WaitAsync(budget.Token);
+        }
+        catch (Exception ex) when (ex is PlaywrightException or OperationCanceledException or TimeoutException) { }
+        finally
+        {
+            if (session != null)
+            {
+                try { await session.DetachAsync().WaitAsync(TimeSpan.FromSeconds(1)); }
+                catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
+            }
+            else if (pending != null) _ = DetachLateTicketCleanupSessionAsync(pending);
+        }
+    }
+    private static async Task DetachLateTicketCleanupSessionAsync(Task<ICDPSession> pending)
+    {
+        try
+        {
+            var session = await pending;
+            await session.DetachAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
     }
 }

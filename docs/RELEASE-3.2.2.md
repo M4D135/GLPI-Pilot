@@ -71,6 +71,8 @@ Les formulaires visibles dans une iframe et les fenêtres de connexion ouvertes 
 
 GLPI Pilot ne coche ni ne soumet le formulaire d’authentification à la place de l’utilisateur. Le parcours reste soumis aux règles du SSO de l’organisation. Les scénarios locaux couvrent le comportement sur des pages de test isolées ; le fournisseur privé doit être essayé sur le poste réel.
 
+L’annulation d’une lecture pendant une navigation ferme également ses onglets temporaires. Si la fermeture habituelle reste en attente, un nettoyage borné arrête le chargement et ferme la cible exacte de l’onglet créé par l’application. La page source, la fiche conservée et le bilan durable de la lecture restent préservés ; une lecture annulée ne confirme pas rétroactivement les contenus reçus.
+
 ## Ajouter une disposition et importer seulement les réglages fournis
 
 Dans **Modifier le dashboard → Disposition → Importer une disposition**, **Ajouter à mes tableaux** est l’action recommandée. L’aperçu présente les tableaux ajoutés et les noms éventuellement renommés. Les tableaux actuels, leurs identifiants, les favoris et les contextes existants sont conservés.
