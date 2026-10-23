@@ -22,7 +22,7 @@ Le parcours reste dans un seul lecteur : consulter un précédent puis revenir c
 
 Le bouton **Chercher des solutions similaires** dans la fiche de travail ouvre ce même parcours. Le rapprochement utilise le numéro et l’adresse GLPI ensemble : un numéro identique d’un autre portail ne prend pas sa place. Si la fiche n’a pas encore été recueillie dans la bibliothèque, un message l’explique en gardant la fiche et la saisie ouvertes.
 
-Le traitement examine au maximum 100 candidats issus de l’index local, recontrôle jusqu’à 16 documents avant restitution et présente au maximum huit résultats. Les compteurs et limites restent visibles. C’est une recherche lexicale expliquée par ses correspondances et ses extraits ; elle ne produit pas de réponse générée, de pourcentage de confiance ou d’envoi à un modèle externe.
+Le traitement examine au maximum 100 candidats issus de l’index local, recontrôle jusqu’à 16 documents avant restitution et présente au maximum huit résultats. Les compteurs sont affichés ; les limites sont précisées lorsque la sélection est limitée. C’est une recherche lexicale expliquée par ses correspondances et ses extraits ; elle ne produit pas de réponse générée, de pourcentage de confiance ou d’envoi à un modèle externe.
 
 ## Bilan durable et reprise ciblée
 

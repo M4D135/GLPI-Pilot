@@ -13,6 +13,7 @@ internal static partial class Program
         var executable = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM");
         await using var browser = await playwright.Chromium.LaunchAsync(new()
         { Headless = true, ExecutablePath = string.IsNullOrEmpty(executable) ? null : executable, Args = ["--no-sandbox", "--disable-dev-shm-usage"] });
+        Console.WriteLine("Navigation browser version: " + browser.Version);
         await using var context = await browser.NewContextAsync(new()
         { ViewportSize = new() { Width = 1440, Height = 1000 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.NoPreference });
         var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000);
@@ -53,6 +54,29 @@ internal static partial class Program
               removeEventListener: (name, handler) => listeners.delete(handler)
             }; window.__pilotDeliver = message => { for (const listener of listeners) listener({ data: message }); }; })();
             """);
+        await page.AddInitScriptAsync("""
+            (() => {
+              window.__navigationDragTrace = [];
+              window.__navigationDragTraceEnabled = false;
+              const describe = node => node instanceof Element ? {
+                tag: node.tagName.toLowerCase(), class: node.getAttribute('class'),
+                page: node.closest('[data-nav-page]')?.dataset.navPage || '',
+                group: node.closest('[data-nav-group]')?.dataset.navGroup || '',
+                focus: node.dataset.navigationFocus || ''
+              } : null;
+              for (const type of ['pointerdown', 'dragstart', 'dragenter', 'dragover', 'drop', 'dragend', 'pointerup']) {
+                document.addEventListener(type, event => {
+                  if (!window.__navigationDragTraceEnabled || window.__navigationDragTrace.length >= 160) return;
+                  const entry = {type, trusted: event.isTrusted, target: describe(event.target),
+                    x: event.clientX, y: event.clientY, focus: describe(document.activeElement),
+                    scroll: document.querySelector('dialog.navigation-modal .modal-body')?.scrollTop};
+                  window.__navigationDragTrace.push(entry);
+                  // Observe after the complete event dispatch, including target/bubble listeners.
+                  setTimeout(() => { entry.prevented = event.defaultPrevented; }, 0);
+                }, true);
+              }
+            })();
+            """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
         ILocator Editor() => page.GetByRole(AriaRole.Dialog, new() { Name = "Personnaliser la navigation", Exact = true });
         async Task OpenEditor()
@@ -91,6 +115,57 @@ internal static partial class Program
         {
             await Call(app, "app.appearance", new { preferences, theme });
             await delivery;
+        }
+        async Task DragDiagnostics(string phase)
+        {
+            Console.WriteLine("NAVIGATION DRAG " + phase + ": " + await page.EvaluateAsync<string>("""
+                JSON.stringify({
+                  events: window.__navigationDragTrace,
+                  dialogs: [...document.querySelectorAll('dialog[open]')].map(node=>node.getAttribute('aria-label')),
+                  groups: [...document.querySelectorAll('.navigation-group-card')].map(node=>({
+                    group:node.dataset.navGroup,pages:[...node.querySelectorAll('[data-nav-page]')].map(row=>row.dataset.navPage)
+                  })),
+                  focus: document.activeElement?.dataset.navigationFocus || document.activeElement?.tagName,
+                  scroll: document.querySelector('dialog.navigation-modal .modal-body')?.scrollTop,
+                  status: document.querySelector('.navigation-editor-status')?.textContent,
+                  transform: document.querySelector('dialog.navigation-modal') && getComputedStyle(document.querySelector('dialog.navigation-modal')).transform
+                })
+                """));
+        }
+        async Task SettleNavigationGeometry(params string[] selectors)
+        {
+            // Native DragTo disables waitAfter. Finish the visible dialog animation,
+            // then observe stable frames after paint() schedules its scrollIntoView.
+            await Editor().EvaluateAsync("""
+                async (modal, selectors) => {
+                  let deadline;
+                  try {
+                    await Promise.race([
+                      (async () => {
+                        const finite = modal.getAnimations({subtree:true}).filter(animation =>
+                          Number.isFinite(animation.effect?.getComputedTiming().endTime));
+                        await Promise.all(finite.map(animation => animation.finished.catch(() => {})));
+                        let previous = '', stableFrames = 0;
+                        while (stableFrames < 2) {
+                          await new Promise(resolve => requestAnimationFrame(resolve));
+                          if (!modal.isConnected) throw new Error('Navigation editor closed before the drag geometry settled.');
+                          const scroller = modal.querySelector('.modal-body');
+                          const rectangles = selectors.map(selector => {
+                            const node = modal.querySelector(selector);
+                            if (!node) throw new Error('Navigation drag endpoint disappeared: ' + selector);
+                            const rect = node.getBoundingClientRect();
+                            return [rect.x, rect.y, rect.width, rect.height];
+                          });
+                          const current = JSON.stringify([scroller.scrollTop, scroller.scrollLeft, rectangles]);
+                          stableFrames = current === previous ? stableFrames + 1 : 0;
+                          previous = current;
+                        }
+                      })(),
+                      new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Navigation drag geometry did not settle within 5 seconds.')), 5000); })
+                    ]);
+                  } finally { clearTimeout(deadline); }
+                }
+                """, selectors);
         }
 
         await page.GotoAsync("https://glpi-pilot.local/index.html");
@@ -137,15 +212,46 @@ internal static partial class Program
             "Cancel discards both visibility edits and a draft reset without changing the saved menu.");
 
         await OpenEditor();
-        await Editor().Locator(".navigation-item-row[data-nav-page=library] .navigation-handle")
-            .DragToAsync(Editor().Locator(".navigation-item-row[data-nav-page=day]"));
-        await Editor().Locator(".navigation-group-card[data-nav-group=workspace] > .navigation-group-heading .navigation-handle")
-            .DragToAsync(Editor().Locator(".navigation-group-card[data-nav-group=pinned] > .navigation-group-heading"));
-        await SaveEditor(); persisted = AppSettings.Load().Interface;
-        Require(!persisted.PinnedNavigation.Contains("library") && persisted.NavigationGroups.GetValueOrDefault("library") == "workspace"
-            && persisted.NavigationOrder.IndexOf("library") < persisted.NavigationOrder.IndexOf("day")
-            && persisted.NavigationGroupOrder.IndexOf("workspace") < persisted.NavigationGroupOrder.IndexOf("pinned"),
-            "Real pointer drag-and-drop rehomes a pinned page before its target and moves a group without duplicating routes.");
+        await page.EvaluateAsync("window.__navigationDragTraceEnabled=true");
+        try
+        {
+            await SettleNavigationGeometry(".navigation-item-row[data-nav-page=library] .navigation-handle", ".navigation-item-row[data-nav-page=day]");
+            await DragDiagnostics("before page gesture");
+            await Editor().Locator(".navigation-item-row[data-nav-page=library] .navigation-handle")
+                .DragToAsync(Editor().Locator(".navigation-item-row[data-nav-page=day]"));
+            await DragDiagnostics("after page gesture");
+            await WaitForPageAsync(page, "document.querySelector('.navigation-item-row[data-nav-page=library]')?.closest('[data-nav-group]')?.dataset.navGroup==='workspace'");
+            await SettleNavigationGeometry(".navigation-group-card[data-nav-group=workspace] > .navigation-group-heading .navigation-handle", ".navigation-group-card[data-nav-group=pinned] > .navigation-group-heading");
+            Require(await Editor().Locator(".navigation-group-card[data-nav-group=pinned] [data-nav-page=library]").CountAsync() == 0
+                && await Editor().Locator(".navigation-group-card[data-nav-group=workspace] [data-nav-page=library]").CountAsync() == 1
+                && await page.EvaluateAsync<bool>("window.__navigationDragTrace.some(event=>event.type==='dragstart' && event.trusted && event.target?.page==='library') && window.__navigationDragTrace.some(event=>event.type==='drop' && event.trusted && event.target?.page==='day' && event.prevented)"),
+                "The real page drag removes Bibliothèque from pinned shortcuts and places it once in Mon quotidien before another gesture starts.");
+            var pageOrder = await Editor().Locator(".navigation-group-card[data-nav-group=workspace] [data-nav-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.navPage)");
+            Require(Array.IndexOf(pageOrder, "library") < Array.IndexOf(pageOrder, "day"),
+                "The real page drop inserts Bibliothèque before Ma journée at the requested target.");
+            await Editor().Locator(".navigation-group-card[data-nav-group=workspace] > .navigation-group-heading .navigation-handle")
+                .DragToAsync(Editor().Locator(".navigation-group-card[data-nav-group=pinned] > .navigation-group-heading"));
+            await DragDiagnostics("after group gesture");
+            await WaitForPageAsync(page, "(() => {const groups=[...document.querySelectorAll('.navigation-group-card')].map(node=>node.dataset.navGroup);return groups.indexOf('workspace')>=0 && groups.indexOf('workspace')<groups.indexOf('pinned');})()");
+            await SettleNavigationGeometry(".navigation-group-card[data-nav-group=workspace]", ".navigation-group-card[data-nav-group=pinned]");
+            Require(await Editor().Locator("[data-nav-page]").CountAsync() == 26
+                && await Editor().Locator("[data-nav-page]").EvaluateAllAsync<bool>("nodes=>new Set(nodes.map(node=>node.dataset.navPage)).size===26")
+                && await page.EvaluateAsync<bool>("window.__navigationDragTrace.some(event=>event.type==='dragstart' && event.trusted && event.target?.focus==='group:workspace') && window.__navigationDragTrace.some(event=>event.type==='drop' && event.trusted && event.target?.group==='pinned' && event.prevented)"),
+                "The real group drag moves Mon quotidien before Épinglés without losing or duplicating a route.");
+            await SaveEditor(); persisted = AppSettings.Load().Interface;
+            Require(!persisted.PinnedNavigation.Contains("library") && persisted.NavigationGroups.GetValueOrDefault("library") == "workspace"
+                && persisted.NavigationOrder.IndexOf("library") < persisted.NavigationOrder.IndexOf("day")
+                && persisted.NavigationGroupOrder.IndexOf("workspace") < persisted.NavigationGroupOrder.IndexOf("pinned"),
+                "Saving both real pointer moves retains their observed page membership and page/group orders in C# preferences.");
+        }
+        catch
+        {
+            await DragDiagnostics("failure");
+            await Capture("navigation-drag-failure");
+            Console.Error.WriteLine("NAVIGATION SAVED PREFERENCES: " + JsonSerializer.Serialize(AppSettings.Load().Interface, PilotApplication.Json));
+            throw;
+        }
+        finally { await page.EvaluateAsync("window.__navigationDragTraceEnabled=false"); }
 
         await OpenEditor();
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Masquer les écrans facultatifs", Exact = true }).ClickAsync();
