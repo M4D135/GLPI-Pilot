@@ -1,7 +1,7 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, form, confirm, formatNumber } from '../ui.js';
 import { page, pager, referenceField, highlighted, details, facts } from './terrain-common.js';
 
-const matchNames = ['Reconnue', 'Sans correspondance', 'Ambiguë', 'Titre indisponible'];
+const matchNames = ['Reconnue', 'Sans correspondance', 'Ambiguë', 'Titre indisponible', 'Site reconnu · commune non renseignée'];
 
 export async function renderReview(ctx) {
   const p = page(ctx, 'Revoir les localisations', 'Retrouvez la décision de détection, corrigez un lieu localement et proposez une règle réutilisable.');
@@ -13,10 +13,10 @@ export async function renderReview(ctx) {
     button('Actualiser', p.act(async () => { const state = await p.call('terrain.reference.state'); revision = state.revision; await load(); })), button('Règles et référentiel', () => ctx.navigate('terrain-reference'))), listing));
   async function load() {
     const data = await p.call('terrain.review.list', { revision, filter: filter.value, search: search.value, offset, limit: 50 }); revision = data.revision;
-    summary.replaceChildren(el('div', { class: 'terrain-statbar' }, badge(`${formatNumber(data.summary.matchedCount)} reconnues`, 'ok'), badge(`${formatNumber(data.summary.unmatchedCount)} sans correspondance`),
+    summary.replaceChildren(el('div', { class: 'terrain-statbar' }, badge(`${formatNumber(data.summary.matchedCount)} lignes avec commune`, 'ok'), data.summary.siteOnlyCount ? badge(`${formatNumber(data.summary.siteOnlyCount)} lignes avec site sans commune`) : '', badge(`${formatNumber(data.summary.unmatchedCount)} sans correspondance`),
       badge(`${formatNumber(data.summary.ambiguousCount)} ambiguës`, 'warn'), badge(`${formatNumber(data.summary.titleUnavailableCount)} titres absents`), badge(`${formatNumber(data.summary.manualCount)} corrections locales`)), el('p', { text: data.summary.message }));
     listing.replaceChildren(table(data.items, [
-      { key: 'id', label: 'ID' }, { key: 'title', label: 'Titre' }, { key: 'cityName', label: 'Ville' }, { key: 'siteName', label: 'Site' },
+      { key: 'id', label: 'ID' }, { key: 'title', label: 'Titre' }, { key: 'cityName', label: 'Ville', render: row => row.cityName || (row.state === 4 ? 'Commune non renseignée' : '—') }, { key: 'siteName', label: 'Site' },
       { key: 'state', label: 'Décision', render: row => badge(row.isOverride ? 'Correction locale' : matchNames[row.state], row.state === 2 ? 'warn' : '') },
       { key: 'actions', label: '', render: row => button('Examiner', p.act(() => examine(row.rowIndex))) }
     ], { key: 'rowIndex', maxRows: 50, onSelect: row => p.run(() => examine(row.rowIndex)), emptyText: 'Aucune ligne dans cette sélection.' }), pager(data, next => p.run(async () => { offset = next; await load(); })));
@@ -24,14 +24,14 @@ export async function renderReview(ctx) {
   async function examine(row) {
     const data = await p.call('terrain.review.detail', { revision, row }); const errors = el('div', { role: 'alert' });
     let site;
-    const city = referenceField(p, 'Ville corrigée', 'city', data.correction?.cityId || data.match.cityId || '', data.match.cityName || '', { saved: true, onChange: () => site?.set('') });
-    site = referenceField(p, 'Site facultatif', 'site', data.correction?.siteId || data.match.siteId || '', data.match.siteName || '', { saved: true, parent: () => city.read(), empty: 'Ville seule' });
+    const city = referenceField(p, 'Commune corrigée · facultative pour un site non rattaché', 'city', data.correction?.cityId || data.match.cityId || '', data.match.cityName || '', { saved: true, empty: 'Commune non renseignée', onChange: () => site?.set('') });
+    site = referenceField(p, 'Site facultatif', 'site', data.correction?.siteId || data.match.siteId || '', data.match.siteName || '', { saved: true, parent: () => city.read(), empty: 'Site non renseigné' });
     const reason = form([{ key: 'reason', label: 'Motif de la correction', required: true, maxLength: 1000, help: 'Justification conservée localement avec le ticket ; 1 000 caractères au maximum.' }], { reason: data.correction?.reason || '' });
     const promotion = form([{ key: 'term', label: 'Terme à généraliser', required: true }, { key: 'requiredContext', label: 'Contexte requis facultatif' }, { key: 'contextColumn', label: 'Colonne du contexte', help: 'Vide : contexte recherché dans le titre.' }]);
     const content = el('div', { class: 'terrain-editor' }, errors, highlighted(data.title, data.highlights),
       data.titleTruncated ? el('p', { text: 'Titre affiché limité à 20 000 caractères.' }) : '',
       facts([['Ville', data.match.cityName], ['Site', data.match.siteName], ['Bâtiment', data.match.buildingName], ['Confiance', data.match.confidence], ['Décision', data.match.explanation]]),
-      details('Termes et règles examinés', table(data.match.evidence, [{ key: 'cityName', label: 'Ville candidate' }, { key: 'term', label: 'Terme' }, { key: 'decision', label: 'Décision' }, { key: 'explanation', label: 'Justification' }], { maxRows: 100 })),
+      details('Termes et règles examinés', table(data.match.evidence, [{ key: 'cityName', label: 'Lieu candidat', render: row => row.siteName ? `${row.siteName} · ${row.cityName || 'commune non renseignée'}` : row.cityName }, { key: 'term', label: 'Terme' }, { key: 'decision', label: 'Décision' }, { key: 'explanation', label: 'Justification' }], { maxRows: 100 })),
       details('Champs source du ticket', table(data.fields, [{ key: 'name', label: 'Colonne' }, { key: 'value', label: 'Valeur' }], { maxRows: 100 })),
       card('Correction locale', el('p', { text: 'La correction s’attache à l’installation GLPI et à l’identifiant unique du ticket. Le relevé, les tableaux de bord et les tournées seront recalculés.' }), city.element, site.element, reason.element,
         data.correction ? el('p', { text: `Correction conservée le ${new Date(data.correction.updatedUtc).toLocaleString('fr-FR')}.` }) : ''),
@@ -49,7 +49,7 @@ export async function renderReview(ctx) {
         const result = await p.call('terrain.review.correct', { revision, row, cityId: '', siteId: '', reason: '' }); revision = result.revision; close(); await load();
       }, errors) }] : []),
       { label: 'Enregistrer la correction', primary: true, action: close => p.run(async () => {
-        if (!city.read()) throw new Error('Choisissez la ville de correction.');
+        if (!city.read() && !site.read()) throw new Error('Choisissez une commune ou un site de correction.');
         const result = await p.call('terrain.review.correct', { revision, row, cityId: city.read(), siteId: site.read(), reason: reason.read().reason }); revision = result.revision;
         close(); await load(); p.message('Correction enregistrée et localisations recalculées.');
       }, errors) }

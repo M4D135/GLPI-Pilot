@@ -46,6 +46,13 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("SSO terminé sur le tableau de bord : retour automatique à la recherche exacte", CheckDashboardReturn),
     ("SSO ayant retiré les filtres : recherche complète réouverte", CheckLostFilters),
     ("Nouvel onglet GLPI : choix automatique devant une connexion restée ouverte", CheckPopupChoice),
+    ("SSO discret : souvenir de moi et connexion affichés puis collecte réduite", () => CheckInteractiveSso("complete")),
+    ("SSO discret : affichage manuel conservé après la validation", () => CheckInteractiveSso("manual-show")),
+    ("SSO discret : masquage manuel respecté tant que le formulaire reste inchangé", () => CheckInteractiveSso("manual-hide")),
+    ("SSO discret : annulation rend seulement la fenêtre automatique discrète", () => CheckInteractiveSso("cancel")),
+    ("SSO discret : contrôles masqués et redirection passive sans prise de focus", CheckInvisibleSso),
+    ("SSO discret : validation dans une iframe IdP visible", CheckAuthenticationIframe),
+    ("SSO discret : seule la fenêtre IdP ouverte par le portail est révélée", CheckAuthenticationPopup),
     ("Un clic GLPI 10 : page 2 visible, cinq lignes natives et Excel automatique", CheckNative10),
     ("Annulation avant Excel : reçu natif intact et aucune phase Fichier prêt", () => CheckPipelineCancellation("excel-before")),
     ("Annulation après Excel : fichier terminé conservé, aucun faux succès", () => CheckPipelineCancellation("excel-after")),
@@ -62,8 +69,8 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Autre instance GLPI ouverte : seule l’origine cible est retenue", CheckOtherGlpiOrigin),
     ("Portail dans une iframe visible : recherche et export natif complet", CheckIframeNative),
     ("Recherche GLPI vide : compteur zéro et fichiers sans faux résultat", CheckEmptySearch),
-    ("Navigateur derrière le logiciel : aucune réduction ni focus automatique", CheckBackgroundFocus),
-    ("Navigateur déjà réduit : fenêtre normale restaurée sans passage au premier plan", CheckRestoreOpenWindow),
+    ("Navigateur discret : fenêtre dédiée réduite sans focus automatique", CheckBackgroundFocus),
+    ("Navigateur déjà réduit : conservé discret puis restauré sur demande", CheckRestoreOpenWindow),
     ("Popup éphémère : cible CDP disparue sans faux avertissement de navigateur", CheckTransientWindowTarget),
     ("Legacy réel : six tableaux, export adjacent CSV -3 et 828 lignes", () => CheckRealisticLegacy(false)),
     ("Legacy ancien : Select2 masqué, disquette input image et 828 lignes natives", () => CheckRealisticLegacy(true)),
@@ -172,6 +179,7 @@ Task CheckTargetPolicy()
 
 async Task CheckDashboardReturn()
 {
+    var focus = new FocusCallTrace();
     bool authenticated = false;
     var targetQueries = new ConcurrentQueue<string>();
     await using var h = await Create(async route =>
@@ -191,12 +199,13 @@ async Task CheckDashboardReturn()
             await Html(route, "<html><title>GLPI</title><body><a href='/logout.php'>Déconnexion</a><h1>Tableau de bord</h1></body></html>");
         }
         else await route.FulfillAsync(new() { Status = 404 });
-    });
+    }, focus: focus);
     var result = await h.Service.OpenTargetAsync(Settings(), CancellationToken.None);
     Equal(target, result.Url);
     Equal(2, targetQueries.Count);
     True(targetQueries.All(query => query == new Uri(target).Query), "Le retour après SSO doit reprendre tous les paramètres de recherche.");
     True(h.Logs.Any(line => line.Contains("retour automatique", StringComparison.Ordinal)), "Le retour depuis le tableau de bord doit être journalisé.");
+    Equal(0, focus.BringToFrontCalls);
 }
 
 async Task CheckLostFilters()
@@ -238,15 +247,12 @@ async Task CheckPopupChoice()
     }, "http://glpi.test/login.php", focus);
     var messages = new ConcurrentQueue<string>();
     var challengeShown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    h.Service.ConnectionProgress += message =>
-    {
-        messages.Enqueue(message);
-        if (message.Contains("saisie ou validation détectée", StringComparison.Ordinal)) challengeShown.TrySetResult();
-    };
+    h.Service.ConnectionProgress += messages.Enqueue;
+    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) challengeShown.TrySetResult(); };
     using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
     var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
     await challengeShown.Task.WaitAsync(TimeSpan.FromSeconds(3));
-    Equal(1, loginRequests); Equal(0, targetRequests); Equal(0, focus.BringToFrontCalls);
+    Equal(1, loginRequests); Equal(0, targetRequests); Equal(1, focus.BringToFrontCalls);
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
     var popupTask = h.Page.WaitForPopupAsync();
     await h.Page.EvaluateAsync("url => window.open(url, '_blank')", target);
@@ -258,10 +264,122 @@ async Task CheckPopupChoice()
     True(ReferenceEquals(popup, settled), "L’attente automatique doit terminer sur le nouvel onglet.");
     True(ReferenceEquals(popup, h.Service.ActivePage), "L’onglet actif mémorisé doit suivre le portail.");
     True(messages.Any(message => message.Contains("Connexion établie", StringComparison.Ordinal)), "La progression doit annoncer la fin réelle du SSO.");
-    Equal(1, loginRequests); Equal(1, targetRequests); Equal(0, focus.BringToFrontCalls);
+    Equal(1, loginRequests); Equal(1, targetRequests); Equal(1, focus.BringToFrontCalls);
+    True(h.Service.BackgroundMode, "L’onglet GLPI prêt doit rendre le navigateur discret après la validation temporaire.");
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
     Equal("http://glpi.test/login.php", h.Page.Url);
     Equal(2, h.Context.Pages.Count);
+}
+
+string InteractiveSsoMarkup() => """
+    <!doctype html><html><body><h1>Authentification</h1>
+    <form onsubmit="window.testSubmits++; return false">
+      <label><input id="remember" type="checkbox">Se souvenir de moi</label>
+      <button type="submit">Se connecter</button>
+    </form>
+    <script>window.testClicks=0;window.testSubmits=0;document.addEventListener('click',()=>window.testClicks++);</script>
+    </body></html>
+    """;
+
+async Task CheckInteractiveSso(string mode)
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    await using var h = await Create(route => Html(route,
+        new Uri(route.Request.Url).AbsolutePath == "/intermediate" ? InteractiveSsoMarkup() : ready),
+        "http://glpi.test/intermediate", focus);
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    True(!await h.Page.Locator("#remember").IsCheckedAsync(), "La case de persistance appartient à l’utilisateur.");
+    True(!h.Service.BackgroundMode, "La validation nécessaire doit restaurer uniquement le navigateur dédié.");
+    if (mode == "manual-show") await h.Service.ShowBrowserAsync(h.Page, CancellationToken.None);
+    if (mode == "manual-hide")
+    {
+        await h.Service.HideBrowserAsync(CancellationToken.None);
+        await Task.Delay(1100);
+        Equal(1, focus.BringToFrontCalls);
+        True(h.Service.BackgroundMode, "La validation inchangée ne doit pas annuler un masquage manuel.");
+    }
+    if (mode == "cancel")
+    {
+        cancellation.Cancel();
+        try { await settling; throw new Exception("La connexion devait être annulée."); }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        Equal("http://glpi.test/intermediate", h.Page.Url);
+        Equal(0, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    }
+    else
+    {
+        // Completion is simulated externally. BrowserService never checks or submits the form.
+        await h.Page.GotoAsync(target);
+        var page = await settling;
+        Equal(target, page.Url);
+    }
+    Equal(mode == "manual-show" ? 2 : 1, focus.BringToFrontCalls);
+    Equal(mode != "manual-show", h.Service.BackgroundMode);
+    Equal(mode == "manual-show" ? "normal" : "minimized", focus.RequestedWindowStates.Last());
+}
+
+async Task CheckInvisibleSso()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    var requests = 0;
+    await using var h = await Create(route => Html(route, ++requests == 1 ?
+        "<html><body><form hidden id='login'><input type='password'><button>Se connecter</button></form><p>Redirection en cours</p><script>setTimeout(()=>location.reload(),1200)</script></body></html>" : ready), focus: focus);
+    var result = await h.Service.OpenTargetAsync(Settings(), CancellationToken.None);
+    Equal(target, result.Url);
+    Equal(2, requests);
+    Equal(0, focus.BringToFrontCalls);
+    True(h.Service.BackgroundMode, "Des contrôles cachés ne doivent pas interrompre la collecte discrète.");
+}
+
+async Task CheckAuthenticationIframe()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    var authenticated = false;
+    await using var h = await Create(route => Html(route, new Uri(route.Request.Url).Host == "other-glpi.test"
+        ? InteractiveSsoMarkup() : authenticated ? ready : "<html><body><iframe src='http://other-glpi.test/idp'></iframe></body></html>"), target, focus);
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var settling = h.Service.WaitForTargetAsync(Settings(), CancellationToken.None);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    var idp = h.Page.Frames.Single(frame => new Uri(frame.Url).Host == "other-glpi.test");
+    Equal(0, await idp.EvaluateAsync<int>("() => window.testClicks"));
+    True(!await idp.Locator("#remember").IsCheckedAsync(), "La validation IdP intégrée ne doit pas être actionnée.");
+    authenticated = true; await h.Page.GotoAsync(target); await settling;
+    True(h.Service.BackgroundMode, "La collecte reprend discrètement après l’authentification intégrée.");
+}
+
+async Task CheckAuthenticationPopup()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    var authenticated = false;
+    await using var h = await Create(route => Html(route, new Uri(route.Request.Url).Host == "other-glpi.test"
+        ? InteractiveSsoMarkup() : authenticated ? ready : "<html><body><p>Connexion en cours</p></body></html>"), target, focus);
+    // An unrelated login in the same dedicated context must remain untouched.
+    var unrelated = focus.WrapPage(await h.Context.NewPageAsync());
+    await unrelated.GotoAsync("http://other-glpi.test/unrelated");
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
+    await Task.Delay(900);
+    Equal(0, focus.BringToFrontCalls);
+    var popupPending = h.Page.WaitForPopupAsync();
+    await h.Page.EvaluateAsync("() => window.open('http://other-glpi.test/idp','_blank')");
+    var popup = focus.WrapPage(await popupPending);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    Equal(0, await popup.EvaluateAsync<int>("() => window.testClicks"));
+    True(!await popup.Locator("#remember").IsCheckedAsync(), "La page IdP du popup reste contrôlée par l’utilisateur.");
+    authenticated = true; await h.Page.GotoAsync(target); await settling;
+    True(h.Service.BackgroundMode, "La fin de la connexion doit réduire le navigateur de nouveau.");
 }
 
 async Task CheckNative10()
@@ -635,7 +753,7 @@ async Task CheckBackgroundFocus()
     var run = await new AutomaticExtractionService(h.Service).RunAsync(Settings(), null, CancellationToken.None);
     Equal(5, run.Data.Rows.Count);
     Equal(0, focus.BringToFrontCalls);
-    True(focus.RequestedWindowStates.All(state => state == "normal"), "L’extraction automatique ne doit jamais demander minimized ou fullscreen.");
+    True(focus.RequestedWindowStates.Count > 0 && focus.RequestedWindowStates.All(state => state == "minimized"), "L’extraction automatique réduit seulement la fenêtre du contexte dédié.");
     True(h.Service.BackgroundMode, "Le parcours automatique doit conserver le mode arrière-plan.");
     int requestsBeforeShow = pageRequests;
     string urlBeforeShow = h.Page.Url;
@@ -647,7 +765,7 @@ async Task CheckBackgroundFocus()
     await h.Service.HideBrowserAsync(CancellationToken.None);
     Equal(1, focus.BringToFrontCalls);
     True(h.Service.BackgroundMode, "Rendre la main au logiciel doit conserver le navigateur ouvert derrière lui.");
-    True(focus.RequestedWindowStates.All(state => state == "normal"), "Revenir au logiciel ne doit pas réduire le navigateur.");
+    True(focus.RequestedWindowStates.Last() == "minimized", "Revenir au logiciel doit rendre le navigateur discret sans nouvelle navigation.");
     Equal(requestsBeforeShow, pageRequests);
     Equal(urlBeforeShow, h.Page.Url);
 }
@@ -658,12 +776,15 @@ async Task CheckRestoreOpenWindow()
     await using var h = await Create(route => Html(route, ready), focus: focus);
     await h.Service.HideBrowserAsync(CancellationToken.None);
     Equal(0, focus.BringToFrontCalls);
-    True(focus.RequestedWindowStates.SequenceEqual(new[] { "normal" }), "Une fenêtre déjà réduite doit être restaurée en normal, jamais réduite de nouveau.");
+    Equal(0, focus.RequestedWindowStates.Count);
     await h.Service.HideBrowserAsync(CancellationToken.None);
-    Equal(1, focus.RequestedWindowStates.Count);
+    Equal(0, focus.RequestedWindowStates.Count);
     Equal(0, focus.BringToFrontCalls);
     Equal("about:blank", h.Page.Url);
     True(h.Service.BackgroundMode, "La restauration ne doit pas désactiver le mode logiciel au-dessus.");
+    await h.Service.ShowBrowserAsync(h.Page, CancellationToken.None);
+    True(focus.RequestedWindowStates.SequenceEqual(new[] { "normal" }), "La demande explicite restaure la fenêtre réduite.");
+    Equal(1, focus.BringToFrontCalls);
 }
 
 async Task CheckTransientWindowTarget()
@@ -671,11 +792,11 @@ async Task CheckTransientWindowTarget()
     var focus = new FocusCallTrace { CdpCreationFailure = "Protocol error (Target.attachToTarget): No target with given id found" };
     await using var h = await Create(route => Html(route, ready), focus: focus);
     await h.Service.HideBrowserAsync(CancellationToken.None);
-    Equal(0, h.Logs.Count(line => line.Contains("ajustement de fenêtre indisponible", StringComparison.Ordinal)));
+    Equal(0, h.Logs.Count(line => line.Contains("mode discret indisponible", StringComparison.Ordinal)));
     // A subsequent real restriction must still produce its one-time warning.
     focus.CdpCreationFailure = "Protocol error (Target.attachToTarget): Access denied by browser policy";
     await h.Service.HideBrowserAsync(CancellationToken.None);
-    Equal(1, h.Logs.Count(line => line.Contains("ajustement de fenêtre indisponible", StringComparison.Ordinal)));
+    Equal(1, h.Logs.Count(line => line.Contains("mode discret indisponible", StringComparison.Ordinal)));
     Equal(2, focus.NewCdpSessionCalls);
     Equal(0, focus.BringToFrontCalls);
     Equal("about:blank", h.Page.Url);
@@ -702,7 +823,7 @@ async Task CheckWindowManagementTimeout()
     await h.Service.HideBrowserAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
     True(elapsed.Elapsed < TimeSpan.FromSeconds(5), "Une création de session CDP qui ne répond jamais doit libérer l’opération avant cinq secondes.");
     Equal(1, focus.NewCdpSessionCalls);
-    Equal(1, h.Logs.Count(line => line.Contains("ajustement de fenêtre indisponible", StringComparison.Ordinal)));
+    Equal(1, h.Logs.Count(line => line.Contains("mode discret indisponible", StringComparison.Ordinal)));
 
     using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
     elapsed.Restart();
@@ -714,7 +835,7 @@ async Task CheckWindowManagementTimeout()
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     True(elapsed.Elapsed < TimeSpan.FromSeconds(1.5), "L’annulation doit être reconnue sans attendre le délai interne de trois secondes.");
     Equal(2, focus.NewCdpSessionCalls); // A second CDP attempt proves the first call released the semaphore.
-    Equal(1, h.Logs.Count(line => line.Contains("ajustement de fenêtre indisponible", StringComparison.Ordinal)));
+    Equal(1, h.Logs.Count(line => line.Contains("mode discret indisponible", StringComparison.Ordinal)));
     Equal(0, focus.BringToFrontCalls);
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessClicks"));
     Equal(initialUrl, h.Page.Url);

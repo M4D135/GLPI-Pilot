@@ -40,6 +40,9 @@ public sealed partial class PilotApplication : IAsyncDisposable
     private readonly Dictionary<Task, CancellationTokenSource> _pendingExecutions = new();
     private AppSettings _savedSettings;
     private AppSettings? _resultContext;
+    private sealed record LocalFileTestContext(ExtractionResult? Previous, CityEnrichmentResult? Locations, SnapshotDocument? Historical,
+        AppSettings? Interpretation, string InitialQueries, string FileName, long? SourceRows, bool FileReadComplete, int MissingFormulaValues);
+    private LocalFileTestContext? _localFileTest = null;
     private Task? _disposeTask;
     private volatile bool _disposed;
     private volatile bool _isBusy;
@@ -53,6 +56,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
     public IPilotHost Host { get; }
     public long Revision { get; private set; }
     public bool IsHistorical => HistoricalDocument is not null;
+    public bool IsTestMode => _localFileTest is not null;
     public bool IsBusy => _isBusy;
     public string CurrentOperation { get; private set; } = "";
     public bool SessionLocked { get; set; }
@@ -93,7 +97,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
         Browser = browser ?? new(); Snapshots = snapshots ?? new(); _journal = new();
         Browser.Log += Log; Browser.ConnectionProgress += message => Publish("operation.progress", new { message });
         RegisterFoundationOperations(); RegisterAnalyticsOperations(); RegisterWorkplaceOperations(); RegisterTerrainOperations();
-        NotificationPolicy.CanNotify = () => !SessionLocked && !AutomationPolicy.IsQuiet(Settings.Automation, DateTimeOffset.Now);
+        NotificationPolicy.CanNotify = () => !IsTestMode && !SessionLocked && !AutomationPolicy.IsQuiet(Settings.Automation, DateTimeOffset.Now);
     }
 
     public Task<object?> ExecuteAsync(string operation, JsonElement arguments, CancellationToken ct = default)
@@ -127,6 +131,11 @@ public sealed partial class PilotApplication : IAsyncDisposable
             lock (_executionAdmission)
             { cancellation.Token.ThrowIfCancellationRequested(); _isBusy = true; CurrentOperation = operation; }
             Publish("operation.state", new { busy = true, operation });
+            if (IsTestMode)
+            {
+                if (operation is "automation.tick" or "library.tick" or "workplace.reminders.check") return new { skipped = true, testMode = true };
+                RequireOfflineTestOperation(operation);
+            }
             return await handler(arguments, cancellation.Token).ConfigureAwait(false);
         }
         finally
@@ -170,6 +179,22 @@ public sealed partial class PilotApplication : IAsyncDisposable
     {
         if (!System.Text.RegularExpressions.Regex.IsMatch(operation, "^[a-z][A-Za-z0-9]*(\\.[A-Za-z][A-Za-z0-9]*)+$") || !_handlers.TryAdd(operation, handler))
             throw new InvalidOperationException("Opération dupliquée ou invalide : " + operation);
+    }
+    private static void RequireOfflineTestOperation(string operation)
+    {
+        // The allow-list keeps newly introduced integrations offline by default. Test
+        // file changes are local; collection profiles and operational stores stay separate.
+        if (operation is "app.bootstrap" or "app.diagnostic" or "app.copy" or "app.close" or "app.appearance"
+            or "settings.get" or "operations.list" or "operations.cancel" or "configuration.export"
+            or "records.test.import" or "records.test.exit" or "records.list" or "records.export" or "records.cell"
+            or "records.columns" or "records.views" or "records.saveView" or "records.removeView" or "records.basket"
+            or "records.quality" or "records.schema" or "mapping.get" or "mapping.preview" or "mapping.save"
+            or "populations.list" or "reports.export" or "terrain.reference.state" or "terrain.reference.list" or "terrain.reference.detail"
+            or "terrain.reference.lookup" or "terrain.reference.simulate" or "terrain.reference.preview" or "terrain.reference.previewPage"
+            or "terrain.review.list" or "terrain.review.detail"
+            || operation.StartsWith("dashboard.", StringComparison.Ordinal)
+            || operation.StartsWith("queries.", StringComparison.Ordinal)) return;
+        throw new InvalidOperationException("Mode test hors ligne : quittez le mode test pour cette action. Le relevé et le contexte précédents seront restaurés.");
     }
     private ExtractionResult RequireResult() => Result ?? throw new InvalidOperationException("Chargez un relevé ou la démonstration pour ouvrir cet espace.");
     private void RequireCurrentResult()
@@ -268,6 +293,9 @@ public sealed partial class PilotApplication : IAsyncDisposable
         revision = Revision, loaded = Result is not null, title = Result?.Title ?? "Aucun relevé chargé",
         rows = Result?.Rows.Count ?? 0, columns = Result?.Headers.Count ?? 0, complete = Result?.Complete ?? false,
         date = Result?.ExtractedAt, historical = IsHistorical, demo = Result?.Provenance.SourceKind == "demo",
+        testMode = IsTestMode, testFileName = _localFileTest?.FileName ?? "", testCanRestore = _localFileTest?.Previous is not null,
+        testSourceRows = _localFileTest?.SourceRows, testFileReadComplete = _localFileTest?.FileReadComplete ?? false,
+        testMissingFormulaValues = _localFileTest?.MissingFormulaValues ?? 0,
         status = Result?.Status ?? "Configurez une source ou explorez la démonstration.", warnings = Result?.Warnings,
         source = Result is null ? "" : AppPaths.SafeUrl(Result.SourceUrl), provenance = Result?.Provenance,
         quality = Result?.Quality, expectedTotal = Result?.ExpectedTotal

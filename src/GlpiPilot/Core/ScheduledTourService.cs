@@ -90,7 +90,8 @@ public sealed partial class ScheduledTour
         foreach (var stop in Stops)
         {
             if (stop == null || !Guid.TryParse(stop.Id, out var stopId) || stopId == Guid.Empty || !stopIds.Add(stopId)
-                || !Guid.TryParse(stop.CityId, out var city) || city == Guid.Empty || stop.SiteId is null || stop.SiteId.Length > 0 && (!Guid.TryParse(stop.SiteId, out var site) || site == Guid.Empty)
+                || stop.CityId is null || stop.CityId.Length > 0 && (!Guid.TryParse(stop.CityId, out var city) || city == Guid.Empty)
+                || stop.SiteId is null || stop.SiteId.Length > 0 && (!Guid.TryParse(stop.SiteId, out var site) || site == Guid.Empty) || stop.CityId.Length == 0 && stop.SiteId.Length == 0
                 || stop.TicketIds == null || stop.TicketIds.Count == 0 || stop.TicketIds.Count > MaximumTickets || stop.TicketIds.Any(ticket => !ids.Contains(ticket) || !assigned.Add(ticket))
                 || !Text(stop.TechnicianKey, 400) || stop.DurationMinutes is < 1 or > 1440 || stop.TravelMinutes is < 0 or > 1440
                 || !Time(stop.Earliest, true, out var earliest) || !Time(stop.Latest, true, out var latest) || stop.Earliest.Length > 0 && stop.Latest.Length > 0 && earliest > latest
@@ -142,7 +143,7 @@ public static partial class ScheduledTourService
             var source = context.Rows[row]; var place = PlaceKey(source); tour.Tickets.Add(new() { TicketId = id, PlaceKey = place, BaselineStatus = source.Status, BaselineFingerprint = Fingerprint(context, row) });
             if (place.Length == 0) continue;
             if (!groups.TryGetValue(place, out var stop))
-            { stop = new() { CityId = source.CityId!, SiteId = source.SiteId ?? "", TechnicianKey = tour.TechnicianKey }; groups.Add(place, stop); tour.Stops.Add(stop); }
+            { stop = new() { CityId = source.CityId ?? "", SiteId = source.SiteId ?? "", TechnicianKey = tour.TechnicianKey }; groups.Add(place, stop); tour.Stops.Add(stop); }
             stop.TicketIds.Add(id);
         }
         foreach (var stop in tour.Stops)
@@ -366,13 +367,19 @@ public static partial class ScheduledTourService
         return new();
     }
     public static IReadOnlyList<(string Key, string Label)> PlaceChoices(TourPlanningContext context) => context.Cities.Values.Select(city => ("city:" + city.Id, city.Name + " · ville"))
-        .Concat(context.Sites.Values.Select(site => ("site:" + site.Id, site.Name + " · " + context.Cities[site.CityId].Name))).OrderBy(item => item.Item2, StringComparer.CurrentCultureIgnoreCase).ToArray();
+        .Concat(context.Sites.Values.Select(site => ("site:" + site.Id, site.Name + " · " + (context.Cities.GetValueOrDefault(site.CityId)?.Name ?? "commune non renseignée")))).OrderBy(item => item.Item2, StringComparer.CurrentCultureIgnoreCase).ToArray();
     private static Dictionary<string, int[]> IdMap(TourPlanningContext context) => Enumerable.Range(0, context.Rows.Length).GroupBy(row => Cell(context, row, "id").Trim(), StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
-    private static string PlaceKey(TourRow row) => row.CityState == CityMatchState.Matched && row.CityId != null ? row.SiteId != null ? "site:" + row.SiteId : "city:" + row.CityId : "";
+    private static string PlaceKey(TourRow row) => row.CityState is CityMatchState.Matched or CityMatchState.SiteOnly && row.SiteId != null ? "site:" + row.SiteId
+        : row.CityState == CityMatchState.Matched && row.CityId != null ? "city:" + row.CityId : "";
     private static string Fingerprint(TourPlanningContext context, int row) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { Cell(context, row, "title"), Cell(context, row, "status"), Cell(context, row, "priority"), Cell(context, row, "due"), Cell(context, row, "assignee"), PlaceKey(context.Rows[row]) }))));
     private static string TechnicianName(TourPlanningContext context, string key) => key.Length == 0 ? "À attribuer" : context.Technicians.FirstOrDefault(technician => technician.Key == key)?.Name ?? key;
     private static (string Place, string Address, TourPoint Point, bool Missing) Location(TourPlanningContext context, ScheduledTourStop stop)
     {
+        if (stop.CityId.Length == 0)
+        {
+            if (!context.Sites.TryGetValue(stop.SiteId, out var standalone) || standalone.CityId.Length != 0) return ("Site retiré ou rattachement modifié", "", new(), true);
+            return (standalone.Name + " · commune non renseignée", standalone.Address, new() { Label = standalone.Name, Latitude = standalone.Latitude, Longitude = standalone.Longitude }, false);
+        }
         if (!context.Cities.TryGetValue(stop.CityId, out var city)) return ("Ville retirée", "", new(), true);
         if (stop.SiteId.Length == 0) return (city.Name, city.PostalCode, new() { Label = city.Name, Latitude = city.Latitude, Longitude = city.Longitude }, false);
         if (!context.Sites.TryGetValue(stop.SiteId, out var site) || site.CityId != city.Id) return ("Site retiré · " + city.Name, "", new(), true);

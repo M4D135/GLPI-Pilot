@@ -16,12 +16,15 @@ internal sealed class MainForm : Form, IPilotHost
     private readonly WebBridge _bridge;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15000 };
+    private readonly System.Windows.Forms.Timer _browserLaunchTimer = new() { Interval = 3000 };
     private readonly NotifyIcon _notification = new();
     private readonly bool _backupPrepared;
     private readonly string[] _args;
     private bool _closing, _closed, _tick, _ready, _bootstrapped, _navigated, _placementChanged, _closeRequested, _closeReady, _displayFailed;
     private Task? _shutdown;
     private string _closeToken = "";
+    private bool _browserLaunchShield, _browserLaunchWasTopMost;
+    private long _browserLaunchRevision;
     public int ExitCode { get; private set; }
     private static readonly string[] HostOperations = { "app.ready", "app.closeReady", "host.screens", "host.screen", "host.editor" };
 
@@ -34,6 +37,9 @@ internal sealed class MainForm : Form, IPilotHost
         _notification.Icon = Icon; _notification.Text = "GLPI Pilot";
         Controls.Add(_web);
         _application = new PilotApplication(this, Publish);
+        _application.Browser.BackgroundLaunchStateChanged += BrowserLaunchPresentationChanged;
+        _browserLaunchTimer.Tick += (_, _) => ReleaseBrowserLaunchShield();
+        Deactivate += (_, _) => ReleaseBrowserLaunchShield();
         _bridge = new WebBridge(_application.Operations.Concat(HostOperations), ExecuteAsync, Post);
         _notification.BalloonTipClicked += (_, _) => { ActivateExisting(); _bridge.Publish("app.navigate", new { page = "day" }); };
         RestorePlacement();
@@ -103,6 +109,39 @@ internal sealed class MainForm : Form, IPilotHost
         }
         catch (Exception error) { ExitCode = 1; Program.ReportStartupFailure(error); Close(); }
     }
+
+    private void BrowserLaunchPresentationChanged(bool starting)
+    {
+        var revision = Interlocked.Increment(ref _browserLaunchRevision);
+        try
+        {
+            // The browser starts on a worker thread. Briefly protect the already
+            // active application until CDP has minimized its dedicated window.
+            // Never activate GLPI Pilot over another application or hold this
+            // shield throughout collection, an application switch or a user-operated SSO challenge.
+            UiAsync(() =>
+            {
+                if (revision != Interlocked.Read(ref _browserLaunchRevision) || _closing || _displayFailed) return true;
+                if (!starting) { ReleaseBrowserLaunchShield(); return true; }
+                if (!Visible || WindowState == FormWindowState.Minimized || GetForegroundWindow() != Handle) return true;
+                if (!_browserLaunchShield) { _browserLaunchWasTopMost = TopMost; _browserLaunchShield = true; TopMost = true; }
+                _browserLaunchTimer.Start(); return true;
+            }).WaitAsync(TimeSpan.FromSeconds(1)).GetAwaiter().GetResult();
+        }
+        catch (Exception error) when (error is TimeoutException or InvalidOperationException or ObjectDisposedException)
+        { /* Window presentation must never block or replay the collection. */ }
+    }
+
+    private void ReleaseBrowserLaunchShield()
+    {
+        _browserLaunchTimer.Stop();
+        if (!_browserLaunchShield) return;
+        _browserLaunchShield = false;
+        if (!IsDisposed) TopMost = _browserLaunchWasTopMost;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
     private async Task MonitorReadyAsync()
     {
         try { await Task.Delay(TimeSpan.FromSeconds(60), _lifetime.Token); if (!_ready && !_closing) { ExitCode = 1; Program.ReportStartupFailure(new TimeoutException("L’interface n’a pas confirmé son premier affichage.")); Close(); } }
@@ -257,6 +296,9 @@ internal sealed class MainForm : Form, IPilotHost
     private Task ShutdownAsync()
     {
         if (_shutdown is not null) return _shutdown;
+        Interlocked.Increment(ref _browserLaunchRevision);
+        _application.Browser.BackgroundLaunchStateChanged -= BrowserLaunchPresentationChanged;
+        ReleaseBrowserLaunchShield();
         _timer.Stop(); _lifetime.Cancel();
         SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.PowerModeChanged -= PowerChanged;
         System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= NetworkChanged;
@@ -327,6 +369,6 @@ internal sealed class MainForm : Form, IPilotHost
             }
         }
         catch (Exception error) { AppPaths.AppendLog("Fermeture : " + AppPaths.SafeError(error)); }
-        finally { _closed = true; _notification.Dispose(); _timer.Dispose(); _web.Dispose(); _lifetime.Dispose(); Close(); }
+        finally { _closed = true; _notification.Dispose(); _timer.Dispose(); _browserLaunchTimer.Dispose(); _web.Dispose(); _lifetime.Dispose(); Close(); }
     }
 }

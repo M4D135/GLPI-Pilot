@@ -117,6 +117,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .search-command .icon { width: 17px; height: 17px; }
 kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--surface-2); font: 11px/1.5 var(--font); color: var(--muted); white-space: nowrap; }
 .workspace { overflow: auto; min-width: 0; padding: 24px 28px 36px; scrollbar-gutter: stable; background: radial-gradient(ellipse 60% 260px at 100% 0, color-mix(in srgb, var(--brand-violet) 4%, transparent), transparent), var(--bg); }
+.local-test-banner { position: sticky; top: -1px; z-index: 5; display: flex; align-items: center; gap: 14px; margin: 0 0 22px; padding: 12px 16px; border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border)); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.local-test-banner[hidden] { display: none; }
+.local-test-banner > .icon { color: var(--accent); flex: none; }
+.local-test-copy { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; font-size: 12px; }
+.local-test-copy > strong { color: var(--accent); }
+.local-test-file-name { min-width: 0; overflow-wrap: anywhere; font-weight: 650; }
+.local-test-copy .local-test-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 36ch; }
+.local-test-details { width: 100%; color: var(--muted); font-variant-numeric: tabular-nums; }
+.local-test-banner > .button { flex: none; }
+.local-test-help > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .page-heading h1 { margin: 0; }
 .page-heading p { color: var(--muted); font-size: 13px; margin: 7px 0 0; max-width: 85ch; }
@@ -358,6 +368,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: .6; background: va
   .sidebar-close > span { display: none; }
   :root[data-motion=normal] .sidebar.open { animation: pilot-sidebar var(--motion) var(--ease); }
   .workspace { padding: 20px 14px 28px; }
+  .local-test-banner { flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .local-test-banner > .button { margin-left: auto; }
   .grid.two, .grid.three { grid-template-columns: minmax(0, 1fr); }
   .topbar { padding: 0 14px; }
   .top-actions { gap: 6px; }

@@ -19,6 +19,13 @@ var checks = new List<(string Name, Action Run)>
     ("Zoom : préférence locale préservée pendant les imports et absente du partage", CheckZoomTransfer),
     ("Export portable : filtres conservés, secrets et dossier local exclus", CheckPortableExport),
     ("Import portable : aucune mutation et dossier du poste conservé", CheckPortableImport),
+    ("Import partiel : seules les sections présentes sont proposées", CheckSuppliedParts),
+    ("Import partiel : tableau global et tableau personnel restent indépendants", CheckPartialLayouts),
+    ("Import partiel : indicateurs, dictionnaires et seuils héritent des propriétés absentes", CheckPartialIndicators),
+    ("Import partiel : source, extraction et détail gardent leurs champs voisins", CheckPartialScalarSections),
+    ("Import partiel : tableaux remplacés et références de sites validées ensemble", CheckPartialCollections),
+    ("Import partiel : champs inconnus, doublons et valeurs invalides refusés avant réparation", CheckPartialValidation),
+    ("Colonnes source : huit rôles distincts partagés et disponibles dans les requêtes", CheckSourceFieldMappings),
     ("Ancien settings.json : migration sans reprendre le dossier distant", CheckLegacy),
     ("Schéma et version : formats inconnus et doublons refusés", CheckEnvelope),
     ("Champs inconnus ou non partageables : refus à chaque niveau", CheckUnknownFields),
@@ -173,6 +180,30 @@ void CheckLegacy()
     Equal(5000, imported.TicketDetails.MaxRowsPerSection); Equal(30, imported.Dashboard.OldDays);
 }
 
+void CheckSourceFieldMappings()
+{
+    var mappings = new Dictionary<string, string>
+    {
+        ["followupAuthor"] = "Suivis - Rédacteur", ["taskAuthor"] = "Tâches - Rédacteur", ["ttrProgress"] = "TTR + Progression",
+        ["takeIntoAccount"] = "Statistiques - Délai de prise en compte", ["reportedAge"] = "Âge (jours)",
+        ["reportedGroupCount"] = "Nombre de groupes", ["reportedAuthorCount"] = "Nombre de rédacteurs", ["description"] = "Description"
+    };
+    var source = Sample();
+    foreach (var pair in mappings) source.Dashboard.ColumnMappings[pair.Key.ToUpperInvariant()] = pair.Value;
+    string path = Path.Combine(temporary, "source-fields.json");
+    ConfigurationTransferService.Export(path, source);
+    var imported = ConfigurationTransferService.Import(path, Sample());
+    var choices = QueryService.FieldChoices(mappings.Values.ToArray());
+    foreach (var pair in mappings)
+    {
+        Equal(pair.Value, imported.Dashboard.ColumnMappings[pair.Key]);
+        True(imported.Dashboard.ColumnMappings.Keys.Contains(pair.Key, StringComparer.Ordinal), "Casse canonique : " + pair.Key);
+        True(choices.Any(choice => choice.Key == "role:" + pair.Key), "Rôle absent des requêtes : " + pair.Key);
+        new SavedQuery { Name = "Champ source", GroupBy = "role:" + pair.Key }.Validate();
+    }
+    True(!imported.Dashboard.ColumnMappings.ContainsKey("due"), "La progression TTR ne crée pas de correspondance d’échéance.");
+}
+
 void CheckZoomBounds()
 {
     Equal(100, JsonSerializer.Deserialize<AppSettings>("{}")!.InterfaceZoomPercent);
@@ -199,17 +230,23 @@ void CheckZoomTransfer()
 
 void CheckEnvelope()
 {
-    // Version 3 is the current portable schema; future major versions stay refused.
+    // Supported application versions share schema 1; future minor/major versions stay refused.
     var current = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.0.0\",\"Settings\":{}}"), Sample());
     Equal(Sample().InterfaceZoomPercent, current.InterfaceZoomPercent);
     var version31 = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.1.0\",\"Settings\":{}}"), Sample());
     Equal(Sample().InterfaceZoomPercent, version31.InterfaceZoomPercent);
+    foreach (var version in new[] { "3.2.0", "3.2.1", "3.2.2" })
+    {
+        var version32 = ConfigurationTransferService.Import(Write(JsonSerializer.Serialize(new
+            { Schema = "glpi-pilot.configuration", SchemaVersion = 1, AppVersion = version, Settings = new { } })), Sample());
+        Equal(Sample().InterfaceZoomPercent, version32.InterfaceZoomPercent);
+    }
     foreach (string json in new[]
     {
         "{\"Schema\":\"wrong\",\"SchemaVersion\":1,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":2,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"4.0.0\",\"Settings\":{}}",
-        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.2.0\",\"Settings\":{}}",
+        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.3.0\",\"Settings\":{}}",
         "{\"PortalUrl\":\"https://glpi.test/front/ticket.php\",\"portalurl\":\"https://other.test\"}",
         "{\"Dashboard\":{\"ColumnMappings\":{\"id\":\"ID\",\"ID\":\"Autre\"}}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));
@@ -711,6 +748,131 @@ void CheckQueriesUnknownFields()
         "{\"Queries\":{\"Queries\":[{\"Id\":\"11111111111111111111111111111111\",\"Name\":\"Q\",\"Script\":\"run\"}]}}",
         "{\"Queries\":{\"Queries\":[{\"Id\":\"11111111111111111111111111111111\",\"Name\":\"Q\",\"Conditions\":[{\"Field\":\"role:city\",\"Operator\":\"equals\",\"Value\":\"MA\",\"Evaluate\":true}]}]}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));
+}
+
+void CheckSuppliedParts()
+{
+    var current = Sample();
+    current.Normalize();
+    var incoming = ConfigurationTransferService.Import(Write("{\"Cities\":{\"Cities\":[],\"Sites\":[]}}"), current, out var parts);
+    Equal(ConfigurationParts.Cities, parts);
+    var preview = ConfigurationReview.Apply(current, incoming, parts, false);
+    Equal(current.PortalUrl, preview.PortalUrl); Equal(current.Theme, preview.Theme);
+    Equal(current.Dashboard.Layout.Boards[0].Id, preview.Dashboard.Layout.Boards[0].Id);
+    _ = ConfigurationTransferService.Import(Write("{\"Dashboard\":{\"StaleDays\":12}}"), current, out parts);
+    Equal(ConfigurationParts.Indicators, parts);
+    _ = ConfigurationTransferService.Import(Write(LayoutJson()), current, out parts);
+    Equal(ConfigurationParts.Dashboards, parts);
+    _ = ConfigurationTransferService.Import(Write("{\"Theme\":\"dark\",\"MaxRows\":1000,\"BrowserChannel\":\"msedge\"}"), current, out parts);
+    Equal(ConfigurationParts.Theme | ConfigurationParts.Extraction | ConfigurationParts.Source, parts);
+    var path = Write("{}"); ConfigurationTransferService.Export(path, current);
+    _ = ConfigurationTransferService.Import(path, current, out parts); Equal(ConfigurationParts.All, parts);
+}
+
+void CheckPartialLayouts()
+{
+    var current = Sample(); current.Normalize();
+    current.Dashboard.PersonalLayout.Boards[0].Name = "Mon suivi personnel";
+    for (var i = 1; i < 12; i++) current.Dashboard.PersonalLayout.Boards.Add(DashboardLayoutSettings.CreateBoard("Personnel " + i, "empty"));
+    current.Normalize();
+    var personal = JsonSerializer.Serialize(current.Dashboard.PersonalLayout);
+    var incoming = ConfigurationTransferService.Import(Write(LayoutJson()), current, out var parts);
+    Equal(ConfigurationParts.Dashboards, parts);
+    var draft = ConfigurationReview.Apply(current, incoming, parts, false);
+    foreach (var merge in new[] { false, true })
+    {
+        var applied = ConfigurationReview.Apply(current, draft, parts, merge);
+        Equal(personal, JsonSerializer.Serialize(applied.Dashboard.PersonalLayout));
+        True(applied.Dashboard.Layout.Boards.Any(board => board.Id == "b"), "Le tableau global importé est présent.");
+    }
+    Equal(personal, JsonSerializer.Serialize(current.Dashboard.PersonalLayout));
+    // The legacy overload still migrates a global-only file to its initial
+    // personal copy; only the review overload applies partial-file semantics.
+    var legacy = ConfigurationTransferService.Import(Write(LayoutJson()), current);
+    Equal("b", legacy.Dashboard.PersonalLayout.Boards[0].Id);
+}
+
+void CheckPartialIndicators()
+{
+    var current = Sample(); current.Normalize();
+    current.Dashboard.StaleDays = 14; current.Dashboard.OldDays = 90;
+    current.Dashboard.Weather.WatchThreshold = 30; current.Dashboard.Weather.RainThreshold = 50; current.Dashboard.Weather.StormThreshold = 70;
+    current.Dashboard.ValueDictionaries["status"] = new(StringComparer.OrdinalIgnoreCase) { ["Ouvert"] = "Nouveau", ["En pause"] = "En attente" };
+    var before = JsonSerializer.Serialize(current);
+    var incoming = ConfigurationTransferService.Import(Write("{\"dashboard\":{\"StaleDays\":20,\"ColumnMappings\":{\"ID\":\"Numéro\"},\"Weather\":{\"WatchThreshold\":40},\"ValueDictionaries\":{\"status\":{\"Ouvert\":\"En cours\"}}}}"), current, out var parts);
+    Equal(ConfigurationParts.Indicators, parts);
+    var applied = ConfigurationReview.Apply(current, incoming, parts, false);
+    Equal(20, applied.Dashboard.StaleDays); Equal(90, applied.Dashboard.OldDays);
+    Equal(40d, applied.Dashboard.Weather.WatchThreshold); Equal(50d, applied.Dashboard.Weather.RainThreshold); Equal(70d, applied.Dashboard.Weather.StormThreshold);
+    Equal("Numéro", applied.Dashboard.ColumnMappings["id"]); Equal("Titre", applied.Dashboard.ColumnMappings["title"]);
+    Equal(3, applied.Dashboard.ColumnMappings.Count);
+    Equal("En cours", applied.Dashboard.ValueDictionaries["status"]["Ouvert"]);
+    Equal("En attente", applied.Dashboard.ValueDictionaries["status"]["En pause"]);
+    Equal(before, JsonSerializer.Serialize(current));
+    var unchanged = ConfigurationTransferService.Import(Write("{\"Dashboard\":{\"ColumnMappings\":{}}}"), current, out _);
+    Equal(current.Dashboard.ColumnMappings.Count, unchanged.Dashboard.ColumnMappings.Count);
+}
+
+void CheckPartialScalarSections()
+{
+    var current = Sample(); current.Normalize();
+    current.TimeoutSeconds = 321; current.DownloadTimeoutSeconds = 987; current.ExpectedTotal = 42;
+    current.Sources.Add(new() { Name = "Source conservée", Url = current.PortalUrl });
+    var incoming = ConfigurationTransferService.Import(Write("{\"BrowserChannel\":\"chrome\",\"MaxRows\":25000,\"ExpectedTotal\":null,\"TicketDetails\":{\"AutoReadTreatment\":false}}"), current, out var parts);
+    Equal(ConfigurationParts.Source | ConfigurationParts.Extraction | ConfigurationParts.Ticket, parts);
+    var applied = ConfigurationReview.Apply(current, incoming, parts, false);
+    Equal("chrome", applied.BrowserChannel); Equal(current.PortalUrl, applied.PortalUrl);
+    Equal(current.Sources[0].Id, applied.Sources[0].Id); Equal(current.Sources[0].Url, applied.Sources[0].Url);
+    Equal(25000, applied.MaxRows); Equal(321, applied.TimeoutSeconds); Equal(987, applied.DownloadTimeoutSeconds);
+    True(applied.ExpectedTotal is null, "Un champ nullable explicitement vide efface sa valeur.");
+    True(!applied.TicketDetails.AutoReadTreatment, "Le seul réglage de détail fourni est appliqué.");
+    Equal(current.TicketDetails.UrlTemplate, applied.TicketDetails.UrlTemplate);
+    Equal(current.TicketDetails.Sections[0].Selector, applied.TicketDetails.Sections[0].Selector);
+    Equal(current.ExportFolder, applied.ExportFolder);
+    Equal("", ConfigurationTransferService.Import(Write("{\"BrowserChannel\":\"chrome\"}"), current).PortalUrl);
+}
+
+void CheckPartialCollections()
+{
+    var current = Sample(); current.Normalize();
+    var city = new CityDefinition { Name = "Commune existante" };
+    var oldSite = new SiteDefinition { CityId = city.Id, Name = "Ancien site" };
+    var nextSite = new SiteDefinition { CityId = city.Id, Name = "Nouveau site", Aliases = new() { "NS" } };
+    current.Cities.Cities.Add(city); current.Cities.Sites.Add(oldSite);
+    var incoming = ConfigurationTransferService.Import(Write(JsonSerializer.Serialize(new
+    {
+        Cities = new { Sites = new[] { nextSite } }, TicketDetails = new { Sections = Array.Empty<object>() },
+        Queries = new { Queries = Array.Empty<object>() }, Dashboard = new { DueHorizonHours = new[] { 0, 72 } }
+    })), current, out var parts);
+    Equal(ConfigurationParts.Cities | ConfigurationParts.Ticket | ConfigurationParts.Queries | ConfigurationParts.Indicators, parts);
+    Equal(1, incoming.Cities.Cities.Count); Equal(city.Id, incoming.Cities.Cities[0].Id);
+    Equal(1, incoming.Cities.Sites.Count); Equal(nextSite.Id, incoming.Cities.Sites[0].Id);
+    Equal(city.Id, incoming.Cities.Sites[0].CityId); Equal(0, incoming.TicketDetails.Sections.Count); Equal(0, incoming.Queries.Queries.Count);
+    True(incoming.Dashboard.DueHorizonHours.SequenceEqual(new[] { 0d, 72d }), "Une liste fournie remplace la liste actuelle, sans union implicite.");
+    var before = JsonSerializer.Serialize(current);
+    Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write("{\"Cities\":{\"Cities\":[]}}"), current, out _));
+    Equal(before, JsonSerializer.Serialize(current));
+}
+
+void CheckPartialValidation()
+{
+    var current = Sample(); current.Normalize(); var before = JsonSerializer.Serialize(current);
+    foreach (var json in new[]
+    {
+        "{\"Dashboard\":{\"RemoteScript\":\"run\"}}",
+        "{\"Dashboard\":{\"StaleDays\":12,\"staledays\":13}}",
+        "{\"Dashboard\":{\"ColumnMappings\":{\"ID\":\"A\",\"id\":\"B\"}}}",
+        "{\"Dashboard\":{\"Weather\":{\"WatchThreshold\":50}}}",
+        "{\"Dashboard\":{\"DueHorizonHours\":[0,48,24]}}",
+        "{\"Dashboard\":{\"HistoryCadenceHours\":0}}",
+        "{\"Dashboard\":{\"SatisfactionScale\":0}}",
+        "{\"ListTimeoutSeconds\":1}",
+        "{\"Dashboard\":{\"Layout\":null}}", "{\"Cities\":null}",
+        "{\"TicketDetails\":{\"Sections\":null}}", "{\"Sources\":null}",
+        LayoutJson(new object[] { new { Id = "bad", Span = 13 } }),
+        LayoutJson(Enumerable.Range(0, 61).Select(index => (object)new { Id = "widget" + index }).ToArray())
+    }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), current, out _));
+    Equal(before, JsonSerializer.Serialize(current));
 }
 
 void CheckLocalAnalyticsMigration()

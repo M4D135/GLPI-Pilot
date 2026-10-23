@@ -221,6 +221,58 @@ Test("Invalid PDF page and cancellation preserve an existing target atomically",
     using var cts = new CancellationTokenSource(); cts.Cancel(); Reject<OperationCanceledException>(() => PdfReportWriter.Write(path, 1, _ => throw new Exception("should not render"), cts.Token)); Assert(File.ReadAllText(path) == "existing");
 });
 
+Test("A team union selects each active ticket once across multiple group memberships", () =>
+{
+    var data = Data(0, Row("1", group: "Alpha ; Beta ; alpha"), Row("2", group: "Beta"),
+        Row("3", group: "Gamma"), Row("4", status: "Clos", group: "Alpha"));
+    var snapshot = DashboardService.Calculate(data, new(), clock);
+    var filter = new DashboardScopeFilter { Kind = "matrix-row", SourceKey = "group-status", Values = new() { "ALPHA", "Beta" } };
+    Assert(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 0, 1 }));
+    var matrix = snapshot.Matrices.Single(m => m.Key == "group-status");
+    Assert(matrix.Cells.Sum(c => c.Value) == 4);
+    Assert(matrix.Cells.GroupBy(c => c.RowLabel).All(group => group.Count() == 4), "Each group keeps the four active statuses, including known zero counts.");
+    Assert(matrix.Cells.Where(c => c.Value == 0).All(c => c.Rows.Length == 0), "Zero cells do not invent ticket identities.");
+    Assert(matrix.Cells[0].RowLabel == "Beta", "Rows are ordered by total participation rather than their largest cell.");
+    var settings = new DashboardSettings { AssignmentCountingMode = "fractional" };
+    var fractional = DashboardService.Calculate(data, settings, clock);
+    Assert(DashboardService.ResolveScope(fractional, new[] { filter }).SequenceEqual(new[] { 0, 1 }));
+});
+Test("Union exclusion respects the common cohort and an unavailable matrix fails closed", () =>
+{
+    var snapshot = DashboardService.Calculate(Data(0, Row("1", group: "Alpha;Beta"), Row("2", group: "Gamma"), Row("3", "Clos", group: "Alpha")), new(), clock);
+    var active = new DashboardScopeFilter { Kind = "metric", SourceKey = "active" };
+    var groups = new DashboardScopeFilter { Kind = "matrix-row", SourceKey = "group-status", Values = new() { "Alpha", "Beta" }, Exclude = true };
+    Assert(DashboardService.ResolveScope(snapshot, new[] { active, groups }).SequenceEqual(new[] { 1 }));
+    groups.Exclude = false; groups.Values = new() { "Absent" };
+    Assert(DashboardService.ResolveScope(snapshot, new[] { groups }).Length == 0);
+    groups.SourceKey = "not-present";
+    Reject<InvalidDataException>(() => DashboardService.ResolveScope(snapshot, new[] { groups }));
+});
+Test("Distribution alternatives preserve literal labels and do not split their punctuation", () =>
+{
+    var snapshot = DashboardService.Calculate(Data(0, Row("1", group: "A | B"), Row("2", group: "C"), Row("3", group: "A")), new(), clock);
+    var filter = new DashboardScopeFilter { SourceKey = "group", Values = new() { "A | B", "C" } };
+    Assert(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 0, 1 }));
+    filter.Values.Clear(); filter.Value = "A | B";
+    Assert(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 0 }));
+});
+Test("Filter alternatives are bounded, deeply copied and preserved in portable configuration", () =>
+{
+    var filter = new DashboardScopeFilter { Kind = "matrix-row", SourceKey = "group-status", Values = new() { "Alpha", "Beta" } };
+    var settings = Settings(); settings.Dashboard.Layout.Normalize();
+    settings.Dashboard.Layout.Boards[0].Filters.Add(filter);
+    var copied = settings.Copy(); copied.Dashboard.Layout.Boards[0].Filters[0].Values[0] = "Other";
+    Assert(filter.Values[0] == "Alpha");
+    var path = Path.Combine(Folder(), "team-union.json");
+    ConfigurationTransferService.Export(path, settings);
+    var imported = ConfigurationTransferService.Import(path, Settings());
+    Assert(imported.Dashboard.Layout.Boards[0].Filters.Single().Selections().SequenceEqual(new[] { "Alpha", "Beta" }));
+    filter.Values = Enumerable.Repeat("A", 33).ToList(); Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
+    filter.Values = new() { " " }; Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
+    filter.Values = new() { "A" }; filter.Kind = "metric"; Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
+    filter.Values = null!; Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
+});
+
 var failed = 0;
 foreach (var test in tests) try { test.Run(); Console.WriteLine("PASS " + test.Name); } catch (Exception error) { failed++; Console.WriteLine("FAIL " + test.Name + "\n" + error); }
 Console.WriteLine($"{tests.Count - failed}/{tests.Count} vérifications réussies."); Console.WriteLine("PDF validation artifact: " + Path.Combine(root, "native-report.pdf"));

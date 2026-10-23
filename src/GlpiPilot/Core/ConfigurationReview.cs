@@ -17,7 +17,7 @@ public static partial class ConfigurationReview
         new(ConfigurationParts.Indicators, "Indicateurs et règles", Rules(current), Rules(incoming)),
         new(ConfigurationParts.Dashboards, "Dashboards", Boards(current), Boards(incoming)),
         new(ConfigurationParts.Queries, "Requêtes", $"{current.Queries.Queries.Count} requêtes", $"{incoming.Queries.Queries.Count} requêtes"),
-        new(ConfigurationParts.Cities, "Villes et sites", $"{current.Cities.Cities.Count} villes", $"{incoming.Cities.Cities.Count} villes"),
+        new(ConfigurationParts.Cities, "Villes et sites", $"{current.Cities.Cities.Count} villes · {current.Cities.Sites.Count} sites", $"{incoming.Cities.Cities.Count} villes · {incoming.Cities.Sites.Count} sites"),
         new(ConfigurationParts.Theme, "Thème clair / sombre", current.Theme, incoming.Theme)
     };
     private static string Address(AppSettings value) => AppPaths.SafeUrl(value.PortalUrl);

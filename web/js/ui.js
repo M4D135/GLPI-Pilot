@@ -35,6 +35,15 @@ export const toolbar=(...children)=>el('div',{class:'toolbar'},...children);
 export const empty=(title,detail='')=>el('div',{class:'empty'},icon('layers'),el('h3',{text:title}),detail?el('p',{text:detail}):null);
 export const badge=(text,tone='')=>el('span',{class:`badge ${tone}`,text});
 export function extractionStatus(session={}) {
+ if(session.testMode){
+  const receptionComplete=session.testFileReadComplete===true;
+  const missing=Number(session.testMissingFormulaValues)||0;
+  const receipt=receptionComplete?'Fichier entièrement lu':missing>0?'Valeurs calculées indisponibles':'Lecture limitée';
+  return{label:'Fichier local · simulation',tone:receptionComplete?'info':'warning',receipt,receptionComplete,
+   concordance:'Périmètre GLPI non vérifié',identity:'Identifiants lus dans le fichier local',
+   details:`${formatNumber(session.rows)} lignes chargées${Number.isFinite(session.testSourceRows)?` sur ${formatNumber(session.testSourceRows)} lignes du fichier`:''}. Les calculs sont une simulation sur les valeurs enregistrées.`,
+   attention:receptionComplete?'':missing>0?`${formatNumber(missing)} cellules calculées n’ont pas de résultat enregistré. Leurs valeurs restent inconnues ; la météo de simulation ne peut pas être confirmée.`:'Le fichier contient plus de lignes que le relevé chargé. Les calculs utilisent les lignes chargées uniquement.'};
+ }
  const quality=session.quality;
  const expected=Number.isInteger(session.expectedTotal)&&session.expectedTotal>=0?session.expectedTotal:null;
  const legacyComplete=!quality&&session.complete===true&&(expected===null||session.rows===expected);
@@ -59,6 +68,9 @@ export function extractionStatus(session={}) {
 export function extractionNotice(session,onDetails,{detailed=false}={}) {
  if(!session?.loaded||session.demo)return null;
  const status=extractionStatus(session);
+ if(session.testMode)return el('section',{class:status.attention?'notice warning':'receipt-summary','aria-label':'Lecture du fichier de test'},
+  toolbar(badge(status.receipt,status.attention?'warning':'info'),el('span',{text:'Simulation locale · périmètre GLPI non vérifié'})),
+  detailed?el('p',{class:'help',text:status.details}):null,status.attention?el('p',{class:'help',text:status.attention}):null);
  if(!detailed)return el('section',{class:status.attention?'notice warning':'receipt-summary','aria-label':'Bilan de la collecte'},
   toolbar(badge(status.receipt,status.receptionComplete?'success':'warning'),
    status.attention?el('span',{text:status.attention}):null,onDetails?button('Qualité du relevé',onDetails):null));

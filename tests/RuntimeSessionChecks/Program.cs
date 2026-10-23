@@ -232,6 +232,7 @@ Add("Busy events finish one operation before announcing the next", async f =>
     Check(events.Length == 4 && !events[1].GetProperty("busy").GetBoolean() && events[1].GetProperty("operation").GetString() == "test.first" && events[2].GetProperty("busy").GetBoolean());
 });
 
+tests.AddRange(OfflineImportChecks.Create());
 tests.AddRange(LibraryRuntimeChecks.Create());
 tests.AddRange(LibraryCaptureRuntimeChecks.Create());
 tests.AddRange(SharedOperationsRuntimeChecks.Create());

@@ -18,6 +18,12 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--offline-import-only"))
+            {
+                await CheckLocalFileTestInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} offline file import WebView checks passed.");
+                return;
+            }
             if (args.Contains("--resolution-only"))
             {
                 await CheckResolutionInterfaceAsync(args);
@@ -57,7 +63,11 @@ internal static partial class Program
             await CheckBridgeAsync();
             await CheckFoundationAsync();
             await CheckDivergenceReportAsync();
-            if (!args.Contains("--core-only")) await CheckInterfaceAsync(args);
+            if (!args.Contains("--core-only"))
+            {
+                await CheckInterfaceAsync(args);
+                await CheckLocalFileTestInterfaceAsync(args);
+            }
             Console.WriteLine($"{_passed}/{_passed} WebView integration checks passed.");
         }
         finally { Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", null); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", null); try { Directory.Delete(_root, true); } catch (IOException) { } }

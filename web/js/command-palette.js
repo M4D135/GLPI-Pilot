@@ -19,6 +19,7 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
     if (active) { active.search.focus(); active.search.select(); return true; }
     // A modal editor/confirmation owns focus until it is explicitly closed.
     if (document.querySelector('dialog[open]')) return false;
+    const ticketLookup = getCommands().ticketLookup !== false;
     const id = `command-palette-${++instanceSequence}`;
     const lifetime = new AbortController();
     const search = input('', {role: 'combobox', 'aria-label': 'Rechercher une commande ou un ticket',
@@ -31,9 +32,10 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
       const text = search.value.trim(), installation = sources.value;
       close(); return navigate('library', {text, installation});
     }, {icon: 'folder'});
+    browse.hidden = !ticketLookup;
     const body = el('div', {class: 'command-palette-body'},
       el('div', {class: 'command-palette-input'}, icon('search'), search),
-      el('div', {class: 'command-palette-scope'}, field('Installation des tickets conservés', sources),
+      el('div', {class: 'command-palette-scope', hidden: !ticketLookup}, field('Installation des tickets conservés', sources),
         el('p', {class: 'help', text: 'Recherche locale · la consultation conserve votre écran et votre relevé.'})),
       results, status,
       el('div', {class: 'command-palette-footer'},
@@ -92,7 +94,8 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
             command.active ? el('span', {class: 'command-palette-current', text: 'Écran actuel'}) : null);
         }))));
       if (!items.length && ticketState !== 'loading') results.append(el('p', {class: 'command-palette-empty', text: 'Aucun écran, action ou ticket ne correspond.'}));
-      const note = ticketState === 'loading' ? 'Recherche dans les tickets conservés…'
+      const note = !ticketLookup ? 'Mode test : recherche des écrans et des actions. Pour rechercher les lignes du fichier, ouvrez le relevé.'
+        : ticketState === 'loading' ? 'Recherche dans les tickets conservés…'
         : ticketState === 'error' ? `Recherche locale indisponible : ${ticketError}`
         : ticketState === 'ready' ? `${total} ticket(s) conservé(s) trouvé(s)${total > rows.length ? ` · ${rows.length} affichés, ouvrez la bibliothèque pour la suite` : ''}.`
         : 'Saisissez un numéro ou au moins deux caractères pour chercher dans les tickets conservés.';
@@ -111,8 +114,8 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
       clearTimeout(timer); queryRequest?.abort(); generation++;
       rows = []; total = 0; ticketError = '';
       const text = cacheQuery();
-      ticketState = canSearch(text) ? 'loading' : 'idle'; paint(true);
-      if (!canSearch(text)) return;
+      ticketState = ticketLookup && canSearch(text) ? 'loading' : 'idle'; paint(true);
+      if (!ticketLookup || !canSearch(text)) return;
       const version = generation, installation = sources.value;
       timer = setTimeout(async () => {
         queryRequest = new AbortController(); const request = queryRequest;
@@ -149,7 +152,7 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
       const option = event.target.closest('[data-command-index]');
       if (option) { selected = Number(option.dataset.commandIndex); syncSelection(false); }
     });
-    void api.call('library.get', {}, {signal: lifetime.signal}).then(model => {
+    if (ticketLookup) void api.call('library.get', {}, {signal: lifetime.signal}).then(model => {
       if (active !== current) return;
       sources.replaceChildren(el('option', {value: '', text: 'Toutes les installations'}),
         ...(model.sources || []).map(source => el('option', {value: source.installation, text: source.label || source.installation})));

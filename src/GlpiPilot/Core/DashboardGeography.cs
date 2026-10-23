@@ -6,7 +6,7 @@ public static class DashboardGeography
     {
         var scope = snapshot.ScopeRows.ToHashSet(); var active = snapshot.Metric("active")?.Rows.ToHashSet() ?? new HashSet<int>();
         var groups = new Dictionary<string, (string Label, double Latitude, double Longitude, List<int> Rows)>();
-        foreach (var match in report.Matches.Where(m => scope.Contains(m.RowIndex) && m.State == CityMatchState.Matched))
+        foreach (var match in report.Matches.Where(m => scope.Contains(m.RowIndex) && m.State is CityMatchState.Matched or CityMatchState.SiteOnly))
         {
             var site = geography.Sites.FirstOrDefault(s => s.Id == match.SiteId);
             var city = geography.Cities.FirstOrDefault(c => c.Id == match.CityId);

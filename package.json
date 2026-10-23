@@ -1,1 +1,1 @@
-{"name":"glpi-pilot-interface","version":"3.2.1","private":true,"type":"module","description":"Interface locale WebView2 ; moteur C# avec cache local et partage PostgreSQL facultatif"}
+{"name":"glpi-pilot-interface","version":"3.2.2","private":true,"type":"module","description":"Interface locale WebView2 ; moteur C# avec cache local et partage PostgreSQL facultatif"}

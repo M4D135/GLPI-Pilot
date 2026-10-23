@@ -174,6 +174,7 @@ try
     using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
     await Reject(() => Call("terrain.reference.upsert", new { }, cancelled.Token), "cancelled bridge request stops before mutation");
     Check(AppPaths.DataRoot == root && events.Contains("session.changed"), "all fixture persistence stays in explicitly isolated test profile");
+    await StandaloneSiteBridgeChecks.RunAsync(root, Check, Reject);
     Console.WriteLine($"{passed}/{passed} terrain bridge checks passed.");
 }
 finally

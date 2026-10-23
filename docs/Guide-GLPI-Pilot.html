@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 3.2.1</div>
+    <div class="eyebrow">Guide de prise en main · Version 3.2.2</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -61,7 +61,7 @@
       <h2>2. Préparer sa recherche, puis extraire en un clic</h2>
       <ol>
         <li>Dans <strong>Collecte GLPI</strong>, coller l’adresse complète de la recherche GLPI, avec ses critères. Choisir Edge ou Chrome et le dossier des exports dans les réglages.</li>
-        <li>Cliquer sur <strong>Lancer la collecte</strong>. Le logiciel mémorise la source, ouvre son navigateur, attend le SSO et retrouve la recherche.</li>
+        <li>Cliquer sur <strong>Lancer la collecte</strong>. Le navigateur réservé à la collecte reste réduit. Si une validation SSO visible demande une intervention, sa fenêtre s’affiche temporairement ; la collecte reprend discrètement après la connexion.</li>
         <li>Si une intervention est nécessaire, cliquer sur <strong>Afficher le navigateur</strong>, effectuer l’étape demandée puis revenir dans GLPI Pilot. Le logiciel ne renseigne pas les identifiants.</li>
         <li>Lire le bilan : lignes récupérées, méthode employée, totalité vérifiée ou limites à examiner. Consulter ensuite le relevé et ses commandes d’export.</li>
       </ol>
@@ -101,7 +101,9 @@
       <p>La recherche et les filtres portent sur toutes les lignes chargées, avant l’affichage paginé de 50 à 500 lignes. La recherche inclut les colonnes masquées. Un clic sur un en-tête trie le résultat ; <kbd>Maj + clic</kbd> ajoute un niveau de tri.</p>
       <p><strong>Colonnes</strong> règle visibilité, ordre et largeur. <strong>Vues mémorisées</strong> mémorise recherche, filtres par colonne, jusqu’à quatre niveaux de tri et présentation. Une vue reste liée à la structure exacte des en-têtes pour ne pas appliquer un filtre à une autre colonne.</p>
       <p>L’export complet conserve toutes les lignes et colonnes du relevé. <strong>Exporter la vue</strong> utilise les critères courants et les colonnes visibles, y compris les lignes correspondantes au-delà de l’aperçu.</p>
-      <p>Les outils manuels importent un <strong>CSV ou XLSX</strong> local sans connexion au portail. Le lecteur Excel utilise la première feuille visible et les valeurs enregistrées ; il n’exécute pas les formules. La provenance du fichier reste indiquée, avec une exhaustivité GLPI non confirmée.</p>
+      <p><strong>Importer un fichier de test</strong> ouvre un extrait <strong>CSV, XLSX ou XLSM</strong> sans connexion au portail. TSV et TXT sont aussi acceptés. Dans un fichier Excel, choisir la feuille visible contenant la liste des incidents et, si nécessaire, le numéro de la ligne d’en-têtes. Laisser ce numéro vide utilise la première ligne non vide. Les valeurs enregistrées sont lues ; aucune formule, macro ni liaison externe n’est exécutée. Pour un ancien fichier XLS, enregistrer une copie XLSX ou CSV.</p>
+      <p>Le bandeau <strong>Mode test</strong> reste visible. Les listes, recherches et dashboards utilisent cet extrait. La météo du stock porte la mention <strong>Simulation</strong> lorsqu’elle peut appliquer les seuils sur un fichier entièrement lu et des identifiants/statuts exploitables. La couverture GLPI reste non confirmée. Un fichier limité ou incohérent conserve une météo neutre.</p>
+      <p>La collecte, les actions sur les tickets, le partage, l’archivage et les notifications sont suspendus. Le panier de test est indépendant. <strong>Quitter le mode test</strong> restitue le relevé précédent, même après plusieurs imports. Les personnalisations des dashboards et des requêtes restent enregistrées dans les réglages. Une annulation ou une erreur d’import conserve le relevé courant.</p>
     </section>
     <section id="dashboard">
       <h2>5. Construire et explorer les dashboards</h2>
@@ -111,6 +113,9 @@
       <p>Les filtres communs s’appliquent aux widgets compatibles. Chaque widget peut ajouter ses propres conditions. Activer les filtres croisés pour filtrer le dashboard en cliquant sur une catégorie ; <strong>Réinitialiser</strong> retire les filtres communs et croisés. La comparaison A/B affiche deux périmètres issus de la même source. Les contextes nommés mémorisent les filtres indépendamment de la disposition.</p>
       <p>Les visualisations comprennent indicateurs, anneaux, jauges, histogrammes, matrices, barres empilées, Pareto, quantiles, boîtes statistiques et nuage ancienneté/échéance. Les méthodes, champs disponibles et effectifs accompagnent les mesures. Un champ absent reste indisponible.</p>
       <p>Les indices de « météo » décrivent la santé du relevé : échéances, qualité, localisation ou synthèse. Leurs poids et seuils se règlent dans la configuration du dashboard. Ils ne sont pas des prévisions climatiques. Les durées sont calendaires et ne prouvent pas à elles seules le respect d’un SLA GLPI.</p>
+      <p>La présentation <strong>Météo du stock</strong> s’applique à un indicateur de volume, avec deux seuils orange et rouge. Le changement de couleur exige un dépassement strict : avec un seuil orange de 30, 30 reste maîtrisé et 31 passe à surveiller. Sans seuils, la carte affiche <strong>Seuils à définir</strong>. Le nombre reste consultable lorsqu’un relevé doit être vérifié. Le modèle <strong>Météo et pilotage du service</strong> fournit un tableau prêt à adapter.</p>
+      <p>Les matrices <strong>Groupes × statuts</strong> et <strong>Types × statuts</strong> décrivent les tickets actifs, y compris ceux en attente ou planifiés. Un ticket affecté à plusieurs groupes participe une fois à chaque groupe ; la somme des groupes peut donc dépasser le stock global. Dans un filtre <strong>Groupe ou ligne de tableau</strong>, saisir un nom par ligne réunit ces groupes par OU, sans doublonner le total du périmètre.</p>
+      <p>Pour reprendre une disposition, ouvrir <strong>Modifier le dashboard → Disposition → Importer une disposition</strong>, puis <strong>Ajouter à mes tableaux</strong>. L’aperçu explique les renommages nécessaires et la limite de douze tableaux. Les tableaux actuels, les favoris et les contextes sont conservés. Le remplacement reste un choix explicite et le changement peut être annulé.</p>
       <p>Exporter le rendu en PNG ou le bilan détaillé en CSV/Excel. Quatre courbes historiques globales utilisent les archives comparables ; les courbes personnelles et les historiques recalculés sur des filtres arbitraires restent à poursuivre.</p>
     </section>
     <section id="requetes">
@@ -135,6 +140,7 @@
       <h2>9. Définir les villes, alias et sites</h2>
       <p>Le référentiel permet plusieurs termes pour une ville : <code>MA ; Mars ; Marseille = Marseille</code>. La détection prend en compte mots entiers, accents et noms composés. Une ambiguïté reste visible au lieu d’attribuer arbitrairement une ville.</p>
       <p>Définir régions, départements, secteurs, sites, adresses et coordonnées facultatives. Régler l’ordre des sources, conditions et exclusions, puis simuler les changements pour examiner les tickets affectés et les preuves de détection.</p>
+      <p>Un <strong>site sans commune renseignée</strong> peut être créé, importé, reconnu par ses alias et utilisé dans un panier de tournée. Son rattachement peut être complété plus tard sans perdre son identité. Aucun nom de ville ni point sur une carte n’est déduit arbitrairement. Un CSV minimal <code>Type;Nom;Alias</code> avec le type <code>Site</code> suffit pour ces lieux.</p>
       <p>La file de vérification géographique permet des corrections locales par installation et identifiant de ticket. L’import CSV présente les changements avant application. Une coordonnée approximative au centre d’une ville ne représente pas l’adresse précise d’un site.</p>
     </section>
     <section id="tournees">
@@ -159,6 +165,7 @@
     <section id="partage">
       <h2>13. Partager la configuration et récupérer ses réglages</h2>
       <p>L’import présente les sections et le comparatif avant application. Choisir les éléments à reprendre et le mode de fusion ou remplacement. Les versions précédentes des réglages sont conservées ; une restauration manuelle passe par cet aperçu.</p>
+      <p>Un fichier partiel ne propose que les sections présentes et conserve les réglages absents. Pour ajouter un référentiel de sites à des lieux déjà configurés, choisir <strong>Fusionner</strong> et examiner les conflits. La fusion s’appuie sur les identifiants ; deux lieux portant le même nom avec des identifiants différents demandent une vérification.</p>
       <p>Le partage contient les définitions d’équipe et les adresses choisies. Il laisse sur le poste l’identité personnelle, le profil SSO, les dossiers, le zoom, la programmation, les historiques, alertes et notes privées. Copier un pack ne copie pas la session du compte Windows.</p>
       <p>Le mode démonstration charge 180 tickets fictifs pour découvrir les vues. Ils ne sont pas archivés comme des relevés métier et ne déclenchent pas les alertes.</p>
     </section>
@@ -190,7 +197,7 @@
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 3.2.1 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 3.2.2 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

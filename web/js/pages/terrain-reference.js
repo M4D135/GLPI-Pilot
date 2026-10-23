@@ -6,7 +6,7 @@ const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi',
 
 export async function renderReference(ctx) {
   const p = page(ctx, 'Référentiel géographique', 'Villes, sites, bâtiments et règles de localisation. Préparez vos modifications, puis vérifiez leur effet sur le relevé complet.');
-  let state = await p.call('terrain.reference.state'), kind = 'city', offset = 0;
+  let state = await p.call('terrain.reference.state'), kind = !state.cities && state.sites ? 'site' : 'city', offset = 0;
   const summary = el('div'), listing = el('div'), configuration = el('div'), warningArea = el('div');
   const search = input('', { placeholder: 'Nom, alias ou rattachement', maxLength: 120 });
   const type = select(Object.entries(labels).map(([value, label]) => ({ value, label })), kind);
@@ -26,6 +26,7 @@ export async function renderReference(ctx) {
   function paintState() {
     summary.replaceChildren(el('div', { class: 'terrain-statbar' },
       badge(`${formatNumber(state.cities)} villes`), badge(`${formatNumber(state.sites)} sites`), badge(`${formatNumber(state.buildings)} bâtiments`),
+      state.sitesWithoutCity ? badge(`${formatNumber(state.sitesWithoutCity)} sites · commune non renseignée`) : '',
       badge(state.dirty ? 'Brouillon modifié' : 'Référentiel enregistré', state.dirty ? 'warn' : 'ok')));
     warningArea.replaceChildren();
     if (state.conflicted) warningArea.append(el('p', { class: 'terrain-warning', text: 'Le référentiel a été modifié ailleurs depuis l’ouverture du brouillon. Rechargez-le avant de reprendre les modifications.' }));
@@ -78,7 +79,8 @@ export async function renderReference(ctx) {
     const editor = form(fields, { ...value, aliases: listText(value.aliases), excludedTerms: listText(value.excludedTerms), latitude: value.latitude ?? '', longitude: value.longitude ?? '' });
     const body = el('div', { class: 'terrain-editor' }, errors);
     if (entryKind !== 'city') {
-      parent = referenceField(p, entryKind === 'site' ? 'Ville de rattachement' : 'Site de rattachement', entryKind === 'site' ? 'city' : 'site', entryKind === 'site' ? value.cityId : value.siteId);
+      parent = referenceField(p, entryKind === 'site' ? 'Commune de rattachement · facultative' : 'Site de rattachement', entryKind === 'site' ? 'city' : 'site', entryKind === 'site' ? value.cityId : value.siteId, '',
+        entryKind === 'site' ? { empty: 'Commune non renseignée', help: 'Le site et ses alias fonctionnent sans commune. Vous pourrez le rattacher plus tard ; aucune position géographique ne sera inventée.' } : {});
       body.append(parent.element);
     }
     body.append(editor.element);
@@ -117,13 +119,13 @@ export async function renderReference(ctx) {
   async function importCsv() {
     const data = await p.call('terrain.reference.import', draft()); if (data.cancelled) return;
     const content = el('div'), errors = el('div', { role: 'alert' });
-    const panel = el('div', {}, el('p', { text: `${data.fileName} · ${data.additions} ajouts, ${data.modifications} modifications, ${data.identical} références identiques. Les lignes absentes du CSV sont conservées.` }), errors, content);
+    const panel = el('div', {}, el('p', { text: `${data.fileName} · ${data.additions} ajouts, ${data.modifications} modifications, ${data.identical} références identiques. Les lignes absentes du CSV sont conservées. La colonne Alias remplace les variantes des références concernées. Une colonne VilleId absente préserve le rattachement existant ; vide, elle le retire.` }), errors, content);
     const paint = value => content.replaceChildren(table(value.items, [{ key: 'kind', label: 'Décision' }, { key: 'type', label: 'Type' }, { key: 'name', label: 'Nom' }, { key: 'detail', label: 'Changement' }], { maxRows: 50 }),
       pager(value, next => p.run(async () => paint(await p.call('terrain.reference.importPage', { token: data.token, offset: next, limit: 50 })), errors)));
     paint(data);
     p.dialog('Comparatif d’import CSV', panel, [
       { label: 'Annuler', action: close => close() },
-      { label: 'Fusionner dans le brouillon', primary: true, action: close => p.run(async () => { state = await p.call('terrain.reference.importApply', { token: data.token, confirmed: true }); close(); await reload(); p.message('Import fusionné dans le brouillon. Simulez maintenant le référentiel avant de l’enregistrer.'); }, errors) }
+      { label: 'Fusionner dans le brouillon', primary: true, action: close => p.run(async () => { state = await p.call('terrain.reference.importApply', { token: data.token, confirmed: true }); if (!state.cities && state.sites) { kind = 'site'; type.value = kind; offset = 0; } close(); await reload(); p.message('Import fusionné dans le brouillon. Simulez maintenant le référentiel avant de l’enregistrer.'); }, errors) }
     ]);
   }
   search.addEventListener('keydown', event => { if (event.key === 'Enter') p.run(async () => { offset = 0; await loadList(); }); });
@@ -194,7 +196,7 @@ function simulation(p, state, draft, updated) {
       for (const entry of contexts) { if (!entry.name.value) throw new Error('Nommez chaque colonne de contexte.'); if (Object.hasOwn(context, entry.name.value)) throw new Error('Deux colonnes de contexte portent le même nom.'); context[entry.name.value] = entry.value.value; }
       const data = await p.call('terrain.reference.simulate', { ...draft(), title: title.read().title, context });
       result.replaceChildren(highlighted(data.title, data.highlights), facts([['Ville', data.match.cityName], ['Site', data.match.siteName], ['Bâtiment', data.match.buildingName], ['Décision', data.match.explanation]]),
-        table(data.match.evidence, [{ key: 'cityName', label: 'Ville' }, { key: 'term', label: 'Terme' }, { key: 'decision', label: 'Décision' }, { key: 'explanation', label: 'Justification' }], { maxRows: 100 }));
+        table(data.match.evidence, [{ key: 'cityName', label: 'Lieu', render: row => row.siteName ? `${row.siteName} · ${row.cityName || 'commune non renseignée'}` : row.cityName }, { key: 'term', label: 'Terme' }, { key: 'decision', label: 'Décision' }, { key: 'explanation', label: 'Justification' }], { maxRows: 100 }));
     }), { primary: true })
   ), result);
   return root;

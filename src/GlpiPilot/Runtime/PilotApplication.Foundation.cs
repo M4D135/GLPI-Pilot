@@ -33,6 +33,8 @@ public sealed partial class PilotApplication
         Register("sources.remove", (a, ct) => { CheckRevision(a); var id = Text(a, "id", 80); var next = Settings.Copy(); next.Sources.RemoveAll(s => s.Id == id); if (next.ActiveSourceId == id) next.ActiveSourceId = ""; CommitSettings(next); return Task.FromResult<object?>(Settings.Sources); });
         Register("records.schema", (a, ct) => { var data = RequireResult(); if (IsHistorical || IsLocalResult(data)) return Task.FromResult<object?>(new { available = false }); var key = SnapshotStore.SourceKey(data); if (key.Length == 0) return Task.FromResult<object?>(new { available = false }); if (Flag(a, "accept")) { CheckRevision(a); _schemas.Accept(key, data.Headers); } return Task.FromResult<object?>(new { available = true, change = _schemas.Inspect(key, data.Headers), revision = Revision }); });
         Register("records.import", ImportRecordsAsync);
+        Register("records.test.import", ImportTestRecordsAsync);
+        Register("records.test.exit", ExitTestRecordsAsync);
         Register("records.list", RecordListAsync);
         Register("records.export", ExportRecordsAsync);
         Register("records.cell", CellAsync);
@@ -40,7 +42,7 @@ public sealed partial class PilotApplication
         Register("records.views", (_, _) => Task.FromResult<object?>(_views.List(PreviewViewPreferences.Fingerprint(RequireResult().Headers))));
         Register("records.saveView", (a, ct) => { CheckRevision(a); var view = Read<NamedPreview>(a); var data = RequireResult(); view.HeaderFingerprint = PreviewViewPreferences.Fingerprint(data.Headers); view.ColumnsCount = data.Headers.Count; _views.Save(view); return Task.FromResult<object?>(view); });
         Register("records.removeView", (a, ct) => { _views.Remove(Text(a, "id", 80)); return Task.FromResult<object?>(new { removed = true }); });
-        Register("records.basket", (a, ct) => { var data = RequireResult(); if (a.TryGetProperty("rows", out var rows)) { CheckRevision(a); _basket.Add(data, Read<int[]>(rows), EffectiveSettings.Dashboard); } if (Flag(a, "clear")) _basket.Clear(); return Task.FromResult<object?>(new { count = _basket.Keys.Count, rows = _basket.Find(data, EffectiveSettings.Dashboard) }); });
+        Register("records.basket", (a, ct) => { if (IsTestMode) return Task.FromResult<object?>(TestRecordBasket(a)); var data = RequireResult(); if (a.TryGetProperty("rows", out var rows)) { CheckRevision(a); _basket.Add(data, Read<int[]>(rows), EffectiveSettings.Dashboard); } if (Flag(a, "clear")) _basket.Clear(); return Task.FromResult<object?>(new { count = _basket.Keys.Count, rows = _basket.Find(data, EffectiveSettings.Dashboard) }); });
         Register("mapping.get", (_, _) => Task.FromResult<object?>(MappingState()));
         Register("mapping.preview", (a, ct) => { CheckRevision(a); var settings = Read<DashboardSettings>(a.GetProperty("settings")); DashboardService.ValidateSettings(settings); return Task.FromResult<object?>(MappingPreview(settings)); });
         Register("mapping.save", (a, ct) => Task.FromResult<object?>(SaveMapping(a)));

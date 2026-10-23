@@ -1,4 +1,4 @@
-# GLPI Pilot 3.2.1 — Windows x64
+# GLPI Pilot 3.2.2 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -28,14 +28,34 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 ## Premier réglage, puis un clic
 
 1. Dans **Collecte GLPI**, renseigner l’adresse **complète de la recherche**, filtres compris, et choisir Edge ou Chrome. Enregistrer la source ; le dossier des exports se règle dans Configuration.
-2. Cliquer **Lancer la collecte**. Le logiciel ouvre son navigateur, attend le SSO, retrouve la recherche et récupère toutes les pages par la méthode disponible.
+2. Cliquer **Lancer la collecte**. Le navigateur réservé à la collecte reste réduit ; il s’affiche temporairement si une validation SSO visible demande une intervention, puis la collecte reprend discrètement.
 3. Examiner le relevé, son état d’exhaustivité et le dashboard. Cliquer une valeur retrouve les tickets correspondants.
 4. Dans **Équipe**, choisir son nom et **C’est moi** pour le travail personnel. Définir les villes, sites, bâtiments et variantes dans **Référentiel géographique** si besoin.
 5. Aux sessions suivantes, réutiliser la source enregistrée. Les vues nommées, tableaux de bord et réglages de présentation restent mémorisés.
 
-**Afficher le navigateur** permet d’intervenir si le SSO attend une saisie ; le logiciel ne renseigne aucun identifiant. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
+**Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Nouveautés de la version 3.2.1
+## Nouveautés de la version 3.2.2
+
+**La météo peut suivre le volume réel de tickets d’un service, d’une équipe ou d’une catégorie.** La présentation « Météo du stock » conserve le nombre cliquable et applique deux seuils configurables avec un dépassement strict : la valeur égale au seuil orange reste maîtrisée, celle égale au seuil rouge reste à surveiller. Les états soleil, nuage et pluie suivent les thèmes clair/sombre et la préférence de réduction des animations. Une réception partielle, un périmètre non confirmé ou un problème d’identité ne produit pas un faux état vert ; une simple différence de représentation HTML/CSV ne neutralise pas le comptage. Les indices de risque existants restent disponibles.
+
+**Le modèle « Météo et pilotage du service »** ajoute un point de départ modifiable : stock actif, demandes et incidents, attente, absence de groupe, affectations multiples, rédacteurs renseignés, groupes × statuts, types × statuts, catégories, ancienneté et inactivité. Les matrices conservent les quatre statuts actifs, y compris leurs zéros connus, avec un total par ligne. Un ticket multigroupe compte une fois dans chacun de ses groupes ; ses affectations multiples ne multiplient pas le stock global. Les lignes portant un identifiant répété restent des occurrences signalées, sans déduplication silencieuse. Un filtre d’équipe peut réunir plusieurs groupes par **OU**, sans compter deux fois la même ligne commune.
+
+**Les colonnes d’un rapport métier sont mieux reprises.** Suivis et tâches ont chacun leur rôle de rédacteur ; description, TTR avec progression, délai de prise en compte et compteurs déclarés sont reconnus séparément. Les âges et nombres déclarés restent distincts des mesures recalculées. Aucun pourcentage TTR n’est transformé en échéance et aucune unité de durée n’est inventée. Les widgets sans données utilisables restent masqués automatiquement, selon le réglage du tableau.
+
+**Importer une disposition propose « Ajouter à mes tableaux ».** L’aperçu présente le nombre de tableaux et les éventuels renommages, préserve les tableaux existants et permet l’annulation. Un fichier de configuration partiel propose seulement les sections qu’il contient et conserve les réglages absents. Les sites peuvent être reconnus par leurs noms et variantes **sans commune renseignée**, puis rattachés ultérieurement sans changer d’identité ; aucun emplacement cartographique n’est inventé.
+
+Les [notes 3.2.2](docs/RELEASE-3.2.2.md) précisent les règles de calcul et de reprise. Les configurations internes et les captures métier restent dans les fichiers d’import de leur propriétaire ; le dépôt contient uniquement le moteur, des modèles génériques et des jeux de vérification fictifs.
+
+### Essayer un extrait Excel ou CSV hors ligne
+
+**Importer un fichier de test** est accessible depuis la collecte et le relevé. Le mode test accepte CSV, TSV, TXT, XLSX et XLSM. Pour Excel, choisir la feuille visible contenant les incidents et, si des titres précèdent le tableau, le numéro de sa ligne d’en-têtes. Les valeurs enregistrées sont lues sans exécuter de formule, macro ni liaison externe. L’ancien format XLS demande une copie XLSX ou CSV.
+
+Un bandeau permanent indique **Mode test** et le nom du fichier. Les listes, recherches, graphiques, météo et correspondances utilisent uniquement cet extrait. Une météo de volume calculable porte la mention **Simulation** ; une lecture limitée ou des identifiants/statuts douteux ne donnent pas un état maîtrisé artificiel. La couverture GLPI reste non confirmée.
+
+La collecte, les actions métier sur les tickets, les synchronisations, l’archivage et les notifications sont suspendus pendant ce mode. Le panier de test est séparé. **Quitter le mode test** restitue le relevé précédent, même après plusieurs imports. Les personnalisations des dashboards et des requêtes restent enregistrées dans les réglages. Un fichier invalide ou une sélection annulée conserve le relevé en cours.
+
+## Apports de la version 3.2.1
 
 **Ctrl+K retrouve les tickets conservés**, en plus des écrans et actions. Les résultats précisent leur installation GLPI, leur état et la date de lecture. Un numéro exact est prioritaire ; le filtre d’installation distingue les tickets portant le même numéro. La lecture du contenu local garde la saisie, l’écran et le relevé en cours. Les flèches et Entrée permettent de choisir, Échap rend le focus au point de départ.
 
@@ -180,6 +200,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.2.2](docs/RELEASE-3.2.2.md)
 - [Notes de version 3.2.1](docs/RELEASE-3.2.1.md)
 - [Notes de version 3.2.0](docs/RELEASE-3.2.0.md)
 - [Notes de version 3.1.1](docs/RELEASE-3.1.1.md)
@@ -214,7 +235,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.2.1'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.2.2'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -230,7 +251,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.2.1'
+  -OutputDirectory '.\artifacts\release-3.2.2'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

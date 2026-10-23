@@ -22,6 +22,10 @@ public sealed partial class PilotApplication
         public required Dictionary<string, DashboardSnapshot> Widgets { get; init; }
         public required SnapshotScopedHistory History { get; init; }
         public required string TechnicianKey { get; init; }
+        public required bool SourceTicketIdentityReliable { get; init; }
+        public required bool SourceStatusesKnown { get; init; }
+        public bool IsLocalFileTest { get; init; }
+        public bool TestFileReadComplete { get; init; }
         public bool HistoryLoaded { get; set; }
     }
     private AnalyticsRun? _analyticsRun;
@@ -45,6 +49,7 @@ public sealed partial class PilotApplication
         Register("dashboard.board.create", AnalyticsCreateBoardAsync);
         Register("dashboard.layout.export", AnalyticsExportLayoutAsync);
         Register("dashboard.layout.import", AnalyticsImportLayoutAsync);
+        Register("dashboard.layout.append", AnalyticsAppendLayoutAsync);
         Register("dashboard.rows", (a, ct) => Task.FromResult<object?>(AnalyticsRows(a, ct)));
         Register("dashboard.data", (a, ct) => Task.FromResult<object?>(AnalyticsDataPage(a)));
         Register("reports.export", AnalyticsExportReportAsync);
@@ -96,6 +101,10 @@ public sealed partial class PilotApplication
             var at = historical is null ? DateTimeOffset.Now : source.ExtractedAt;
             var baseline = personal ? TechnicianDashboardService.CalculateForTechnician(source, settings.Dashboard, technician, at, token)
                 : DashboardService.Calculate(source, settings.Dashboard, at, token);
+            // A filtered card must not hide an uncertain source row and thereby certify
+            // the remaining count. Personal layouts also retain the unfiltered evidence.
+            var weatherSource = personal && board.Widgets.Any(widget => !widget.Hidden && widget.Kind == "metric" && widget.Presentation == "weather-volume")
+                ? DashboardService.Calculate(source, settings.Dashboard, at, token) : baseline;
             void Append(DashboardSnapshot snapshot)
             {
                 if (!string.IsNullOrEmpty(populationWarning)) snapshot.Warnings.Add(populationWarning);
@@ -134,7 +143,9 @@ public sealed partial class PilotApplication
                 : Calculate(DashboardService.ResolveScope(baseline, board.ComparisonFilters, token), "Comparaison · " + AnalyticsDescribe(board.ComparisonFilters)) : null;
             return new AnalyticsRun { Revision = revision, Source = source, Settings = settings, Rules = SnapshotStore.RulesFingerprint(settings),
                 Baseline = baseline, Current = current, Comparison = comparison, Board = board, Common = common, Widgets = widgets,
-                TechnicianKey = technician, History = new(Snapshots, source, settings, baseline, technician, token) };
+                TechnicianKey = technician, History = new(Snapshots, source, settings, baseline, technician, token),
+                SourceTicketIdentityReliable = weatherSource.Grain == "tickets", SourceStatusesKnown = weatherSource.Metric("unknown-status")?.Value == 0,
+                IsLocalFileTest = IsTestMode, TestFileReadComplete = _localFileTest?.FileReadComplete == true };
         }, ct);
         ct.ThrowIfCancellationRequested();
         if (Revision != revision || !ReferenceEquals(source, Result)) throw new OperationCanceledException("Le relevé a changé.", ct);
@@ -150,6 +161,9 @@ public sealed partial class PilotApplication
     private async Task<object?> AnalyticsDashboardHistoryAsync(JsonElement args, CancellationToken ct)
     {
         var run = RequireAnalyticsRun(args);
+        if (run.IsLocalFileTest)
+            return new { runId = run.Id, revision = run.Revision, widgets = run.Board.Widgets.Where(w => !w.Hidden && (w.Kind == "history" || w.Kind == "metric" && w.ShowMiniHistory))
+                .Select(w => new { id = w.Id, history = (object?)null, comparison = (object?)null }).ToArray() };
         if (!run.HistoryLoaded)
         {
             var requests = new List<DashboardHistoryScope> { new("current", run.Common, Array.Empty<DashboardScopeFilter>()) };
@@ -184,8 +198,28 @@ public sealed partial class PilotApplication
     }
 
     private static string AnalyticsDescribe(IEnumerable<DashboardScopeFilter> filters) => string.Join(" · ", filters.Select(f =>
-        (f.Exclude ? "sauf " : "") + f.SourceKey + (f.Kind == "metric" ? "" : " = " + f.Value + (f.Kind == "date" ? " → " + f.Value2 : ""))));
-    private static object AnalyticsMetric(DashboardMetric m) => new { m.Key, m.Label, m.Value, m.Unit, explanation = AnalyticsClip(m.Explanation), m.Sample, m.Tone, count = m.Rows.Length };
+        (f.Exclude ? "sauf " : "") + f.SourceKey + (f.Kind == "metric" ? "" : " = " + string.Join(" OU ", f.Selections()) + (f.Kind == "date" ? " → " + f.Value2 : ""))));
+    private static object AnalyticsMetric(DashboardMetric m) => AnalyticsMetric(m, null, true);
+    private static object AnalyticsMetric(DashboardMetric m, DashboardWidgetSettings? widget, bool complete, bool simulation = false) => new
+    {
+        m.Key, m.Label, m.Value, m.Unit, explanation = AnalyticsClip(m.Explanation), m.Sample, m.Tone, count = m.Rows.Length,
+        volumeWeather = widget?.Presentation == "weather-volume" ? AnalyticsVolumeWeather(widget, m.Value, complete, simulation) : null
+    };
+    private static object AnalyticsVolumeWeather(DashboardWidgetSettings widget, double? value, bool complete, bool simulation)
+    {
+        var weather = widget.EvaluateVolumeWeather(value, complete);
+        return new { weather.State, title = simulation ? "Simulation · " + weather.Title : weather.Title,
+            explanation = simulation ? "Simulation des seuils sur le fichier local ; aucune couverture GLPI n’est confirmée. " + weather.Explanation : weather.Explanation, simulation };
+    }
+    private static bool AnalyticsVolumeWeatherReliable(AnalyticsRun run, DashboardSnapshot snapshot, DashboardWidgetSettings widget)
+    {
+        // Every stock weather must retain the unfiltered source's status evidence,
+        // including pending, old tickets and incident/request subsets.
+        var identities = run.SourceTicketIdentityReliable && snapshot.Grain == "tickets" && run.SourceStatusesKnown;
+        if (run.IsLocalFileTest) return run.TestFileReadComplete && identities;
+        return identities && snapshot.ReceptionComplete && snapshot.Quality?.ScopeStable != false && snapshot.Quality?.SampleIdentityVerified != false
+            && (!snapshot.SourceExpectedTotal.HasValue || snapshot.SourceExpectedTotal == snapshot.SourceRowCount);
+    }
     private static object AnalyticsSummary(DashboardSnapshot s) => new { s.CalculatedAt, s.ExtractedAt, s.RowCount, s.ExpectedTotal, s.Complete, s.ReceptionComplete, s.Quality,
         s.IsFiltered, s.ScopeLabel, s.SourceRowCount, s.SourceExpectedTotal, sourceUrl = AppPaths.SafeUrl(s.SourceUrl), s.Scope, s.Grain,
         columns = s.Columns, metrics = s.Metrics.Select(AnalyticsMetric).ToArray(), warnings = s.Warnings.Take(100).Select(w => AnalyticsClip(w)).ToArray(), weather = AnalyticsWeather(s.Weather) };
@@ -225,7 +259,7 @@ public sealed partial class PilotApplication
     {
         var s = run.Widgets[widget.Id]; object? content = widget.Kind switch
         {
-            "metric" => s.Metric(widget.SourceKey) is { } metric ? AnalyticsMetric(metric) : null,
+            "metric" => s.Metric(widget.SourceKey) is { } metric ? AnalyticsMetric(metric, widget, AnalyticsVolumeWeatherReliable(run, s, widget), run.IsLocalFileTest) : null,
             "distribution" => s.Distributions.FirstOrDefault(d => d.Key == widget.SourceKey) is { } distribution ? AnalyticsDistribution(distribution, widget.TopCount, widget.Presentation) : null,
             "weather" => AnalyticsWeather(s.WeatherProfiles.GetValueOrDefault(widget.SourceKey) ?? s.Weather),
             "timeline" => s.Timeline.TakeLast(366).Select(d => new { d.Date, created = d.Created.Length, resolved = d.Resolved.Length, closed = d.Closed.Length }).ToArray(),
@@ -272,7 +306,23 @@ public sealed partial class PilotApplication
     private Task<object?> AnalyticsSaveLayoutAsync(JsonElement args, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested(); var layout = AnalyticsArgument<DashboardLayoutSettings>(args, "layout"); layout.Validate();
+        if (args.TryGetProperty("baseFingerprint", out _)) AnalyticsCheckLayoutFingerprint(args, Flag(args, "personal"));
         AnalyticsPersistLayout(Flag(args, "personal"), layout); return Task.FromResult<object?>(new { saved = true });
+    }
+    private string AnalyticsLayoutFingerprint(bool personal) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+        System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(AnalyticsLayout(personal), Json))));
+    private void AnalyticsCheckLayoutFingerprint(JsonElement args, bool personal)
+    {
+        if (Text(args, "baseFingerprint", 64) != AnalyticsLayoutFingerprint(personal))
+            throw new InvalidOperationException("La disposition a changé depuis l’aperçu. Importez de nouveau le fichier pour vérifier son ajout.");
+    }
+    private Task<object?> AnalyticsAppendLayoutAsync(JsonElement args, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); AnalyticsCheckLayoutFingerprint(args, personal);
+        var imported = AnalyticsArgument<DashboardLayoutSettings>(args, "layout"); imported.Validate();
+        var merged = DashboardLayoutSettings.AppendBoards(AnalyticsLayout(personal), imported);
+        AnalyticsPersistLayout(personal, merged.Layout);
+        return Task.FromResult<object?>(new { saved = true, boardId = merged.Layout.ActiveBoardId, added = merged.AddedBoards.Count, merged.AddedBoards });
     }
     private AnalyticsLayoutJournal AnalyticsJournal(bool personal)
     {
@@ -305,7 +355,7 @@ public sealed partial class PilotApplication
     {
         ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); var layout = AnalyticsLayout(personal).Copy(); layout.Normalize();
         var name = Text(args, "name", 120, "Mon tableau de bord"); var preset = Text(args, "preset", 40, "empty");
-        if (!new[] { "empty", "overview", "personal", "team", "deadlines", "quality", "geography", "analysis", "operations" }.Contains(preset)) throw new InvalidDataException("Modèle inconnu.");
+        if (!new[] { "empty", "overview", "personal", "team", "deadlines", "quality", "geography", "analysis", "operations", "service" }.Contains(preset)) throw new InvalidDataException("Modèle inconnu.");
         var board = DashboardLayoutSettings.CreateBoard(name, preset); layout.Boards.Add(board); layout.ActiveBoardId = board.Id; layout.Validate();
         AnalyticsPersistLayout(personal, layout); return Task.FromResult<object?>(new { boardId = board.Id });
     }
@@ -322,7 +372,11 @@ public sealed partial class PilotApplication
         if (path is null) return new { cancelled = true };
         if (new FileInfo(path).Length > 2 * 1024 * 1024) throw new InvalidDataException("Disposition limitée à 2 Mio.");
         var layout = JsonSerializer.Deserialize<DashboardLayoutSettings>(await File.ReadAllTextAsync(path, ct), Json) ?? throw new InvalidDataException("Disposition vide.");
-        layout.Validate(); layout.Normalize(); layout.Validate(); return new { layout, preview = true };
+        layout.Validate(); layout.Normalize(); layout.Validate();
+        var personal = Flag(args, "personal"); var current = AnalyticsLayout(personal); var canAppend = current.Boards.Count + layout.Boards.Count <= 12;
+        var additions = canAppend ? DashboardLayoutSettings.AppendBoards(current, layout).AddedBoards : Array.Empty<DashboardAppendedBoard>();
+        return new { layout, preview = true, baseFingerprint = AnalyticsLayoutFingerprint(personal), existingBoards = current.Boards.Count, canAppend,
+            addedBoards = additions, appendReason = canAppend ? "" : $"L’ajout dépasserait 12 tableaux ({current.Boards.Count} existants + {layout.Boards.Count} importés)." };
     }
 
     private static DashboardSnapshot AnalyticsSnapshot(AnalyticsRun run, JsonElement args)

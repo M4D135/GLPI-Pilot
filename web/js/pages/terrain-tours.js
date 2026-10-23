@@ -69,7 +69,7 @@ export async function renderTours(ctx) {
 
   async function loadProjection() {
     const data = await p.call('terrain.tours.projection', { ...filterArgs(), order: manualOrder ? 'current' : order.value, firstCity: firstCity.read(), offset: projectionOffset, limit: 30 });
-    projection.replaceChildren(el('p', { text: `${data.scopeLabel} · ${data.statusLabel} · ${data.orderLabel}. ${data.tickets} tickets, ${data.unlocated} non localisés, ${data.ambiguous} ambiguïtés.` }),
+    projection.replaceChildren(el('p', { text: `${data.scopeLabel} · ${data.statusLabel} · ${data.orderLabel}. ${data.tickets} tickets, ${data.unlocated} sans commune repérée, ${data.ambiguous} ambiguïtés.` }),
       el('p', { class: 'terrain-muted', text: data.message }),
       data.straightLineDistanceKm != null ? el('p', { text: `${formatNumber(data.straightLineDistanceKm, { maximumFractionDigits: 1 })} km à vol d’oiseau. Cet ordre reste indicatif ; il ne tient pas lieu d’itinéraire routier.` }) : '',
       table(data.items, [{ key: 'number', label: '#' }, { key: 'cityName', label: 'Ville' }, { key: 'count', label: 'Tickets' }, { key: 'activeCount', label: 'Actifs', render: row => text(row.activeCount) },

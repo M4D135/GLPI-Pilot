@@ -163,7 +163,7 @@ public sealed partial class PilotApplication
         ct.ThrowIfCancellationRequested(); return new { revision = Revision, total = rows.Length, offset, limit, selected = _terrainBasket.Count, plan.Message,
             items = rows.Skip(offset).Take(limit).Select(index => new { row = index, id = TerrainShort(ScheduledTourService.Cell(context, index, "id"), 120), title = TerrainShort(ScheduledTourService.Cell(context, index, "title")),
                 status = TerrainShort(ScheduledTourService.Cell(context, index, "status"), 120), priority = TerrainShort(ScheduledTourService.Cell(context, index, "priority"), 120), due = TerrainShort(ScheduledTourService.Cell(context, index, "due"), 120),
-                city = context.Cities.GetValueOrDefault(context.Rows[index].CityId ?? "")?.Name ?? "À localiser", site = context.Sites.GetValueOrDefault(context.Rows[index].SiteId ?? "")?.Name ?? "", selected = _terrainBasket.Contains(index) }).ToArray() };
+                city = context.Cities.GetValueOrDefault(context.Rows[index].CityId ?? "")?.Name ?? (context.Rows[index].CityState == CityMatchState.SiteOnly ? "Commune non renseignée" : "À localiser"), site = context.Sites.GetValueOrDefault(context.Rows[index].SiteId ?? "")?.Name ?? "", selected = _terrainBasket.Contains(index) }).ToArray() };
     }
     private object TerrainBasketSelect(JsonElement args, CancellationToken ct)
     {

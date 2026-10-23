@@ -31,13 +31,13 @@ public sealed partial class PilotApplication
     }
     public async Task TickAsync(CancellationToken ct = default)
     {
-        if (_disposed || IsBusy || SessionLocked || EditorOpen) return;
+        if (_disposed || IsBusy || SessionLocked || EditorOpen || IsTestMode) return;
         try { using var empty = JsonDocument.Parse("{}"); await ExecuteWhenIdleAsync("automation.tick", empty.RootElement, ct).ConfigureAwait(false); }
         catch (Exception error) when (error is not OperationCanceledException && !_disposed) { Log("Programmation : " + AppPaths.SafeError(error)); }
     }
     private async Task<object?> RunAutomaticTickAsync(JsonElement args, CancellationToken ct)
     {
-        if (SessionLocked || EditorOpen) return new { skipped = true };
+        if (SessionLocked || EditorOpen || IsTestMode) return new { skipped = true };
         if (_handlers.ContainsKey("workplace.reminders.check"))
         {
             try { await _handlers["workplace.reminders.check"](args, ct).ConfigureAwait(false); }

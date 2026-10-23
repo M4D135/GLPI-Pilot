@@ -107,7 +107,7 @@ public sealed class CitySettings
         var siteIds = new HashSet<Guid>();
         foreach (var site in Sites)
             if (site is null || !site.IsValid(Cities) || !siteIds.Add(Guid.Parse(site.Id)))
-                throw new InvalidDataException("Chaque site doit avoir un identifiant unique, une ville existante, un nom, des horaires et des coordonnées valides si elles sont renseignées.");
+                throw new InvalidDataException("Chaque site doit avoir un identifiant unique et un nom ; sa commune est facultative mais doit exister si elle est renseignée. Vérifiez aussi ses horaires et coordonnées.");
         var buildingIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var building in Buildings)
             if (building == null || !building.IsValid(Sites) || !buildingIds.Add(building.Id))
@@ -195,7 +195,8 @@ public enum CityMatchState
     Matched,
     Unmatched,
     Ambiguous,
-    TitleUnavailable
+    TitleUnavailable,
+    SiteOnly
 }
 
 /// <summary>RowIndex always refers to the unchanged order of Source.Rows.</summary>
@@ -214,7 +215,11 @@ public sealed record CityMatch(int RowIndex, string? CityId, string? CityName,
 }
 
 public sealed record CityMatchEvidence(string CityId, string CityName, string Term, string RuleId, int Priority,
-    string Decision, string Explanation);
+    string Decision, string Explanation)
+{
+    public string SiteId { get; init; } = "";
+    public string SiteName { get; init; } = "";
+}
 
 public sealed class CityAliasRule
 {
@@ -247,7 +252,7 @@ public sealed class SiteDefinition
     public SiteDefinition Copy() => new() { Id = Id, CityId = CityId, Name = Name, Aliases = Aliases?.ToList()!, Address = Address, Latitude = Latitude, Longitude = Longitude,
         Openings = Openings?.Select(value => value.Copy()).ToList()!, ClosedDates = ClosedDates?.ToList()!, Contact = Contact, Equipment = Equipment };
     internal bool IsValid(IReadOnlyList<CityDefinition> cities) => Guid.TryParse(Id, out var id) && id != Guid.Empty
-        && cities.Any(city => city.Id == CityId) && CityText.ValidText(Name, false) && CityText.Tokens(Name).Count > 0
+        && CityId is not null && (CityId.Length == 0 || cities.Any(city => city.Id == CityId)) && CityText.ValidText(Name, false) && CityText.Tokens(Name).Count > 0
         && CityText.ValidTerms(Aliases) && CityText.ValidText(Address, true) && CityDefinition.ValidCoordinates(Latitude, Longitude)
         && CityText.ValidText(Contact, true) && CityText.ValidText(Equipment, true) && Openings != null && Openings.Count <= 28 && Openings.All(value => value != null && value.IsValid)
         && ClosedDates != null && ClosedDates.Count <= 366 && ClosedDates.All(value => DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
@@ -269,6 +274,7 @@ public sealed class CityEnrichmentResult
     public string DepartmentColumnName { get; init; } = "";
     public string SectorColumnName { get; init; } = "";
     public int SiteMatchedCount { get; init; }
+    public int SiteOnlyCount { get; init; }
     public int ManualCount { get; init; }
     public int MatchedCount { get; init; }
     public int UnmatchedCount { get; init; }

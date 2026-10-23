@@ -96,6 +96,34 @@ public sealed class DashboardLayoutSettings
     public static string NewId() => Guid.NewGuid().ToString("N");
     private static bool ValidText(string? value, int maximum) => !string.IsNullOrWhiteSpace(value) && value.Length <= maximum;
 
+    public static DashboardLayoutAppendResult AppendBoards(DashboardLayoutSettings current, DashboardLayoutSettings imported)
+    {
+        ArgumentNullException.ThrowIfNull(current); ArgumentNullException.ThrowIfNull(imported);
+        current.Validate(); imported.Validate();
+        if (current.Boards.Count + imported.Boards.Count > 12)
+            throw new InvalidDataException($"L’ajout dépasserait la limite de 12 tableaux : {current.Boards.Count} existants et {imported.Boards.Count} importés. Libérez une place ou importez moins de tableaux.");
+        var result = current.Copy();
+        var ids = result.Boards.Select(board => board.Id).ToHashSet(StringComparer.Ordinal);
+        var names = result.Boards.Select(board => board.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var additions = new List<DashboardAppendedBoard>();
+        foreach (var original in imported.Boards)
+        {
+            var board = original.Copy();
+            while (!ids.Add(board.Id)) board.Id = NewId();
+            var suffixIndex = 1;
+            while (!names.Add(board.Name))
+            {
+                var suffix = suffixIndex++ == 1 ? " (importé)" : $" (importé {suffixIndex - 1})";
+                board.Name = original.Name[..Math.Min(original.Name.Length, 120 - suffix.Length)].TrimEnd() + suffix;
+            }
+            result.Boards.Add(board);
+            additions.Add(new(original.Id, board.Id, original.Name, board.Name, board.Widgets.Count));
+            if (original.Id == imported.ActiveBoardId) result.ActiveBoardId = board.Id;
+        }
+        result.Validate();
+        return new(result, additions);
+    }
+
     public static DashboardBoardSettings CreateBoard(string name, string preset)
     {
         var board = new DashboardBoardSettings { Name = name };
@@ -113,6 +141,33 @@ public sealed class DashboardLayoutSettings
             Add("distribution", key, span, 400);
             board.Widgets[^1].Presentation = presentation;
             board.Widgets[^1].TopCount = 10;
+        }
+        if (preset == "service")
+        {
+            board.Description = "Stock des demandes et incidents ouverts, attente et planification incluses. Les seuils de chaque météo sont configurables.";
+            board.Sections = new()
+            {
+                new() { Key = "stock", Title = "Stock du service" },
+                new() { Key = "teams", Title = "Équipes et types", Accent = "teal" },
+                new() { Key = "categories", Title = "Catégories", Accent = "purple" },
+                new() { Key = "activity", Title = "Ancienneté et activité", Accent = "orange" },
+                new() { Key = "actions", Title = "Analyse et actions", Accent = "teal" }
+            };
+            Add("metric", "active", 12, 240); var stock = board.Widgets[^1];
+            stock.Title = "Tickets en cours"; stock.Presentation = "weather-volume"; stock.ShowMiniHistory = false; stock.Section = "stock";
+            stock.Note = "Demandes et incidents · tickets en attente et planifiés inclus.";
+            Metrics("active-incidents", "active-requests", "pending", "without-group", "active-multiple-groups", "active-no-author");
+            foreach (var widget in board.Widgets.Skip(1)) { widget.Section = "stock"; widget.Span = 4; widget.ShowMiniHistory = false; }
+            foreach (var key in new[] { "group-status", "type-status" })
+            { Add("matrix", key, 6, 380, "teal"); board.Widgets[^1].Section = "teams"; board.Widgets[^1].Presentation = "heatmap"; }
+            Distribution("active-category", 12); board.Widgets[^1].Section = "categories";
+            Distribution("age"); board.Widgets[^1].Section = "activity";
+            Distribution("inactivity"); board.Widgets[^1].Section = "activity";
+            Add("attention", span: 12, height: 380, accent: "orange"); board.Widgets[^1].Section = "activity";
+            Add("note", span: 12, height: 160, accent: "teal"); board.Widgets[^1].Section = "actions";
+            board.Widgets[^1].Title = "Analyse et actions en cours";
+            board.Widgets[^1].Note = "Renseignez ici les événements qui expliquent le stock et les actions prévues pour le service.";
+            return board;
         }
         if (preset == "personal")
         {
@@ -185,6 +240,9 @@ public sealed class DashboardLayoutSettings
         return board;
     }
 }
+
+public sealed record DashboardAppendedBoard(string SourceId, string Id, string OriginalName, string Name, int WidgetCount);
+public sealed record DashboardLayoutAppendResult(DashboardLayoutSettings Layout, IReadOnlyList<DashboardAppendedBoard> AddedBoards);
 
 public sealed class DashboardBoardSettings
 {
@@ -261,7 +319,7 @@ public sealed class DashboardWidgetSettings
     public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note", "matrix", "histogram", "boxplot", "scatter", "history", "map" };
     public static readonly string[] Styles = { "surface", "outline", "accent", "minimal" };
     public static readonly string[] Accents = { "blue", "teal", "green", "orange", "red", "purple", "slate" };
-    public static readonly string[] Presentations = { "bars", "list", "compact", "donut", "gauge", "pareto", "columns", "heatmap", "stacked" };
+    public static readonly string[] Presentations = { "bars", "list", "compact", "donut", "gauge", "pareto", "columns", "heatmap", "stacked", "weather-volume" };
     public string Id { get; set; } = DashboardLayoutSettings.NewId();
     public string Kind { get; set; } = "metric";
     public string SourceKey { get; set; } = "total";
@@ -298,6 +356,8 @@ public sealed class DashboardWidgetSettings
     }
     public void ValidateThresholds()
     {
+        if (Presentation == "weather-volume" && Kind != "metric")
+            throw new InvalidDataException("La présentation météo des volumes demande un widget Indicateur.");
         if (StackedMode is not ("percent" or "volume") || !double.IsFinite(ParetoThresholdPercent) || ParetoThresholdPercent is <= 0 or > 100 || HistoryPeriodDays is < 1 or > 3650)
             throw new InvalidDataException("Empilage volume/pourcentage, seuil de Pareto ]0 ; 100] et période de 1 à 3 650 jours sont requis.");
         if (!ValidNumber(TargetValue, positive: true) || !ValidNumber(WarningValue) || !ValidNumber(CriticalValue))
@@ -305,6 +365,22 @@ public sealed class DashboardWidgetSettings
         if (WarningValue.HasValue && CriticalValue.HasValue && (LowerIsBetter
             ? CriticalValue.Value < WarningValue.Value : CriticalValue.Value > WarningValue.Value))
             throw new InvalidDataException("Le seuil critique doit être au-delà du seuil d’avertissement dans le sens défavorable choisi.");
+    }
+    public DashboardVolumeWeather EvaluateVolumeWeather(double? value, bool complete)
+    {
+        if (!value.HasValue || !double.IsFinite(value.Value))
+            return new("unknown", "Donnée indisponible", "La valeur de cet indicateur n’est pas calculable sur ce relevé.");
+        if (!WarningValue.HasValue || !CriticalValue.HasValue || !ValidNumber(WarningValue) || !ValidNumber(CriticalValue)
+            || (LowerIsBetter ? CriticalValue < WarningValue : CriticalValue > WarningValue))
+            return new("unknown", "Seuils à définir", "Renseignez les deux seuils de ce widget pour évaluer sa météo. Le volume observé reste disponible.");
+        var direction = LowerIsBetter ? "strictement supérieur" : "strictement inférieur";
+        var method = $"À surveiller si le volume est {direction} à {WarningValue.Value:G} ; sous tension s’il est {direction} à {CriticalValue.Value:G}. L’égalité reste dans l’état précédent. Ces seuils sont propres à ce widget et à ses filtres.";
+        if (!complete)
+            return new("partial", "Relevé à vérifier", method + " Le comptage reste à vérifier : réception, périmètre, identifiants ou statuts. Le volume observé est conservé sans lui attribuer une météo de santé.");
+        bool Beyond(double threshold) => LowerIsBetter ? value.Value > threshold : value.Value < threshold;
+        return Beyond(CriticalValue.Value) ? new("rain", "Sous tension", method)
+            : Beyond(WarningValue.Value) ? new("watch", "À surveiller", method)
+            : new("sun", "Maîtrisé", method);
     }
     private static bool ValidNumber(double? value, bool positive = false) => !value.HasValue ||
         double.IsFinite(value.Value) && value.Value >= 0 && value.Value <= 1e12 && (!positive || value.Value > 0);
@@ -325,6 +401,7 @@ public sealed class DashboardWidgetSettings
         if (!Styles.Contains(Style)) Style = "surface";
         if (!Accents.Contains(Accent)) Accent = "blue";
         if (!Presentations.Contains(Presentation)) Presentation = "bars";
+        if (Presentation == "weather-volume" && Kind != "metric") Presentation = "bars";
         if (!ValidNumber(TargetValue, positive: true)) TargetValue = null;
         if (!ValidNumber(WarningValue)) WarningValue = null;
         if (!ValidNumber(CriticalValue)) CriticalValue = null;
@@ -333,6 +410,8 @@ public sealed class DashboardWidgetSettings
     }
 }
 
+public sealed record DashboardVolumeWeather(string State, string Title, string Explanation);
+
 /// <summary>Portable, bounded filters referencing real snapshot cohorts; missing sources fail closed.</summary>
 public sealed class DashboardScopeFilter
 {
@@ -340,17 +419,27 @@ public sealed class DashboardScopeFilter
     public string SourceKey { get; set; } = "";
     public string Value { get; set; } = "";
     public string Value2 { get; set; } = "";
+    public List<string> Values { get; set; } = new();
     public bool Exclude { get; set; }
-    public DashboardScopeFilter Copy() => (DashboardScopeFilter)MemberwiseClone();
+    public DashboardScopeFilter Copy()
+    {
+        var copy = (DashboardScopeFilter)MemberwiseClone();
+        copy.Values = Values?.ToList() ?? new();
+        return copy;
+    }
+    public IReadOnlyList<string> Selections() => Values.Count > 0 ? Values : new[] { Value };
     public static List<DashboardScopeFilter> CopyList(IEnumerable<DashboardScopeFilter>? values) => values?.Select(x => x?.Copy()!).ToList() ?? new();
     public static void ValidateList(IReadOnlyList<DashboardScopeFilter>? values)
     {
         if (values is null || values.Count > 12) throw new InvalidDataException("Un périmètre accepte au maximum 12 filtres.");
         foreach (var value in values)
         {
-            if (value is null || value.Kind is not ("distribution" or "metric" or "date")
+            if (value is null || value.Kind is not ("distribution" or "matrix-row" or "metric" or "date")
                 || string.IsNullOrWhiteSpace(value.SourceKey) || value.SourceKey.Length > 120
-                || value.Value is null || value.Value.Length > 2000 || value.Value2 is null || value.Value2.Length > 2000)
+                || value.Value is null || value.Value.Length > 2000 || value.Value2 is null || value.Value2.Length > 2000
+                || value.Values is null || value.Values.Count > 32
+                || value.Values.Any(item => string.IsNullOrWhiteSpace(item) || item.Length > 2000)
+                || value.Values.Count > 0 && value.Kind is not ("distribution" or "matrix-row"))
                 throw new InvalidDataException("Un filtre du dashboard est invalide.");
             if (value.Kind == "date" && (value.SourceKey is not ("created" or "updated" or "resolved" or "closed" or "due")
                 || !DateTime.TryParseExact(value.Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)

@@ -30,6 +30,9 @@ public sealed class ExtractionQuality
     public bool? RowCountVerified { get; set; }
     public bool? FinalTotalVerified { get; set; }
     public bool? ScopeStable { get; set; }
+    // Local SpreadsheetML imports only. Null means that no workbook observation
+    // was made; zero records that every encountered formula had a cached value.
+    public int? UncachedFormulaCount { get; set; }
     // The local report contains cell values. Archives carry its name/count only;
     // ordinary diagnostics never include the report's contents.
     public string DivergenceReportName { get; set; } = "";

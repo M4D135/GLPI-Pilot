@@ -25,6 +25,7 @@ public sealed partial class PilotApplication
     {
         Register("collect.connect", async (_, ct) => { await Browser.OpenAsync(Settings.Copy(), ct, background: false).ConfigureAwait(false); return await PagesAsync().ConfigureAwait(false); });
         Register("collect.show", async (_, ct) => { await Browser.ShowBrowserAsync(Browser.ActivePage, ct).ConfigureAwait(false); return new { visible = true }; });
+        Register("collect.hide", async (_, ct) => { await Browser.HideBrowserAsync(ct).ConfigureAwait(false); return new { visible = false }; });
         Register("collect.pages", async (_, _) => await PagesAsync().ConfigureAwait(false));
         Register("collect.inspect", async (a, ct) =>
         {
@@ -82,7 +83,7 @@ public sealed partial class PilotApplication
     }
     private Task ArchiveActiveAsync(CancellationToken ct)
     {
-        if (Result is null || !Settings.History.Enabled || Result.Provenance.SourceKind == "demo" || IsHistorical) return Task.CompletedTask;
+        if (Result is null || !Settings.History.Enabled || Result.Provenance.SourceKind == "demo" || IsHistorical || IsTestMode) return Task.CompletedTask;
         try
         {
             var populations = new AnalyticsPopulationStore().LoadOrEmpty(out var warning); if (warning.Length > 0) Log(warning);

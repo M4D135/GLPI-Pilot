@@ -116,7 +116,8 @@ internal static partial class Program
         await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync(); await Ready("dashboard");
         var matrix = page.Locator("[data-widget-id=status]");
         await matrix.Locator(".analytics-heat-cell").First.WaitForAsync();
-        Check(await matrix.Locator("thead th").CountAsync() == 3 && await matrix.Locator(".analytics-heat-cell").AllTextContentsAsync() is var cells && cells.Order().SequenceEqual(new[] { "1", "2" }), "The two-axis heatmap displays the actual category/status matrix, including both observed counts.");
+        Check(await matrix.Locator("thead th").CountAsync() == 4 && await matrix.Locator("thead th").Last.TextContentAsync() == "Total"
+            && await matrix.Locator(".analytics-heat-cell").AllTextContentsAsync() is var cells && cells.Order().SequenceEqual(new[] { "1", "2" }), "The two-axis heatmap displays the actual category/status matrix, including both observed counts and the row total.");
         await matrix.GetByRole(AriaRole.Button, new() { Name = "2", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").First.WaitForAsync();
         Check(await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").CountAsync() == 2, "Selecting a matrix cell resolves its two original source rows."); await CloseDialogs();
@@ -313,6 +314,131 @@ internal static partial class Program
             && await page.Locator("[data-widget-id=missing-metric],[data-widget-id=missing-distribution]").CountAsync() == 0
             && app.Settings.Dashboard.Layout.Boards[0].Widgets.Count == 4,
             "Undo restores automatic hiding while preserving all widget definitions for later recovery.");
+        var weatherBoard = DashboardLayoutSettings.CreateBoard("Météo de contrôle", "empty");
+        foreach (var (id, warning, critical) in new (string, double?, double?)[] { ("weather-sun", 1, 2), ("weather-watch", 0, 1), ("weather-rain", 0, 0), ("weather-empty", null, null) })
+            weatherBoard.Widgets.Add(new() { Id = id, Kind = "metric", SourceKey = "active", Presentation = "weather-volume", WarningValue = warning, CriticalValue = critical, ShowMiniHistory = false, Span = 3 });
+        var weatherLayout = new DashboardLayoutSettings { Boards = new() { weatherBoard }, ActiveBoardId = weatherBoard.Id };
+        app.LoadFixture(source, Locations(source, settings)); await Call(app, "dashboard.layout.save", new { personal = false, layout = weatherLayout }); await Open("dashboard");
+        Check(await page.Locator("[data-widget-id=weather-sun] .analytics-volume-weather[data-state=sun]").CountAsync() == 1
+            && await page.Locator("[data-widget-id=weather-watch] .analytics-volume-weather-status").TextContentAsync() == "À surveiller"
+            && await page.Locator("[data-widget-id=weather-rain] .analytics-volume-weather-status").TextContentAsync() == "Sous tension"
+            && await page.Locator("[data-widget-id=weather-empty] .analytics-volume-weather-status").TextContentAsync() == "Seuils à définir",
+            "Volume weather renders the C# strict threshold states while an unconfigured card remains neutral.");
+        Check(await page.EvaluateAsync<bool>("[...document.querySelectorAll('.analytics-volume-weather-icon *')].every(node=>getComputedStyle(node).animationName==='none')"),
+            "Weather illustrations respect reduced motion for all sun cloud and rain components.");
+        await page.Locator("[data-widget-id=weather-sun] .analytics-metric-value").ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").First.WaitForAsync();
+        Check(await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").CountAsync() == 1,
+            "A volume weather count opens the real active contributors and excludes resolved source rows."); await CloseDialogs();
+        await Button("Modifier le dashboard").ClickAsync(); await page.Locator("[data-widget-id=weather-empty]").GetByRole(AriaRole.Button, new() { Name = "Régler", Exact = true }).ClickAsync();
+        Check(await page.GetByLabel("Présentation", new() { Exact = true }).InputValueAsync() == "weather-volume"
+            && await page.GetByRole(AriaRole.Dialog).GetByText("strictement au-delà", new() { Exact = false }).CountAsync() == 1,
+            "The widget editor exposes the named volume weather presentation and its strict comparison rule.");
+        await page.GetByLabel("Seuil de vigilance", new() { Exact = true }).FillAsync("1"); await page.GetByLabel("Seuil critique", new() { Exact = true }).FillAsync("2");
+        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync(); await Ready("dashboard");
+        Check(await page.Locator("[data-widget-id=weather-empty] .analytics-volume-weather-status").TextContentAsync() == "Maîtrisé"
+            && AppSettings.Load().Dashboard.Layout.Boards[0].Widgets.Single(widget => widget.Id == "weather-empty").WarningValue == 1,
+            "Editing missing weather thresholds persists the card and recalculates its C# state.");
+        host.SavePath = Path.Combine(_root, "weather-layout.json"); await Call(app, "dashboard.layout.export", new { personal = false }); host.OpenPath = host.SavePath;
+        var weatherImport = await Call(app, "dashboard.layout.import", new { personal = false });
+        var importedCard = weatherImport.GetProperty("layout").GetProperty("boards")[0].GetProperty("widgets")[0];
+        Check(Str(importedCard, "presentation") == "weather-volume" && importedCard.GetProperty("warningValue").GetDouble() == 1
+            && importedCard.GetProperty("criticalValue").GetDouble() == 2, "The real layout export and import preserve weather presentations and per-card thresholds.");
+        if (availabilityCapture >= 0 && availabilityCapture + 1 < args.Length)
+        {
+            await Button("Quitter l’édition").ClickAsync();
+            var output = Path.GetFullPath(args[availabilityCapture + 1]);
+            await page.ScreenshotAsync(new() { Path = Path.Combine(output, "analytics-volume-weather-dark.png"), FullPage = true });
+            await page.EvaluateAsync("document.documentElement.dataset.theme='light'");
+            await page.ScreenshotAsync(new() { Path = Path.Combine(output, "analytics-volume-weather-light.png"), FullPage = true });
+            await page.EvaluateAsync("document.documentElement.dataset.theme='dark'");
+        }
+        var partialWeather = Data(1, Row("2")); partialWeather.Complete = false; partialWeather.ExpectedTotal = 2; app.LoadFixture(partialWeather); await Open("dashboard");
+        Check(await page.Locator(".analytics-volume-weather[data-state=partial]").CountAsync() == 4 && await page.Locator(".analytics-volume-weather-status").First.TextContentAsync() == "Relevé à vérifier",
+            "An incomplete source retains its measured volume without claiming a healthy weather state.");
+        var contentDifferenceWeather = Data(1, source.Rows.Select(row => row.ToArray()).ToArray()); contentDifferenceWeather.Complete = false;
+        contentDifferenceWeather.Quality = new() { SourceRows = 3, ExpectedRows = 3, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true, ScopeStable = true,
+            InitialSample = new() { IdentityVerified = true, RepresentationVerified = false }, FinalSample = new() { IdentityVerified = true, RepresentationVerified = false } };
+        app.LoadFixture(contentDifferenceWeather); await Open("dashboard");
+        Check(await page.Locator("[data-widget-id=weather-sun] .analytics-volume-weather[data-state=sun]").CountAsync() == 1 && !app.Result!.Complete,
+            "Cell representation differences preserve a reliable volume weather when receipt identity and scope are confirmed without certifying source values.");
+        contentDifferenceWeather.Quality.ScopeStable = false; app.LoadFixture(contentDifferenceWeather); await Open("dashboard");
+        Check(await page.Locator(".analytics-volume-weather[data-state=partial]").CountAsync() == 4,
+            "A changed collection scope prevents a weather health claim even when the transferred row count is complete.");
+        var weatherBeforeAppend = JsonSerializer.Serialize(app.Settings.Dashboard.Layout.Boards[0], PilotApplication.Json);
+        await Open("dashboard", new { editing = true });
+        await page.Locator(".analytics-editor-toolbar").GetByText("Disposition", new() { Exact = true }).ClickAsync();
+        await Button("Importer une disposition").ClickAsync();
+        var importDialog = page.GetByRole(AriaRole.Dialog, new() { Name = "Vérifier la disposition importée", Exact = true });
+        await importDialog.WaitForAsync();
+        Check(await importDialog.Locator(".modal-actions .primary").TextContentAsync() == "Ajouter à mes tableaux"
+            && await importDialog.GetByText("Météo de contrôle (importé)", new() { Exact = true }).CountAsync() == 1
+            && app.Settings.Dashboard.Layout.Boards.Count == 1,
+            "The import dialog recommends addition, previews renamed collisions and preserves the layout until confirmation.");
+        await importDialog.GetByRole(AriaRole.Button, new() { Name = "Ajouter à mes tableaux", Exact = true }).ClickAsync();
+        await Until("document.querySelector('main').dataset.ready==='true' && [...document.querySelectorAll('select option')].some(option=>option.textContent==='Météo de contrôle (importé)')");
+        Check(app.Settings.Dashboard.Layout.Boards.Count == 2
+            && JsonSerializer.Serialize(app.Settings.Dashboard.Layout.Boards[0], PilotApplication.Json) == weatherBeforeAppend
+            && app.Settings.Dashboard.Layout.Boards[1].Widgets.Count == 4,
+            "The real WebView append action keeps the original board and imports the complete additional weather board.");
+        await page.GetByText("Autres actions", new() { Exact = true }).ClickAsync(); await Button("Annuler la modification").ClickAsync();
+        await Until("document.querySelector('main').dataset.ready==='true' && ![...document.querySelectorAll('select option')].some(option=>option.textContent==='Météo de contrôle (importé)')");
+        Check(app.Settings.Dashboard.Layout.Boards.Count == 1
+            && JsonSerializer.Serialize(app.Settings.Dashboard.Layout.Boards[0], PilotApplication.Json) == weatherBeforeAppend,
+            "WebView undo removes only the appended boards and restores the previous active dashboard.");
+        await page.GetByText("Autres actions", new() { Exact = true }).ClickAsync(); await Button("+ Tableau de bord").ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).GetByLabel("Modèle", new() { Exact = true }).SelectOptionAsync("service");
+        await page.GetByRole(AriaRole.Dialog).GetByLabel("Nom", new() { Exact = true }).FillAsync("Pilotage de contrôle");
+        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Créer", Exact = true }).ClickAsync();
+        await Until("document.querySelector('main').dataset.ready==='true' && document.querySelectorAll('.analytics-widget').length===14");
+        Check(await page.Locator(".analytics-board-section").CountAsync() == 5
+            && await page.Locator(".analytics-volume-weather-status").TextContentAsync() == "Seuils à définir"
+            && app.Settings.Dashboard.Layout.Boards.Count == 2
+            && app.Settings.Dashboard.Layout.Boards[1].Widgets.Count == 14,
+            "The service preset is available from the real creation dialog with fourteen editable widgets and neutral initial weather.");
+
+        var multiGroup = Data(1, Row("31", group: "Alpha;Beta"), Row("32", "En attente", group: "Beta"), Row("33", group: "Gamma;Delta"), Row("34", "Résolu", group: "Alpha"));
+        var unionBoard = DashboardLayoutSettings.CreateBoard("Équipes de contrôle", "empty");
+        unionBoard.Widgets.Add(new() { Id = "union-stock", Kind = "metric", SourceKey = "active", Title = "Tickets actifs des équipes", ShowMiniHistory = false });
+        unionBoard.Widgets.Add(new() { Id = "group-table", Kind = "matrix", SourceKey = "group-status", Presentation = "heatmap", Span = 6 });
+        unionBoard.Widgets.Add(new() { Id = "group-stack", Kind = "matrix", SourceKey = "group-status", Presentation = "stacked", TopCount = 3, Span = 6 });
+        var unionLayout = new DashboardLayoutSettings { Boards = new() { unionBoard }, ActiveBoardId = unionBoard.Id };
+        app.LoadFixture(multiGroup); await Call(app, "dashboard.layout.save", new { layout = unionLayout }); await Open("dashboard", new { editing = true });
+        var groupTable = page.Locator("[data-widget-id=group-table] table");
+        var groupStatusCells = await groupTable.Locator("tbody tr").First.Locator(".analytics-heat-cell").AllTextContentsAsync();
+        Check(await groupTable.Locator("thead th").CountAsync() == 6
+            && await groupTable.Locator("thead th").Last.TextContentAsync() == "Total"
+            && await groupTable.Locator("tbody tr").First.Locator("td").First.TextContentAsync() == "Beta"
+            && groupStatusCells.SequenceEqual(new[] { "1", "0", "0", "1" })
+            && await page.Locator("[data-widget-id=group-stack] .analytics-stack-row").CountAsync() == 3
+            && await page.Locator("[data-widget-id=group-stack] .analytics-stack-row > span").First.TextContentAsync() == "Beta"
+            && await page.Locator("[data-widget-id=group-stack] .analytics-matrix-legend > span").CountAsync() == 4,
+            "Active group matrices show four statuses including zeros, sort by row total and respect the stacked top-count limit.");
+        await page.Locator("[data-widget-id=union-stock]").GetByRole(AriaRole.Button, new() { Name = "Régler", Exact = true }).ClickAsync();
+        var unionDialog = page.GetByRole(AriaRole.Dialog);
+        await unionDialog.GetByText("Filtres propres à ce widget", new() { Exact = true }).ClickAsync();
+        await unionDialog.GetByRole(AriaRole.Button, new() { Name = "+ Condition", Exact = true }).ClickAsync();
+        var filterRow = unionDialog.Locator(".analytics-filter-row");
+        await filterRow.GetByLabel("Type", new() { Exact = true }).SelectOptionAsync("matrix-row");
+        await filterRow.GetByLabel("Source", new() { Exact = true }).SelectOptionAsync("group-status");
+        await filterRow.GetByLabel("Valeurs acceptées · une par ligne", new() { Exact = true }).FillAsync("Alpha\nBeta");
+        await unionDialog.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync();
+        await Until("document.querySelector('main').dataset.ready==='true' && document.querySelector('[data-widget-id=union-stock] .analytics-metric-value')?.textContent==='2'");
+        var unionFilter = app.Settings.Dashboard.Layout.Boards[0].Widgets[0].Filters.Single();
+        Check(unionFilter.Kind == "matrix-row" && unionFilter.SourceKey == "group-status" && unionFilter.Values.SequenceEqual(new[] { "Alpha", "Beta" })
+            && await page.Locator("[data-widget-id=union-stock] .analytics-metric-value").TextContentAsync() == "2",
+            "The filter editor persists OR selections for group matrix rows and counts a ticket shared by both teams only once.");
+        await page.Locator("[data-widget-id=union-stock] .analytics-metric-value").ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").First.WaitForAsync();
+        Check(await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").CountAsync() == 2
+            && await page.GetByRole(AriaRole.Dialog).Locator("tbody").GetByText("31", new() { Exact = true }).CountAsync() == 1
+            && await page.GetByRole(AriaRole.Dialog).Locator("tbody").GetByText("32", new() { Exact = true }).CountAsync() == 1,
+            "A multi-group OR metric drills into unique active source tickets without the resolved or unrelated team rows.");
+        await CloseDialogs();
+        await page.Locator("[data-widget-id=union-stock]").GetByRole(AriaRole.Button, new() { Name = "Régler", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).GetByText("Filtres propres à ce widget", new() { Exact = true }).ClickAsync();
+        Check(await page.GetByRole(AriaRole.Dialog).GetByLabel("Valeurs acceptées · une par ligne", new() { Exact = true }).InputValueAsync() == "Alpha\nBeta",
+            "Reopening the widget editor restores every OR alternative for further editing."); await CloseDialogs();
         await Call(app, "dashboard.layout.save", new { personal = false, layout = layoutBeforeEditing });
         app.LoadFixture(source, Locations(source, settings));
         await Open("dashboard"); await page.SetViewportSizeAsync(900, 700);

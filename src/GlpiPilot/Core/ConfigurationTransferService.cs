@@ -34,7 +34,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks" };
     private static readonly HashSet<string> MappingKeys = new(StringComparer.OrdinalIgnoreCase)
-    { "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "updatedBy", "resolved", "closed", "due", "assignee", "group", "requester", "category", "entity", "location", "city", "postal", "source", "solution", "satisfaction", "satisfaction-invited" };
+    { "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "updatedBy", "resolved", "closed", "due", "assignee", "group", "requester", "category", "entity", "location", "city", "postal", "source", "solution", "satisfaction", "satisfaction-invited", "followupAuthor", "taskAuthor", "ttrProgress", "takeIntoAccount", "reportedAge", "reportedGroupCount", "reportedAuthorCount", "description" };
     private static readonly HashSet<string> CitySettingsProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Enabled", "TitleColumn", "LocationColumn", "SourcePriority", "Cities", "Sites", "Buildings" };
     private static readonly HashSet<string> CityDefinitionProperties = new(StringComparer.OrdinalIgnoreCase)
@@ -47,7 +47,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> SourceProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "Name", "Url", "Browser", "Mode", "IncludedInCampaign", "Acquisition", "Interpretation", "RestoreWorkspace", "WorkspaceQueries" };
     private static readonly HashSet<string> WeatherProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "OverdueWeight", "PriorityWeight", "AssignmentWeight", "StaleWeight", "OldWeight", "WatchThreshold", "RainThreshold", "StormThreshold", "MinimumCoveragePercent", "MinimumWeightPercent" };
-    private static readonly HashSet<string> FilterProperties = new(StringComparer.OrdinalIgnoreCase) { "Kind", "SourceKey", "Value", "Value2", "Exclude" };
+    private static readonly HashSet<string> FilterProperties = new(StringComparer.OrdinalIgnoreCase) { "Kind", "SourceKey", "Value", "Value2", "Values", "Exclude" };
     private static readonly HashSet<string> PresetProperties = new(StringComparer.OrdinalIgnoreCase) { "Name", "Filters" };
     private static readonly HashSet<string> ParameterProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Label", "Type", "DefaultValue" };
     private static readonly HashSet<string> ComputedProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Label", "Function", "Field", "OtherField", "Constant", "Unit" };
@@ -89,7 +89,14 @@ public static class ConfigurationTransferService
     }
 
     public static AppSettings Import(string path, AppSettings current)
+        => Import(path, current, preserveMissing: false, out _);
+
+    public static AppSettings Import(string path, AppSettings current, out ConfigurationParts suppliedParts)
+        => Import(path, current, preserveMissing: true, out suppliedParts);
+
+    private static AppSettings Import(string path, AppSettings current, bool preserveMissing, out ConfigurationParts suppliedParts)
     {
+        suppliedParts = ConfigurationParts.None;
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(current);
         byte[] bytes = ReadBounded(path);
@@ -109,7 +116,7 @@ public static class ConfigurationTransferService
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor is >= 0 and <= 1)))
+                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor is >= 0 and <= 2)))
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);
@@ -124,9 +131,14 @@ public static class ConfigurationTransferService
                     throw Invalid("Le fichier ne contient pas de configuration GLPI Pilot reconnue.");
                 settings = root;
             }
-            ValidateNestedProperties(settings, allowLocalPreferences: !envelope);
+            suppliedParts = SuppliedParts(settings);
+            // The preview treats a partial file as an explicit patch. Keep every
+            // supplied property until the strict allowlist and bounds have checked
+            // the merged document; filtering first could hide an unknown member.
+            var candidate = preserveMissing ? PreserveMissingSettings(current, settings) : settings;
+            ValidateNestedProperties(candidate, allowLocalPreferences: !envelope);
             using var filtered = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(filtered)) WriteShareable(writer, settings);
+            using (var writer = new Utf8JsonWriter(filtered)) WriteShareable(writer, candidate);
             var imported = JsonSerializer.Deserialize<AppSettings>(filtered.ToArray(), JsonOptions)
                 ?? throw Invalid("Les réglages de configuration sont absents.");
             imported.ExportFolder = current.ExportFolder;
@@ -139,6 +151,14 @@ public static class ConfigurationTransferService
             imported.Dashboard ??= new();
             imported.Dashboard.PersonalTechnician = current.Dashboard?.PersonalTechnician ?? "";
             imported.Dashboard.OpenPersonalAfterExtraction = current.Dashboard?.OpenPersonalAfterExtraction ?? false;
+            if (preserveMissing)
+            {
+                // Cross-field constraints need inherited values, but must run
+                // before local recovery can clamp, discard or repair an import.
+                try { DashboardService.ValidateSettings(imported.Dashboard); }
+                catch (InvalidOperationException error) { throw Invalid(error.Message); }
+                imported.Dashboard.Layout.Validate(); imported.Dashboard.PersonalLayout.Validate();
+            }
             imported.Normalize();
             ValidateAndSanitize(imported);
             foreach (var source in imported.Sources) source.ExportFolder = current.Sources.FirstOrDefault(old => old.Id == source.Id)?.ExportFolder ?? "";
@@ -153,6 +173,82 @@ public static class ConfigurationTransferService
         {
             throw Invalid("La configuration doit être un fichier JSON UTF-8 valide.");
         }
+    }
+
+    private static JsonElement PreserveMissingSettings(AppSettings current, JsonElement supplied)
+    {
+        RejectDuplicateProperties(supplied);
+        using var baselineBytes = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(baselineBytes))
+            WriteShareable(writer, JsonSerializer.SerializeToElement(current.Copy(), JsonOptions));
+        using var baseline = JsonDocument.Parse(baselineBytes.ToArray(), new JsonDocumentOptions { MaxDepth = 24 });
+        using var mergedBytes = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(mergedBytes)) MergeObject(writer, baseline.RootElement, supplied);
+        if (mergedBytes.Length > MaximumFileBytes) throw Invalid("La configuration résultante dépasse la limite de 16 Mio.");
+        using var merged = JsonDocument.Parse(mergedBytes.ToArray(), new JsonDocumentOptions { MaxDepth = 24 });
+        return merged.RootElement.Clone();
+
+        static void MergeObject(Utf8JsonWriter writer, JsonElement existing, JsonElement incoming)
+        {
+            if (existing.ValueKind != JsonValueKind.Object || incoming.ValueKind != JsonValueKind.Object)
+            {
+                if (incoming.ValueKind == JsonValueKind.Null && existing.ValueKind is JsonValueKind.Object or JsonValueKind.Array or JsonValueKind.String)
+                    throw Invalid("Une section, une liste ou un texte fourni ne peut pas être null. Omettez le champ pour le conserver, ou fournissez une valeur explicite valide.");
+                // Lists are complete replacements; never merge their elements by
+                // position or manufacture an identity for a partial list item.
+                incoming.WriteTo(writer); return;
+            }
+            var overrides = incoming.EnumerateObject().ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
+            writer.WriteStartObject();
+            foreach (var property in existing.EnumerateObject())
+            {
+                writer.WritePropertyName(property.Name);
+                if (overrides.Remove(property.Name, out var replacement)) MergeObject(writer, property.Value, replacement);
+                else property.Value.WriteTo(writer);
+            }
+            foreach (var property in incoming.EnumerateObject())
+                if (overrides.ContainsKey(property.Name)) property.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+
+        static void RejectDuplicateProperties(JsonElement value)
+        {
+            if (value.ValueKind == JsonValueKind.Object)
+            {
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var property in value.EnumerateObject())
+                {
+                    if (!names.Add(property.Name)) throw Invalid("La configuration contient un champ dupliqué. Aucun réglage n’a été appliqué.");
+                    RejectDuplicateProperties(property.Value);
+                }
+            }
+            else if (value.ValueKind == JsonValueKind.Array)
+                foreach (var item in value.EnumerateArray()) RejectDuplicateProperties(item);
+        }
+    }
+
+    private static ConfigurationParts SuppliedParts(JsonElement settings)
+    {
+        var parts = ConfigurationParts.None;
+        foreach (var property in settings.EnumerateObject())
+        {
+            var name = property.Name;
+            if (!Shareable.Contains(name)) continue;
+            if (name.Equals("Cities", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Cities;
+            else if (name.Equals("Queries", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Queries;
+            else if (name.Equals("Theme", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Theme;
+            else if (name.Equals("TicketDetails", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Ticket;
+            else if (name.Equals("PortalUrl", StringComparison.OrdinalIgnoreCase) || name.Equals("BrowserChannel", StringComparison.OrdinalIgnoreCase) || name.Equals("Sources", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Source;
+            else if (name.Equals("Dashboard", StringComparison.OrdinalIgnoreCase))
+            {
+                if (property.Value.ValueKind != JsonValueKind.Object) continue;
+                foreach (var nested in property.Value.EnumerateObject())
+                    if (nested.Name.Equals("Layout", StringComparison.OrdinalIgnoreCase) || nested.Name.Equals("PersonalLayout", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Dashboards;
+                    else if (DashboardProperties.Contains(nested.Name)) parts |= ConfigurationParts.Indicators;
+            }
+            else parts |= ConfigurationParts.Extraction;
+        }
+        return parts;
     }
 
     private static void ValidateAndSanitize(AppSettings settings)

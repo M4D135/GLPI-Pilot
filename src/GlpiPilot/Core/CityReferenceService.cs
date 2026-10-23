@@ -62,13 +62,16 @@ public static class CityReferenceService
         foreach (var (row, number) in rows.Where(item => IsSite(item.Row)))
         {
             ct.ThrowIfCancellationRequested(); var id = Value(row, "Id"); var name = Value(row, "Nom"); var cityReference = Value(row, "VilleId");
-            var cities = result.Cities.Where(city => city.Id == cityReference || Key(city.Name) == Key(cityReference)).ToArray();
-            if (cities.Length != 1) throw new InvalidDataException($"Ligne {number} : VilleId doit identifier une ville unique par son Id ou son nom.");
-            var sameName = result.Sites.Where(site => site.CityId == cities[0].Id && Key(site.Name) == Key(name)).ToArray();
+            var cities = cityReference.Length == 0 ? Array.Empty<CityDefinition>() : result.Cities.Where(city => city.Id == cityReference || Key(city.Name) == Key(cityReference)).ToArray();
+            if (cityReference.Length > 0 && cities.Length != 1) throw new InvalidDataException($"Ligne {number} : VilleId doit être vide ou identifier une ville unique par son Id ou son nom.");
+            var cityId = cities.SingleOrDefault()?.Id ?? "";
+            // An omitted parent column preserves a known relationship. An explicit empty
+            // VilleId detaches the site; neither case invents a municipality for a new site.
+            var sameName = result.Sites.Where(site => (!Has("VilleId") || site.CityId == cityId) && Key(site.Name) == Key(name)).ToArray();
             if (id.Length == 0 && sameName.Length > 1) throw new InvalidDataException($"Ligne {number} : site ambigu ; renseignez Id.");
             var existing = id.Length == 0 ? sameName.SingleOrDefault() : result.Sites.FirstOrDefault(site => site.Id == id);
             id = id.Length > 0 ? id : existing?.Id ?? Guid.NewGuid().ToString("N"); if (!seen.Add("site:" + id)) throw new InvalidDataException($"Ligne {number} : site dupliqué.");
-            var site = existing?.Copy() ?? new SiteDefinition { Id = id }; site.CityId = cities[0].Id; site.Name = name;
+            var site = existing?.Copy() ?? new SiteDefinition { Id = id }; if (Has("VilleId") || existing is null) site.CityId = cityId; site.Name = name;
             if (Has("Alias")) site.Aliases = Terms(Value(row, "Alias")); if (Has("Adresse")) site.Address = Value(row, "Adresse");
             if (Has("Contact")) site.Contact = Value(row, "Contact"); if (Has("Materiel")) site.Equipment = Value(row, "Materiel");
             if (Has("Fermetures")) site.ClosedDates = Terms(Value(row, "Fermetures"));
@@ -79,7 +82,8 @@ public static class CityReferenceService
             var changed = existing == null || JsonSerializer.Serialize(existing) != JsonSerializer.Serialize(site);
             if (existing != null) result.Sites.Remove(existing); result.Sites.Add(site);
             changes.Add(new(existing == null ? "Ajout" : changed ? "Modification" : "Identique", "Site", id, name,
-                existing == null ? "Nouveau site rattaché à " + cities[0].Name + "." : changed ? "Nom, ville, alias, adresse ou coordonnées du site modifiés." : "Aucune modification."));
+                existing == null ? site.CityId.Length == 0 ? "Nouveau site · commune non renseignée." : "Nouveau site rattaché à " + result.Cities.Single(city => city.Id == site.CityId).Name + "."
+                    : changed ? "Nom, commune, alias, adresse ou coordonnées du site modifiés." : "Aucune modification."));
         }
         foreach (var (row, number) in rows.Where(item => IsBuilding(item.Row)))
         {

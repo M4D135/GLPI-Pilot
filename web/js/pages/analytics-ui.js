@@ -90,27 +90,38 @@ export function filterEditor(catalog, initial = []) {
   const root = el('div', { class: 'analytics-filter-editor' }); const rows = [];
   const add = value => {
     if (rows.length >= 12) throw new Error('Douze conditions au maximum par périmètre.');
-    const kind = select([{ value: 'distribution', label: 'Catégorie' }, { value: 'metric', label: 'Population' }, { value: 'date', label: 'Période datée' }], value.kind ?? 'distribution');
+    const kind = select([{ value: 'distribution', label: 'Catégorie' }, { value: 'matrix-row', label: 'Groupe ou ligne de tableau' }, { value: 'metric', label: 'Population' }, { value: 'date', label: 'Période datée' }], value.kind ?? 'distribution');
     const source = select([], value.sourceKey ?? ''); const first = input(value.value ?? ''); const last = input(value.value2 ?? '', { type: 'date' });
+    const alternatives = textArea(value.values?.length ? value.values.join('\n') : value.value ?? '', 3);
+    const alternativesField = field('Valeurs acceptées · une par ligne', alternatives);
+    const firstField = field('Début inclus', first); const lastField = field('Fin incluse', last);
     const exclude = checkbox('Exclure', value.exclude ?? false);
     const row = el('div', { class: 'analytics-filter-row' });
     const refresh = () => {
       const previous = source.value || value.sourceKey;
-      const available = kind.value === 'metric' ? catalog.metrics : kind.value === 'date' ? catalog.dates : catalog.distributions;
+      const available = kind.value === 'metric' ? catalog.metrics : kind.value === 'date' ? catalog.dates : kind.value === 'matrix-row' ? catalog.matrices : catalog.distributions;
       source.replaceChildren(...(available ?? []).map(item => el('option', { value: item.key, text: `${item.label}${item.available === false ? ' · indisponible' : ''}` })));
       if (previous && ![...source.options].some(option => option.value === previous)) source.append(el('option', { value: previous, text: `${previous} · indisponible` }));
       if (previous) source.value = previous;
-      first.type = kind.value === 'date' ? 'date' : 'text'; first.hidden = kind.value === 'metric'; last.hidden = kind.value !== 'date';
+      first.type = 'date'; firstField.hidden = lastField.hidden = kind.value !== 'date';
+      alternativesField.hidden = kind.value !== 'distribution' && kind.value !== 'matrix-row';
     };
     kind.addEventListener('change', refresh); refresh();
-    const item = { read: () => ({ kind: kind.value, sourceKey: source.value, value: first.value, value2: last.value, exclude: exclude.control.checked }) };
-    row.append(field('Type', kind), field('Source', source), field('Valeur / début', first), field('Fin incluse', last), exclude.element,
+    const item = { read: () => {
+      const selections = [...new Set(alternatives.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean))];
+      if ((kind.value === 'distribution' || kind.value === 'matrix-row') && selections.length > 32) throw new Error('Une condition accepte au maximum 32 valeurs.');
+      return { kind: kind.value, sourceKey: source.value,
+        value: kind.value === 'date' ? first.value : kind.value === 'metric' ? '' : selections.length === 1 ? selections[0] : '',
+        values: kind.value === 'distribution' || kind.value === 'matrix-row' ? selections.length > 1 ? selections : [] : [],
+        value2: kind.value === 'date' ? last.value : '', exclude: exclude.control.checked };
+    } };
+    row.append(field('Type', kind), field('Source', source), alternativesField, firstField, lastField, exclude.element,
       button('Retirer', () => { row.remove(); rows.splice(rows.indexOf(item), 1); addButton.disabled = false; }));
     item.row = row; rows.push(item); list.append(row); addButton.disabled = rows.length >= 12;
   };
   const list = el('div'); const message = el('div', { role: 'alert' });
   const addButton = button('+ Condition', () => { try { add({}); } catch (reason) { message.textContent = reason.message; } });
-  root.append(list, addButton, caption('Conditions combinées par ET. Les filtres des widgets s’ajoutent au périmètre commun. Une source disparue reste indisponible.'), message);
+  root.append(list, addButton, caption('Les valeurs d’une condition sont combinées par OU, sans compter deux fois le même ticket. Les conditions sont combinées par ET. Les filtres des widgets s’ajoutent au périmètre commun.'), message);
   for (const value of initial) add(value);
   return { element: root, read: () => rows.map(row => row.read()) };
 }

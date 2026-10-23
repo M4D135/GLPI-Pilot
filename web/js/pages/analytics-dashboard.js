@@ -5,9 +5,10 @@ import { ensureSections, moveDashboardWidget, moveDashboardSection, bindDashboar
 
 const kindNames = { metric: 'Indicateur', distribution: 'Répartition', weather: 'Météo', timeline: 'Chronologie', attention: 'Points d’attention', quality: 'Qualité',
   note: 'Note', matrix: 'Matrice', histogram: 'Histogramme', boxplot: 'Boîtes à moustaches', scatter: 'Nuage de points', history: 'Historique', map: 'Carte locale' };
-const presetNames = { empty: 'Vide', overview: 'Pilotage', operations: 'Opérations', personal: 'Personnel', team: 'Équipe', deadlines: 'Échéances', quality: 'Qualité', geography: 'Géographie', analysis: 'Analyse' };
+const presetNames = { empty: 'Vide', overview: 'Pilotage', service: 'Météo et pilotage du service', operations: 'Opérations', personal: 'Personnel', team: 'Équipe', deadlines: 'Échéances', quality: 'Qualité', geography: 'Géographie', analysis: 'Analyse' };
 const accentNames = { blue: 'Bleu', teal: 'Turquoise', green: 'Vert', orange: 'Ambre', red: 'Rouge', purple: 'Violet', slate: 'Neutre' };
 const styleNames = { surface: 'Carte', outline: 'Contour', accent: 'Accent', minimal: 'Sans cadre' };
+const presentationNames = { bars: 'Barres', list: 'Liste', compact: 'Compacte', donut: 'Anneau', gauge: 'Jauge', pareto: 'Pareto', columns: 'Colonnes', heatmap: 'Carte de chaleur', stacked: 'Empilage', 'weather-volume': 'Météo des volumes' };
 const namedChoices = (values, names) => values.map(value => ({ value, label: names[value] || value }));
 
 export async function renderDashboard(ctx) {
@@ -165,10 +166,15 @@ export async function renderDashboard(ctx) {
     if (editing) {
       const transfer = details('Disposition', toolbar(command(ctx, 'Nom et organisation', () => boardDialog()),
         command(ctx, 'Importer une disposition', async () => {
-          const preview = await call(ctx, 'dashboard.layout.import'); if (preview.cancelled) return;
-          dialog('Vérifier la disposition importée', el('div', {}, caption(`${preview.layout.boards.length} tableaux de bord remplaceraient la disposition ${personal ? 'personnelle' : 'globale'}.`),
-            table(preview.layout.boards, [{ key: 'name', label: 'Tableau' }, { key: 'widgets', label: 'Widgets', render: b => String(b.widgets.length) }])),
-          [{ label: 'Remplacer cette disposition', primary: true, action: async close => { await call(ctx, 'dashboard.layout.save', { personal, layout: preview.layout }); close(); go({ boardId: preview.layout.activeBoardId }); } }]);
+          const preview = await call(ctx, 'dashboard.layout.import', { personal }); if (preview.cancelled) return;
+          dialog('Vérifier la disposition importée', el('div', {}, caption(`${preview.layout.boards.length} tableau(x) à importer · ${preview.existingBoards} déjà présent(s) dans la disposition ${personal ? 'personnelle' : 'globale'}.`),
+            caption('Ajout recommandé : vos tableaux actuels sont conservés. Les noms déjà utilisés reçoivent un suffixe « importé ». Vous pourrez annuler cet ajout.'),
+            preview.canAppend ? table(preview.addedBoards, [{ key: 'originalName', label: 'Nom dans le fichier' }, { key: 'name', label: 'Nom après ajout' }, { key: 'widgetCount', label: 'Widgets' }])
+              : caption(preview.appendReason, 'warning'),
+            details('Remplacement complet', caption('Le remplacement retire tous les tableaux de cette disposition et charge ceux du fichier. Les tableaux personnels et globaux sont indépendants.'))),
+          [{ label: 'Ajouter à mes tableaux', primary: true, disabled: !preview.canAppend, action: async close => {
+            const result = await call(ctx, 'dashboard.layout.append', { personal, layout: preview.layout, baseFingerprint: preview.baseFingerprint }); close(); go({ boardId: result.boardId });
+          } }, { label: 'Remplacer cette disposition', danger: true, action: async close => { await call(ctx, 'dashboard.layout.save', { personal, layout: preview.layout, baseFingerprint: preview.baseFingerprint }); close(); go({ boardId: preview.layout.activeBoardId }); } }]);
         }), command(ctx, 'Exporter la disposition', async () => { const r = await call(ctx, 'dashboard.layout.export', { personal }); if (!r.cancelled) ctx.notify(`Disposition exportée : ${r.path}`); }),
         command(ctx, 'Widgets masqués', () => hiddenDialog())));
       editorHost.append(toolbar(el('strong', { class: 'analytics-edit-label', text: 'Personnaliser' }), command(ctx, '+ Widget', () => catalogDialog()),
@@ -376,7 +382,7 @@ export async function renderDashboard(ctx) {
     const source = select([], widget.sourceKey); const title = input(widget.title, { maxLength: 180 }); const section = select(sectionChoices(), widget.section);
     const span = select(Array.from({ length: 10 }, (_, index) => index + 3).map(value => ({ value: String(value), label: `${value} / 12` })), String(widget.span));
     const height = input(widget.height, { type: 'number', min: 160, max: 960, step: 20 }); const top = input(widget.topCount, { type: 'number', min: 3, max: 30 });
-    const style = select(namedChoices(model.catalog.styles, styleNames), widget.style); const accent = select(namedChoices(model.catalog.accents, accentNames), widget.accent); const presentation = select(choices(model.catalog.presentations), widget.presentation);
+    const style = select(namedChoices(model.catalog.styles, styleNames), widget.style); const accent = select(namedChoices(model.catalog.accents, accentNames), widget.accent); const presentation = select(namedChoices(model.catalog.presentations, presentationNames), widget.presentation);
     const stacking = select([{ value: 'percent', label: 'Pourcentage' }, { value: 'volume', label: 'Volume' }], widget.stackedMode); const pareto = input(widget.paretoThresholdPercent, { type: 'number', min: .1, max: 100, step: .1 });
     const automatic = checkbox('Hauteur automatique', widget.autoHeight); const row = checkbox('Commencer une nouvelle ligne', widget.startNewRow);
     const description = checkbox('Afficher les définitions et limites', widget.showDescription); const mini = checkbox('Mini-historique sur l’indicateur', widget.showMiniHistory);
@@ -384,6 +390,12 @@ export async function renderDashboard(ctx) {
     const period = input(widget.historyPeriodDays, { type: 'number', min: 1, max: 3650 }); const note = textArea(widget.note, 5);
     const target = nullableNumber(widget.targetValue, 'Objectif'); const warning = nullableNumber(widget.warningValue, 'Seuil de vigilance'); const critical = nullableNumber(widget.criticalValue, 'Seuil critique');
     const lower = checkbox('Une valeur plus basse est préférable', widget.lowerIsBetter); const breaks = input(widget.histogramBreaks.join(';'));
+    const weatherHelp = caption('');
+    const updateWeatherHelp = () => {
+      const weather = kind.value === 'metric' && presentation.value === 'weather-volume'; weatherHelp.hidden = !weather;
+      weatherHelp.textContent = `Météo des volumes : les deux seuils sont propres à ce widget. La vigilance puis la tension commencent ${lower.control.checked ? 'strictement au-delà' : 'strictement en dessous'} de chaque seuil ; l’égalité reste dans l’état précédent. Sans les deux seuils, le volume reste visible et la météo indique « Seuils à définir ». Pour le stock de tickets ouverts, choisissez la source Actifs.`;
+      const weatherOption = presentation.querySelector('option[value="weather-volume"]'); if (weatherOption) weatherOption.disabled = kind.value !== 'metric';
+    };
     const filters = filterEditor(model.catalog, widget.filters);
     const updateSources = () => {
       const old = source.value || widget.sourceKey; const entries = catalogEntries(model.catalog).filter(e => e.kind === kind.value);
@@ -391,7 +403,8 @@ export async function renderDashboard(ctx) {
       if (old && !entries.some(e => e.key === old)) source.append(el('option', { value: old, text: `${old} · indisponible` }));
       source.value = old || entries[0]?.key || '';
     };
-    kind.addEventListener('change', () => { widget.sourceKey = ''; source.value = ''; updateSources(); }); updateSources();
+    kind.addEventListener('change', () => { widget.sourceKey = ''; source.value = ''; if (kind.value !== 'metric' && presentation.value === 'weather-volume') presentation.value = 'bars'; updateSources(); updateWeatherHelp(); }); updateSources();
+    presentation.addEventListener('change', updateWeatherHelp); lower.control.addEventListener('change', updateWeatherHelp); updateWeatherHelp();
     const read = () => Object.assign(widget, { kind: kind.value, sourceKey: source.value, title: title.value, section: section.value,
       span: Number(span.value), height: Number(height.value), topCount: Number(top.value), style: style.value, accent: accent.value, presentation: presentation.value,
       stackedMode: stacking.value, paretoThresholdPercent: Number(pareto.value), autoHeight: automatic.control.checked, startNewRow: row.control.checked,
@@ -401,7 +414,7 @@ export async function renderDashboard(ctx) {
     dialog('Configurer le widget', el('div', {}, el('div', { class: 'analytics-form-grid' }, field('Type', kind), field('Source', source), field('Titre facultatif', title), field('Section', section),
       field('Largeur', span), field('Hauteur', height), field('Top catégories', top), field('Style', style), field('Accent', accent), field('Présentation', presentation),
       field('Empilage', stacking), field('Seuil de Pareto (%)', pareto), field('Fenêtre historique (jours)', period), field('Bornes histogramme séparées par ;', breaks), target.element, warning.element, critical.element),
-      toolbar(automatic.element, row.element, description.element, mini.element, locked.element, hidden.element, lower.element), field('Note', note), details('Filtres propres à ce widget', filters.element)), [
+      toolbar(automatic.element, row.element, description.element, mini.element, locked.element, hidden.element, lower.element), weatherHelp, field('Note', note), details('Filtres propres à ce widget', filters.element)), [
       { label: 'Enregistrer', primary: true, action: async close => {
         read(); if (original.locked && widget.locked && (widget.section !== original.section || widget.span !== original.span || widget.height !== original.height || widget.autoHeight !== original.autoHeight || widget.startNewRow !== original.startNewRow))
           throw new Error('Déverrouillez le widget pour modifier sa position ou ses dimensions.');
@@ -495,7 +508,7 @@ function qualitySummary(quality) {
       values: value.representationVerified == null ? 'Indisponible' : `${value.differentCells} écarts / ${value.comparedCells}`,
       formats: value.equivalentFormatCells })), [{ key: 'phase', label: 'Contrôle' }, { key: 'ids', label: 'Identifiants rapprochés' }, { key: 'values', label: 'Valeurs comparées' }, { key: 'formats', label: 'Formats équivalents prouvés' }])) : null);
 }
-function describeFilters(filters = []) { return filters.map(f => `${f.exclude ? 'sauf ' : ''}${f.sourceKey}${f.kind === 'metric' ? '' : ` = ${f.value}${f.kind === 'date' ? ` → ${f.value2}` : ''}`}`).join(' · '); }
+function describeFilters(filters = []) { return filters.map(f => `${f.exclude ? 'sauf ' : ''}${f.sourceKey}${f.kind === 'metric' ? '' : ` = ${f.values?.length ? f.values.join(' OU ') : f.value}${f.kind === 'date' ? ` → ${f.value2}` : ''}`}`).join(' · '); }
 function catalogEntries(catalog) {
   return [...catalog.metrics.map(m => ({ ...m, kind: 'metric' })), ...catalog.distributions.map(m => ({ ...m, kind: 'distribution' })),
     ...catalog.matrices.map(m => ({ ...m, kind: 'matrix' })), ...catalog.numeric.map(m => ({ ...m, kind: 'histogram' })),

@@ -230,6 +230,155 @@ Test("Observed column labels: urgency, impact, city and solution stay distinct",
     Equal(d.Metric("with-solution")!.Value, 1, "solution"); Check(d.Column("city")!.Header == "Ville" && d.Column("due")!.Index == null);
     Check(d.Column("updatedBy")!.Header == "Dernière modification par" && d.Column("assignee")!.Header == "Technicien");
 });
+Test("Nineteen source columns bind to distinct roles without guessing missing dates", () =>
+{
+    var headers = new[] { "ID", "Titre", "Statut", "Dernière modification", "Date d'ouverture", "Priorité", "Demandeur - Demandeur",
+        "Attribué à - Technicien", "Catégorie", "Suivis - Rédacteur", "Tâches - Rédacteur", "TTR + Progression",
+        "Statistiques - Délai de prise en compte", "Type", "Attribué à - Groupe de techniciens", "Âge (jours)",
+        "Nombre de groupes", "Nombre de rédacteurs", "Description" };
+    var expectedRoles = new[] { "id", "title", "status", "updated", "created", "priority", "requester", "assignee", "category",
+        "followupAuthor", "taskAuthor", "ttrProgress", "takeIntoAccount", "type", "group", "reportedAge", "reportedGroupCount", "reportedAuthorCount", "description" };
+    var columns = DashboardService.ResolveColumns(headers, new());
+    Check(columns.Count(column => column.Index.HasValue) == headers.Length);
+    for (var index = 0; index < headers.Length; index++)
+        Check(columns.Single(column => column.Role == expectedRoles[index]) is { State: "auto" } found && found.Index == index && found.Header == headers[index], expectedRoles[index]);
+    Check(new[] { "due", "resolved", "closed", "updatedBy", "solution" }.All(role => columns.Single(column => column.Role == role).Index is null));
+    var duplicated = DashboardService.ResolveColumns(headers.Append("Suivis - Rédacteur (2)").ToArray(), new());
+    Check(duplicated.Single(column => column.Role == "followupAuthor") is { State: "ambiguous", Index: null });
+});
+Test("TTR progression and pickup delay stay source text even when they resemble dates", () =>
+{
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Date d'ouverture", "TTR + Progression", "Statistiques - Délai de prise en compte" },
+        Rows = new() { new[] { "1", "Nouveau", "01/10/2026 12:00", "20/10/2026 12:00 · 125 %", "20/10/2026 12:00" },
+            new[] { "2", "Résolu", "01/10/2026 12:00", "20/10/2026 12:00", "15" } }, Complete = true, ExpectedTotal = 2
+    };
+    var d = Calc(source);
+    Check(d.Column("ttrProgress")!.Index == 3 && d.Column("takeIntoAccount")!.Index == 4 && d.Column("due")!.Index is null);
+    Check(new[] { "overdue", "soon", "resolution-mean", "closure-mean" }.All(key => d.Metric(key)!.Value is null));
+    Check(!d.Weather.Signals.Any(signal => signal.Label == "Échéance dépassée") && !d.DateValues.ContainsKey("due"));
+    Check(source.Rows[0][3] == "20/10/2026 12:00 · 125 %" && source.Rows[1][4] == "15");
+});
+Test("Declared source age is separate from current calendar age and preserves subset row identities", () =>
+{
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Date d'ouverture", "Âge (jours)" },
+        Rows = new() { new[] { "1", "Nouveau", "01/10/2026 12:00", "1" }, new[] { "2", "Clos", "01/10/2026 12:00", "400" },
+            new[] { "3", "En attente", "", "7,5" } }, Complete = true, ExpectedTotal = 3
+    };
+    var d = Calc(source);
+    Equal(d.Metric("age-mean")!.Value, 20, "recalculated active age");
+    Equal(d.Metric("source-age-mean")!.Value, 408.5 / 3, "source age across source rows");
+    Check(d.Metric("age-mean")!.Sample == 1 && d.Metric("source-age-mean")!.Sample == 3);
+    Check(d.NumericSeries.Single(series => series.Key == "source-age").Unit == "j");
+    var subset = DashboardService.CalculateSubset(source, new(), new[] { 2 }, "Synthétique", clock);
+    Equal(subset.Metric("source-age-mean")!.Value, 7.5, "source subset age");
+    Check(subset.Metric("source-age-mean")!.Rows.SequenceEqual(new[] { 2 }) && subset.Metric("age-mean")!.Value is null);
+});
+Test("Source numeric counters preserve zero and reject fractions negatives nonfinite and missing values", () =>
+{
+    var raw = new[] { "0", "2", "2,5", "", "null", "-1", "NaN", "Infinity", "2147483648", "pas un nombre" };
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Âge (jours)", "Nombre de groupes", "Nombre de rédacteurs" },
+        Rows = raw.Select((value, index) => new[] { (index + 1).ToString(CultureInfo.InvariantCulture), "Nouveau", value, value, value }).ToList(),
+        Complete = true, ExpectedTotal = raw.Length
+    };
+    var d = Calc(source);
+    foreach (var key in new[] { "source-group-count", "source-author-count" })
+    {
+        var series = d.NumericSeries.Single(item => item.Key == key);
+        Check(series.Values.Select(item => item.Row).SequenceEqual(new[] { 0, 1 }));
+        Check(series.Values.Select(item => item.Value).SequenceEqual(new[] { 0d, 2d }));
+        Equal(d.Metric(key + "-mean")!.Value, 1, key);
+        Check(d.Metric(key + "-mean")!.Sample == 2 && d.Metric(key + "-mean")!.Rows.SequenceEqual(new[] { 0, 1 }));
+    }
+    Check(d.NumericSeries.Single(item => item.Key == "source-age").Values.Select(item => item.Row).SequenceEqual(new[] { 0, 1, 2, 8 }));
+    source.Rows[0][2] = "1e308"; source.Rows[1][2] = "1e308";
+    Check(Calc(source).Metric("source-age-mean")!.Value is double mean && double.IsFinite(mean));
+});
+Test("Followup and task author distributions retain complete cells and do not imply assignments", () =>
+{
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Suivis - Rédacteur", "Tâches - Rédacteur", "Attribué à - Technicien" },
+        Rows = new() { new[] { "1", "Nouveau", "Personne A;\nPersonne B", "Personne C", "" },
+            new[] { "2", "Résolu", "Personne A", "Personne C", "Technicien X" }, new[] { "3", "En attente", "null", "", "" } },
+        Complete = true, ExpectedTotal = 3
+    };
+    var d = Calc(source);
+    foreach (var key in new[] { "followupAuthor", "taskAuthor" })
+    {
+        var distribution = d.Distributions.Single(item => item.Key == key);
+        Check(distribution.Available && distribution.Denominator == 3 && distribution.Buckets.Sum(bucket => bucket.Count) == 3);
+        Check(distribution.Buckets.SelectMany(bucket => bucket.Rows).Order().SequenceEqual(new[] { 0, 1, 2 }));
+    }
+    Check(d.Distributions.Single(item => item.Key == "followupAuthor").Buckets.Single(bucket => bucket.Label == "Personne A;\nPersonne B").Rows.SequenceEqual(new[] { 0 }));
+    Check(d.Distributions.Single(item => item.Key == "taskAuthor").Buckets.Single(bucket => bucket.Label == "Personne C").Rows.SequenceEqual(new[] { 0, 1 }));
+    Equal(d.Metric("without-technician")!.Value, 2, "authors do not provide assignment");
+    Check(d.Column("updatedBy")!.Index is null && d.Column("resolved")!.Index is null);
+});
+Test("Missing optional source fields remain unavailable without added alerts or inferred zeros", () =>
+{
+    var d = Calc(new ExtractionResult { Headers = new() { "ID", "Statut" }, Rows = new() { new[] { "1", "Nouveau" } }, Complete = true, ExpectedTotal = 1 });
+    foreach (var key in new[] { "source-age", "source-group-count", "source-author-count" })
+    {
+        Check(d.NumericSeries.Single(series => series.Key == key).Values.Count == 0);
+        Check(d.Metric(key + "-mean") is { Value: null, Sample: 0, Rows.Length: 0 });
+    }
+    Check(new[] { "followupAuthor", "taskAuthor" }.All(key => !d.Distributions.Single(item => item.Key == key).Available));
+    Check(d.Warnings.Count == 0);
+});
+Test("Active group matrix counts each distinct group once and keeps ticket totals separate", () =>
+{
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Type", "Attribué à - Groupe de techniciens", "Nombre de groupes" },
+        Rows = new() { new[] { "1", "Nouveau", "Incident", "Groupe A; Groupe B; groupe a", "1" },
+            new[] { "2", "En cours (planifié)", "Demande", "groupe a", "8" }, new[] { "3", "En attente", "1", "null;none", "0" },
+            new[] { "4", "Résolu", "Incident", "Groupe B", "1" }, new[] { "5", "Nouveau", "Personnalisé", "Groupe B | Groupe C", "2" } },
+        Complete = true, ExpectedTotal = 5
+    };
+    foreach (var mode in new[] { "participation", "fractional", "cell" })
+    {
+        var d = Calc(source, new() { AssignmentCountingMode = mode });
+        var matrix = d.Matrices.Single(item => item.Key == "group-status");
+        Check(matrix.Available && matrix.Unit == "participations");
+        Equal(matrix.Cells.Sum(cell => cell.Value), 6, "group participations " + mode);
+        Check(matrix.Cells.SelectMany(cell => cell.Rows).Distinct().Order().SequenceEqual(new[] { 0, 1, 2, 4 }));
+        Check(matrix.Cells.Where(cell => cell.RowLabel == "Groupe A").SelectMany(cell => cell.Rows).Order().SequenceEqual(new[] { 0, 1 }));
+        Check(matrix.Cells.Where(cell => cell.RowLabel == "Groupe B").SelectMany(cell => cell.Rows).Order().SequenceEqual(new[] { 0, 4 }));
+        Check(matrix.Cells.Where(cell => cell.RowLabel == "Sans groupe").SelectMany(cell => cell.Rows).SequenceEqual(new[] { 2 }));
+        Check(matrix.Cells.All(cell => cell.Rows.Distinct().Count() == cell.Rows.Length && cell.Value == cell.Rows.Length));
+        Equal(d.Metric("active")!.Value, 4, "ticket stock");
+        Equal(d.Metric("without-group")!.Value, 1, "empty multi-value markers remain without a group");
+        Check(d.Metric("without-group")!.Rows.SequenceEqual(new[] { 2 }));
+        Equal(d.Metric("active-multiple-groups")!.Value, 2, "observed multiple groups");
+        Check(d.Metric("active-multiple-groups")!.Rows.SequenceEqual(new[] { 0, 4 }));
+        Check(d.Distributions.Single(item => item.Key == "group").Buckets.Sum(bucket => bucket.Count) == 5);
+    }
+    var types = Calc(source).Matrices.Single(item => item.Key == "type-status");
+    Check(types.Available && types.Cells.Sum(cell => cell.Value) == 4);
+    Check(types.Cells.Where(cell => cell.RowLabel == "Incident").SelectMany(cell => cell.Rows).Order().SequenceEqual(new[] { 0, 2 }));
+    Check(types.Cells.Where(cell => cell.RowLabel == "Personnalisé").SelectMany(cell => cell.Rows).SequenceEqual(new[] { 4 }));
+});
+Test("No visible author needs both author columns and never uses the declared author count", () =>
+{
+    var source = new ExtractionResult
+    {
+        Headers = new() { "ID", "Statut", "Suivis - Rédacteur", "Tâches - Rédacteur", "Nombre de rédacteurs" },
+        Rows = new() { new[] { "1", "Nouveau", "null", "", "9" }, new[] { "2", "Nouveau", "Personne A", "", "0" },
+            new[] { "3", "En attente", "", "Anonyme", "0" }, new[] { "4", "Clos", "", "", "0" },
+            new[] { "5", "En cours (planifié)", "aucun;\nnull", "0", "3" } }, Complete = true, ExpectedTotal = 5
+    };
+    var d = Calc(source);
+    Equal(d.Metric("active-no-author")!.Value, 2, "absence in two visible columns");
+    Check(d.Metric("active-no-author")!.Rows.SequenceEqual(new[] { 0, 4 }) && d.Metric("active-no-author")!.Sample == 4);
+    source.Headers[3] = "Colonne sans rôle";
+    Check(Calc(source).Metric("active-no-author") is { Value: null, Rows.Length: 0 });
+});
 Test("City, location and postcode mapped separately, leading zeros retained", () =>
 {
     var data = new ExtractionResult { Headers = new() { "ID", "Statut", "Ville", "Lieu", "Code postal" }, Rows = new() { new[] { "1", "Nouveau", "Ville A", "Site B", "01230" } }, Complete = true, ExpectedTotal = 1 };

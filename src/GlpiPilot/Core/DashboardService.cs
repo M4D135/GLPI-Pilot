@@ -33,12 +33,20 @@ public static class DashboardService
         new DashboardRole("updatedBy", "Dernière modification par", new[] { "Dernière modification par", "Last update by", "Last edited by", "Updated by" }),
         new DashboardRole("satisfaction", "Note de satisfaction", new[] { "Satisfaction", "Note de satisfaction", "Satisfaction score", "Satisfaction - Note" }),
         new DashboardRole("satisfaction-invited", "Invitation à l’enquête de satisfaction", new[] { "Date d'envoi de l'enquête", "Enquête envoyée", "Satisfaction - Date d'envoi", "Survey sent" }),
-        new DashboardRole("solution", "Solution", new[] { "Solution", "Solution - Description", "Solutions - Description", "Solution description" })
+        new DashboardRole("solution", "Solution", new[] { "Solution", "Solution - Description", "Solutions - Description", "Solution description" }),
+        new DashboardRole("followupAuthor", "Rédacteur de suivi · source", new[] { "Suivis - Rédacteur", "Suivi - Rédacteur", "Suivis - Rédacteurs", "Suivis - Auteur" }),
+        new DashboardRole("taskAuthor", "Rédacteur de tâche · source", new[] { "Tâches - Rédacteur", "Tâche - Rédacteur", "Tâches - Rédacteurs", "Tâches - Auteur" }),
+        new DashboardRole("ttrProgress", "TTR et progression · source", new[] { "TTR + Progression", "TTR - Progression" }),
+        new DashboardRole("takeIntoAccount", "Délai de prise en compte · source", new[] { "Statistiques - Délai de prise en compte", "Délai de prise en compte" }),
+        new DashboardRole("reportedAge", "Âge déclaré · source", new[] { "Âge (jours)", "Âge en jours" }),
+        new DashboardRole("reportedGroupCount", "Nombre de groupes déclaré · source", new[] { "Nombre de groupes" }),
+        new DashboardRole("reportedAuthorCount", "Nombre de rédacteurs déclaré · source", new[] { "Nombre de rédacteurs" }),
+        new DashboardRole("description", "Description du ticket", new[] { "Description", "Description du ticket", "Ticket description" })
     };
 
     private sealed class Record
     {
-        public int Index, Status, Type, TechnicianCount, DatePresent, DateInvalid, DateFuture;
+        public int Index, Status, Type, TechnicianCount, GroupCount, DatePresent, DateInvalid, DateFuture;
         public int? Priority;
         public string Id = "", Title = "", Assignee = "", Group = "";
         public DateTime? Created, Updated, Resolved, Closed, Due;
@@ -119,11 +127,13 @@ public static class DashboardService
                 return value;
             }
             var assignee = Cell(row, "assignee");
+            var group = Cell(row, "group");
             records.Add(new Record
             {
                 Index = i, Id = NormalizeId(Cell(row, "id")), Title = Cell(row, "title"),
                 Status = Status(Cell(row, "status")), Priority = Priority(Cell(row, "priority")),
-                Type = TypeKind(Cell(row, "type")), Assignee = assignee, TechnicianCount = SplitTechnicianNames(assignee, settings.MultiValueSeparators).Count, Group = Cell(row, "group"),
+                Type = TypeKind(Cell(row, "type")), Assignee = assignee, TechnicianCount = SplitTechnicianNames(assignee, settings.MultiValueSeparators).Count,
+                Group = group, GroupCount = SplitTechnicianNames(group, settings.MultiValueSeparators).Count,
                 Created = Date("created"), Updated = Date("updated"), Resolved = Date("resolved"), Closed = Date("closed"), Due = Date("due", true),
                 DatePresent = datePresent, DateInvalid = dateInvalid, DateFuture = dateFuture
             });
@@ -254,6 +264,10 @@ public static class DashboardService
             if (role is "group" or "assignee" or "category" or "entity" or "location" or "city" or "postal" or "source")
                 Distribution("active-" + role, roleTitle + " — actifs", active, activeKnown && Has(role), Label, "Volume d’actifs par valeur complète. Ce volume ne mesure pas la capacité ou la performance d’une personne.");
         }
+        foreach (var role in new[] { "followupAuthor", "taskAuthor" })
+            Distribution(role, Roles.First(item => item.Key == role).Label, records, Has(role),
+                record => IsMissing(Cell(data.Rows[record.Index], role)) ? "Non renseigné" : Cell(data.Rows[record.Index], role),
+                "Auteurs exposés dans ce relevé, par cellule complète. Chaque ligne figure une seule fois ; les noms multiples restent associés. Ce n’est ni un nombre d’interventions, ni un historique d’activité, ni une mesure de productivité.");
         for (var i = 29; i >= 0; i--)
         {
             var day = wallNow.Date.AddDays(-i);
@@ -324,38 +338,64 @@ public static class DashboardService
             result.NumericSeries.Add(new("inactivity", "Dernière modification des actifs", "j", updatedActive.Select(x => new DashboardNumericValue(x.Index, (wallNow - x.Updated!.Value).TotalDays, x.Title)).ToArray(), "Ancienneté d’une modification visible, sans déduction du travail accompli."));
             result.NumericSeries.Add(new("resolution", "Ouverture → résolution", "h", resolution.Select(x => new DashboardNumericValue(x.Index, (x.Resolved!.Value - x.Created!.Value).TotalHours, x.Title)).ToArray(), "Durée calendaire des paires de dates valides ; ni temps de travail ni conformité SLA."));
             result.NumericSeries.Add(new("overdue-delay", "Retard des échéances", "h", overdue.Select(x => new DashboardNumericValue(x.Index, (wallNow - x.Due!.Value).TotalHours, x.Title)).ToArray(), "Heures calendaires après l’échéance visible, parmi les actifs en retard."));
+            AddReportedSeries("reportedAge", "source-age", "Âge déclaré · source", "j", false,
+                "Âge présent dans la colonne source, pour toutes les lignes du périmètre. La date et la formule de ce calcul ne sont pas connues. Il ne remplace pas l’âge recalculé depuis la date d’ouverture.");
+            AddReportedSeries("reportedGroupCount", "source-group-count", "Nombre de groupes · source", "groupes", true,
+                "Nombre déclaré dans la colonne source, pour toutes les lignes du périmètre. Ce n’est ni un nombre de transferts ou d’escalades, ni un recomptage des groupes actuellement affectés.");
+            AddReportedSeries("reportedAuthorCount", "source-author-count", "Nombre de rédacteurs · source", "rédacteurs", true,
+                "Nombre déclaré dans la colonne source, pour toutes les lignes du périmètre. La règle de dédoublonnage n’est pas connue ; aucune activité, intervention ou résolution n’en est déduite.");
             var assignmentNote = settings.AssignmentCountingMode switch
             {
                 "fractional" => "Chaque ticket est réparti à parts égales entre ses techniciens explicitement renseignés.",
                 "cell" => "Chaque cellule d’affectation complète forme une seule catégorie.",
                 _ => "Chaque technicien explicitement renseigné reçoit une participation ; la somme peut dépasser le nombre de tickets distincts."
             };
-            void Matrix(string key, string title, string rowRole, string colRole, bool activeOnly = false)
+            void Matrix(string key, string title, string rowRole, string colRole, bool activeOnly = false, bool splitGroups = false)
             {
                 var available = Has(rowRole) && Has(colRole) && (!activeOnly || activeKnown);
                 var cells = new Dictionary<(string Row, string Col), (double Value, List<int> Rows)>();
+                var groupLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var record in available ? activeOnly ? active : records : Enumerable.Empty<Record>())
                 {
                     if ((cells.Count & 255) == 0) ct.ThrowIfCancellationRequested();
-                    string Label(string role) => role switch { "status" => StatusLabel(record.Status), "urgency" or "impact" => SeverityLabel(Severity(Cell(data.Rows[record.Index], role)), role == "impact"), _ => IsMissing(Cell(data.Rows[record.Index], role)) ? "Non renseigné" : Cell(data.Rows[record.Index], role) };
+                    string Label(string role) => role switch { "status" => StatusLabel(record.Status), "type" => TypeLabel(Cell(data.Rows[record.Index], role)), "urgency" or "impact" => SeverityLabel(Severity(Cell(data.Rows[record.Index], role)), role == "impact"), _ => IsMissing(Cell(data.Rows[record.Index], role)) ? "Non renseigné" : Cell(data.Rows[record.Index], role) };
                     var raw = Label(rowRole);
-                    var names = rowRole == "assignee" && settings.AssignmentCountingMode != "cell" ? SplitTechnicianNames(raw, settings.MultiValueSeparators) : new[] { raw };
-                    if (names.Count == 0) names = new[] { "Non renseigné" };
+                    var names = splitGroups || rowRole == "assignee" && settings.AssignmentCountingMode != "cell" ? SplitTechnicianNames(raw, settings.MultiValueSeparators) : new[] { raw };
+                    if (names.Count == 0) names = new[] { splitGroups ? "Sans groupe" : "Non renseigné" };
                     var share = rowRole == "assignee" && settings.AssignmentCountingMode == "fractional" ? 1d / names.Count : 1d;
-                    foreach (var name in names)
+                    foreach (var sourceName in names)
                     {
+                        var name = sourceName;
+                        if (splitGroups)
+                        {
+                            if (groupLabels.TryGetValue(name, out var canonical)) name = canonical;
+                            else groupLabels[name] = name;
+                        }
                         var cellKey = (name, Label(colRole));
                         if (!cells.TryGetValue(cellKey, out var item)) item = (0, new());
                         item.Value += share; item.Rows.Add(record.Index); cells[cellKey] = item;
                     }
                 }
-                result.Matrices.Add(new(key, title, available, rowRole == "assignee" && settings.AssignmentCountingMode == "fractional" ? "parts" : "occurrences",
-                    cells.OrderByDescending(x => x.Value.Value).ThenBy(x => x.Key.Row).ThenBy(x => x.Key.Col).Select(x => new DashboardMatrixCell(x.Key.Row, x.Key.Col, x.Value.Value, x.Value.Rows.ToArray())).ToArray(),
-                    (activeOnly ? "Actifs reconnus. " : "Lignes du périmètre. ") + (rowRole == "assignee" ? assignmentNote : "Les valeurs non reconnues restent visibles.")));
+                var stockMatrix = key is "group-status" or "type-status";
+                var stockStatuses = Enumerable.Range(1, 4).Select(StatusLabel).ToArray();
+                if (stockMatrix)
+                    foreach (var row in cells.Keys.Select(cell => cell.Row).Distinct(StringComparer.Ordinal).ToArray())
+                        foreach (var status in stockStatuses) cells.TryAdd((row, status), (0, new()));
+                var rowTotals = cells.GroupBy(cell => cell.Key.Row, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.Sum(cell => cell.Value.Value), StringComparer.Ordinal);
+                var ordered = stockMatrix
+                    ? cells.OrderByDescending(cell => rowTotals[cell.Key.Row]).ThenBy(cell => cell.Key.Row, StringComparer.OrdinalIgnoreCase).ThenBy(cell => Array.IndexOf(stockStatuses, cell.Key.Col))
+                    : cells.OrderByDescending(cell => cell.Value.Value).ThenBy(cell => cell.Key.Row).ThenBy(cell => cell.Key.Col);
+                result.Matrices.Add(new(key, title, available, splitGroups ? "participations" : rowRole == "assignee" && settings.AssignmentCountingMode == "fractional" ? "parts" : "occurrences",
+                    ordered.Select(x => new DashboardMatrixCell(x.Key.Row, x.Key.Col, x.Value.Value, x.Value.Rows.ToArray())).ToArray(),
+                    (activeOnly ? "Actifs reconnus. " : "Lignes du périmètre. ") + (splitGroups
+                        ? "Chaque ticket compte une fois dans chacun de ses groupes distincts ; le total des participations peut dépasser le stock de tickets. Les cellules sans groupe forment la ligne Sans groupe. Le nombre déclaré de groupes dans la source n’intervient pas."
+                        : rowRole == "assignee" ? assignmentNote : "Les valeurs non reconnues restent visibles.")));
             }
             Matrix("technician-city", "Techniciens × villes", "assignee", "city", true);
             Matrix("city-status", "Villes × statuts", "city", "status");
             Matrix("category-status", "Catégories × statuts", "category", "status");
+            Matrix("group-status", "Groupes × statuts · actifs", "group", "status", activeOnly: true, splitGroups: true);
+            Matrix("type-status", "Types × statuts · actifs", "type", "status", activeOnly: true);
             Matrix("urgency-impact", "Urgence × impact", "urgency", "impact");
             foreach (var series in result.NumericSeries.Where(x => x.Key is "age" or "resolution"))
                 foreach (var role in new[] { "city", "assignee", "category" })
@@ -378,6 +418,38 @@ public static class DashboardService
             }
             else Number("priority-rule-mismatch", "Écarts à la matrice de priorité locale", null, "lignes", "Renseignez les règles locales et les colonnes urgence, impact et priorité pour activer cette comparaison.", 0, Array.Empty<int>());
             RefreshWeatherProfiles(result, settings);
+        }
+
+        void AddReportedSeries(string role, string key, string title, string unit, bool integer, string explanation)
+        {
+            var values = new List<DashboardNumericValue>();
+            var positionChecked = 0;
+            if (Has(role))
+                foreach (var record in records)
+                {
+                    if ((positionChecked++ & 255) == 0) ct.ThrowIfCancellationRequested();
+                    if (TrySourceNumber(Cell(data.Rows[record.Index], role), settings, out var value) && value >= 0
+                        && (!integer || value <= int.MaxValue && Math.Truncate(value) == value))
+                        values.Add(new(record.Index, value, record.Title));
+                }
+            explanation += integer
+                ? " Seuls les entiers de 0 à 2 147 483 647 sont utilisés ; cellules vides, négatives ou illisibles exclues."
+                : " Seuls les nombres finis positifs ou nuls sont utilisés ; cellules vides, négatives ou illisibles exclues.";
+            result.NumericSeries.Add(new(key, title, unit, values, explanation));
+            var sorted = values.Select(item => item.Value).Order().ToArray();
+            var mean = 0d;
+            // These source values are non-negative. An incremental mean avoids an
+            // overflowing sum even when a finite source value is unusually large.
+            for (var position = 0; position < sorted.Length; position++) mean += (sorted[position] - mean) / (position + 1);
+            var rows = values.Select(item => item.Row).ToArray();
+            foreach (var (suffix, label, value) in new[]
+            {
+                ("mean", "moyenne", sorted.Length > 0 ? (double?)mean : null),
+                ("median", "médiane", Percentile(sorted, .5)),
+                ("p90", "90e percentile", Percentile(sorted, .9)),
+                ("max", "maximum", sorted.Length > 0 ? (double?)sorted[^1] : null)
+            }) Number(key + "-" + suffix, title + " · " + label, value, unit,
+                explanation + " Percentiles calculés par interpolation linéaire.", sorted.Length, rows);
         }
 
         void AddDurations(string key, string title, double[] values, List<Record> sample, string unit, string explanation)
@@ -418,7 +490,7 @@ public static class DashboardService
                 "Priorités haute, très haute ou majeure / actifs dont la priorité est reconnue. Les valeurs inconnues ne sont pas assimilées à une priorité faible.");
 
             var withoutTechnician = active.Where(record => record.TechnicianCount == 0);
-            var withoutGroup = active.Where(record => IsMissing(record.Group));
+            var withoutGroup = active.Where(record => record.GroupCount == 0);
             Count("without-technician", "Actifs sans technicien", withoutTechnician, activeKnown && Has("assignee"),
                 "Aucun technicien renseigné dans la colonne d’affectation ; un groupe peut être présent.", active.Count, "warning");
             Count("without-group", "Actifs sans groupe", withoutGroup, activeKnown && Has("group"),
@@ -429,6 +501,13 @@ public static class DashboardService
                 "Actifs sans groupe renseigné / actifs reconnus. La présence d’un technicien ne change pas ce ratio.");
             Count("multi-technician", "Actifs avec plusieurs techniciens", active.Where(record => record.TechnicianCount > 1), activeKnown && Has("assignee"),
                 "Au moins deux identités distinctes dans une cellule d’affectation. Retours à la ligne, points-virgules et barres entourées d’espaces séparent les noms ; virgules et espaces ordinaires ne sont pas découpés.", active.Count);
+            Count("active-multiple-groups", "Actifs avec plusieurs groupes", active.Where(record => record.GroupCount > 1), activeKnown && Has("group"),
+                "Au moins deux groupes distincts observés dans la cellule d’affectation, selon les séparateurs configurés. Chaque actif compte une fois ; la colonne Nombre de groupes de la source reste indépendante.", active.Count);
+            Count("active-no-author", "Actifs sans rédacteur visible", active.Where(record =>
+                    SplitTechnicianNames(Cell(data.Rows[record.Index], "followupAuthor"), settings.MultiValueSeparators).Count == 0
+                    && SplitTechnicianNames(Cell(data.Rows[record.Index], "taskAuthor"), settings.MultiValueSeparators).Count == 0),
+                activeKnown && Has("followupAuthor") && Has("taskAuthor"),
+                "Les deux colonnes de rédacteurs des suivis et tâches sont disponibles et ne contiennent aucun auteur exploitable. Cela ne prouve pas une absence de prise en charge ou d’activité ; le nombre déclaré de rédacteurs n’est pas utilisé.", active.Count);
             Count("new-unassigned", "Nouveaux sans affectation", active.Where(record => record.Status == 1 && unassignedSet.Contains(record.Index)),
                 activeKnown && Has("assignee") && Has("group"), "Statut Nouveau, aucun technicien et aucun groupe renseignés. Les deux colonnes d’affectation sont requises.",
                 active.Count(record => record.Status == 1), "warning");
@@ -710,11 +789,19 @@ public static class DashboardService
                 // Missing dates stay unknown even when an interval is excluded.
                 if (filter.Exclude) scope.IntersectWith(values.Select(x => x.Row));
             }
+            else if (filter.Kind == "matrix-row")
+            {
+                var matrix = snapshot.Matrices.FirstOrDefault(x => x.Key == filter.SourceKey);
+                if (matrix?.Available != true) throw new System.IO.InvalidDataException("Tableau croisé du filtre indisponible : " + filter.SourceKey);
+                var selected = filter.Selections().ToHashSet(StringComparer.OrdinalIgnoreCase);
+                rows = matrix.Cells.Where(cell => selected.Contains(cell.RowLabel)).SelectMany(cell => cell.Rows).Distinct().ToArray();
+            }
             else
             {
                 var distribution = snapshot.Distributions.FirstOrDefault(x => x.Key == filter.SourceKey);
                 if (distribution?.Available != true) throw new System.IO.InvalidDataException("Répartition du filtre indisponible : " + filter.SourceKey);
-                rows = distribution.Buckets.Where(x => string.Equals(x.Label, filter.Value, StringComparison.OrdinalIgnoreCase)).SelectMany(x => x.Rows).Distinct().ToArray();
+                var selected = filter.Selections().ToHashSet(StringComparer.OrdinalIgnoreCase);
+                rows = distribution.Buckets.Where(x => selected.Contains(x.Label)).SelectMany(x => x.Rows).Distinct().ToArray();
             }
             if (filter.Exclude) scope.ExceptWith(rows); else scope.IntersectWith(rows);
         }

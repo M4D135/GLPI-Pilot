@@ -85,6 +85,7 @@ public sealed partial class PilotApplication
             revision = Revision, draftVersion = _terrainCityDraftVersion,
             dirty = TerrainDigest(draft) != _terrainCityBaseline, conflicted = _terrainCityBaseline != TerrainDigest(Settings.Cities),
             cities = draft.Cities.Count, sites = draft.Sites.Count, buildings = draft.Buildings.Count,
+            sitesWithoutCity = draft.Sites.Count(site => site.CityId.Length == 0),
             configuration = new { draft.Enabled, draft.TitleColumn, draft.LocationColumn, draft.SourcePriority },
             warnings = CityDetectionService.InspectDictionary(draft).Take(100).ToArray(),
             sourceLoaded = Result is not null, historical = IsHistorical
@@ -102,7 +103,7 @@ public sealed partial class PilotApplication
         IEnumerable<TerrainReferenceRow> rows = kind switch
         {
             "city" => draft.Cities.Select(city => new TerrainReferenceRow(city.Id, city.Name, city.TerritoryPath.Length > 0 ? city.TerritoryPath : string.Join(" / ", new[] { city.Region, city.Department, city.Sector }.Where(value => value.Length > 0)), string.Join(" ; ", city.Aliases), city.PostalCode, city.Rules.Count, city.Latitude, city.Longitude)),
-            "site" => draft.Sites.Select(site => new TerrainReferenceRow(site.Id, site.Name, draft.Cities.FirstOrDefault(city => city.Id == site.CityId)?.Name ?? "", string.Join(" ; ", site.Aliases), site.Address, site.Openings.Count, site.Latitude, site.Longitude)),
+            "site" => draft.Sites.Select(site => new TerrainReferenceRow(site.Id, site.Name, draft.Cities.FirstOrDefault(city => city.Id == site.CityId)?.Name ?? "Commune non renseignée", string.Join(" ; ", site.Aliases), site.Address, site.Openings.Count, site.Latitude, site.Longitude)),
             "building" => draft.Buildings.Select(building => new TerrainReferenceRow(building.Id, building.Name, draft.Sites.FirstOrDefault(site => site.Id == building.SiteId)?.Name ?? "", string.Join(" ; ", building.Aliases), building.Floor, 0, null, null)),
             _ => throw new InvalidDataException("Type de référence inconnu.")
         };
@@ -128,9 +129,9 @@ public sealed partial class PilotApplication
         IEnumerable<TerrainChoice> choices = kind switch
         {
             "city" => settings.Cities.Select(value => new TerrainChoice(value.Id, value.Name, value.TerritoryPath)),
-            "site" => settings.Sites.Where(value => parent.Length == 0 || value.CityId == parent).Select(value => new TerrainChoice(value.Id, value.Name, settings.Cities.FirstOrDefault(city => city.Id == value.CityId)?.Name ?? "")),
+            "site" => settings.Sites.Where(value => parent.Length == 0 || value.CityId == parent).Select(value => new TerrainChoice(value.Id, value.Name, settings.Cities.FirstOrDefault(city => city.Id == value.CityId)?.Name ?? "Commune non renseignée")),
             "place" => settings.Cities.Select(value => new TerrainChoice("city:" + value.Id, value.Name, "Ville"))
-                .Concat(settings.Sites.Select(value => new TerrainChoice("site:" + value.Id, value.Name, settings.Cities.FirstOrDefault(city => city.Id == value.CityId)?.Name ?? "Site"))),
+                .Concat(settings.Sites.Select(value => new TerrainChoice("site:" + value.Id, value.Name, settings.Cities.FirstOrDefault(city => city.Id == value.CityId)?.Name ?? "Commune non renseignée"))),
             "header" => (Locations?.Source ?? Result)?.Headers.Select(value => new TerrainChoice(value, value, "Colonne du relevé")) ?? Array.Empty<TerrainChoice>(),
             "technician" => TerrainContext(ct).Technicians.Select(value => new TerrainChoice(value.Key, value.Name, value.RowCount.ToString(CultureInfo.InvariantCulture) + " lignes")),
             _ => throw new InvalidDataException("Liste de choix inconnue.")
@@ -287,10 +288,10 @@ public sealed partial class PilotApplication
         var dashboard = EffectiveSettings.Dashboard; var columns = DashboardService.ResolveColumns(report.Source.Headers, dashboard).ToDictionary(column => column.Role, column => column.Index);
         columns["title"] = TerrainTitleColumn(report, columns);
         string Cell(int index, string role) => columns.GetValueOrDefault(role) is int column && column < report.Source.Rows[index].Length ? report.Source.Rows[index][column] ?? "" : "";
-        var matches = report.Matches.Where(match => filter switch { "review" => match.State != CityMatchState.Matched, "matched" => match.State == CityMatchState.Matched, "unmatched" => match.State is CityMatchState.Unmatched or CityMatchState.TitleUnavailable, "ambiguous" => match.State == CityMatchState.Ambiguous, "manual" => match.IsOverride, _ => true })
+        var matches = report.Matches.Where(match => filter switch { "review" => match.State is not (CityMatchState.Matched or CityMatchState.SiteOnly), "matched" => match.State is CityMatchState.Matched or CityMatchState.SiteOnly, "unmatched" => match.State is CityMatchState.Unmatched or CityMatchState.TitleUnavailable, "ambiguous" => match.State == CityMatchState.Ambiguous, "manual" => match.IsOverride, _ => true })
             .Where(match => TerrainContains(Cell(match.RowIndex, "id"), term) || TerrainContains(Cell(match.RowIndex, "title"), term) || TerrainContains(match.CityName, term) || TerrainContains(match.SiteName, term)).ToArray();
         ct.ThrowIfCancellationRequested(); return new { revision = Revision, total = matches.Length, offset, limit,
-            summary = new { report.Applied, report.MatchedCount, report.UnmatchedCount, report.AmbiguousCount, report.TitleUnavailableCount, report.ManualCount, report.Message },
+            summary = new { report.Applied, report.MatchedCount, report.SiteOnlyCount, report.UnmatchedCount, report.AmbiguousCount, report.TitleUnavailableCount, report.ManualCount, report.Message },
             items = matches.Skip(offset).Take(limit).Select(match => new { match.RowIndex, id = TerrainShort(Cell(match.RowIndex, "id"), 120), title = TerrainShort(Cell(match.RowIndex, "title")), match.CityName, match.SiteName, match.BuildingName, match.State, match.IsOverride, match.Explanation }).ToArray() };
     }
     private object TerrainReviewDetail(JsonElement args, CancellationToken ct)
@@ -310,18 +311,20 @@ public sealed partial class PilotApplication
         CheckRevision(args); if (IsHistorical) throw new InvalidOperationException("Les corrections s’appliquent au relevé courant ; fermez l’archive avant de corriger un ticket.");
         var report = TerrainLocations(ct); var source = report.Source; var row = Number(args, "row", -1, -1); if (row < 0 || row >= source.Rows.Count) throw new InvalidDataException("Ligne absente du relevé.");
         var city = Text(args, "cityId", 40); var site = Text(args, "siteId", 40); var reason = Text(args, "reason", 1000).Trim();
+        var remove = city.Length == 0 && site.Length == 0;
+        if (!remove && reason.Length == 0) throw new InvalidDataException("Indiquez le motif de la correction locale.");
         if (city.Length > 0 && (!Settings.Cities.Cities.Any(value => value.Id == city) || reason.Length == 0)) throw new InvalidDataException("Choisissez une ville enregistrée et indiquez le motif de la correction locale.");
         if (site.Length > 0 && !Settings.Cities.Sites.Any(value => value.Id == site && value.CityId == city)) throw new InvalidDataException("Le site choisi n’appartient pas à cette ville enregistrée.");
         var dashboard = EffectiveSettings.Dashboard; var column = DashboardService.ResolveColumns(source.Headers, dashboard).First(value => value.Role == "id").Index;
         string Id(int index) => column is int position && position < source.Rows[index].Length ? source.Rows[index][position]?.Trim() ?? "" : "";
         var ticket = Id(row); var key = CityOverrideStore.SourceKey(source.SourceUrl);
         if (key.Length == 0 || ticket.Length == 0 || Enumerable.Range(0, source.Rows.Count).Count(index => Id(index) == ticket) != 1) throw new InvalidDataException("La correction nécessite une installation GLPI et un identifiant unique dans le relevé.");
-        var store = CityOverrideStore.Load(DataPath("city-overrides.json")).With(city.Length == 0 ? null : new CityTicketOverride { CityId = city, SiteId = site, Reason = reason }, key, ticket);
+        var store = CityOverrideStore.Load(DataPath("city-overrides.json")).With(remove ? null : new CityTicketOverride { CityId = city, SiteId = site, Reason = reason }, key, ticket);
         var context = EffectiveSettings; context.Cities = Settings.Cities.Copy();
         var after = CityDetectionService.Enrich(source, context.Cities, dashboard, ct, store.Overrides); ct.ThrowIfCancellationRequested();
         store.Save(DataPath("city-overrides.json")); SetResult(after.Data, after, context: context); _terrainCityPreview = null;
-        Log("VILLES · correction locale " + (city.Length == 0 ? "retirée" : "enregistrée") + ".");
-        return new { revision = Revision, removed = city.Length == 0 };
+        Log("VILLES · correction locale " + (remove ? "retirée" : "enregistrée") + ".");
+        return new { revision = Revision, removed = remove };
     }
 
     private sealed record TerrainReferenceRow(string Id, string Name, string Parent, string Aliases, string Detail, int Rules, double? Latitude, double? Longitude);

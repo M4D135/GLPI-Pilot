@@ -102,10 +102,11 @@ internal static partial class Program
             await page.GetByRole(AriaRole.Button, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }).FocusAsync();
             await Open();
             Require(await Palette().Locator("[data-command-id^='page:']").CountAsync() == 26
-                && await Palette().Locator("[data-command-id^='action:']").CountAsync() == 7
+                && await Palette().Locator("[data-command-id^='action:']").CountAsync() == 8
+                && await Palette().Locator("[data-command-id='action:test-file']").CountAsync() == 1
                 && !calls.Contains("library.search")
                 && await Search().EvaluateAsync<bool>("node => document.activeElement===node && node.getAttribute('aria-controls')===document.querySelector('.command-palette-results').id"),
-                "The singleton combobox exposes all screens and explicit actions without silently searching the cache on opening.");
+                "The singleton combobox exposes all screens, explicit actions and local test import without silently searching the cache on opening.");
             await Search().PressAsync("ArrowUp");
             Require(await Palette().Locator("[role=option]").Last.GetAttributeAsync("aria-selected") == "true", "Up wraps from the first command to the final command.");
             await Search().PressAsync("ArrowDown");

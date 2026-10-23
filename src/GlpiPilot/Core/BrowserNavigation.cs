@@ -40,12 +40,21 @@ public sealed partial class BrowserService
                   const visible = e => e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' && !e.closest('[hidden],[aria-hidden=true]');
                   const any = s => [...document.querySelectorAll(s)].some(visible);
                   const password = any('input[type=password]');
-                  const challenge = password || any('input[autocomplete=one-time-code],input[name=otp],input[name=otc],input[name=verificationCode],iframe[title*=captcha i]');
                   const busy = any('table.search-results[aria-busy=true],[data-glpi-search-results][aria-busy=true]');
                   const search = !busy && any('table.search-results,[data-glpi-search-results]');
                   const native = !!document.querySelector('[id^=dropdown-export],select[name=display_type],a[href*="report.dynamic.php"][href*="display_type=-"]');
-                  const authenticated = [...document.querySelectorAll('a[href],button')].some(e => /(?:^|\/)logout(?:\.php)?(?:[?#]|$)/i.test(e.getAttribute('href') || '') || /^(?:se déconnecter|déconnexion|log out|logout|sign out)$/i.test((e.textContent || '').trim()));
-                  const login = !search && (password || any('form#login,form[name=login],.login-form') || /(?:^|\/)(?:login|signin|sign-in)(?:\.php)?(?:\/|$)/i.test(location.pathname));
+                  const authenticated = [...document.querySelectorAll('a[href],button')].filter(visible).some(e => /(?:^|\/)logout(?:\.php)?(?:[?#]|$)/i.test(e.getAttribute('href') || '') || /^(?:se déconnecter|déconnexion|log out|logout|sign out)$/i.test((e.textContent || '').trim()));
+                  // Read only visible control labels, never credentials or checkbox values.
+                  // A passive /login redirect is not proof that a person must intervene.
+                  const norm = text => (text || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’‘]/g,"'").replace(/\s+/g,' ').trim().toLowerCase();
+                  const controls = [...document.querySelectorAll('button,input[type=submit],input[type=button],a[role=button],[role=button]')].filter(e => visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true');
+                  const label = e => norm(e.getAttribute('aria-label') || (e.matches('input') ? e.getAttribute('value') : e.textContent));
+                  const signin = controls.some(e => /^(?:se connecter|connexion|s'identifier|s'authentifier|sign in|log in|login|connecter|connect|connexion sso|se connecter avec (?:sso|mon compte|votre compte))$/.test(label(e)));
+                  const remember = [...document.querySelectorAll('input[type=checkbox]')].filter(visible).some(e => /(?:se souvenir de moi|rester connecte|garder ma session|memoriser (?:ma connexion|mon compte)|remember me|keep me signed in|stay signed in)/.test(norm([e.getAttribute('aria-label'),...(e.labels || [])].map(v => typeof v === 'string' ? v : v?.textContent || '').join(' '))));
+                  const proceed = controls.some(e => /^(?:continuer|continue|poursuivre|suivant|next|oui|yes|valider|confirmer)$/.test(label(e)));
+                  const interactive = !search && !authenticated && (signin || proceed && (remember || any('input[autocomplete=username],input[type=email]')));
+                  const challenge = password || interactive || any('input[autocomplete=one-time-code],input[name=otp],input[name=otc],input[name=verificationCode],iframe[title*=captcha i]');
+                  const login = !search && (challenge || any('form#login,form[name=login],.login-form') || /(?:^|\/)(?:login|signin|sign-in)(?:\.php)?(?:\/|$)/i.test(location.pathname));
                   const table = any('table,[role=grid],[role=table]');
                   const glpi = search || /glpi/i.test(document.querySelector('meta[name=generator]')?.content || '') || (/glpi/i.test(document.title) && authenticated);
                   return {password,challenge,search,authenticated,login,table,glpi,native};
@@ -74,7 +83,7 @@ public sealed partial class BrowserService
         foreach (var frame in page.Frames.ToArray())
         {
             ct.ThrowIfCancellationRequested();
-            if (frame == page.MainFrame || frame.IsDetached || !TrustedTableOrigin(Origin(frame.Url), settings)) continue;
+            if (frame == page.MainFrame || frame.IsDetached || Origin(frame.Url).Length == 0) continue;
             try
             {
                 // A nested frame is useful only if every enclosing iframe is visible.
@@ -90,6 +99,9 @@ public sealed partial class BrowserService
                 probe.Password |= child.Password;
                 probe.Challenge |= child.Challenge;
                 probe.Login |= child.Login;
+                // A visible identity-provider frame may request interaction,
+                // but only configured GLPI origins can certify a data table.
+                if (!TrustedTableOrigin(Origin(frame.Url), settings)) continue;
                 probe.Search |= child.Search;
                 probe.Table |= child.Table;
                 probe.Native |= child.Native;
@@ -164,7 +176,40 @@ public sealed partial class BrowserService
         return await WaitForTargetAsync(settings, ct);
     }
 
+    private async Task<IPage?> AuthenticationPopupAsync(IPage source, AppSettings settings, CancellationToken ct)
+    {
+        if (_context is null) return null;
+        foreach (var candidate in _context.Pages.ToArray())
+        {
+            if (ReferenceEquals(candidate, source) || candidate.IsClosed || IsTicketDetailPage(candidate)) continue;
+            if (_navigationTimes.TryGetValue(candidate, out var since) && (DateTimeOffset.UtcNow - since).TotalMilliseconds < 600) continue;
+            try
+            {
+                IPage? parent = candidate;
+                var related = false;
+                for (var depth = 0; depth < 4 && parent != null; depth++)
+                {
+                    parent = await parent.OpenerAsync().WaitAsync(ct);
+                    if (ReferenceEquals(parent, source)) { related = true; break; }
+                }
+                if (related && (await ProbeAsync(candidate, settings, ct))?.Challenge == true) return candidate;
+            }
+            catch (PlaywrightException) { /* A popup can close while SSO redirects. */ }
+        }
+        return null;
+    }
+
     public async Task<IPage> WaitForTargetAsync(AppSettings settings, CancellationToken ct)
+    {
+        try { return await WaitForTargetCoreAsync(settings, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await CancelAuthenticationPresentationAsync();
+            throw;
+        }
+    }
+
+    private async Task<IPage> WaitForTargetCoreAsync(AppSettings settings, CancellationToken ct)
     {
         var target = TargetUrlPolicy.Validate(settings.PortalUrl).AbsoluteUri;
         var timer = Stopwatch.StartNew();
@@ -216,12 +261,18 @@ public sealed partial class BrowserService
                     continue;
                 }
                 SetActivePage(page);
+                await ResumeAfterAuthenticationAsync(ct);
                 if (BackgroundMode) await SetPageWindowAsync(page, false, ct);
                 Log?.Invoke($"SSO · page cible disponible après {timer.Elapsed.TotalSeconds:F1} s ; authentification observée={_authenticationNavigationObserved}, reprises={targetRetries}, actualisations={loginRefreshes}.");
                 ConnectionProgress?.Invoke("Connexion établie. La recherche demandée est prête.");
                 RecordStage("terminé");
                 return page;
             }
+
+            if (probe.Challenge && stableFor.TotalMilliseconds >= 600)
+                await RevealAuthenticationAsync(page, ct);
+            else if (!probe.Challenge && await AuthenticationPopupAsync(page, settings, ct) is { } authenticationPopup)
+                await RevealAuthenticationAsync(authenticationPopup, ct);
 
             var authenticatedLanding = !probe.Challenge && !probe.Login && (probe.Authenticated || probe.Search || probe.ExplicitReady);
             if (!samePath && sameOrigin && authenticatedLanding && stableFor.TotalSeconds >= 1 && targetRetries < 3 && (timer.Elapsed - lastRetryAt).TotalSeconds >= 3)
@@ -249,7 +300,7 @@ public sealed partial class BrowserService
                 previousChallenge = probe.Challenge;
                 Log?.Invoke($"SSO · attente {timer.Elapsed.TotalSeconds:F0}/{settings.TimeoutSeconds} s ; onglets={_context.Pages.Count}, cible={(samePath ? "oui" : "non")}, authentification={(probe.Login || probe.Challenge ? "en cours" : "non détectée")}, tableau={(probe.Table || probe.Search ? "oui" : "non")}.");
                 ConnectionProgress?.Invoke(probe.Challenge
-                    ? "SSO : saisie ou validation détectée. Utilisez « Voir le navigateur » ; la suite reprendra automatiquement."
+                    ? "SSO : saisie ou validation détectée. Le navigateur s’affiche si une intervention reste nécessaire ; la suite reprendra automatiquement."
                     : $"Connexion SSO en cours ({timer.Elapsed.TotalSeconds:F0} s). « Voir le navigateur » permet de suivre la connexion.");
             }
             await Task.Delay(400, ct);

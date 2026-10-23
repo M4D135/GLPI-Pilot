@@ -106,7 +106,7 @@ function Assert-PackContents {
         $required = @(
             'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
-            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md',
+            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md', 'wad/docs/RELEASE-3.2.2.md',
             'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
             'wad/version.json', 'wad/SHA256SUMS.txt',
             'wad/web/index.html', 'wad/web/js/app.js', 'wad/web/js/bridge.js', 'wad/web/css/app.css',
@@ -120,7 +120,8 @@ function Assert-PackContents {
             'wad/web/js/domenia-motion.js', 'wad/web/css/domenia.css',
             'wad/web/js/pages/shared-operations.js',
             'wad/web/js/command-palette.js', 'wad/web/js/library-ticket.js', 'wad/web/css/command-palette.css',
-            'wad/web/js/library-resolution.js', 'wad/web/css/library-resolution.css'
+            'wad/web/js/library-resolution.js', 'wad/web/css/library-resolution.css',
+            'wad/web/js/local-file-test.js'
         )
         if ($Edition -eq 'DEV') {
             $required += @(
@@ -149,6 +150,8 @@ function Assert-PackContents {
                 'wad/sources/tests/WebViewChecks/Program.Palette.cs',
                 'wad/sources/tests/WebViewChecks/Program.LibraryWorkflows.cs',
                 'wad/sources/tests/WebViewChecks/Program.Resolution.cs',
+                'wad/sources/tests/WebViewChecks/Program.LocalFileTest.cs',
+                'wad/sources/tests/RuntimeSessionChecks/OfflineImportChecks.cs',
                 'wad/sources/src/GlpiPilot/Core/TicketLibraryCaptureStore.cs',
                 'wad/sources/src/GlpiPilot/Core/TeamWorkspaceConflictComparison.cs',
                 'wad/sources/src/GlpiPilot/Runtime/PilotApplication.SharedConflicts.cs',
@@ -222,15 +225,15 @@ try {
                 @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '\d+/\d+ Foundation checks passed\.' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
-                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '39/39 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '117/117' },
-                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '36/36 checks passed.' },
+                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '46/46 vérifications de configuration réussies.' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '125/125' },
+                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '42/42 checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
                 @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '35/35' },
-                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '91/91' },
+                @{ Project = 'CityDetectionChecks'; Log = 'city-detection-checks.log'; Summary = '105/105' },
                 @{ Project = 'TourPlanningChecks'; Log = 'tour-planning-checks.log'; Summary = '87/87' },
                 @{ Project = 'QueryChecks'; Log = 'query-checks.log'; Summary = '99/99 vérifications réussies.' },
-                @{ Project = 'AnalyticsChecks'; Log = 'analytics-checks.log'; Summary = '32/32 vérifications réussies.' },
+                @{ Project = 'AnalyticsChecks'; Log = 'analytics-checks.log'; Summary = '36/36 vérifications réussies.' },
                 @{ Project = 'CompletionChecks'; Log = 'completion-checks.log'; Summary = '44/44 Completion checks passed.' },
                 @{ Project = 'UpdateChecks'; Log = 'update-checks.log'; Summary = ''; Pattern = '\d+/\d+ update checks passed\.' },
                 @{ Project = 'LanguageAssistantChecks'; Log = 'language-assistant-checks.log'; Summary = ''; Pattern = '\d+/\d+ language assistant checks passed; synthetic handlers only, no provider contacted\.' },
@@ -292,7 +295,7 @@ try {
             $driver = Join-Path $repository 'tests/TerrainBridgeChecks/bin/Release/net10.0/.playwright'
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') -Arguments @('tests/TerrainWebChecks/run.cjs') `
-                -LogName 'terrain-webview-checks.log' -TimeoutSeconds 180 -ExpectedSummary '18/18 terrain WebView page checks passed.'
+                -LogName 'terrain-webview-checks.log' -TimeoutSeconds 180 -ExpectedSummary '21/21 terrain WebView page checks passed.'
         }
         'BuildPack' {
             $release = Join-Path $OutputDirectory 'release'

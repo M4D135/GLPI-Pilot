@@ -1,4 +1,4 @@
-GLPI Pilot 3.2.1 — protocole et preuves de vérification
+GLPI Pilot 3.2.2 — protocole et preuves de vérification
 Date : 23 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
 
@@ -11,7 +11,40 @@ https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
 Une version déjà publiée pour un autre commit ne peut pas être remplacée.
 La présence des tests ou leur compilation ne constitue pas leur exécution.
 
-PERIMETRE DES VERIFICATIONS 3.2.1
+PERIMETRE DES VERIFICATIONS 3.2.2
+Reprise des champs de rapports métier : rôles distincts, valeurs sources
+préservées, séries numériques bornées et absence de durée ou d’activité
+déduite d’un libellé ambigu. Les matrices actives contrôlent les quatre
+statuts, les zéros connus, les participations par groupe et les totaux.
+Les filtres OU de groupes dédoublonnent les tickets ; les exclusions et
+le périmètre commun restent reproductibles, y compris dans le détail.
+La météo de volume contrôle les frontières strictes, les seuils manquants,
+la réception, les identités et statuts du relevé avant tout filtrage.
+Les différences de représentation seules ne dégradent pas les volumes.
+L’import cumulatif conserve exactement les tableaux existants, renomme
+les collisions, refuse les aperçus périmés et limites dépassées, puis
+permet annuler/rétablir. L’import partiel conserve les réglages absents.
+Les sites sans commune sont vérifiés dans la détection, le référentiel,
+les archives, les statistiques, les tournées et le vrai parcours WebView :
+création, simulation, puis rattachement ultérieur sans changement d’ID.
+L’import de test vérifie CSV/TSV et Excel XLSX/XLSM, choix de feuille et
+ligne d’en-têtes, annulation, fichier changé depuis l’aperçu, cellules
+seulement formatées, durées et formules sans résultat enregistré.
+Les lectures partielles restent signalées jusque dans la météo. La sortie
+du test restaure le relevé et son interprétation ; les requêtes volontairement
+modifiées restent disponibles sans réécrire les contextes d’archives.
+Les opérations réelles sont suspendues, y compris la recherche bibliothèque
+de la palette, tandis que les écrans d’analyse restent accessibles.
+Les transitions SSO vérifient les formulaires visibles, iframes et popups
+liés au portail suivi, les redirections passives, le retour discret,
+l’annulation et le respect des choix manuels d’affichage.
+Les fixtures du dépôt sont synthétiques. Les captures et configurations
+métier privées ne font pas partie des sources ni des packs publics.
+Les résultats définitifs, nombres de contrôles et SHA-256 sont ceux du
+workflow associé au commit de wad/version.json. Les résultats des versions
+précédentes ci-dessous ne valident pas par avance la version 3.2.2.
+
+COUVERTURE CONSERVEE DE 3.2.1
 La palette de recherche utilise le cache réel et le pont C# : numéro exact
 avant pagination, installations distinctes, commandes clavier, conservation
 de la saisie, focus de retour, annulation et réponses devenues anciennes.

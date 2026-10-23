@@ -75,7 +75,7 @@ public sealed class AnalyticsPopulationStore
     public static void Append(DashboardSnapshot snapshot, CityEnrichmentResult report, CitySettings geography, string sourceKey, IReadOnlyList<SitePopulationEntry> entries)
     {
         var date = snapshot.ExtractedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); var scope = snapshot.ScopeRows.ToHashSet();
-        var matches = report.Matches.Where(m => scope.Contains(m.RowIndex) && m.State == CityMatchState.Matched && m.SiteId != null).ToArray();
+        var matches = report.Matches.Where(m => scope.Contains(m.RowIndex) && m.State is CityMatchState.Matched or CityMatchState.SiteOnly && m.SiteId != null).ToArray();
         foreach (var unit in new[] { "people", "workstations" })
         {
             var valid = entries.Where(e => e.SourceKey == sourceKey && e.Unit == unit && string.CompareOrdinal(e.FromDate, date) <= 0 && string.CompareOrdinal(e.UntilDate, date) >= 0)

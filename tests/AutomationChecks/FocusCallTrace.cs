@@ -40,12 +40,19 @@ sealed class FocusCallTrace(bool stallCdpCreation = false)
     {
         if (_pages.TryGetValue(actual, out var found)) return found;
         var wrapped = ForwardingSpy.Create<IPage>(actual, (method, _) =>
-            method.Name == "get_Context" && _context != null ? (true, _context) : (false, null), method =>
+            method.Name == "get_Context" && _context != null ? (true, _context)
+            : method.Name == nameof(IPage.OpenerAsync) ? (true, WrappedOpenerAsync(actual)) : (false, null), method =>
             {
                 if (method.Name == nameof(IPage.BringToFrontAsync)) Interlocked.Increment(ref _bringToFrontCalls);
             });
         _pages.Add(actual, wrapped);
         return wrapped;
+    }
+
+    private async Task<IPage?> WrappedOpenerAsync(IPage actual)
+    {
+        var parent = await actual.OpenerAsync();
+        return parent is null ? null : WrapPage(parent);
     }
 
     private async Task<ICDPSession> ObserveSessionAsync(Task<ICDPSession> pending)

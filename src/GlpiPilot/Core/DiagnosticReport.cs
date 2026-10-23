@@ -13,7 +13,7 @@ public static class DiagnosticReport
         report.AppendLine("Système : " + RuntimeInformation.OSDescription + " · " + RuntimeInformation.ProcessArchitecture);
         report.AppendLine("Runtime : " + RuntimeInformation.FrameworkDescription);
         report.AppendLine($"Navigateur : {settings.BrowserChannel} · mode : {settings.AutoMode} · thème : {settings.Theme}");
-        report.AppendLine("Parcours automatique : navigateur ouvert derrière le logiciel ; priorité de fenêtre suspendue par Voir le navigateur.");
+        report.AppendLine("Parcours automatique : navigateur dédié en mode discret ; affichage temporaire si validation SSO visible, puis reprise. Voir le navigateur conserve un affichage choisi manuellement.");
         report.AppendLine("Adresse source (paramètres masqués) : " + AppPaths.SafeUrl(settings.PortalUrl));
         if (Uri.TryCreate(settings.PortalUrl, UriKind.Absolute, out var url))
             report.AppendLine("Nombre de paramètres mémorisés : " + url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries).Length);

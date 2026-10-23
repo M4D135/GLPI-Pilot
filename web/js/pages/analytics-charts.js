@@ -21,19 +21,30 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
     const unavailable = data.value == null || !Number.isFinite(data.value);
     const metric = el('button', { class: `analytics-metric-value${unavailable ? ' is-unavailable' : ''}`, text: unavailable ? '—' : number(data.value),
       disabled: unavailable, 'aria-label': unavailable ? 'Donnée indisponible' : undefined, title: unavailable ? 'Cette mesure ne peut pas être calculée sur ce relevé.' : 'Voir les lignes contributrices', onClick: () => activate({ kind: 'metric', key: data.key }) });
-    body.append(metric, caption(unavailable ? 'Donnée indisponible' : data.unit), badge(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`));
+    const volumeWeather = setting.presentation === 'weather-volume';
+    if (volumeWeather) {
+      const weather = data.volumeWeather ?? { state: 'unknown', title: 'Météo indisponible', explanation: 'Rechargez ce tableau pour calculer la météo de ce widget.' };
+      body.classList.add('analytics-volume-weather'); body.dataset.state = weather.state;
+      metric.setAttribute('aria-label', `${unavailable ? 'Donnée indisponible' : number(data.value)} ${data.unit} · ${weather.title} · Voir les lignes contributrices`);
+      body.append(el('div', { class: 'analytics-volume-weather-summary' },
+        el('div', { class: 'analytics-volume-weather-numbers' }, metric, caption(unavailable ? 'Donnée indisponible' : data.unit),
+          el('strong', { class: 'analytics-volume-weather-status', text: weather.title })), volumeWeatherIcon(weather.state)));
+      if (setting.note) body.append(el('p', { class: 'analytics-volume-weather-note', text: setting.note }));
+      if (setting.showDescription) body.append(details('Seuils, périmètre et définition', caption(weather.explanation), caption(data.explanation),
+        caption(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`)));
+    } else body.append(metric, caption(unavailable ? 'Donnée indisponible' : data.unit), badge(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`));
     if (setting.presentation === 'gauge' && data.value != null) {
       const maximum = setting.targetValue ?? (data.unit === '%' ? 100 : null);
       if (maximum > 0) body.append(gauge(data.value, maximum, `Objectif ${number(maximum, data.unit)}`));
       else body.append(caption('Définissez un objectif positif pour afficher la jauge ; la valeur reste disponible.'));
     }
     if (data.value != null && setting.targetValue != null) body.append(el('progress', { value: Math.max(0, data.value), max: Math.max(setting.targetValue, data.value), 'aria-label': 'Valeur et objectif' }), caption(`Objectif : ${number(setting.targetValue, data.unit)}`));
-    if (data.value != null && (setting.warningValue != null || setting.criticalValue != null)) {
+    if (!volumeWeather && data.value != null && (setting.warningValue != null || setting.criticalValue != null)) {
       const exceeded = threshold => threshold != null && (setting.lowerIsBetter ? data.value >= threshold : data.value <= threshold);
       body.append(badge(exceeded(setting.criticalValue) ? 'Seuil critique atteint' : exceeded(setting.warningValue) ? 'Seuil de vigilance atteint' : 'Dans les seuils configurés', exceeded(setting.criticalValue) ? 'danger' : exceeded(setting.warningValue) ? 'warning' : 'success'));
     }
     if (setting.showMiniHistory) body.append(el('div', { class: 'analytics-mini-history', 'data-history-widget': widget.id }, caption('Historique : calcul des observations en attente.')));
-    if (setting.showDescription) body.append(details('Définition et échantillon', caption(data.explanation)));
+    if (setting.showDescription && !volumeWeather) body.append(details('Définition et échantillon', caption(data.explanation)));
   } else if (setting.kind === 'distribution' || setting.kind === 'histogram') {
     body.append(distribution(ctx, data, setting, bucket => activate({ kind: setting.kind, key: data.key, label: bucket.label })));
     if (data.truncated) body.append(command(ctx, `Toutes les catégories (${formatNumber(data.totalBuckets)})`, () => more('distribution', data.key)));
@@ -69,6 +80,24 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
     if (data.total > data.points.length) body.append(command(ctx, `Table des ${formatNumber(data.total)} localisations`, () => more('map', '')));
   }
   return body;
+}
+
+function volumeWeatherIcon(state) {
+  const icon = svg('svg', { viewBox: '0 0 112 96', class: 'analytics-volume-weather-icon', 'aria-hidden': 'true', focusable: 'false' });
+  if (state === 'sun' || state === 'watch') {
+    const rays = svg('g', { class: 'weather-sun-rays', fill: 'none', stroke: 'currentColor', 'stroke-width': 3.5, 'stroke-linecap': 'round' });
+    for (let index = 0; index < 8; index++) {
+      const angle = index * Math.PI / 4;
+      rays.append(svg('line', { x1: 48 + Math.cos(angle) * 29, y1: 40 + Math.sin(angle) * 29, x2: 48 + Math.cos(angle) * 36, y2: 40 + Math.sin(angle) * 36 }));
+    }
+    icon.append(rays, svg('circle', { cx: 48, cy: 40, r: 21, class: 'weather-sun-disc' }));
+  }
+  if (state !== 'sun') {
+    icon.append(svg('path', { class: 'weather-cloud', d: 'M30 69C18 69 16 50 28 46C27 31 47 23 57 36C71 27 86 38 85 51C103 51 105 74 87 75H34Z' }));
+    if (state === 'rain') for (let index = 0; index < 3; index++) icon.append(svg('path', { class: `weather-rain-drop drop-${index}`, d: `M${41 + index * 18} 81l-4 7`, fill: 'none', stroke: 'currentColor', 'stroke-width': 5, 'stroke-linecap': 'round' }));
+    if (state === 'unknown' || state === 'partial') icon.append(svg('text', { x: 60, y: 63, 'text-anchor': 'middle', class: 'weather-unknown-mark' }, '?'));
+  }
+  return icon;
 }
 
 function qualityOverview(ctx, data, { snapshot, historical = false, onControls } = {}) {
@@ -208,10 +237,12 @@ function matrix(ctx, data, setting, activate) {
   const panel = el('div'); const groups = new Map();
   for (const cell of data.cells) { if (!groups.has(cell.rowLabel)) groups.set(cell.rowLabel, []); groups.get(cell.rowLabel).push(cell); }
   const rowTotals = new Map((data.rowTotals ?? []).map(row => [row.label, row.value]));
+  const orderedGroups = [...groups.entries()].sort((a, b) => (rowTotals.get(b[0]) ?? 0) - (rowTotals.get(a[0]) ?? 0) || a[0].localeCompare(b[0], 'fr'));
   const maxRow = Math.max(1, data.maximumRowTotal ?? 0);
   if (setting.presentation === 'stacked') {
     const columnNames = [...new Set(data.cells.map(c => c.columnLabel))];
-    for (const [label, cells] of groups) {
+    const displayed = orderedGroups.slice(0, setting.topCount || 8);
+    for (const [label, cells] of displayed) {
       const total = rowTotals.get(label) ?? 0;
       const row = el('div', { class: 'analytics-stack-row' }, el('span', { text: label })); const track = el('div', { class: 'analytics-stack' });
       for (const cell of cells) {
@@ -221,17 +252,20 @@ function matrix(ctx, data, setting, activate) {
       }
       row.append(track, el('strong', { text: number(total, data.unit) })); panel.append(row);
     }
+    panel.append(el('div', { class: 'analytics-matrix-legend' }, ...columnNames.map((name, index) => el('span', {},
+      el('i', { 'aria-hidden': 'true', style: { background: palette[index % palette.length] } }), name))));
+    if (orderedGroups.length > displayed.length) panel.append(caption(`${displayed.length} premiers groupes sur ${orderedGroups.length}, classés par total. Le détail donne accès à toutes les lignes.`));
     panel.append(caption(setting.stackedMode === 'percent' ? 'Le total complet de chaque ligne représente 100 %. Les cellules non affichées ne sont pas redistribuées.' : 'Toutes les lignes utilisent la même échelle de volume, calculée sur la matrice complète.'));
   } else {
     const maximum = Math.max(1, ...data.cells.map(c => c.value));
-    const columns = [...new Set(data.cells.map(c => c.columnLabel))]; const rowLabels = [...groups.keys()];
+    const columns = [...new Set(data.cells.map(c => c.columnLabel))]; const rowLabels = orderedGroups.map(([label]) => label);
     const displayedRows = rowLabels.slice(0, 40); const displayedColumns = columns.slice(0, 30);
     panel.append(table(displayedRows.map(label => ({ label })), [{ key: 'label', label: 'Ligne / colonne' }, ...displayedColumns.map((name, index) => ({ key: `column-${index}`, label: name,
       render: row => {
         const cell = groups.get(row.label).find(c => c.columnLabel === name);
         return cell ? el('button', { class: 'analytics-heat-cell', style: { '--heat': Math.max(.08, cell.value / maximum) }, text: number(cell.value),
           title: `${row.label} · ${name} · ${number(cell.value, data.unit)} · ${cell.count} lignes`, onClick: () => activate(cell) }) : el('span', { text: '—', title: 'Aucune cellule fournie dans cette sélection ; consulter le détail complet.' });
-      } }))], { maxRows: 40 }));
+      } })), { label: 'Total', render: row => el('strong', { text: number(rowTotals.get(row.label), data.unit), title: 'Total complet de cette ligne' }) }], { maxRows: 40 }));
     if (rowLabels.length > 40 || columns.length > 30) panel.append(caption(`Vue croisée limitée à 40 lignes et 30 colonnes. Le détail paginé donne accès à toutes les cellules.`, 'warning'));
   }
   if (data.total > data.cells.length) panel.append(caption(`Affichage limité à ${data.cells.length} cellules sur ${data.total}. Les totaux des empilements incluent toutes les cellules du calcul.`, 'warning'));

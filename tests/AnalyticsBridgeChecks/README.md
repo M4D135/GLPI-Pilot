@@ -37,12 +37,28 @@ l’origine locale du harnais ; toute tentative externe fait échouer le contrô
   résultats périmés, annulation et restauration fidèle au démarrage.
 - Dispositions globales/personnelles, annuler/rétablir persistants, catalogue
   et disponibilité effective, édition d’un widget personnel.
+- Import cumulatif recommandé : aperçu sans écriture, collisions de noms et
+  d’identifiants, conservation intégrale des tableaux existants, limite de
+  douze tableaux avant mutation, refus d’un aperçu périmé et annuler/rétablir.
+  Le modèle « Météo et pilotage du service » crée quatorze widgets dans cinq
+  sections sans fixer de seuil métier arbitraire.
 - Mini-historiques globaux, filtres communs et propres, identité personnelle
   recalculée après réaffectation et changement d’ordre des lignes. Les tests
   distinguent le zéro observé des données incompatibles, partielles ou absentes,
   et vérifient cache, annulation, limite de 64 périmètres et budget cumulé.
 - Matrice à deux axes, retour aux lignes contributrices, dénominateurs des
   empilements, courbe de Pareto et mise en page responsive sous CSP stricte.
+- Filtres de lignes de matrice : plusieurs valeurs en OU dans l’éditeur,
+  persistance et détail des tickets actifs sans doublonner un ticket partagé
+  entre plusieurs groupes.
+- Météo des volumes : seuils stricts calculés en C#, état neutre sans deux
+  seuils, édition persistante, export/import de disposition et détail des
+  tickets actifs. Une divergence d’affichage seule ne neutralise pas un
+  comptage fiable ; une réception partielle ou un périmètre modifié le fait.
+  Un filtre de widget ou un périmètre personnel ne peut pas faire disparaître
+  une incertitude d’identifiant ou de statut du relevé source pour rendre la
+  météo artificiellement fiable.
+  Les illustrations respectent la réduction des animations.
 - Requêtes typées, aperçu sans écriture, sous-totaux, export intégral CSV/XLSX,
   packs en aperçu puis validation explicite.
 - Comparaisons d’archives, absence distincte d’une résolution, références
@@ -64,13 +80,13 @@ ouvrant le shell intégral et les autres domaines de l’application.
 
 ## Opérations exposées par le domaine
 
-Les 50 noms ci-dessous sont enregistrés dans le dispatcher fermé. Les appels
+Les 51 noms ci-dessous sont enregistrés dans le dispatcher fermé. Les appels
 de lecture de lignes et les exports d’un calcul portent son identifiant et sa
 révision. Les imports et l’assistant séparent préparation et action explicite.
 
 | Domaine | Opérations |
 | --- | --- |
-| Dashboard (12) | `dashboard.get`, `dashboard.history`, `dashboard.catalog`, `dashboard.layout.get`, `dashboard.layout.save`, `dashboard.layout.undo`, `dashboard.layout.redo`, `dashboard.board.create`, `dashboard.layout.export`, `dashboard.layout.import`, `dashboard.rows`, `dashboard.data` |
+| Dashboard (13) | `dashboard.get`, `dashboard.history`, `dashboard.catalog`, `dashboard.layout.get`, `dashboard.layout.save`, `dashboard.layout.undo`, `dashboard.layout.redo`, `dashboard.board.create`, `dashboard.layout.export`, `dashboard.layout.import`, `dashboard.layout.append`, `dashboard.rows`, `dashboard.data` |
 | Requêtes (14) | `queries.list`, `queries.get`, `queries.fields`, `queries.preview`, `queries.results`, `queries.results.export`, `queries.rows`, `queries.explain`, `queries.save`, `queries.delete`, `queries.export`, `queries.import.preview`, `queries.import.commit`, `queries.widget.add` |
 | Historique (12) | `history.list`, `history.open`, `history.export`, `history.archive`, `history.protect`, `history.compare`, `history.changes`, `history.absent.references`, `history.analyze`, `history.analysis.page`, `history.analysis.rows`, `history.ticket` |
 | Effectifs (6) | `populations.list`, `populations.upsert`, `populations.delete`, `populations.import.preview`, `populations.import.commit`, `populations.export` |

@@ -13,17 +13,39 @@ public static class XlsxImportService
     private const long MaximumExpandedBytes = 512L * 1024 * 1024;
     private static readonly XNamespace Ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private static readonly XNamespace Rel = "http://schemas.openxmlformats.org/package/2006/relationships";
-    public static ExtractionResult Read(string path, int maximumRows = 100000, CancellationToken ct = default)
+    public static IReadOnlyList<string> VisibleSheets(string path, CancellationToken ct = default)
     {
-        if (maximumRows is < 1 or > 1000000) throw new ArgumentOutOfRangeException(nameof(maximumRows));
+        ct.ThrowIfCancellationRequested();
         using var file = File.OpenRead(path);
         if (file.Length > MaximumExpandedBytes) throw new InvalidDataException("Le classeur dépasse la limite de taille autorisée.");
         using var archive = new ZipArchive(file, ZipArchiveMode.Read);
+        ValidateArchive(archive);
+        var names = Load(archive, "xl/workbook.xml").Descendants(Ns + "sheet")
+            .Where(element => (string?)element.Attribute("state") is null or "visible")
+            .Select(element => (string?)element.Attribute("name") ?? "").ToArray();
+        if (names.Length == 0) throw new InvalidDataException("Le classeur ne possède aucune feuille visible.");
+        if (names.Any(string.IsNullOrWhiteSpace) || names.Distinct(StringComparer.Ordinal).Count() != names.Length)
+            throw new InvalidDataException("Les noms des feuilles visibles ne sont pas uniques et renseignés.");
+        return names;
+    }
+    private static void ValidateArchive(ZipArchive archive)
+    {
         if (archive.Entries.Count > 20000 || archive.Entries.Sum(entry => entry.Length) > MaximumExpandedBytes)
             throw new InvalidDataException("Le contenu décompressé du classeur dépasse la limite autorisée.");
+    }
+    public static ExtractionResult Read(string path, int maximumRows = 100000, CancellationToken ct = default, string? sheetName = null, int headerRow = 0)
+    {
+        if (maximumRows is < 1 or > 1000000) throw new ArgumentOutOfRangeException(nameof(maximumRows));
+        if (headerRow is < 0 or > 1048576) throw new ArgumentOutOfRangeException(nameof(headerRow));
+        ct.ThrowIfCancellationRequested();
+        using var file = File.OpenRead(path);
+        if (file.Length > MaximumExpandedBytes) throw new InvalidDataException("Le classeur dépasse la limite de taille autorisée.");
+        using var archive = new ZipArchive(file, ZipArchiveMode.Read);
+        ValidateArchive(archive);
         var workbook = Load(archive, "xl/workbook.xml");
-        var sheet = workbook.Descendants(Ns + "sheet").FirstOrDefault(element => (string?)element.Attribute("state") is null or "visible")
-            ?? throw new InvalidDataException("Le classeur ne possède aucune feuille visible.");
+        var visible = workbook.Descendants(Ns + "sheet").Where(element => (string?)element.Attribute("state") is null or "visible").ToArray();
+        var sheet = sheetName is null ? visible.FirstOrDefault() : visible.SingleOrDefault(element => (string?)element.Attribute("name") == sheetName);
+        if (sheet is null) throw new InvalidDataException("La feuille choisie est absente ou masquée dans le classeur.");
         var id = (string?)sheet.Attribute(XName.Get("id", "http://schemas.openxmlformats.org/officeDocument/2006/relationships"));
         var relationships = Load(archive, "xl/_rels/workbook.xml.rels");
         var relation = relationships.Descendants(Rel + "Relationship").FirstOrDefault(element => (string?)element.Attribute("Id") == id)
@@ -57,21 +79,34 @@ public static class XlsxImportService
         var date1904 = (string?)workbook.Root?.Element(Ns + "workbookPr")?.Attribute("date1904") is "1" or "true";
         var result = new ExtractionResult { SourceUrl = "", Title = Path.GetFileName(path), Scope = "Classeur local · provenance GLPI non confirmée", Complete = false,
             Provenance = new() { SourceKind = "file", Method = "xlsx", OriginalFileName = Path.GetFileName(path) } };
-        int count = 0, formulas = 0; bool headerRead = false;
+        int count = 0, formulas = 0, uncachedFormulas = 0, rowNumber = 0, actualHeaderRow = 0; bool headerRead = false, renamedHeaders = false;
         using var sheetStream = (archive.GetEntry(sheetPath) ?? throw new InvalidDataException("La feuille du classeur est introuvable.")).Open();
         using var xml = Reader(sheetStream);
         while (!xml.EOF)
         {
             ct.ThrowIfCancellationRequested();
             if (xml.NodeType != XmlNodeType.Element || xml.LocalName != "row") { xml.Read(); continue; }
-            var row = (XElement)XNode.ReadFrom(xml); var values = new SortedDictionary<int, string>();
+            var row = (XElement)XNode.ReadFrom(xml); var values = new SortedDictionary<int, string>(); var missingRowValue = false;
+            rowNumber = (int?)row.Attribute("r") ?? rowNumber + 1;
+            if (!headerRead && headerRow > 0 && rowNumber < headerRow) continue;
+            if (!headerRead && headerRow > 0 && rowNumber > headerRow)
+                throw new InvalidDataException("La ligne d’en-têtes choisie est vide ou absente.");
             foreach (var cell in row.Elements(Ns + "c"))
             {
                 var reference = (string?)cell.Attribute("r") ?? ""; int column = Column(reference);
                 if (column < 0 || column >= 16384) throw new InvalidDataException("Une adresse de cellule dépasse les limites du classeur.");
-                if (cell.Element(Ns + "f") != null) formulas++;
-                var value = cell.Element(Ns + "v")?.Value ?? ""; var type = (string?)cell.Attribute("t");
-                if (type == "s")
+                var cached = cell.Element(Ns + "v"); var value = cached?.Value ?? ""; var type = (string?)cell.Attribute("t"); var missingCellValue = false;
+                if (cell.Element(Ns + "f") != null)
+                {
+                    formulas++;
+                    // An empty cached string is a real empty result. A missing
+                    // cache (or empty numeric cache) is an unknown value, never
+                    // evidence that the formula or its whole row is blank.
+                    if (cached is null || string.IsNullOrWhiteSpace(value) && type is not ("str" or "inlineStr"))
+                    { uncachedFormulas++; missingCellValue = true; missingRowValue = true; }
+                }
+                if (missingCellValue) value = "";
+                else if (type == "s")
                 {
                     if (!int.TryParse(value, out var index) || index < 0 || index >= strings.Count) throw new InvalidDataException("Une chaîne partagée du classeur est introuvable.");
                     value = strings[index];
@@ -93,22 +128,40 @@ public static class XlsxImportService
                 if (value.Length > 1000000) throw new InvalidDataException("Une cellule du classeur dépasse la taille autorisée.");
                 if (!values.TryAdd(column, value)) throw new InvalidDataException("Une ligne contient plusieurs fois la même adresse de cellule.");
             }
-            if (values.Count == 0 || values.Values.All(string.IsNullOrWhiteSpace)) continue;
+            if (!headerRead && missingRowValue)
+                throw new InvalidDataException("La ligne d’en-têtes contient une formule sans résultat enregistré. Enregistrez ses valeurs dans Excel ou choisissez une autre ligne d’en-têtes.");
+            if (!missingRowValue && (values.Count == 0 || values.Values.All(string.IsNullOrWhiteSpace)))
+            {
+                if (!headerRead && headerRow > 0) throw new InvalidDataException("La ligne d’en-têtes choisie est vide ou absente.");
+                continue;
+            }
             if (!headerRead)
             {
-                var width = values.Keys.Max() + 1;
-                result.Headers = Enumerable.Range(0, width).Select(column => values.GetValueOrDefault(column, "").Trim()).Select((text, index) => text.Length == 0 ? $"Colonne {index + 1}" : text).ToList();
-                headerRead = true; continue;
+                var width = values.Where(pair => !string.IsNullOrWhiteSpace(pair.Value)).Max(pair => pair.Key) + 1;
+                var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                result.Headers = Enumerable.Range(0, width).Select(column =>
+                {
+                    var text = values.GetValueOrDefault(column, "").Trim();
+                    var basis = text.Length == 0 ? $"Colonne {column + 1}" : text;
+                    var name = basis; var suffix = 2;
+                    while (!used.Add(name)) name = basis + " (" + suffix++ + ")";
+                    renamedHeaders |= name != text; return name;
+                }).ToList();
+                headerRead = true; actualHeaderRow = rowNumber; continue;
             }
             count++;
-            if (values.Keys.Max() >= result.Headers.Count) throw new InvalidDataException("Une ligne possède des cellules au-delà des colonnes d’en-tête ; import interrompu pour éviter une perte.");
+            if (values.Any(pair => pair.Key >= result.Headers.Count && !string.IsNullOrWhiteSpace(pair.Value)))
+                throw new InvalidDataException("Une ligne possède des cellules au-delà des colonnes d’en-tête ; choisissez la ligne d’en-têtes du tableau pour éviter une perte.");
             if (result.Rows.Count < maximumRows) result.Rows.Add(Enumerable.Range(0, result.Headers.Count).Select(column => values.GetValueOrDefault(column, "")).ToArray());
         }
-        if (!headerRead) throw new InvalidDataException("La première feuille visible ne contient pas de tableau.");
+        if (!headerRead) throw new InvalidDataException("La feuille choisie ne contient pas de tableau à la ligne indiquée.");
         result.Pages = 1;
-        result.Warnings.Add($"Feuille lue : {(string?)sheet.Attribute("name") ?? "sans nom"}. La première ligne non vide sert d’en-tête. La portée GLPI n’est pas confirmée.");
+        result.Quality = new() { SourceRows = count, RowCountVerified = count == result.Rows.Count, AllPagesRequested = false, UncachedFormulaCount = uncachedFormulas };
+        result.Warnings.Add($"Feuille lue : {(string?)sheet.Attribute("name") ?? "sans nom"}. En-têtes : ligne {actualHeaderRow}. La portée GLPI n’est pas confirmée.");
+        if (renamedHeaders) result.Warnings.Add("Les en-têtes vides ou en double ont reçu un nom unique. Les cellules restent dans leur colonne d’origine.");
         if (count > maximumRows) result.Warnings.Add($"{count:N0} lignes dans la feuille, {maximumRows:N0} conservées selon la limite d’import.");
         if (formulas > 0) result.Warnings.Add($"{formulas:N0} cellules contiennent une formule : seules leurs valeurs enregistrées ont été lues, sans recalcul.");
+        if (uncachedFormulas > 0) result.Warnings.Add($"{uncachedFormulas:N0} cellules calculées n’ont pas de résultat enregistré : leurs valeurs sont inconnues. Les lignes correspondantes sont conservées ; enregistrez le classeur après calcul dans Excel pour compléter ces valeurs.");
         result.Status = $"Classeur local importé · {result.Rows.Count:N0} lignes · complétude GLPI non confirmée";
         result.Provenance.FinishedAt = DateTimeOffset.Now;
         return result;
@@ -129,8 +182,11 @@ public static class XlsxImportService
     private static string Decode(string text) => Regex.Replace(text, "_x([0-9A-Fa-f]{4})_", match => ((char)int.Parse(match.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture)).ToString());
     private static bool IsDateFormat(int id, string format)
     {
-        if (id is >= 14 and <= 22 or >= 45 and <= 47) return true;
+        if (id is >= 14 and <= 17 or 22) return true;
+        // Time-only/elapsed formats carry no calendar date. Preserve their numeric
+        // value rather than manufacturing an opening date in December 1899.
+        if (id is >= 18 and <= 21 or >= 45 and <= 47) return false;
         var stripped = Regex.Replace(format, "\"[^\"]*\"|\\\\.|\\[[^\\]]*\\]", "");
-        return Regex.IsMatch(stripped, "[ydhs]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return Regex.IsMatch(stripped, "[yd]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 }

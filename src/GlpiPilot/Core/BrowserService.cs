@@ -56,6 +56,7 @@ public sealed partial class BrowserService : IAsyncDisposable
             Log?.Invoke("SOURCE · changement d’installation : fermeture du contexte précédent et ouverture du profil isolé correspondant.");
             await DisposeAsync();
         }
+        ResetAuthenticationPresentation();
         SetBackgroundMode(background);
 
         if (_context == null)
@@ -83,7 +84,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                 _profileInstallation = installation;
                 _presentationWarningLogged = false;
                 ConfigureContext(_context);
-                // Keep the initial browser window open while the launch guard is held.
+                // Minimize the dedicated window while the short launch guard is held.
                 // Other windows are handled after it has been released.
                 if (BackgroundMode && _context.Pages.FirstOrDefault(p => !p.IsClosed) is { } initialPage)
                     await SetPageWindowAsync(initialPage, false, cancellationToken);
@@ -556,6 +557,7 @@ public sealed partial class BrowserService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        ResetAuthenticationPresentation();
         var context = _context;
         _context = null;
         if (context != null) { try { await context.CloseAsync(); } catch (PlaywrightException) { } }

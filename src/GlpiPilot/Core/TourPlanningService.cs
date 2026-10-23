@@ -151,7 +151,9 @@ public static class TourPlanningService
                     throw new InvalidDataException("Les indices de localisation ne correspondent pas au relevé.");
                 if (match.State == CityMatchState.Matched && (match.CityId == null || !cityById.ContainsKey(match.CityId)))
                     throw new InvalidDataException("Une ville détectée n’appartient pas au référentiel associé à ce relevé.");
-                if (match.SiteId != null && (match.State != CityMatchState.Matched || !cities.Sites.Any(site => site.Id == match.SiteId && site.CityId == match.CityId)))
+                if (match.State == CityMatchState.SiteOnly && (match.CityId != null || match.SiteId == null))
+                    throw new InvalidDataException("Un site sans commune doit conserver son identifiant de site sans inventer une ville.");
+                if (match.SiteId != null && (match.State is not (CityMatchState.Matched or CityMatchState.SiteOnly) || !cities.Sites.Any(site => site.Id == match.SiteId && site.CityId == (match.CityId ?? ""))))
                     throw new InvalidDataException("Le site détecté n’appartient pas à la ville du référentiel associé au relevé.");
             }
             if (matches.Count != data.Rows.Count)
@@ -233,7 +235,7 @@ public static class TourPlanningService
             : !context.Applied ? context.Message
             : !allStatuses && !context.HasStatus ? "La colonne Statut n’est pas reconnue. Choisissez « Tous les statuts » pour préparer un plan sans filtrage d’état."
             : !allStatuses && selected.Count == 0 && unknownStatus.Count > 0 ? "Aucun actif reconnu dans ce périmètre. Des statuts non classés restent accessibles séparément."
-            : "Les étapes regroupent les villes confirmées du relevé. Les affectations multiples restent visibles dans chaque tournée concernée ; les totaux par technicien ne s’additionnent pas.";
+            : "Les étapes regroupent les villes confirmées du relevé. Un site sans commune reste disponible dans le panier pour créer une étape de tournée. Les affectations multiples restent visibles dans chaque tournée concernée ; les totaux par technicien ne s’additionnent pas.";
         return new(context, key, scope, allStatuses,
             stops.OrderBy(stop => stop.CityName, StringComparer.CurrentCultureIgnoreCase).ThenBy(stop => stop.CityId, StringComparer.Ordinal),
             selected, unlocated, ambiguous, titleUnavailable, unknownStatus, excludedCompleted, available, message, TourOrderKind.Alphabetical);
@@ -343,7 +345,7 @@ public static class TourPlanningService
             var stop = plan.Stops[order];
             foreach (var row in stop.Rows) Add(row, (order + 1).ToString(CultureInfo.InvariantCulture), stop.CityName, stop.PostalCode, "Ville confirmée");
         }
-        foreach (var row in plan.UnlocatedRows) Add(row, "", "", "", plan.Context.Rows[row].CityState == CityMatchState.TitleUnavailable ? "Titre indisponible" : "Non localisé");
+        foreach (var row in plan.UnlocatedRows) Add(row, "", "", "", plan.Context.Rows[row].CityState == CityMatchState.TitleUnavailable ? "Titre indisponible" : plan.Context.Rows[row].CityState == CityMatchState.SiteOnly ? "Site reconnu · commune non renseignée" : "Non localisé");
         foreach (var row in plan.AmbiguousRows) Add(row, "", "", "", "Localisation ambiguë");
         if (export.Rows.Count != plan.SelectedRows.Count)
             throw new InvalidDataException("Le plan ne conserve pas exactement le périmètre sélectionné.");

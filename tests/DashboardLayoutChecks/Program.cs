@@ -11,10 +11,67 @@ DashboardLayoutSettings Layout(string preset = "overview")
 }
 void Invalid(Action action) { try { action(); } catch (InvalidDataException) { return; } throw new Exception("Invalid layout accepted"); }
 Test("New local settings produce a usable default board", () => { var settings = new DashboardSettings(); settings.Normalize(); settings.Layout.Validate(); Assert(settings.Layout.Boards[0].Widgets.Count > 10); });
-Test("Every preset is valid and bounded", () => { foreach (var preset in new[] { "overview", "operations", "analysis", "personal", "team", "deadlines", "quality", "geography", "empty" }) Layout(preset).Validate(); });
+Test("Every preset is valid and bounded", () => { foreach (var preset in new[] { "overview", "service", "operations", "analysis", "personal", "team", "deadlines", "quality", "geography", "empty" }) Layout(preset).Validate(); });
+Test("Appending boards preserves existing identities and resolves imported identity and name collisions", () =>
+{
+    var current = Layout("overview"); current.CatalogFavorites.Add("metric:active"); var imported = current.Copy();
+    var extra = DashboardLayoutSettings.CreateBoard("test", "empty"); imported.Boards.Add(extra);
+    var before = JsonSerializer.Serialize(current); var originalImport = JsonSerializer.Serialize(imported);
+    var appended = DashboardLayoutSettings.AppendBoards(current, imported); appended.Layout.Validate();
+    Assert(appended.Layout.Boards.Count == 3 && appended.AddedBoards.Count == 2);
+    Assert(JsonSerializer.Serialize(appended.Layout.Boards[0]) == JsonSerializer.Serialize(current.Boards[0]));
+    Assert(appended.Layout.Boards[1].Id != current.Boards[0].Id && appended.Layout.Boards[1].Widgets[0].Id == imported.Boards[0].Widgets[0].Id);
+    Assert(appended.Layout.Boards[1].Name == "Test (importé)" && appended.Layout.Boards[2].Name == "test (importé 2)");
+    Assert(appended.Layout.ActiveBoardId == appended.Layout.Boards[1].Id && appended.Layout.CatalogFavorites.SequenceEqual(current.CatalogFavorites));
+    appended.Layout.Boards[1].Widgets[0].Note = "Changed copy";
+    Assert(JsonSerializer.Serialize(current) == before && JsonSerializer.Serialize(imported) == originalImport);
+});
+Test("Append capacity rejects before mutation and accepts the exact twelve-board boundary", () =>
+{
+    var current = Layout("empty"); current.Boards.AddRange(Enumerable.Range(1, 11).Select(index => DashboardLayoutSettings.CreateBoard("Board " + index, "empty")));
+    var imported = Layout("empty"); var before = JsonSerializer.Serialize(current); Invalid(() => DashboardLayoutSettings.AppendBoards(current, imported));
+    Assert(JsonSerializer.Serialize(current) == before);
+    current.Boards.RemoveAt(current.Boards.Count - 1); var append = DashboardLayoutSettings.AppendBoards(current, imported);
+    Assert(append.Layout.Boards.Count == 12 && current.Boards.Count == 11); append.Layout.Validate();
+    imported.Version = 9; Invalid(() => DashboardLayoutSettings.AppendBoards(current, imported));
+});
+Test("Service preset combines stock weather real analytical sources and editable action sections", () =>
+{
+    var layout = Layout("service"); layout.Validate(); var board = layout.Boards[0];
+    Assert(board.Sections.Count == 5 && board.Widgets.Count == 14 && board.Widgets.All(widget => board.Sections.Any(section => section.Key == widget.Section)));
+    var stock = board.Widgets.Single(widget => widget.SourceKey == "active");
+    Assert(stock.Presentation == "weather-volume" && stock.WarningValue is null && stock.CriticalValue is null && stock.EvaluateVolumeWeather(5, true).State == "unknown");
+    foreach (var key in new[] { "active-incidents", "active-requests", "pending", "without-group", "active-multiple-groups", "active-no-author", "group-status", "type-status", "active-category", "age", "inactivity" })
+        Assert(board.Widgets.Any(widget => widget.SourceKey == key), key);
+    Assert(board.Widgets.Any(widget => widget.Kind == "note" && widget.Section == "actions") && board.Widgets.Any(widget => widget.Kind == "attention"));
+});
 Test("Deep copy isolates nested boards and widgets", () => { var a = Layout(); var b = a.Copy(); b.Boards[0].Widgets[0].Title = "B"; b.Boards[0].Name = "B"; Assert(a.Boards[0].Name == "Test" && a.Boards[0].Widgets[0].Title == ""); });
 Test("Settings deep copy preserves local identity without sharing layout", () => { var a = new DashboardSettings { Layout = Layout(), PersonalTechnician = "A" }; var b = a.Copy(); b.Layout.Boards.Clear(); Assert(a.Layout.Boards.Count == 1 && b.PersonalTechnician == "A"); });
 Test("Portable layout JSON round-trips all presentation settings", () => { var a = Layout("empty"); a.Boards[0].Widgets.Add(new() { Kind = "note", Note = "Ligne 1\nLigne 2", Span = 7, Height = 440, Locked = true, Hidden = true, Style = "accent", Accent = "teal", Presentation = "compact", Title = "Note" }); var b = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(a))!; b.Validate(); Assert(b.Boards[0].Widgets[0].Note == "Ligne 1\nLigne 2" && b.Boards[0].Widgets[0].Locked && b.Boards[0].Widgets[0].Hidden && b.Boards[0].Widgets[0].Span == 7); });
+Test("Volume weather JSON preserves independent card thresholds and strict boundaries", () =>
+{
+    var layout = Layout("empty"); layout.Boards[0].Widgets.Add(new() { Kind = "metric", SourceKey = "active", Presentation = "weather-volume", WarningValue = 10, CriticalValue = 20 });
+    var copy = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(layout.Copy()))!; copy.Normalize(); copy.Validate(); var card = copy.Boards[0].Widgets[0];
+    Assert(card.Presentation == "weather-volume" && card.WarningValue == 10 && card.CriticalValue == 20);
+    Assert(card.EvaluateVolumeWeather(10, true).State == "sun" && card.EvaluateVolumeWeather(11, true).State == "watch");
+    Assert(card.EvaluateVolumeWeather(20, true).State == "watch" && card.EvaluateVolumeWeather(21, true).State == "rain");
+    card.WarningValue = 12; Assert(layout.Boards[0].Widgets[0].WarningValue == 10);
+});
+Test("Volume weather does not infer health from missing thresholds values or partial counts", () =>
+{
+    var card = new DashboardWidgetSettings { Presentation = "weather-volume", WarningValue = 10, CriticalValue = 20 };
+    Assert(card.EvaluateVolumeWeather(0, true).Title == "Maîtrisé" && card.EvaluateVolumeWeather(null, true).State == "unknown");
+    Assert(card.EvaluateVolumeWeather(double.NaN, true).State == "unknown" && card.EvaluateVolumeWeather(0, false).State == "partial");
+    card.CriticalValue = null; Assert(card.EvaluateVolumeWeather(8, true).Title == "Seuils à définir");
+    card.CriticalValue = 20; card.WarningValue = null; Assert(card.EvaluateVolumeWeather(25, true).Title == "Seuils à définir");
+});
+Test("Volume weather reverses strict boundaries only when higher values are preferred", () =>
+{
+    var card = new DashboardWidgetSettings { Presentation = "weather-volume", WarningValue = 20, CriticalValue = 10, LowerIsBetter = false }; card.ValidateThresholds();
+    Assert(card.EvaluateVolumeWeather(20, true).State == "sun" && card.EvaluateVolumeWeather(19, true).State == "watch");
+    Assert(card.EvaluateVolumeWeather(10, true).State == "watch" && card.EvaluateVolumeWeather(9, true).State == "rain");
+    card.Kind = "distribution"; Invalid(card.ValidateThresholds); card.Normalize(); Assert(card.Presentation == "bars");
+});
 Test("Automatic height preserves the manual minimum across copy and JSON", () =>
 {
     var layout = Layout("empty"); layout.Boards[0].Widgets.Add(new() { Height = 640, AutoHeight = false });
