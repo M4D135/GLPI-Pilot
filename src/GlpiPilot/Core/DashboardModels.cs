@@ -42,6 +42,16 @@ public sealed record DashboardBox(string Label, int Sample, double Minimum, doub
 public sealed record DashboardBoxSeries(string Key, string Title, bool Available, string Unit,
     IReadOnlyList<DashboardBox> Boxes, string Explanation);
 public sealed record DashboardGeoPoint(string Key, string Label, double Latitude, double Longitude, int[] Rows, int[] ActiveRows);
+public sealed record DashboardSiteWorkloadEntry(string Key, string Label, bool Unknown, int[] Rows);
+public sealed class DashboardSiteWorkloadSnapshot
+{
+    public bool Available { get; init; }
+    public string UnavailableReason { get; init; } = "Appliquez le référentiel de sites au relevé pour calculer cette vue.";
+    public string Grain { get; init; } = "lignes";
+    public int Population { get; init; }
+    public IReadOnlyList<DashboardSiteWorkloadEntry> Sites { get; init; } = Array.Empty<DashboardSiteWorkloadEntry>();
+    public string Explanation { get; init; } = "";
+}
 public sealed record DashboardHistoryPoint(DateTimeOffset CapturedAt, double? Value, int Rows,
     bool Complete, bool Comparable, string SnapshotId, string Note = "");
 public sealed record DashboardHistorySeries(string Key, string Title, string Unit,
@@ -79,6 +89,9 @@ public sealed class DashboardSnapshot
     public List<DashboardBoxSeries> BoxSeries { get; init; } = new();
     public List<DashboardHistorySeries> History { get; init; } = new();
     public List<DashboardGeoPoint> Geography { get; init; } = new();
+    public DashboardParticipationResult Participation { get; set; } = new();
+    public DashboardOldestGroupsSnapshot? OldestGroups { get; set; }
+    public DashboardSiteWorkloadSnapshot SiteWorkload { get; set; } = new();
     public Dictionary<string, DashboardWeather> WeatherProfiles { get; init; } = new(StringComparer.Ordinal);
     [System.Text.Json.Serialization.JsonIgnore]
     public Func<int[], string, CancellationToken, DashboardSnapshot>? RecalculateScope { get; set; }

@@ -6,10 +6,12 @@
   <ItemGroup>
     <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="DashboardService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="DashboardModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardOldestGroups.cs" Link="DashboardOldestGroups.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardSettings.cs" Link="DashboardSettings.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardLayout*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/TechnicianDashboardService.cs" Link="TechnicianDashboardService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="ExportModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportService.cs" Link="ExportService.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardParticipation.cs" Link="Core/DashboardParticipation.cs" />
   </ItemGroup>
 </Project>

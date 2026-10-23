@@ -2,9 +2,13 @@ import { el, button, card, toolbar, empty, badge, input, select, field, table, d
   number, formatNumber, formatDate, rowDialog, pager, filterEditor, checkbox, nullableNumber, textArea, sparkline, error } from './analytics-ui.js';
 import { widgetContent } from './analytics-charts.js';
 import { ensureSections, moveDashboardWidget, moveDashboardSection, bindDashboardLayout } from './analytics-layout.js';
+import { renderOldestGroups } from './analytics-oldest.js';
+import { participationTable, participationRosterEditor } from './analytics-participation.js';
+import { sitesTable } from './analytics-sites.js';
 
 const kindNames = { metric: 'Indicateur', distribution: 'Répartition', weather: 'Météo', timeline: 'Chronologie', attention: 'Points d’attention', quality: 'Qualité',
-  note: 'Note', matrix: 'Matrice', histogram: 'Histogramme', boxplot: 'Boîtes à moustaches', scatter: 'Nuage de points', history: 'Historique', map: 'Carte locale' };
+  note: 'Note', matrix: 'Matrice', histogram: 'Histogramme', boxplot: 'Boîtes à moustaches', scatter: 'Nuage de points', history: 'Historique', map: 'Carte locale',
+  oldest: 'Plus anciens', participation: 'Participation des agents', sites: 'Stock des sites' };
 const presetNames = { empty: 'Vide', overview: 'Pilotage', service: 'Météo et pilotage du service', operations: 'Opérations', personal: 'Personnel', team: 'Équipe', deadlines: 'Échéances', quality: 'Qualité', geography: 'Géographie', analysis: 'Analyse' };
 const accentNames = { blue: 'Bleu', teal: 'Turquoise', green: 'Vert', orange: 'Ambre', red: 'Rouge', purple: 'Violet', slate: 'Neutre' };
 const styleNames = { surface: 'Carte', outline: 'Contour', accent: 'Accent', minimal: 'Sans cadre' };
@@ -74,6 +78,7 @@ export async function renderDashboard(ctx) {
   const provenanceRow = el('div', { class: 'analytics-provenance-row' }, provenance,
     command(ctx, 'Détails des contrôles', () => controlsDialog(), { attributes: { class: 'button analytics-controls-access no-print' } }));
   const receptionIssue = el('div', { class: 'analytics-reception-issue', role: 'status', hidden: true });
+  const freshnessIssue = el('div', { class: 'analytics-reception-issue analytics-freshness-issue', role: 'status', hidden: true });
   const boardHost = el('div', { class: 'analytics-board-host' }); const editorHost = el('div', { class: 'analytics-editor-toolbar no-print' });
   const editStatus = el('span', { class: 'analytics-edit-status', role: 'status', 'aria-live': 'polite', text: '' });
   const selectionHost = el('div', { class: 'analytics-selection-toolbar no-print' }); const status = el('div', { class: 'analytics-history-status no-print', role: 'status' });
@@ -86,7 +91,7 @@ export async function renderDashboard(ctx) {
     if (saving) { showUnavailable.control.checked = board.hideUnavailableWidgets === false; return; }
     board.hideUnavailableWidgets = !showUnavailable.control.checked; persist().catch(reason => error(ctx, reason));
   });
-  ctx.root.append(controls, provenanceRow, receptionIssue, toolbar(cross.element,
+  ctx.root.append(controls, provenanceRow, receptionIssue, freshnessIssue, toolbar(cross.element,
     command(ctx, 'Voir les lignes du périmètre', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, kind: 'scope' })),
     command(ctx, 'Effacer les filtres', async () => { if (board.filters.length) { board.filters = []; await call(ctx, 'dashboard.layout.save', { personal, layout }); } go({ crossFilters: [] }); }, { disabled: model.commonFilters.length === 0 }),
     command(ctx, 'Effectifs datés', () => ctx.navigate('populations')), command(ctx, 'Assistant sur ce périmètre', () => ctx.navigate('assistant', runArgs))),
@@ -118,6 +123,11 @@ export async function renderDashboard(ctx) {
       quality?.finalTotalVerified === false ? 'Le total GLPI a changé pendant la collecte.' : ''].filter(Boolean);
     receptionIssue.hidden = issues.length === 0;
     receptionIssue.replaceChildren(...(issues.length ? [el('strong', { text: 'Collecte à vérifier' }), el('span', { text: issues.join(' ') })] : []));
+    const elapsedHours = (Date.parse(snapshot.calculatedAt) - Date.parse(snapshot.extractedAt)) / 3600000;
+    const stale = !model.historical && board.freshnessWarningHours > 0 && Number.isFinite(elapsedHours) && elapsedHours > board.freshnessWarningHours;
+    freshnessIssue.hidden = !stale;
+    freshnessIssue.replaceChildren(...(stale ? [el('strong', { text: 'Relevé à actualiser' }),
+      el('span', { text: `Ce relevé date de ${number(elapsedHours, 'h')}. Rappel configuré après ${board.freshnessWarningHours} h ; les volumes et les couleurs météo restent ceux du relevé.` })] : []));
   }
   function controlsDialog(extraWarnings = []) {
     const warnings = [...new Set([...(model.snapshot.warnings ?? []), ...extraWarnings].filter(text => typeof text === 'string' && text.trim()))];
@@ -137,10 +147,22 @@ export async function renderDashboard(ctx) {
       go({ crossFilters: [...params.crossFilters, filter] });
     } else await rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: widget.id, ...selection }, `${widget.settings.title || widget.settings.sourceKey} · lignes contributrices`);
   }
+  async function copyIds(widget, selection) {
+    const result = await call(ctx, 'dashboard.copyIds', { ...runArgs, widgetId: widget.id, ...selection });
+    ctx.notify(`${formatNumber(result.count)} identifiants copiés${result.missing ? ` · ${formatNumber(result.missing)} lignes sans identifiant` : ''}.`);
+  }
   async function more(widget, kind, key) {
     const content = el('div'); const modal = dialog('Toutes les valeurs', content);
     const load = async offset => {
       const data = await call(ctx, 'dashboard.data', { ...runArgs, widgetId: widget.id, kind, key, offset, limit: 100 });
+      if (['oldest', 'participation', 'sites'].includes(kind)) {
+        const activateDetail = selection => activate(widget, selection);
+        const view = kind === 'oldest' ? renderOldestGroups(ctx, data, activateDetail)
+          : kind === 'participation' ? participationTable(ctx, data.participants, widget.settings.sourceKey, activateDetail, data.maximumCount)
+          : sitesTable(ctx, data.sites, activateDetail, selection => copyIds(widget, selection));
+        content.replaceChildren(view, pager(ctx, data.total, data.offset, 100, load));
+        return;
+      }
       const columns = kind === 'distribution' ? [{ key: 'label', label: 'Catégorie' }, { key: 'count', label: 'Lignes' }, { key: 'value', label: 'Valeur', render: r => number(r.isAggregate ? r.value : r.value ?? r.count, r.unit) }, { key: 'sample', label: 'Échantillon' }]
         : kind === 'matrix' ? [{ key: 'rowLabel', label: 'Ligne' }, { key: 'columnLabel', label: 'Colonne' }, { key: 'value', label: 'Valeur' }]
         : kind === 'map' ? [{ key: 'label', label: 'Lieu' }, { key: 'latitude', label: 'Latitude' }, { key: 'longitude', label: 'Longitude' }, { key: 'count', label: 'Tickets' }, { key: 'active', label: 'Actifs' }]
@@ -238,7 +260,7 @@ export async function renderDashboard(ctx) {
           'data-available': widget.available ?? 'unknown', 'data-auto-height': setting.autoHeight }, header,
           caption(`${formatNumber(widget.rowCount)} lignes · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
-            { snapshot: model.snapshot, historical: model.historical, onControls: () => controlsDialog(widget.content?.warnings) }));
+            { snapshot: model.snapshot, historical: model.historical, onControls: () => controlsDialog(widget.content?.warnings), copyIds: selection => copyIds(widget, selection) }));
         if (editing) article.append(el('div', { class: 'analytics-widget-edit-footer no-print' },
           el('span', { text: setting.locked ? 'Position verrouillée' : `${setting.span} / 12 · ${setting.autoHeight ? 'hauteur auto' : `${setting.height} px`}` }),
           setting.locked ? null : button('↘', () => widgetDialog(setting), { title: 'Étirer pour redimensionner, utiliser les flèches ou ouvrir les dimensions', attributes: {
@@ -322,9 +344,12 @@ export async function renderDashboard(ctx) {
   function boardDialog() {
     const name = input(board.name, { maxLength: 120 }); const description = textArea(board.description || '', 3); description.maxLength = 600;
     const density = select([{ value: 'comfortable', label: 'Aérée' }, { value: 'compact', label: 'Compacte' }], board.density || 'comfortable');
+    const freshness = input(board.freshnessWarningHours ?? '', { type: 'number', min: 1, max: 8760, step: 1 });
     const message = el('div', { role: 'alert' });
-    dialog('Organiser ce tableau de bord', el('div', {}, field('Nom', name), field('Description du tableau', description), field('Densité du tableau', density), message), [
-      { label: 'Enregistrer', primary: true, action: async close => { board.name = name.value; board.description = description.value; board.density = density.value; await persist(); close(); } },
+    dialog('Organiser ce tableau de bord', el('div', {}, field('Nom', name), field('Description du tableau', description), field('Densité du tableau', density),
+      field('Rappel après un relevé ancien · heures', freshness, 'Vide : aucun rappel. Un rappel ne modifie pas les couleurs météo.'), message), [
+      { label: 'Enregistrer', primary: true, action: async close => { board.name = name.value; board.description = description.value; board.density = density.value;
+        board.freshnessWarningHours = freshness.value.trim() === '' ? null : Number(freshness.value); await persist(); close(); } },
       { label: 'Dupliquer', action: async close => { const copy = clone(board); copy.id = uuid(); copy.name = `${name.value} · copie`.slice(0, 120); copy.widgets.forEach(w => w.id = uuid()); layout.boards.push(copy); layout.activeBoardId = copy.id; await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ boardId: copy.id }); } },
       { label: 'Supprimer ce tableau', danger: true, action: async close => {
         if (layout.boards.length === 1) { message.textContent = 'Conservez au moins un tableau de bord.'; return; }
@@ -397,6 +422,10 @@ export async function renderDashboard(ctx) {
       const weatherOption = presentation.querySelector('option[value="weather-volume"]'); if (weatherOption) weatherOption.disabled = kind.value !== 'metric';
     };
     const filters = filterEditor(model.catalog, widget.filters);
+    const roster = participationRosterEditor(widget.participationRoster ?? []);
+    const rosterPanel = details('Liste facultative des participants et alias', roster.element);
+    const updateRoster = () => { rosterPanel.hidden = kind.value !== 'participation'; };
+    kind.addEventListener('change', updateRoster); updateRoster();
     const updateSources = () => {
       const old = source.value || widget.sourceKey; const entries = catalogEntries(model.catalog).filter(e => e.kind === kind.value);
       source.replaceChildren(...entries.map(e => el('option', { value: e.key, text: e.label })));
@@ -410,11 +439,11 @@ export async function renderDashboard(ctx) {
       stackedMode: stacking.value, paretoThresholdPercent: Number(pareto.value), autoHeight: automatic.control.checked, startNewRow: row.control.checked,
       showDescription: description.control.checked, showMiniHistory: mini.control.checked, historyPeriodDays: Number(period.value), locked: locked.control.checked,
       hidden: hidden.control.checked, note: note.value, targetValue: target.read(), warningValue: warning.read(), criticalValue: critical.read(), lowerIsBetter: lower.control.checked,
-      histogramBreaks: breaks.value.trim() ? breaks.value.split(';').map(value => Number(value.trim().replace(',', '.'))) : [], filters: filters.read() });
+      histogramBreaks: breaks.value.trim() ? breaks.value.split(';').map(value => Number(value.trim().replace(',', '.'))) : [], filters: filters.read(), participationRoster: roster.read() });
     dialog('Configurer le widget', el('div', {}, el('div', { class: 'analytics-form-grid' }, field('Type', kind), field('Source', source), field('Titre facultatif', title), field('Section', section),
       field('Largeur', span), field('Hauteur', height), field('Top catégories', top), field('Style', style), field('Accent', accent), field('Présentation', presentation),
       field('Empilage', stacking), field('Seuil de Pareto (%)', pareto), field('Fenêtre historique (jours)', period), field('Bornes histogramme séparées par ;', breaks), target.element, warning.element, critical.element),
-      toolbar(automatic.element, row.element, description.element, mini.element, locked.element, hidden.element, lower.element), weatherHelp, field('Note', note), details('Filtres propres à ce widget', filters.element)), [
+      toolbar(automatic.element, row.element, description.element, mini.element, locked.element, hidden.element, lower.element), weatherHelp, field('Note', note), rosterPanel, details('Filtres propres à ce widget', filters.element)), [
       { label: 'Enregistrer', primary: true, action: async close => {
         read(); if (original.locked && widget.locked && (widget.section !== original.section || widget.span !== original.span || widget.height !== original.height || widget.autoHeight !== original.autoHeight || widget.startNewRow !== original.startNewRow))
           throw new Error('Déverrouillez le widget pour modifier sa position ou ses dimensions.');
@@ -492,7 +521,7 @@ export async function renderDashboard(ctx) {
 
 function newWidget(kind, sourceKey) { return { id: uuid(), kind, sourceKey, title: '', span: kind === 'metric' ? 3 : 6, height: kind === 'metric' ? 220 : 380, autoHeight: true,
   startNewRow: false, stackedMode: 'percent', paretoThresholdPercent: 80, showMiniHistory: true, historyPeriodDays: 7, style: 'surface', accent: 'blue', presentation: 'bars', topCount: 8,
-  showDescription: true, hidden: false, locked: false, note: '', targetValue: null, warningValue: null, criticalValue: null, lowerIsBetter: true, section: '', filters: [], histogramBreaks: [1, 7, 14, 30, 90] }; }
+  showDescription: true, hidden: false, locked: false, note: '', targetValue: null, warningValue: null, criticalValue: null, lowerIsBetter: true, section: '', filters: [], participationRoster: [], histogramBreaks: [1, 7, 14, 30, 90] }; }
 function qualitySummary(quality) {
   if (!quality) return null;
   const observations = [['Avant le transfert', quality.initialSample], ['Après le transfert', quality.finalSample]].filter(([, sample]) => sample);
@@ -508,12 +537,14 @@ function qualitySummary(quality) {
       values: value.representationVerified == null ? 'Indisponible' : `${value.differentCells} écarts / ${value.comparedCells}`,
       formats: value.equivalentFormatCells })), [{ key: 'phase', label: 'Contrôle' }, { key: 'ids', label: 'Identifiants rapprochés' }, { key: 'values', label: 'Valeurs comparées' }, { key: 'formats', label: 'Formats équivalents prouvés' }])) : null);
 }
-function describeFilters(filters = []) { return filters.map(f => `${f.exclude ? 'sauf ' : ''}${f.sourceKey}${f.kind === 'metric' ? '' : ` = ${f.values?.length ? f.values.join(' OU ') : f.value}${f.kind === 'date' ? ` → ${f.value2}` : ''}`}`).join(' · '); }
+function describeFilters(filters = []) { return filters.map(f => `${f.exclude ? 'sauf ' : ''}${f.sourceKey}${f.kind === 'metric' ? '' : ` = ${f.values?.length ? f.values.join(' OU ') : f.value}${f.kind === 'date' ? ` → ${f.value2}` : ''}${f.includeDescendants ? ' (sous-catégories incluses)' : ''}`}`).join(' · '); }
 function catalogEntries(catalog) {
   return [...catalog.metrics.map(m => ({ ...m, kind: 'metric' })), ...catalog.distributions.map(m => ({ ...m, kind: 'distribution' })),
     ...catalog.matrices.map(m => ({ ...m, kind: 'matrix' })), ...catalog.numeric.map(m => ({ ...m, kind: 'histogram' })),
     ...catalog.boxes.map(m => ({ ...m, kind: 'boxplot' })), ...catalog.scatters.map(m => ({ ...m, kind: 'scatter' })),
     ...catalog.weather.map(m => ({ ...m, kind: 'weather' })), ...catalog.metrics.map(m => ({ ...m, kind: 'history', label: `${m.label} · observations` })),
+    ...(catalog.oldest ?? []).map(m => ({ ...m, kind: 'oldest' })), ...(catalog.participation ?? []).map(m => ({ ...m, kind: 'participation' })),
+    ...(catalog.sites ?? []).map(m => ({ ...m, kind: 'sites' })),
     ...['timeline', 'attention', 'quality', 'note'].map(kind => ({ kind, key: '', label: kindNames[kind], available: true })),
     { kind: 'map', key: 'all', label: 'Carte des tickets · tous', available: true }, { kind: 'map', key: 'active', label: 'Carte des tickets · actifs', available: true }];
 }

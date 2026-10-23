@@ -18,15 +18,37 @@ déduite d’un libellé ambigu. Les matrices actives contrôlent les quatre
 statuts, les zéros connus, les participations par groupe et les totaux.
 Les filtres OU de groupes dédoublonnent les tickets ; les exclusions et
 le périmètre commun restent reproductibles, y compris dans le détail.
+Les filtres de catégorie peuvent inclure les descendants séparés par > ;
+les frontières de branches excluent les simples préfixes de mots.
 La météo de volume contrôle les frontières strictes, les seuils manquants,
 la réception, les identités et statuts du relevé avant tout filtrage.
 Les différences de représentation seules ne dégradent pas les volumes.
+Le rappel de fraîcheur est configurable par tableau, à 48 heures dans
+le modèle de service ; il ne modifie ni les volumes ni les couleurs et
+ne s’applique pas aux archives consultées.
+Les plus anciens présentent cinq tickets par groupe ou les dix plus anciens
+du périmètre, sans répéter la même ligne multigroupe dans cette seconde vue.
+L’ouverture, l’ID numérique puis l’index source départagent les tickets.
+Les dates absentes, illisibles ou futures restent dans le stock mais hors
+classement, avec des comptes distincts ; une ouverture du jour a un âge nul.
+Les identifiants source répétés ne sont pas fusionnés silencieusement.
+Les participations distinguent suivis, tâches, intersection et union par
+identité, puis comparent cette union à l’attribution. Les colonnes ne sont
+pas additives. Les listes dynamiques et les alias explicites conservent les
+identités distinctes et rendent visibles les champs absents et non renseignés.
+Les historiques personnels et filtrés rejouent leur périmètre dans chaque
+archive comparable, avec sa date de référence ; les incompatibilités et
+limites de calcul produisent des ruptures plutôt que des valeurs inventées.
 L’import cumulatif conserve exactement les tableaux existants, renomme
 les collisions, refuse les aperçus périmés et limites dépassées, puis
 permet annuler/rétablir. L’import partiel conserve les réglages absents.
 Les sites sans commune sont vérifiés dans la détection, le référentiel,
 les archives, les statistiques, les tournées et le vrai parcours WebView :
 création, simulation, puis rattachement ultérieur sans changement d’ID.
+Le stock par site conserve les sites à zéro et les tickets sans site reconnu,
+respecte le périmètre filtré et propose tous les ID du site à la copie.
+Le seuil d’intervention vaut quatre par défaut et peut être réglé ; les
+sites inconnus demandent une vérification dès le premier ticket.
 L’import de test vérifie CSV/TSV et Excel XLSX/XLSM, choix de feuille et
 ligne d’en-têtes, annulation, fichier changé depuis l’aperçu, cellules
 seulement formatées, durées et formules sans résultat enregistré.
@@ -42,11 +64,24 @@ La fermeture des onglets temporaires couvre une annulation pendant la
 navigation et un premier appel de fermeture volontairement bloqué. Le
 recours doit fermer uniquement la cible possédée, préserver la recherche
 et la fiche conservée, puis permettre une reprise depuis le bilan durable.
+Le dialogue de résolution restitue le focus au contrôle d’ouverture, y
+compris depuis la fiche de travail, et conserve la saisie et le contexte
+pendant le retour d’un précédent vers la liste ou le ticket source.
 Les fixtures du dépôt sont synthétiques. Les captures et configurations
 métier privées ne font pas partie des sources ni des packs publics.
 Les résultats définitifs, nombres de contrôles et SHA-256 sont ceux du
 workflow associé au commit de wad/version.json. Les résultats des versions
 précédentes ci-dessous ne valident pas par avance la version 3.2.2.
+
+RESULTATS LOCAUX CONFIRMES A CETTE ETAPE
+DashboardChecks : 131/131 contrôles réussis.
+DashboardLayoutChecks : 43/43 contrôles réussis.
+ConfigurationChecks : 46/46 contrôles réussis.
+Ces exécutions locales ne constituent pas une nouvelle validation CI,
+un parcours natif Windows ou une preuve de publication des packs 3.2.2.
+Les contrôles ajoutés et leurs résultats définitifs seront rapprochés du
+workflow du commit exact ; les preuves des versions précédentes restent
+identifiées séparément ci-dessous.
 
 COUVERTURE CONSERVEE DE 3.2.1
 La palette de recherche utilise le cache réel et le pont C# : numéro exact

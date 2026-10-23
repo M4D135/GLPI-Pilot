@@ -20,6 +20,8 @@ La couleur ne transforme pas un relevé incomplet en situation maîtrisée. Le c
 
 Les météos existantes, fondées sur des indices de risque, restent distinctes et disponibles. La météo du stock compare un nombre à des seuils ; elle n’est ni une prévision ni un indicateur de productivité.
 
+Un **rappel de fraîcheur** peut être défini pour chaque tableau, en heures. Le modèle de service utilise 48 heures ; laisser le réglage vide désactive le rappel. Au-delà du délai, le tableau demande d’actualiser le relevé sans modifier ses volumes ni ses couleurs météo. Une archive consultée conserve sa date d’observation et ne reçoit pas ce rappel de collecte courante.
+
 ## Pilotage des groupes et des types
 
 Le nouveau modèle **Météo et pilotage du service** fournit 14 widgets répartis dans cinq sections : stock, équipes et types, catégories, ancienneté et activité, analyse et actions. Ses seuils de volume restent à définir selon le service. Les titres, notes, sections, couleurs, tailles et positions sont modifiables avec les commandes existantes.
@@ -35,6 +37,24 @@ Un ticket présent dans deux groupes contribue à deux lignes du tableau des gro
 
 Les filtres de répartition et de ligne de matrice acceptent plusieurs valeurs, une par ligne. Les valeurs d’un filtre sont reliées par **OU**, les filtres successifs par **ET**. Leur union dédoublonne les tickets communs. L’exclusion retire cette union du périmètre commun. Un libellé contenant une ponctuation reste un libellé littéral ; aucun découpage implicite ne crée de groupes. Une source de filtre absente est refusée plutôt qu’ignorée.
 
+Les filtres **Catégorie** et **Catégorie active** disposent d’une option pour inclure les descendants. La racine et ses branches séparées par `>` sont alors retenues ; un simple préfixe de mot ne suffit pas. Cette option appartient à la définition du filtre et est conservée par les copies, imports et recalculs historiques.
+
+## Plus anciens et qualité des dates
+
+La vue **Plus anciens · 5 par groupe** présente le stock de chaque groupe, ses ouvertures classables et les tickets à examiner. La seconde vue présente les **dix plus anciens du périmètre courant** : une même ligne affectée à plusieurs groupes n’y apparaît qu’une fois. L’ordre utilise la date et l’heure d’ouverture, puis l’identifiant numérique, puis l’index source pour départager les égalités. Dans la vue par groupe, les groupes suivent leur ouverture la plus ancienne, puis leur nom ; les groupes sans ouverture exploitable restent à la fin.
+
+Dans la vue par groupe, un ticket multigroupe participe à chacun de ses groupes. Les dates absentes, illisibles ou postérieures au jour de référence restent comprises dans le stock, mais sont comptées séparément et exclues du classement. Une ouverture du même jour a un âge de zéro. L’échelle de couleur est commune au périmètre et représente l’âge relatif ; elle ne mesure aucun SLA. Deux lignes portant le même identifiant restent des occurrences signalées et ne sont pas fusionnées silencieusement, y compris dans la vue des dix plus anciens.
+
+Le nombre de groupes présenté dans l’aperçu de la vue groupée est réglable. Le détail paginé conserve les autres groupes, leurs tickets et les populations correspondant aux problèmes de dates.
+
+## Participations des rédacteurs et attributions
+
+**Participation des rédacteurs · suivis et tâches** compte les tickets par identité : avec suivi, avec tâche, présents dans les deux sources, puis union distincte. Pour une personne, l’union vaut le nombre avec suivi plus le nombre avec tâche moins leur intersection. **Rédaction et attribution par personne** compare cette union avec le champ Technicien attribué. Les colonnes peuvent se chevaucher ; leur somme n’est pas un stock de tickets distincts.
+
+La liste est construite à partir des personnes du relevé : techniciens, demandeurs ou autres comptes. Une **liste facultative de participants et d’alias explicites** permet des regroupements choisis. Deux personnes portant des identifiants différents ne sont pas fusionnées parce que leurs noms se ressemblent. Un rattachement ambigu reste dans « Autres » ; « Non renseigné » décrit séparément l’absence de rédacteur et l’absence d’attribution.
+
+Les champs manquants rendent leurs mesures indisponibles, sans transformer l’absence de colonne en zéro. Les listes brutes de rédacteurs restent accessibles dans leurs répartitions distinctes. Aucun nombre de commentaires, de tâches accomplies, d’heures travaillées ou de résolutions n’est déduit de ces participations.
+
 ## Reprise de 19 champs d’un tableau d’incidents
 
 Les rôles couvrent ID, titre, statut, dernière modification, ouverture, priorité, demandeur, technicien, catégorie, rédacteur des suivis, rédacteur des tâches, TTR avec progression, délai de prise en compte, type, groupe de techniciens, âge déclaré, nombre de groupes déclaré, nombre de rédacteurs déclaré et description.
@@ -49,7 +69,13 @@ Les définitions restent explicites :
 - **TTR + Progression** reste un champ source ; un pourcentage n’est pas interprété comme une échéance. Le délai de prise en compte reste disponible sans lui attribuer une unité non démontrée.
 - Une donnée absente ou non interprétable reste indisponible. Les widgets concernés peuvent être masqués automatiquement ; un zéro calculable reste affiché.
 
-Des captures permettent de reprendre les champs, les seuils et les regroupements visibles. Elles ne donnent pas accès aux formules internes d’un classeur ni aux onglets non fournis. Les modèles métier privés documentent ces limites et conservent leurs règles modifiables.
+Les règles de reprise ont été confrontées aux formules et mécanismes de classeur, puis transposées en calculs et filtres explicites. Une valeur mise en cache dans un fichier ne constitue pas un recalcul de son rapport : des cellules peuvent conserver des résultats anciens ou des erreurs après modification de la source. L’import lit les valeurs enregistrées sans exécuter de formule ni de macro. Les classeurs, inventaires et correspondances métier restent dans les fichiers privés de leur propriétaire ; les modèles publics utilisent des données fictives.
+
+## Historiques de périmètre et retour depuis la résolution
+
+Les historiques et mini-historiques d’indicateurs rejouent l’identité personnelle éventuelle, les filtres communs et les filtres de widget sur chaque archive comparable. Ils n’utilisent pas les indices ni la liste de tickets du relevé courant pour représenter le passé. Les valeurs sont calculées à la date de chaque observation ; un filtre indisponible, une archive incompatible, des données absentes ou une limite de calcul créent une rupture explicite.
+
+Le dialogue de consultation des précédents résolus restitue le focus au contrôle qui l’a ouvert, y compris lorsqu’il est lancé directement depuis la fiche de travail. Le retour entre le ticket de départ, la liste des précédents et un précédent consulté conserve la fiche et la saisie en cours.
 
 ## Explorer un extrait Excel ou CSV hors ligne
 
@@ -91,8 +117,22 @@ Le CSV minimal `Type;Nom;Alias`, avec `Type=Site`, suffit pour un site autonome.
 
 Pour ajouter un référentiel à des lieux déjà configurés, choisir **Fusionner** et examiner les conflits. La fusion s’appuie sur les identifiants, pas sur une déduction de proximité entre noms. Les noms et correspondances propres à une organisation sont fournis dans ses fichiers privés d’import et ne figurent pas dans le dépôt public.
 
+## Stock et planification par site
+
+Le widget **Sites · stock et planification** affiche les sites du référentiel même lorsqu’ils n’ont aucun ticket, puis les tickets sans site reconnu. Il utilise les actifs du périmètre courant, y compris les filtres de groupe. Les sites forment une répartition de ces lignes ; les localisations ambiguës ne sont pas attribuées arbitrairement.
+
+Les cinq premiers identifiants donnent accès à leurs lignes du relevé. **Copier les ID** reprend tous les identifiants renseignés du site, y compris les occurrences répétées de la source, et non seulement les cinq liens visibles. Le détail paginé retrouve les sites au-delà de l’aperçu.
+
+Les préconisations distinguent **Aucun ticket**, **À suivre**, **Intervention à planifier** et **À vérifier**. Pour un site connu, l’intervention est proposée à partir de **quatre tickets par défaut** ; le seuil de vigilance du widget peut remplacer ce repère. Un ticket sans site reconnu demande une vérification dès la première occurrence. Cette aide à la préparation ne réserve ni intervention ni tournée.
+
+## Bilans et rapport HTML
+
+Les bilans CSV et Excel et le rapport HTML comprennent les participations, les plus anciens et le stock par site sur le périmètre commun du tableau. Le HTML conserve les sites à zéro, les valeurs indisponibles et les problèmes de dates ; ses identifiants donnent accès aux lignes source complètes dans le même fichier. Les listes de personnes et filtres propres aux widgets restent décrits dans leur vue interactive.
+
 ## Vérification de la livraison
 
-Les scénarios ciblés couvrent les comparaisons météo aux frontières, les filtres masquant une anomalie source, les unions de groupes, les quatre statuts et leurs zéros, les imports sans perte, les nouveaux rôles et les sites autonomes. Ils contrôlent aussi le choix d’une feuille Excel, les valeurs calculées manquantes, l’annulation, le retour du mode test et les transitions visibles du SSO. Des parcours Chromium utilisent les vrais handlers C#, la persistance et la politique de sécurité des pages de production.
+Les scénarios ciblés couvrent les comparaisons météo aux frontières, les filtres masquant une anomalie source, les unions de groupes, les branches de catégorie, les quatre statuts et leurs zéros, les plus anciens et la qualité de leurs dates, les participations par identité, les imports sans perte et les sites autonomes. Ils contrôlent aussi le choix d’une feuille Excel, les valeurs calculées manquantes, l’annulation, le retour du mode test et les transitions visibles du SSO. Des parcours Chromium utilisent les vrais handlers C#, la persistance et la politique de sécurité des pages de production.
+
+Les résultats locaux confirmés à cette étape sont **DashboardChecks : 131/131**, **DashboardLayoutChecks : 43/43** et **ConfigurationChecks : 46/46**. Le [rapport de vérification](Rapport-verification.txt) distingue ces exécutions locales des validations de livraison ; ces nombres ne constituent ni un nouveau résultat CI ni une validation Windows du pack.
 
 La compilation locale et les tests portables ne constituent pas une validation du pack Windows. La livraison exige le workflow du commit exact, avec les contrôles Windows, les parcours de l’hôte WinForms/WebView2, les packs PROD/DEV, la reconstruction DEV, la mise à jour et le serveur PostgreSQL réel. Les résultats définitifs sont ceux de ce workflow et des journaux qui accompagnent la release. Le portail privé GLPI et son SSO restent à vérifier dans leur environnement réel.

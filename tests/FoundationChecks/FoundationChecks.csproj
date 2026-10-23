@@ -38,5 +38,7 @@
     <Compile Include="../../src/GlpiPilot/Core/PreviewViewPreferences.cs" Link="Core/PreviewViewPreferences.cs" />
     <Compile Include="../../src/GlpiPilot/Core/NamedPreviewStore.cs" Link="Core/NamedPreviewStore.cs" />
     <Compile Include="../../src/GlpiPilot/Core/AlertService.cs" Link="Core/AlertService.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardParticipation.cs" Link="Core/DashboardParticipation.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardOldestGroups.cs" Link="Core/DashboardOldestGroups.cs" />
   </ItemGroup>
 </Project>

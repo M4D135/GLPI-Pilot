@@ -46,6 +46,16 @@ Test("Service preset combines stock weather real analytical sources and editable
     Assert(board.Widgets.Any(widget => widget.Kind == "note" && widget.Section == "actions") && board.Widgets.Any(widget => widget.Kind == "attention"));
 });
 Test("Deep copy isolates nested boards and widgets", () => { var a = Layout(); var b = a.Copy(); b.Boards[0].Widgets[0].Title = "B"; b.Boards[0].Name = "B"; Assert(a.Boards[0].Name == "Test" && a.Boards[0].Widgets[0].Title == ""); });
+Test("Freshness reminders and participant rosters remain configurable through copy and JSON", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0]; board.FreshnessWarningHours = 48;
+    board.Widgets.Add(new() { Kind = "participation", SourceKey = "comparison", ParticipationRoster = new() { new() { Identity = "ID:123", Name = "Alex", Aliases = new() { "Alias explicite" } } } });
+    var copy = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(layout.Copy()))!; copy.Validate();
+    Assert(copy.Boards[0].FreshnessWarningHours == 48 && copy.Boards[0].Widgets[0].ParticipationRoster[0].Aliases.Single() == "Alias explicite");
+    copy.Boards[0].Widgets[0].ParticipationRoster[0].Aliases.Clear(); Assert(board.Widgets[0].ParticipationRoster[0].Aliases.Count == 1);
+    copy.Boards[0].FreshnessWarningHours = 0; Invalid(copy.Validate); copy.Normalize(); copy.Validate(); Assert(copy.Boards[0].FreshnessWarningHours is null);
+    board.Widgets[0].ParticipationRoster[0].Name = ""; board.Widgets[0].ParticipationRoster[0].Identity = ""; Invalid(layout.Validate);
+});
 Test("Settings deep copy preserves local identity without sharing layout", () => { var a = new DashboardSettings { Layout = Layout(), PersonalTechnician = "A" }; var b = a.Copy(); b.Layout.Boards.Clear(); Assert(a.Layout.Boards.Count == 1 && b.PersonalTechnician == "A"); });
 Test("Portable layout JSON round-trips all presentation settings", () => { var a = Layout("empty"); a.Boards[0].Widgets.Add(new() { Kind = "note", Note = "Ligne 1\nLigne 2", Span = 7, Height = 440, Locked = true, Hidden = true, Style = "accent", Accent = "teal", Presentation = "compact", Title = "Note" }); var b = JsonSerializer.Deserialize<DashboardLayoutSettings>(JsonSerializer.Serialize(a))!; b.Validate(); Assert(b.Boards[0].Widgets[0].Note == "Ligne 1\nLigne 2" && b.Boards[0].Widgets[0].Locked && b.Boards[0].Widgets[0].Hidden && b.Boards[0].Widgets[0].Span == 7); });
 Test("Volume weather JSON preserves independent card thresholds and strict boundaries", () =>

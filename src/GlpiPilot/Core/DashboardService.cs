@@ -327,6 +327,8 @@ public static class DashboardService
         var invitedRows = Has("satisfaction-invited") ? records.Where(r => { var raw = Cell(data.Rows[r.Index], "satisfaction-invited"); return Normalize(raw) is "oui" or "yes" or "true" or "1" || TrySourceDate(raw, settings, now.Offset, out _); }).Select(r => r.Index).ToArray() : Array.Empty<int>();
         Number("satisfaction-response-rate", "Réponse aux enquêtes envoyées", Has("satisfaction") && Has("satisfaction-invited") && invitedRows.Length > 0 ? 100d * scoreRows.Intersect(invitedRows).Count() / invitedRows.Length : null,
             "%", "Notes exploitables parmi les invitations explicitement datées ou marquées envoyées. Les invitations inconnues restent hors du dénominateur.", invitedRows.Length, scoreRows.Intersect(invitedRows).ToArray());
+        result.Participation = DashboardParticipationService.Build(data, settings, result, ct);
+        result.OldestGroups = DashboardOldestGroups.Calculate(data, settings, result, topCount: 10, ct: ct);
         return result;
 
         void AddAnalysisSeries()
@@ -801,11 +803,22 @@ public static class DashboardService
                 var distribution = snapshot.Distributions.FirstOrDefault(x => x.Key == filter.SourceKey);
                 if (distribution?.Available != true) throw new System.IO.InvalidDataException("Répartition du filtre indisponible : " + filter.SourceKey);
                 var selected = filter.Selections().ToHashSet(StringComparer.OrdinalIgnoreCase);
-                rows = distribution.Buckets.Where(x => selected.Contains(x.Label)).SelectMany(x => x.Rows).Distinct().ToArray();
+                rows = distribution.Buckets.Where(x => filter.IncludeDescendants
+                    ? selected.Any(category => CategoryInBranch(x.Label, category)) : selected.Contains(x.Label))
+                    .SelectMany(x => x.Rows).Distinct().ToArray();
             }
             if (filter.Exclude) scope.ExceptWith(rows); else scope.IntersectWith(rows);
         }
         return scope.Order().ToArray();
+    }
+
+    /// <summary>Category levels are delimited by >; lexical prefixes are never descendant categories.</summary>
+    public static bool CategoryInBranch(string candidate, string branch)
+    {
+        var child = candidate.Normalize(NormalizationForm.FormC).Split('>').Select(part => part.Trim()).ToArray();
+        var parent = branch.Normalize(NormalizationForm.FormC).Split('>').Select(part => part.Trim()).ToArray();
+        return parent.Length <= child.Length && parent.All(part => part.Length > 0) && child.All(part => part.Length > 0)
+            && parent.Select((part, index) => string.Equals(part, child[index], StringComparison.OrdinalIgnoreCase)).All(matches => matches);
     }
 
     public static DashboardDistribution Histogram(DashboardNumericSeries series, IReadOnlyList<double> edges)
@@ -871,7 +884,10 @@ public static class DashboardService
         + snapshot.Matrices.Sum(x => Math.Max(1L, x.Cells.Count))
         + snapshot.BoxSeries.Sum(x => Math.Max(1L, 6L * x.Boxes.Count))
         + snapshot.Scatters.Sum(x => Math.Max(1L, 2L * x.Points.Count))
-        + snapshot.History.Sum(x => Math.Max(1L, x.Points.Count));
+        + snapshot.History.Sum(x => Math.Max(1L, x.Points.Count))
+        + 3L + 5L * snapshot.Participation.Participants.Count + snapshot.Participation.Warnings.Count
+        + (snapshot.OldestGroups is not { } oldest ? 0L : !oldest.Available ? 1L : 7L + oldest.Oldest.Count + oldest.Groups.Sum(group => 6L + group.Oldest.Count))
+        + 1L + (snapshot.SiteWorkload.Available ? snapshot.SiteWorkload.Sites.Count : 0);
 
     public static ExtractionResult ToExport(DashboardSnapshot snapshot)
     {
@@ -934,6 +950,52 @@ public static class DashboardService
                 point.Comparable && point.Complete && point.Value.HasValue ? point.Value.Value.ToString("G", CultureInfo.InvariantCulture) : "Non comparable",
                 series.Unit, point.Rows.ToString(), point.Note + " " + series.Explanation);
         }
+        var participation = snapshot.Participation;
+        string Count(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "Non disponible";
+        Add("Participation", "Population active", participation.StatusAvailable ? Count(participation.Population) : "Non disponible", participation.Grain, "", participation.Explanation);
+        foreach (var person in participation.Participants)
+            foreach (var (label, measure) in new[] { ("Suivis", person.Followups), ("Tâches", person.Tasks), ("Suivis et tâches", person.Both), ("Rédacteurs · union", person.Writers), ("Attributions", person.Assigned) })
+                Add("Participation", person.Name + " · " + label, Count(measure.Count), participation.Grain, Count(participation.Population),
+                    participation.Explanation + " Identité : " + person.Key + ".");
+        Add("Participation", "Sans rédacteur renseigné", Count(participation.WithoutWriters.Count), participation.Grain, Count(participation.Population), participation.Explanation);
+        Add("Participation", "Sans attribution renseignée", Count(participation.WithoutAssignment.Count), participation.Grain, Count(participation.Population), participation.Explanation);
+        foreach (var warning in participation.Warnings) Add("Participation · limites", "Avertissement", "", "", "", warning);
+        if (snapshot.OldestGroups is { } oldest)
+        {
+            if (!oldest.Available) Add("Plus anciens", "Disponibilité", "Non disponible", "", "", oldest.UnavailableReason);
+            else
+            {
+                foreach (var (label, count) in new[] { ("Stock actif", oldest.Count), ("Ouvertures classables", oldest.DatedCount),
+                    ("Date absente", oldest.MissingDateCount), ("Date invalide", oldest.InvalidDateCount), ("Date future", oldest.FutureDateCount), ("Statut inconnu exclu", oldest.UnknownStatusCount) })
+                    Add("Plus anciens", label, Count(count), oldest.Grain, Count(oldest.Count), oldest.Explanation);
+                Add("Plus anciens", "Âge maximal", Count(oldest.MaximumAgeDays), "jours calendaires", Count(oldest.DatedCount),
+                    "Jour de référence : " + oldest.ReferenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ". " + oldest.Explanation);
+                for (var index = 0; index < oldest.Oldest.Count; index++)
+                {
+                    var ticket = oldest.Oldest[index];
+                    Add("Plus anciens · périmètre", $"{index + 1}. {ticket.Id} · {ticket.Title}", Count(ticket.AgeDays), "jours calendaires", Count(oldest.DatedCount),
+                        $"Ligne du relevé {ticket.Index + 1} ; ouverture {ticket.OpenedAt.ToString("O", CultureInfo.InvariantCulture)} ; statut {ticket.Status} ; priorité {ticket.Priority} ; attribution {ticket.Assignee}. Classement unique du périmètre ; une ligne multigroupe n’est pas répétée.");
+                }
+                foreach (var group in oldest.Groups)
+                {
+                    var section = "Plus anciens · " + group.Label;
+                    foreach (var (label, count) in new[] { ("Stock actif", group.Count), ("Ouvertures classables", group.DatedCount),
+                        ("Date absente", group.MissingDateCount), ("Date invalide", group.InvalidDateCount), ("Date future", group.FutureDateCount) })
+                        Add(section, label, Count(count), oldest.Grain, Count(group.Count), oldest.Explanation);
+                    Add(section, "Âge maximal", Count(group.MaximumAgeDays), "jours calendaires", Count(group.DatedCount), oldest.Explanation);
+                    for (var index = 0; index < group.Oldest.Count; index++)
+                    {
+                        var ticket = group.Oldest[index];
+                        Add(section, $"{index + 1}. {ticket.Id} · {ticket.Title}", Count(ticket.AgeDays), "jours calendaires", Count(group.DatedCount),
+                            $"Ligne du relevé {ticket.Index + 1} ; ouverture {ticket.OpenedAt.ToString("O", CultureInfo.InvariantCulture)} ; statut {ticket.Status} ; priorité {ticket.Priority} ; attribution {ticket.Assignee}. " + oldest.Explanation);
+                    }
+                }
+            }
+        }
+        var sites = snapshot.SiteWorkload;
+        Add("Sites", sites.Available ? "Stock actif" : "Disponibilité", sites.Available ? Count(sites.Population) : "Non disponible", sites.Grain, "", sites.Available ? sites.Explanation : sites.UnavailableReason);
+        if (sites.Available)
+            foreach (var site in sites.Sites) Add("Sites", site.Label, Count(site.Rows.Length), sites.Grain, Count(sites.Population), sites.Explanation);
         foreach (var col in snapshot.Columns) Add("Correspondances", col.Label, col.Header, "", col.StateLabel, col.Index.HasValue ? "Colonne utilisée" : "Indisponible");
         foreach (var warning in snapshot.Warnings) Add("Qualité et limites", "Avertissement", "", "", "", warning);
         return data;

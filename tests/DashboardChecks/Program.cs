@@ -459,6 +459,26 @@ Test("Source quality warnings survive dashboard and exported bilan", () =>
     var s = Sample(); s.Warnings.Add("Import : limite de lignes atteinte."); var d = Calc(s);
     Check(d.Warnings.Contains(s.Warnings[0]) && DashboardService.ToExport(d).Warnings.Contains(s.Warnings[0]));
 });
+Test("Bilan includes participation oldest rows and zero sites with exact export preflight", () =>
+{
+    var source = new ExtractionResult { Headers = new() { "ID", "Statut", "Date d'ouverture", "Attribué à - Groupe de techniciens", "Suivis - Rédacteur", "Tâches - Rédacteur", "Attribué à - Technicien" },
+        Rows = new() { new[] { "12", "Nouveau", "01/01/2026", "Groupe test", "Alice (1)", "Alice (1)", "Bob (2)" },
+            new[] { "13", "En cours (attribué)", "date invalide", "Groupe test", "", "", "" } } };
+    var snapshot = Calc(source);
+    snapshot.SiteWorkload = new() { Available = true, Grain = snapshot.Grain, Population = 2,
+        Sites = new[] { new DashboardSiteWorkloadEntry("site:test", "Site test", false, new[] { 0 }),
+            new DashboardSiteWorkloadEntry("site:zero", "Site vide", false, Array.Empty<int>()),
+            new DashboardSiteWorkloadEntry("unmatched:", "Site inconnu", true, new[] { 1 }) } };
+    var export = DashboardService.ToExport(snapshot);
+    Check(export.Rows.Any(row => row[0] == "Participation" && row[1] == "Alice (1) · Rédacteurs · union" && row[2] == "1"));
+    Check(export.Rows.Any(row => row[0] == "Plus anciens · Groupe test" && row[1] == "Date invalide" && row[2] == "1"));
+    Check(export.Rows.Any(row => row[0] == "Plus anciens · Groupe test" && row[1].StartsWith("1. 12 · ") && row[5].Contains("Ligne du relevé 1")));
+    Check(export.Rows.Any(row => row[0] == "Sites" && row[1] == "Site vide" && row[2] == "0"));
+    Check(export.Rows.Count == DashboardService.EstimatedExportRows(snapshot));
+    var unavailable = Calc(new ExtractionResult { Headers = new() { "ID" }, Rows = new() { new[] { "1" } } });
+    Check(DashboardService.ToExport(unavailable).Rows.Count == DashboardService.EstimatedExportRows(unavailable));
+    Check(DashboardService.ToExport(unavailable).Rows.Any(row => row[0] == "Plus anciens" && row[2] == "Non disponible"));
+});
 Test("Bilan Excel is a readable package with values and information sheet", () =>
 {
     var path = Path.Combine(Path.GetTempPath(), "GLPI-DashboardChecks-" + Guid.NewGuid().ToString("N") + ".xlsx");
@@ -1165,6 +1185,60 @@ Test("Recent widgets and analytical presentation options survive deep copy and b
     var saved = System.Text.Json.JsonSerializer.Deserialize<DashboardLayoutSettings>(System.Text.Json.JsonSerializer.Serialize(settings))!; saved.Validate();
     Check(saved.Boards[0].Widgets[0].ParetoThresholdPercent == 63 && saved.Boards[0].Widgets[0].StackedMode == "volume" && saved.Boards[0].Widgets[0].StartNewRow);
 });
+
+Test("Category branch filters include descendant levels without lexical-prefix collisions", () =>
+{
+    var source = new ExtractionResult { Headers = new() { "ID", "Statut", "Catégorie" }, Complete = true,
+        Rows = new() {
+            new[] { "1", "Nouveau", "Matériel" }, new[] { "2", "Nouveau", "Matériel > Portable" },
+            new[] { "3", "Nouveau", "Matériel > Portable > Batterie" }, new[] { "4", "Nouveau", "Matériels" },
+            new[] { "5", "Nouveau", "Autre > Matériel" }, new[] { "6", "Nouveau", "Logiciel" },
+            new[] { "7", "Nouveau", "Matériel>  Écran " }, new[] { "8", "Nouveau", "Matériel >> Invalide" }
+        } };
+    var snapshot = Calc(source);
+    var filter = new DashboardScopeFilter { SourceKey = "category", Value = "matériel", IncludeDescendants = true };
+    Check(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 0, 1, 2, 6 }));
+    filter.IncludeDescendants = false;
+    Check(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 0 }));
+    filter.IncludeDescendants = true; filter.Values = new() { "Matériel", "Matériel > Portable", "Logiciel" };
+    Check(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 0, 1, 2, 5, 6 }));
+    filter.Exclude = true;
+    Check(DashboardService.ResolveScope(snapshot, new[] { filter }).SequenceEqual(new[] { 3, 4, 7 }));
+});
+Test("Category branch filters preserve options through serialization and reject unrelated dimensions", () =>
+{
+    var filter = new DashboardScopeFilter { SourceKey = "active-category", Value = "A > B", IncludeDescendants = true };
+    var copy = System.Text.Json.JsonSerializer.Deserialize<DashboardScopeFilter>(System.Text.Json.JsonSerializer.Serialize(filter))!;
+    DashboardScopeFilter.ValidateList(new[] { copy }); Check(copy.Copy().IncludeDescendants);
+    foreach (var invalid in new[] {
+        new DashboardScopeFilter { SourceKey = "assignee", Value = "A", IncludeDescendants = true },
+        new DashboardScopeFilter { Kind = "matrix-row", SourceKey = "group-status", Value = "A", IncludeDescendants = true },
+        new DashboardScopeFilter { SourceKey = "category", Value = "A >> B", IncludeDescendants = true }
+    })
+    {
+        var rejected = false;
+        try { DashboardScopeFilter.ValidateList(new[] { invalid }); } catch (InvalidDataException) { rejected = true; }
+        Check(rejected);
+    }
+});
+Test("Ordered team weather filters allocate a multigroup row to only the first matching team", () =>
+{
+    var source = new ExtractionResult { Headers = new() { "ID", "Statut", "Attribué à - Groupe de techniciens" }, Complete = true,
+        Rows = new() { new[] { "1", "Nouveau", "Equipe A;Equipe B" }, new[] { "2", "En attente", "Equipe B;Equipe C" },
+            new[] { "3", "En cours (Attribué)", "Equipe C" }, new[] { "4", "Nouveau", "Autre" } } };
+    var snapshot = Calc(source); var assigned = new List<int>();
+    var groups = new[] { "Equipe A", "Equipe B", "Equipe C" };
+    for (var index = 0; index < groups.Length; index++)
+    {
+        var filters = new List<DashboardScopeFilter> { new() { Kind = "matrix-row", SourceKey = "group-status", Value = groups[index] } };
+        if (index > 0) filters.Add(new() { Kind = "matrix-row", SourceKey = "group-status", Values = groups.Take(index).ToList(), Exclude = true });
+        var rows = DashboardService.ResolveScope(snapshot, filters); Check(rows.SequenceEqual(new[] { index })); assigned.AddRange(rows);
+    }
+    Check(assigned.Distinct().Count() == assigned.Count && !assigned.Contains(3));
+});
+
+Test("Oldest groups preserve calendar ages, source scope, date quality and multigroup participation", () => OldestGroupChecks.Run(Check));
+Test("Author participation preserves union, intersection, assignment, identities and unavailable fields", () => ParticipationChecks.Run(Check));
 
 int failures = 0;
 foreach (var (name, run) in tests)

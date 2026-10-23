@@ -3,16 +3,18 @@ import {createTicketResolution} from './library-resolution.js';
 
 /** Work tickets use their own storage key. Resolve the validated ID and URL as a
  * pair, so the same number on another GLPI installation can never stand in. */
-export async function openLibraryPrecedents({api, signal}, reference) {
+export async function openLibraryPrecedents({api, signal}, reference, options = {}) {
   if (signal?.aborted) return;
+  // The initiating control may blur while this lookup disables it. Its caller
+  // retains the exact control instead of consulting activeElement after await.
   const result = await api.call('library.reference', {id: reference.id, url: reference.url}, {signal});
   if (signal?.aborted) return;
-  if (result.found) return openLibraryTicket({api, signal}, result.key, {resolution: true});
+  if (result.found) return openLibraryTicket({api, signal}, result.key, {resolution: true, returnFocus: options.returnFocus});
   const modal = dialog('Ticket absent de la bibliothèque', el('div', {class: 'library-reference-missing'},
     el('p', {}, el('strong', {class: 'library-ticket-id', text: `Ticket ${result.ticket.id}`}), ' · ', result.installation),
     el('p', {text: 'Aucune fiche de ce ticket n’est conservée dans le cache de cette installation GLPI. Recueillez-la dans la Bibliothèque pour rechercher ses précédents.'}),
     el('p', {class: 'help', text: 'Votre fiche de travail et votre saisie restent ouvertes.'})),
-    [{label: 'Revenir à la fiche', action: close => close()}]);
+    [{label: 'Revenir à la fiche', action: close => close()}], {returnFocus: options.returnFocus});
   const abort = () => modal.close();
   signal?.addEventListener('abort', abort, {once: true});
   modal.element.addEventListener('pilot:closed', () => signal?.removeEventListener('abort', abort), {once: true});
@@ -32,7 +34,7 @@ export async function openLibraryTicket({api, signal}, key, options = {}) {
     {label: 'Retrouver des précédents résolus', action: () => showResolution()},
     {label: 'Copier la référence', action: () => sourceUrl ? call('app.copy', {text: sourceUrl}) : undefined},
     {label: 'Ouvrir dans GLPI', action: () => sourceUrl ? call('library.open', {key: activeKey}) : undefined}
-  ]);
+  ], {returnFocus: options.returnFocus});
   modal.element.classList.add('library-ticket-modal');
   const actions = [...modal.element.querySelectorAll('.modal-actions button')];
   actions.forEach(control => { control.disabled = true; });

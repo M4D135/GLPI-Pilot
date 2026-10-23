@@ -53,7 +53,7 @@ export async function renderTickets(ctx) {
       toolbar(badge(ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue'), ticket.personal.offline ? badge('Copie conservée') : null,
         button('Actualiser la fiche', run(ctx, async () => { current = await call(ctx, 'workplace.ticket.read', { ticketKey: key }); await showReader(); }), { disabled: !ticket.canRead }),
         button('Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); }), { disabled: !ticket.canRead }),
-        button('Chercher des solutions similaires', run(ctx, () => openLibraryPrecedents({api: ctx.api, signal: ctx.signal}, {id: ticket.personal.id, url: ticket.personal.url})), { icon: 'search' }))),
+        button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({api: ctx.api, signal: ctx.signal}, {id: ticket.personal.id, url: ticket.personal.url}, {returnFocus: event.currentTarget})), { icon: 'search' }))),
       !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(w => note(w)),
       ticket.changes ? note(ticket.changes.summary + (ticket.changes.rowComparisonComplete ? '' : ' Comparaison de lignes incomplète.')) : null,
       tabs(readerPages, readerPage, run(ctx, async page => { readerPage = page; await savePosition(); await showReader(); })), body);

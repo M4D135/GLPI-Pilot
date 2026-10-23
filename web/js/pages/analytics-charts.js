@@ -1,4 +1,7 @@
 import { el, button, card, toolbar, badge, table, empty, caption, command, details, columnStateLabel, number, formatNumber, formatDate, svg, sparkline } from './analytics-ui.js';
+import { renderOldestGroups } from './analytics-oldest.js';
+import { renderParticipation } from './analytics-participation.js';
+import { renderSites } from './analytics-sites.js';
 
 const palette = ['var(--c1, #066ddb)', 'var(--c2, #8265c9)', 'var(--c3, #20877e)', 'var(--c4, #c45586)', 'var(--c5, #31748b)', 'var(--c6, #bf7334)', 'var(--c7, #9867ac)', 'var(--c8, #667b35)'];
 function valueOf(bucket) { return bucket.isAggregate ? bucket.value : bucket.value ?? bucket.count; }
@@ -62,6 +65,13 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
     body.append(table(data.rows, [{ key: 'id', label: 'Ticket' }, { key: 'title', label: 'Titre' }, { key: 'status', label: 'Statut' }, { key: 'reasons', label: 'Points d’attention' }],
       { key: 'index', maxRows: 30, onSelect: row => ctx.navigate('tickets', { rowIndex: row.index, revision: ctx.analyticsRevision }) }));
     if (data.total > data.rows.length) body.append(command(ctx, `${formatNumber(data.total)} lignes à examiner`, () => more('attention', '')));
+  } else if (setting.kind === 'oldest') {
+    body.append(renderOldestGroups(ctx, data, activate));
+    if (data.total > data.groups.length) body.append(command(ctx, `Tous les groupes (${formatNumber(data.total)})`, () => more('oldest', setting.sourceKey)));
+  } else if (setting.kind === 'participation') {
+    body.append(renderParticipation(ctx, data, setting, activate, more));
+  } else if (setting.kind === 'sites') {
+    body.append(renderSites(ctx, data, setting, activate, more, options.copyIds));
   } else if (setting.kind === 'quality') {
     body.append(qualityOverview(ctx, data, options));
   } else if (setting.kind === 'note') {

@@ -26,5 +26,7 @@
     <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="Core/DashboardService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="Core/DashboardModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportService.cs" Link="Core/ExportService.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardParticipation.cs" Link="Core/DashboardParticipation.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardOldestGroups.cs" Link="Core/DashboardOldestGroups.cs" />
   </ItemGroup>
 </Project>

@@ -115,8 +115,8 @@ export function table(rows,columns,options={}) {
  if(rows.length>list.length)wrapper.append(el('p',{class:'help',text:`${formatNumber(list.length)} lignes affichées sur ${formatNumber(rows.length)}. Affinez le filtre.`}));return wrapper;
 }
 let dialogCount=0;
-export function dialog(title,content,actions=[]) {
- const previous=document.activeElement;const node=el('dialog',{class:'modal','aria-label':title});const close=(value)=>{if(!node.isConnected)return;node.close();node.remove();dialogCount--;window.dispatchEvent(new CustomEvent('pilot:editor',{detail:dialogCount>0}));previous?.focus?.();node.dispatchEvent(new CustomEvent('pilot:closed',{detail:value}));};
+export function dialog(title,content,actions=[],options={}) {
+ const previous=options.returnFocus??document.activeElement;const node=el('dialog',{class:'modal','aria-label':title});const close=(value)=>{if(!node.isConnected)return;node.close();node.remove();dialogCount--;window.dispatchEvent(new CustomEvent('pilot:editor',{detail:dialogCount>0}));previous?.focus?.();node.dispatchEvent(new CustomEvent('pilot:closed',{detail:value}));};
  const heading=el('div',{class:'modal-heading'},el('h2',{text:title}),button('Fermer',()=>close(),{icon:'close'}));
  node.append(heading,el('div',{class:'modal-body'},content),el('div',{class:'modal-actions'},...actions.map(action=>button(action.label,()=>action.action?.(close),action))));
  node.addEventListener('cancel',event=>{event.preventDefault();close();});document.body.append(node);dialogCount++;node.showModal();window.dispatchEvent(new CustomEvent('pilot:editor',{detail:true}));return{close,element:node};

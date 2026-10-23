@@ -41,6 +41,14 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Le modèle « Météo et pilotage du service »** ajoute un point de départ modifiable : stock actif, demandes et incidents, attente, absence de groupe, affectations multiples, rédacteurs renseignés, groupes × statuts, types × statuts, catégories, ancienneté et inactivité. Les matrices conservent les quatre statuts actifs, y compris leurs zéros connus, avec un total par ligne. Un ticket multigroupe compte une fois dans chacun de ses groupes ; ses affectations multiples ne multiplient pas le stock global. Les lignes portant un identifiant répété restent des occurrences signalées, sans déduplication silencieuse. Un filtre d’équipe peut réunir plusieurs groupes par **OU**, sans compter deux fois la même ligne commune.
 
+**Les plus anciens ont deux vues : cinq tickets par groupe ou les dix premiers du périmètre.** Dans la seconde, une même ligne affectée à plusieurs groupes n’apparaît qu’une fois. Le classement utilise l’ouverture, puis l’identifiant numérique ; son échelle de couleur décrit l’âge relatif, sans seuil SLA. Les tickets sans date, avec une date illisible ou future restent dans le stock et sont signalés séparément, sans recevoir un âge inventé. Le détail retrouve les lignes du périmètre.
+
+**Les participations distinguent rédaction et attribution.** Un widget compte, par personne, les tickets avec suivi, avec tâche, les deux et leur union ; un autre compare cette union aux tickets attribués au technicien. La liste est dynamique, avec une liste de personnes et des alias explicites facultatifs. Les homonymes ou identités incompatibles ne sont pas rapprochés arbitrairement. Ces comptes ne mesurent ni les actions effectuées ni la productivité.
+
+**Sites · stock et planification** conserve les sites du référentiel même à zéro, ainsi que les tickets sans site reconnu. Les cinq premiers identifiants ouvrent leurs lignes ; **Copier les ID** reprend la liste complète du site dans le périmètre courant. Un site connu propose une intervention à partir de quatre tickets par défaut, seuil réglable ; un site inconnu demande une vérification dès le premier ticket. Aucune intervention n’est créée automatiquement.
+
+Les filtres de catégorie peuvent inclure les **sous-catégories délimitées par `>`**. Un rappel de fraîcheur se règle par tableau ; le modèle de service le fixe à **48 heures**. Ce rappel demande une actualisation sans modifier les volumes ni les couleurs météo. Le parcours des précédents résolus restitue également le focus au contrôle de départ lorsque son dialogue se ferme.
+
 **Les colonnes d’un rapport métier sont mieux reprises.** Suivis et tâches ont chacun leur rôle de rédacteur ; description, TTR avec progression, délai de prise en compte et compteurs déclarés sont reconnus séparément. Les âges et nombres déclarés restent distincts des mesures recalculées. Aucun pourcentage TTR n’est transformé en échéance et aucune unité de durée n’est inventée. Les widgets sans données utilisables restent masqués automatiquement, selon le réglage du tableau.
 
 **Importer une disposition propose « Ajouter à mes tableaux ».** L’aperçu présente le nombre de tableaux et les éventuels renommages, préserve les tableaux existants et permet l’annulation. Un fichier de configuration partiel propose seulement les sections qu’il contient et conserve les réglages absents. Les sites peuvent être reconnus par leurs noms et variantes **sans commune renseignée**, puis rattachés ultérieurement sans changer d’identité ; aucun emplacement cartographique n’est inventé.
@@ -129,7 +137,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - Zoom **75–150 %**, boutons − / 100 % / + et raccourcis ; densité compacte, équilibrée ou confortable, colonnes figées et mémorisation de la fenêtre.
 - Navigation dépliable ou réduite en rail, tiroir sur fenêtre étroite, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre. Les commandes restent accessibles au clavier et respectent la réduction des animations de l’application ou du système.
 - Recherche, filtres par colonne et tri multiple calculés en C# sur **toutes les lignes chargées**, avec pages d’affichage bornées. Vues nommées mémorisant filtres, recherche, tri et présentation pour la structure du relevé.
-- Export complet ou export explicite de la vue filtrée ; import local CSV et XLSX. Le fichier natif reçu reste intact.
+- Export complet ou export explicite de la vue filtrée ; import local CSV, TSV, TXT, XLSX et XLSM en mode test. Le fichier natif reçu reste intact.
 
 ### Dashboard global et espace personnel
 
@@ -137,9 +145,10 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - Poignées de déplacement et de redimensionnement à la souris ou au clavier, dimensions précises dans le formulaire, édition groupée et annulation/rétablissement. Les dispositions existantes au format 1 sont reprises sans supprimer leurs widgets ni leurs sections repliées.
 - Catalogue avec favoris persistants, disponibilité réelle des sondes, filtres communs et par widget, filtres croisés, contextes nommés et comparaison A/B.
 - Volumes, actifs, attentes, priorités, échéances, affectations, ancienneté, dates, lieux et couverture des données ; méthodes et effectifs accessibles.
+- Cinq plus anciens par groupe ou dix du périmètre, participations des rédacteurs et comparaison avec les attributions ; listes dynamiques ou regroupements par alias explicites.
 - Anneaux, jauges, histogrammes, matrices colorées, barres empilées, Pareto, boîtes statistiques, médiane/P90 et nuage âge × échéance.
 - Météos de santé du relevé configurables : synthèse, échéances, qualité, localisation. Elles ne représentent pas la météo climatique.
-- Courbes et mini-historiques sur archives comparables, avec ruptures explicites. Export PNG/PDF avec date, filtres et complétude ; bilan CSV/Excel et rapport HTML autonome complet.
+- Courbes et mini-historiques sur archives comparables : identité personnelle, filtres communs et filtres de widget rejoués sur chaque archive, avec ruptures explicites. Export PNG/PDF avec date, filtres et complétude ; bilan CSV/Excel et rapport HTML autonome complet.
 
 ### Techniciens et travail personnel
 
@@ -155,6 +164,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - Régions, départements, secteurs, hiérarchie libre, sites et bâtiments ; adresses et coordonnées facultatives, priorités des sources, conditions et exclusions des règles, simulateur avec termes surlignés et preuves.
 - File des lieux à vérifier, corrections locales par installation et identifiant unique ; import CSV du référentiel avec comparatif avant application.
 - Colonnes enrichies, indicateurs de couverture et répartitions par ville/site/territoire.
+- Tableau des sites avec stock actif, zéros, inconnus, préconisations configurables et copie de tous les identifiants du périmètre.
 - Tournées datées à partir d’un panier explicite, états et historique motivé, départ/retour, durées, calendriers de sites et étapes verrouillées. Répartition sur plusieurs jours et techniciens selon compétences, absences, plages de présence et budgets du matin et de l’après-midi ; les capacités inconnues restent exclues de la proposition.
 - Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs par défaut. Un service OSRM compatible peut fournir distances et durées routières après configuration et consentement ; sa provenance et sa date restent visibles.
 

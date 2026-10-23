@@ -56,7 +56,8 @@ internal static partial class Program
         try
         {
             await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); CheckScopedHistory();
-            if (args.Contains("--web")) await CheckWeb(args);
+            await CheckStockViewsRuntime();
+            if (args.Contains("--web")) { await CheckWeb(args); await CheckStockViewsWeb(args); }
             Console.WriteLine($"{_passed}/{_passed} analytics bridge and scoped-history checks passed.");
         }
         finally { Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", null); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", null); try { Directory.Delete(_root, true); } catch (IOException) { } }

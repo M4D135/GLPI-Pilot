@@ -62,8 +62,9 @@ export async function rowDialog(ctx, op, args, title = 'Lignes du relevé', expl
         dialog(`Cellule · ${cell.header}`, el('div', {}, caption(`Ligne ${row.index + 1} · rôle ${cell.role || 'non attribué'}`),
           el('h3', { text: 'Valeur brute' }), el('pre', { class: 'analytics-preview', text: cell.raw }),
           el('h3', { text: 'Interprétation' }), el('pre', { class: 'analytics-preview', text: cell.interpreted ?? 'Non interprétable' })));
-      }, { class: 'analytics-cell-value', title: 'Voir la valeur brute complète et son interprétation' }) })),
-      { key: 'open', label: 'Consulter', render: row => command(ctx, 'Ticket', () => { modal.close(); ctx.navigate('tickets', { rowIndex: row.index, revision: page.revision }); }) }];
+      }, { class: 'analytics-cell-value', title: 'Voir la valeur brute complète et son interprétation' }) }))];
+    if (!ctx.state.session?.testMode) columns.push({ key: 'open', label: 'Consulter', render: row => command(ctx, 'Ticket',
+      () => { modal.close(); ctx.navigate('tickets', { rowIndex: row.index, revision: page.revision }); }) });
     if (explain) columns.push({ key: 'explain', label: 'Décision', render: row => command(ctx, 'Pourquoi ?', async () => {
       const result = await call(ctx, 'queries.explain', { ...explain, rowIndex: row.index });
       dialog('Décision de la requête pour cette ligne', el('div', {}, badge(result.decision), caption(result.logic), caption(result.message),
@@ -96,7 +97,10 @@ export function filterEditor(catalog, initial = []) {
     const alternativesField = field('Valeurs acceptées · une par ligne', alternatives);
     const firstField = field('Début inclus', first); const lastField = field('Fin incluse', last);
     const exclude = checkbox('Exclure', value.exclude ?? false);
+    const descendants = checkbox('Inclure les sous-catégories', value.includeDescendants ?? false);
     const row = el('div', { class: 'analytics-filter-row' });
+    const categoryBranchAvailable = () => kind.value === 'distribution' && ['category', 'active-category'].includes(source.value);
+    const refreshDescendants = () => { descendants.element.hidden = !categoryBranchAvailable(); };
     const refresh = () => {
       const previous = source.value || value.sourceKey;
       const available = kind.value === 'metric' ? catalog.metrics : kind.value === 'date' ? catalog.dates : kind.value === 'matrix-row' ? catalog.matrices : catalog.distributions;
@@ -105,17 +109,19 @@ export function filterEditor(catalog, initial = []) {
       if (previous) source.value = previous;
       first.type = 'date'; firstField.hidden = lastField.hidden = kind.value !== 'date';
       alternativesField.hidden = kind.value !== 'distribution' && kind.value !== 'matrix-row';
+      refreshDescendants();
     };
-    kind.addEventListener('change', refresh); refresh();
+    kind.addEventListener('change', refresh); source.addEventListener('change', refreshDescendants); refresh();
     const item = { read: () => {
       const selections = [...new Set(alternatives.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean))];
       if ((kind.value === 'distribution' || kind.value === 'matrix-row') && selections.length > 32) throw new Error('Une condition accepte au maximum 32 valeurs.');
       return { kind: kind.value, sourceKey: source.value,
         value: kind.value === 'date' ? first.value : kind.value === 'metric' ? '' : selections.length === 1 ? selections[0] : '',
         values: kind.value === 'distribution' || kind.value === 'matrix-row' ? selections.length > 1 ? selections : [] : [],
-        value2: kind.value === 'date' ? last.value : '', exclude: exclude.control.checked };
+        value2: kind.value === 'date' ? last.value : '', exclude: exclude.control.checked,
+        includeDescendants: categoryBranchAvailable() && descendants.control.checked };
     } };
-    row.append(field('Type', kind), field('Source', source), alternativesField, firstField, lastField, exclude.element,
+    row.append(field('Type', kind), field('Source', source), alternativesField, firstField, lastField, descendants.element, exclude.element,
       button('Retirer', () => { row.remove(); rows.splice(rows.indexOf(item), 1); addButton.disabled = false; }));
     item.row = row; rows.push(item); list.append(row); addButton.disabled = rows.length >= 12;
   };

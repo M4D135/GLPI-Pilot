@@ -55,6 +55,9 @@ internal static partial class Program
         var slowStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var slowRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var slowFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var referenceStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var referenceRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var holdReference = 0;
         void Post(string json)
         {
             lock (gate) delivery = delivery.ContinueWith(async _ =>
@@ -72,6 +75,8 @@ internal static partial class Program
             var result = await app.ExecuteAsync(op, data, ct);
             if (op == "library.resolution" && data.TryGetProperty("text", out var query) && query.GetString() == "lente")
             { slowStarted.TrySetResult(); await slowRelease.Task.WaitAsync(TimeSpan.FromSeconds(15)); slowFinished.TrySetResult(); }
+            if (op == "library.reference" && Interlocked.Exchange(ref holdReference, 0) == 1)
+            { referenceStarted.TrySetResult(); await referenceRelease.Task.WaitAsync(TimeSpan.FromSeconds(15)); }
             return result;
         }, Post); bridge = actualBridge;
         await page.ExposeBindingAsync("__pilotSend", (BindingSource _, string json) => bridge.Receive(json));
@@ -190,16 +195,31 @@ internal static partial class Program
             const string unsavedNote = "Observation encore en cours de saisie, sans enregistrement.";
             await notes.FillAsync(unsavedNote); var noteNode = await notes.ElementHandleAsync();
             var workButton = page.GetByRole(AriaRole.Button, new() { Name = "Chercher des solutions similaires", Exact = true });
-            await workButton.ClickAsync(); await Settled();
+            Interlocked.Exchange(ref holdReference, 1);
+            await workButton.ClickAsync(); await referenceStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // A native disabled button can lose focus while its asynchronous
+            // cache lookup is pending. Reproduce that outcome on every platform.
+            await workButton.EvaluateAsync("node => node.blur()");
+            Require(await workButton.IsDisabledAsync() && await Modal().CountAsync() == 0
+                && !await workButton.EvaluateAsync<bool>("node => node===document.activeElement")
+                && await notes.InputValueAsync() == unsavedNote,
+                "A delayed cache lookup keeps the unsaved editor intact after its disabled initiating button loses focus.");
+            referenceRelease.TrySetResult(); await Settled();
             Require(await cards.CountAsync() == 2 && await cards.First.GetAttributeAsync("data-resolution-key") == saved.Document.Key
                 && !(await Modal().InnerTextAsync()).Contains("étranger")
                 && await page.EvaluateAsync<bool>("document.querySelector('.page-content')?.dataset.page==='tickets'")
                 && await notes.InputValueAsync() == unsavedNote && app.Revision == revision && ReferenceEquals(app.Result, receipt),
                 "The real work-ticket button opens the same confirmed predecessors through its validated ID and installation while the work screen, note draft and report remain intact despite a foreign ID collision.");
             await Capture("resolution-work-ticket"); await Button("Fermer").ClickAsync();
-            Require(await page.EvaluateAsync<bool>("node => node.isConnected", noteNode) && await notes.InputValueAsync() == unsavedNote
-                && await workButton.EvaluateAsync<bool>("node => node===document.activeElement")
-                && WorkplaceStore.Load(Path.Combine(_root, "workplace.json")).Tickets.Single(value => value.Key == sourcePersonal.Key).Notes.Length == 0,
+            var closeChecks = new Dictionary<string, bool>
+            {
+                ["same editor"] = await page.EvaluateAsync<bool>("node => node.isConnected", noteNode),
+                ["unsaved note"] = await notes.InputValueAsync() == unsavedNote,
+                ["initiating button focus"] = await workButton.EvaluateAsync<bool>("node => node===document.activeElement"),
+                ["no unintended save"] = WorkplaceStore.Load(Path.Combine(_root, "workplace.json")).Tickets.Single(value => value.Key == sourcePersonal.Key).Notes.Length == 0
+            };
+            if (closeChecks.Any(pair => !pair.Value)) Console.WriteLine("Work-ticket close failure: " + string.Join(", ", closeChecks.Where(pair => !pair.Value).Select(pair => pair.Key)));
+            Require(closeChecks.Values.All(value => value),
                 "Closing work-ticket predecessors restores the initiating button and the same unsaved personal editor without persisting its draft.");
 
             await page.Locator(".work-open-ticket").GetByRole(AriaRole.Button, new() { Name = absent.Ticket.Id + " · " + absent.Title, Exact = true }).ClickAsync();
@@ -208,6 +228,7 @@ internal static partial class Program
             await page.Locator(".work-ticket-heading h2").Filter(new() { HasText = "#" + absent.Ticket.Id + " · " + absent.Title }).WaitForAsync();
             await notes.FillAsync("Saisie de la fiche absente conservée."); var missingNoteNode = await notes.ElementHandleAsync();
             var resolutionCount = calls.Count(operation => operation == "library.resolution");
+            await workButton.EvaluateAsync("node => node.addEventListener('click', () => node.blur(), {once:true})");
             await workButton.ClickAsync();
             var missingDialog = page.GetByRole(AriaRole.Dialog, new() { Name = "Ticket absent de la bibliothèque", Exact = true });
             await missingDialog.WaitForAsync();
@@ -225,7 +246,11 @@ internal static partial class Program
             Require(missingChecks.Values.All(value => value),
                 "A work ticket absent from its own installation gives an explicit local-cache message, never substitutes a foreign ticket with the same number, and keeps the screen and unsaved note without hidden collection or navigation.");
             await page.Keyboard.PressAsync("Escape"); await delivery;
+            Require(await workButton.EvaluateAsync<bool>("node => node===document.activeElement")
+                && await page.EvaluateAsync<bool>("node => node.isConnected", missingNoteNode)
+                && await notes.InputValueAsync() == "Saisie de la fiche absente conservée.",
+                "Escape from the absent-cache message restores its exact initiating button and preserves the same unsaved editor after focus loss.");
         }
-        finally { slowRelease.TrySetResult(); }
+        finally { slowRelease.TrySetResult(); referenceRelease.TrySetResult(); }
     }
 }

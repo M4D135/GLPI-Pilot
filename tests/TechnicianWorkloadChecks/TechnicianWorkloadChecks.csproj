@@ -13,5 +13,7 @@
     <Compile Include="../../src/GlpiPilot/Core/TechnicianCalendar.cs" Link="Core/TechnicianCalendar.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TechnicianPreferences.cs" Link="Core/TechnicianPreferences.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardParticipation.cs" Link="Core/DashboardParticipation.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardOldestGroups.cs" Link="Core/DashboardOldestGroups.cs" />
   </ItemGroup>
 </Project>

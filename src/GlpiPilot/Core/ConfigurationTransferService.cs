@@ -29,10 +29,11 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> LayoutProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "CatalogRecent", "FilterPresets" };
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Name", "Description", "Density", "HideUnavailableWidgets", "Sections", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
+    { "Id", "Name", "Description", "Density", "HideUnavailableWidgets", "FreshnessWarningHours", "Sections", "Widgets", "Filters", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
     private static readonly HashSet<string> DashboardSectionProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Title", "Description", "Accent", "Hidden" };
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks" };
+    { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks", "ParticipationRoster" };
+    private static readonly HashSet<string> ParticipantProperties = new(StringComparer.OrdinalIgnoreCase) { "Identity", "Name", "Aliases" };
     private static readonly HashSet<string> MappingKeys = new(StringComparer.OrdinalIgnoreCase)
     { "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "updatedBy", "resolved", "closed", "due", "assignee", "group", "requester", "category", "entity", "location", "city", "postal", "source", "solution", "satisfaction", "satisfaction-invited", "followupAuthor", "taskAuthor", "ttrProgress", "takeIntoAccount", "reportedAge", "reportedGroupCount", "reportedAuthorCount", "description" };
     private static readonly HashSet<string> CitySettingsProperties = new(StringComparer.OrdinalIgnoreCase)
@@ -47,7 +48,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> SourceProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "Name", "Url", "Browser", "Mode", "IncludedInCampaign", "Acquisition", "Interpretation", "RestoreWorkspace", "WorkspaceQueries" };
     private static readonly HashSet<string> WeatherProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "OverdueWeight", "PriorityWeight", "AssignmentWeight", "StaleWeight", "OldWeight", "WatchThreshold", "RainThreshold", "StormThreshold", "MinimumCoveragePercent", "MinimumWeightPercent" };
-    private static readonly HashSet<string> FilterProperties = new(StringComparer.OrdinalIgnoreCase) { "Kind", "SourceKey", "Value", "Value2", "Values", "Exclude" };
+    private static readonly HashSet<string> FilterProperties = new(StringComparer.OrdinalIgnoreCase) { "Kind", "SourceKey", "Value", "Value2", "Values", "Exclude", "IncludeDescendants" };
     private static readonly HashSet<string> PresetProperties = new(StringComparer.OrdinalIgnoreCase) { "Name", "Filters" };
     private static readonly HashSet<string> ParameterProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Label", "Type", "DefaultValue" };
     private static readonly HashSet<string> ComputedProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Label", "Function", "Field", "OtherField", "Constant", "Unit" };
@@ -513,6 +514,8 @@ public static class ConfigurationTransferService
             RequireProperties(board, BoardProperties);
             JsonText(board, "Id", 96, required: true); JsonText(board, "Name", 120, required: true);
             JsonText(board, "Description", 600); JsonEnum(board, "Density", "comfortable", "compact");
+            if (Find(board, "FreshnessWarningHours") is { ValueKind: not JsonValueKind.Null })
+                JsonRange(board, "FreshnessWarningHours", 1, 8760);
             if (Find(board, "HideUnavailableWidgets") is { } hideUnavailable && hideUnavailable.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                 throw Invalid("La visibilité des widgets indisponibles doit valoir vrai ou faux.");
             var sectionKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -542,6 +545,13 @@ public static class ConfigurationTransferService
                 JsonEnum(widget, "StackedMode", "volume", "percent"); JsonRange(widget, "HistoryPeriodDays", 1, 3650);
                 if (JsonThreshold(widget, "ParetoThresholdPercent") is double pareto && (pareto < 1 || pareto > 100)) throw Invalid("Le seuil de Pareto doit être compris entre 1 et 100.");
                 JsonText(widget, "Section", 80); ValidateFilters(widget, "Filters");
+                ValidateObjectList(widget, "ParticipationRoster", 200, ParticipantProperties, participant =>
+                {
+                    JsonText(participant, "Identity", 200); JsonText(participant, "Name", 160);
+                    ValidateStringList(participant, "Aliases", 16, 200);
+                });
+                if (Find(widget, "ParticipationRoster") is { } roster)
+                    DashboardParticipationRosterEntry.ValidateList(JsonSerializer.Deserialize<List<DashboardParticipationRosterEntry>>(roster.GetRawText(), JsonOptions));
                 sectionKeys.Add(Find(widget, "Section")?.GetString() ?? "");
                 if (Find(widget, "HistogramBreaks") is { } breaks)
                 {

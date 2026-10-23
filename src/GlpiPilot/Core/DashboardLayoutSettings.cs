@@ -54,7 +54,7 @@ public sealed class DashboardLayoutSettings
                 || board.Widgets is null || board.Widgets.Count > 60)
                 throw new InvalidDataException("Un tableau de bord possède un nom, un identifiant ou une liste de widgets incorrects.");
             if (board.Description is null || board.Description.Length > 600 || board.Density is not ("comfortable" or "compact")
-                || board.Sections is null || board.Sections.Count > 60)
+                || board.Sections is null || board.Sections.Count > 60 || board.FreshnessWarningHours is < 1 or > 8760)
                 throw new InvalidDataException("La description, la densité ou les sections du dashboard sont invalides.");
             var sectionKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var section in board.Sections)
@@ -80,6 +80,7 @@ public sealed class DashboardLayoutSettings
                     throw new InvalidDataException("Un widget possède une présentation ou une taille incorrecte.");
                 widget.ValidateThresholds();
                 DashboardScopeFilter.ValidateList(widget.Filters);
+                DashboardParticipationRosterEntry.ValidateList(widget.ParticipationRoster);
                 if (widget.Section is null || widget.Section.Length > 80 || widget.HistogramBreaks is null
                     || widget.HistogramBreaks.Count > 30 || widget.HistogramBreaks.Any(x => !double.IsFinite(x) || Math.Abs(x) > 1e9))
                     throw new InvalidDataException("Les filtres, sections ou tranches du widget sont invalides.");
@@ -145,6 +146,7 @@ public sealed class DashboardLayoutSettings
         if (preset == "service")
         {
             board.Description = "Stock des demandes et incidents ouverts, attente et planification incluses. Les seuils de chaque météo sont configurables.";
+            board.FreshnessWarningHours = 48;
             board.Sections = new()
             {
                 new() { Key = "stock", Title = "Stock du service" },
@@ -251,6 +253,7 @@ public sealed class DashboardBoardSettings
     public string Description { get; set; } = "";
     public string Density { get; set; } = "comfortable";
     public bool HideUnavailableWidgets { get; set; } = true;
+    public int? FreshnessWarningHours { get; set; }
     public List<DashboardSectionSettings> Sections { get; set; } = new();
     public List<DashboardWidgetSettings> Widgets { get; set; } = new();
     public List<DashboardScopeFilter> Filters { get; set; } = new();
@@ -259,6 +262,7 @@ public sealed class DashboardBoardSettings
     public List<DashboardScopeFilter> ComparisonFilters { get; set; } = new();
     public List<string> CollapsedSections { get; set; } = new();
     public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Description = Description, Density = Density, HideUnavailableWidgets = HideUnavailableWidgets,
+        FreshnessWarningHours = FreshnessWarningHours,
         Sections = Sections?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
         Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
         Filters = DashboardScopeFilter.CopyList(Filters), CrossFilterOnClick = CrossFilterOnClick,
@@ -270,6 +274,7 @@ public sealed class DashboardBoardSettings
         Name = string.IsNullOrWhiteSpace(Name) ? "Mon tableau de bord" : Name[..Math.Min(Name.Length, 120)];
         Description = (Description ?? "")[..Math.Min(Description?.Length ?? 0, 600)];
         if (Density is not ("comfortable" or "compact")) Density = "comfortable";
+        if (FreshnessWarningHours is < 1 or > 8760) FreshnessWarningHours = null;
         Widgets = Widgets?.Where(x => x is not null).Take(60).ToList() ?? new();
         Filters ??= new(); ComparisonFilters ??= new();
         CollapsedSections = (CollapsedSections ?? new()).Where(x => x is not null && x.Length <= 80).Distinct(StringComparer.Ordinal).Take(60).ToList();
@@ -314,9 +319,33 @@ public sealed class DashboardSectionSettings
     }
 }
 
+/// <summary>Optional explicit roster; never inferred from a workbook title or an organization code.</summary>
+public sealed class DashboardParticipationRosterEntry
+{
+    public string Identity { get; set; } = "";
+    public string Name { get; set; } = "";
+    public List<string> Aliases { get; set; } = new();
+    public DashboardParticipationRosterEntry Copy() => new() { Identity = Identity, Name = Name, Aliases = new(Aliases ?? new()) };
+    public static void ValidateList(IReadOnlyList<DashboardParticipationRosterEntry>? entries)
+    {
+        if (entries is null || entries.Count > 200) throw new InvalidDataException("Une liste de participants accepte au maximum 200 personnes.");
+        foreach (var entry in entries)
+        {
+            if (entry is null || entry.Identity is null || entry.Identity.Length > 200 || entry.Name is null || entry.Name.Length > 160
+                || string.IsNullOrWhiteSpace(entry.Identity) && string.IsNullOrWhiteSpace(entry.Name)
+                || entry.Aliases is null || entry.Aliases.Count > 16 || entry.Aliases.Any(alias => string.IsNullOrWhiteSpace(alias) || alias.Length > 200))
+                throw new InvalidDataException("Chaque participant demande un nom ou un identifiant, et au maximum 16 alias explicites.");
+            var identity = entry.Identity.Trim();
+            if (identity.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && (identity.Length == 3 || identity[3..].Any(character => character is < '0' or > '9'))
+                || identity.StartsWith("NOM:", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(identity[4..]))
+                throw new InvalidDataException("Un identifiant GLPI doit être numérique ; une identité par nom doit contenir le nom.");
+        }
+    }
+}
+
 public sealed class DashboardWidgetSettings
 {
-    public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note", "matrix", "histogram", "boxplot", "scatter", "history", "map" };
+    public static readonly string[] Kinds = { "metric", "distribution", "weather", "timeline", "attention", "quality", "note", "matrix", "histogram", "boxplot", "scatter", "history", "map", "oldest", "participation", "sites" };
     public static readonly string[] Styles = { "surface", "outline", "accent", "minimal" };
     public static readonly string[] Accents = { "blue", "teal", "green", "orange", "red", "purple", "slate" };
     public static readonly string[] Presentations = { "bars", "list", "compact", "donut", "gauge", "pareto", "columns", "heatmap", "stacked", "weather-volume" };
@@ -346,12 +375,14 @@ public sealed class DashboardWidgetSettings
     public bool LowerIsBetter { get; set; } = true;
     public string Section { get; set; } = "";
     public List<DashboardScopeFilter> Filters { get; set; } = new();
+    public List<DashboardParticipationRosterEntry> ParticipationRoster { get; set; } = new();
     public List<double> HistogramBreaks { get; set; } = new() { 1, 7, 14, 30, 90 };
     public DashboardWidgetSettings Copy()
     {
         var copy = (DashboardWidgetSettings)MemberwiseClone();
         copy.Filters = DashboardScopeFilter.CopyList(Filters);
         copy.HistogramBreaks = new(HistogramBreaks ?? new());
+        copy.ParticipationRoster = ParticipationRoster?.Select(entry => entry.Copy()).ToList() ?? new();
         return copy;
     }
     public void ValidateThresholds()
@@ -393,6 +424,7 @@ public sealed class DashboardWidgetSettings
         Note = (Note ?? "")[..Math.Min(Note?.Length ?? 0, 4000)];
         Section = (Section ?? "")[..Math.Min(Section?.Length ?? 0, 80)];
         Filters ??= new();
+        ParticipationRoster ??= new();
         HistogramBreaks = (HistogramBreaks ?? new()).Where(double.IsFinite).Where(x => Math.Abs(x) <= 1e9).Distinct().Order().Take(30).ToList();
         if (StackedMode is not ("percent" or "volume")) StackedMode = "percent";
         if (!double.IsFinite(ParetoThresholdPercent) || ParetoThresholdPercent is <= 0 or > 100) ParetoThresholdPercent = 80;
@@ -421,6 +453,7 @@ public sealed class DashboardScopeFilter
     public string Value2 { get; set; } = "";
     public List<string> Values { get; set; } = new();
     public bool Exclude { get; set; }
+    public bool IncludeDescendants { get; set; }
     public DashboardScopeFilter Copy()
     {
         var copy = (DashboardScopeFilter)MemberwiseClone();
@@ -445,6 +478,9 @@ public sealed class DashboardScopeFilter
                 || !DateTime.TryParseExact(value.Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)
                 || !DateTime.TryParseExact(value.Value2, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var end) || start > end))
                 throw new InvalidDataException("Un filtre de dates demande deux dates ISO valides, dans l’ordre chronologique.");
+            if (value.IncludeDescendants && (value.Kind != "distribution" || value.SourceKey is not ("category" or "active-category")
+                || value.Selections().Any(selection => selection.Split('>').Any(segment => string.IsNullOrWhiteSpace(segment)))))
+                throw new InvalidDataException("Les sous-catégories nécessitent une catégorie valide, dont chaque niveau est séparé par >.");
         }
     }
 }

@@ -201,6 +201,85 @@ Test("Complete HTML report includes criteria, SVG graphics, quality and every sc
     var path = Path.Combine(Folder(), "report.html"); var exported = ReportService.WriteHtml(snapshot, data, "Filtre : catégorie = A & B", path); var html = File.ReadAllText(path);
     Assert(exported.Rows == 1 && html.Contains("Raw &amp; exact") && !html.Contains("alert(") && html.Contains("<svg") && html.Contains("id=\"quality\"") && html.Contains("A &amp; B") && html.Contains("Content-Security-Policy"));
 });
+Test("HTML includes participation, global and grouped oldest tickets, site zeroes and unknowns from the common scope", () =>
+{
+    var data = new ExtractionResult
+    {
+        Headers = new() { "ID", "Titre", "Statut", "Date d'ouverture", "Attribué à - Groupe de techniciens", "Suivis - Rédacteur", "Tâches - Rédacteur", "Attribué à - Technicien", "Priorité" },
+        ExtractedAt = clock, Complete = true, ExpectedTotal = 6,
+        Rows = new()
+        {
+            new[] { "900", "PRIVATE OUTSIDE SCOPE", "Nouveau", "01/01/2020 10:00", "Private group", "Private actor (999)", "", "", "Haute" },
+            new[] { "201", "Titre <script>alert(1)</script> & détail", "Nouveau", "28/09/2026 09:00", "Groupe <b>&\nSecond groupe", "Acteur <img src=x onerror=alert(1)> (71)", "Autre libellé (71)", "Technicien (71)", "Haute" },
+            new[] { "202", "Date absente", "En attente", "", "Groupe <b>&", "", "", "", "Basse" },
+            new[] { "203", "Date invalide", "Nouveau", "invalide", "Groupe <b>&", "", "", "", "Moyenne" },
+            new[] { "204", "Date future", "Nouveau", "05/10/2026 10:00", "Groupe <b>&", "", "", "", "Moyenne" },
+            new[] { "205", "Ticket terminé", "Clos", "01/09/2026 10:00", "Groupe <b>&", "Compte clos (99)", "", "Compte clos (99)", "Basse" }
+        }
+    };
+    var snapshot = DashboardService.CalculateSubset(data, new(), new[] { 1, 2, 3, 4, 5 }, "Périmètre commun", clock);
+    snapshot.SiteWorkload = new()
+    {
+        Available = true, Grain = snapshot.Grain, Population = 4,
+        Sites = new[]
+        {
+            new DashboardSiteWorkloadEntry("site:known", "Site <Nord> & accueil", false, new[] { 1, 2, 3 }),
+            new DashboardSiteWorkloadEntry("site:zero", "Site sans ticket", false, Array.Empty<int>()),
+            new DashboardSiteWorkloadEntry("unmatched:", "Site non connu / à vérifier", true, new[] { 4 })
+        },
+        Explanation = "Source <référentiel> & corrections locales."
+    };
+    var path = Path.Combine(Folder(), "analyses.html");
+    var exported = ReportService.WriteHtml(snapshot, data, "Critères & périmètre", path);
+    var html = File.ReadAllText(path);
+    Assert(exported.Rows == 5 && !html.Contains("PRIVATE OUTSIDE SCOPE") && !html.Contains("Private actor"));
+    Assert(html.Contains("id=\"participation\"") && html.Contains("id=\"oldest\"") && html.Contains("id=\"sites\""));
+    Assert(html.Contains("Acteur &lt;img") && !html.Contains("<img ") && !html.Contains("<script>"));
+    Assert(html.Contains("<td>ID:71</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td>"), "Union, intersection and assignment must retain their independent measured values.");
+    var participationStart = html.IndexOf("<h2 id=\"participation\"", StringComparison.Ordinal);
+    var oldestStart = html.IndexOf("<h2 id=\"oldest\"", StringComparison.Ordinal);
+    Assert(!html[participationStart..oldestStart].Contains("Compte clos"), "Completed rows cannot leak into active participation.");
+    Assert(html.Contains("<th>Dates absentes / invalides / futures</th><td>1 / 1 / 1</td>"));
+    Assert(html.Contains("Groupe &lt;b&gt;&amp;") && html.Contains(System.Net.WebUtility.HtmlEncode(data.Rows[1][1])));
+    Assert(html.Contains("01/10/2026") && html.Contains("28/09/2026 09:00") && html.Contains("style=\"background-color:#"));
+    var globalStart = html.IndexOf("<h3>Classement global du périmètre</h3>", StringComparison.Ordinal);
+    var groupsStart = html.IndexOf("<h3>Synthèse par groupe</h3>", StringComparison.Ordinal);
+    Assert(globalStart > oldestStart && groupsStart > globalStart);
+    Assert(System.Text.RegularExpressions.Regex.Matches(html[globalStart..groupsStart], "href=\"#ticket-row-2\"").Count == 1,
+        "The global oldest list does not repeat a multigroup source occurrence.");
+    Assert(html.Contains("Site &lt;Nord&gt; &amp; accueil") && html.Contains(System.Net.WebUtility.HtmlEncode(snapshot.SiteWorkload.Explanation)));
+    Assert(html.Contains("<td>Site sans ticket</td><td>Site référencé</td><td>0</td>")
+        && html.Contains("<td>" + System.Net.WebUtility.HtmlEncode("Site non connu / à vérifier") + "</td><td>À vérifier</td><td>1</td>"));
+    Assert(html.Contains("href=\"#ticket-row-2\">201</a>") && html.Contains("id=\"ticket-row-2\"")
+        && !html.Contains("href=\"#ticket-row-1\"") && !html.Contains("id=\"ticket-row-1\""), "Links retain original row indices and remain within the report scope.");
+    Assert(html.Contains("href=\"#ticket-row-5\">204</a>"), "Site lists retain tickets excluded from date rankings.");
+});
+Test("HTML keeps missing analytical sources unavailable and escapes their explanations", () =>
+{
+    var data = new ExtractionResult { Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "1", "Titre" } }, ExtractedAt = clock, Complete = true, ExpectedTotal = 1 };
+    var snapshot = DashboardService.Calculate(data, new(), clock);
+    snapshot.SiteWorkload = new() { UnavailableReason = "Référentiel <indisponible> & à appliquer." };
+    var path = Path.Combine(Folder(), "unavailable.html"); ReportService.WriteHtml(snapshot, data, "", path); var html = File.ReadAllText(path);
+    Assert(html.Contains("<th>Population active</th><td>Indisponible") && html.Contains("Participation indisponible"));
+    Assert(html.Contains(System.Net.WebUtility.HtmlEncode("Correspondances nécessaires"))
+        && html.Contains(System.Net.WebUtility.HtmlEncode(snapshot.SiteWorkload.UnavailableReason)));
+    Assert(!html.Contains("<td>Site référencé</td>"), "An unavailable site inventory never becomes a measured zero stock.");
+});
+Test("HTML rejects out-of-scope analysis links and preserves an existing report atomically", () =>
+{
+    var folder = Folder(); var path = Path.Combine(folder, "keep.html"); File.WriteAllText(path, "existing report");
+    var data = Data(0, Row("1"), Row("2")); var snapshot = DashboardService.CalculateSubset(data, new(), new[] { 1 }, "Second row", clock);
+    snapshot.SiteWorkload = new()
+    {
+        Available = true, Population = 1, Grain = snapshot.Grain,
+        Sites = new[] { new DashboardSiteWorkloadEntry("site:wrong", "Stale site", false, new[] { 0 }) }
+    };
+    Reject<InvalidDataException>(() => ReportService.WriteHtml(snapshot, data, "", path));
+    Assert(File.ReadAllText(path) == "existing report" && Directory.GetFiles(folder).SequenceEqual(new[] { path }));
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+    Reject<OperationCanceledException>(() => ReportService.WriteHtml(snapshot, data, "", path, cancelled.Token));
+    Assert(File.ReadAllText(path) == "existing report" && Directory.GetFiles(folder).SequenceEqual(new[] { path }));
+});
 Test("Cancelled report leaves no target or temporary file and never exports stale indices", () =>
 {
     var folder = Folder(); var path = Path.Combine(folder, "report.html"); var data = Data(0, Row("1")); var snapshot = DashboardService.Calculate(data, new(), data.ExtractedAt);

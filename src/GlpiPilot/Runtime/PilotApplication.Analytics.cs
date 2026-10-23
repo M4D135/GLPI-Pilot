@@ -51,6 +51,7 @@ public sealed partial class PilotApplication
         Register("dashboard.layout.import", AnalyticsImportLayoutAsync);
         Register("dashboard.layout.append", AnalyticsAppendLayoutAsync);
         Register("dashboard.rows", (a, ct) => Task.FromResult<object?>(AnalyticsRows(a, ct)));
+        Register("dashboard.copyIds", AnalyticsCopyIdsAsync);
         Register("dashboard.data", (a, ct) => Task.FromResult<object?>(AnalyticsDataPage(a)));
         Register("reports.export", AnalyticsExportReportAsync);
         RegisterAnalyticsQueries();
@@ -111,7 +112,7 @@ public sealed partial class PilotApplication
                 if (locations is not null)
                 {
                     CityDetectionService.AppendDashboardProbes(snapshot, locations, token);
-                    DashboardGeography.Append(snapshot, locations, settings.Cities);
+                    DashboardGeography.Append(snapshot, locations, settings.Cities, token);
                     if (historical is null || historical.Populations is not null)
                         AnalyticsPopulationStore.Append(snapshot, locations, settings.Cities, SnapshotStore.SourceKey(source), populations);
                 }
@@ -198,7 +199,8 @@ public sealed partial class PilotApplication
     }
 
     private static string AnalyticsDescribe(IEnumerable<DashboardScopeFilter> filters) => string.Join(" · ", filters.Select(f =>
-        (f.Exclude ? "sauf " : "") + f.SourceKey + (f.Kind == "metric" ? "" : " = " + string.Join(" OU ", f.Selections()) + (f.Kind == "date" ? " → " + f.Value2 : ""))));
+        (f.Exclude ? "sauf " : "") + f.SourceKey + (f.Kind == "metric" ? "" : " = " + string.Join(" OU ", f.Selections()) + (f.Kind == "date" ? " → " + f.Value2 : "")
+            + (f.IncludeDescendants ? " (sous-catégories incluses)" : ""))));
     private static object AnalyticsMetric(DashboardMetric m) => AnalyticsMetric(m, null, true);
     private static object AnalyticsMetric(DashboardMetric m, DashboardWidgetSettings? widget, bool complete, bool simulation = false) => new
     {
@@ -234,6 +236,13 @@ public sealed partial class PilotApplication
         boxes = s.BoxSeries.Select(d => new { d.Key, label = d.Title, d.Available }).ToArray(),
         scatters = s.Scatters.Select(d => new { d.Key, label = d.Title, available = d.Points.Count > 0 }).ToArray(),
         weather = s.WeatherProfiles.Select(d => new { key = d.Key, label = d.Value.Title }).ToArray(),
+        oldest = new[] {
+            new { key = "groups", label = "Plus anciens · 5 par groupe", available = s.OldestGroups?.Available == true },
+            new { key = "tickets", label = "Plus anciens · 10 du périmètre", available = s.OldestGroups?.Available == true } },
+        participation = new[] {
+            new { key = "authors", label = "Participation des rédacteurs · suivis et tâches", available = s.Participation.StatusAvailable && (s.Participation.FollowupsAvailable || s.Participation.TasksAvailable) },
+            new { key = "comparison", label = "Rédaction et attribution par personne", available = s.Participation.Available } },
+        sites = new[] { new { key = "sites", label = "Sites · stock et planification", available = s.SiteWorkload.Available } },
         dates = DashboardService.Roles.Where(r => r.Key is "created" or "updated" or "resolved" or "closed" or "due").Select(r => new { r.Key, r.Label }).ToArray(),
         kinds = DashboardWidgetSettings.Kinds, presentations = DashboardWidgetSettings.Presentations,
         styles = DashboardWidgetSettings.Styles, accents = DashboardWidgetSettings.Accents
@@ -264,6 +273,9 @@ public sealed partial class PilotApplication
             "weather" => AnalyticsWeather(s.WeatherProfiles.GetValueOrDefault(widget.SourceKey) ?? s.Weather),
             "timeline" => s.Timeline.TakeLast(366).Select(d => new { d.Date, created = d.Created.Length, resolved = d.Resolved.Length, closed = d.Closed.Length }).ToArray(),
             "attention" => new { rows = s.Attention.Take(30).ToArray(), total = s.Attention.Count },
+            "oldest" => AnalyticsOldestContent(s, widget),
+            "participation" => AnalyticsParticipationContent(s, widget),
+            "sites" => AnalyticsSitesContent(run, s, widget),
             "quality" => new { s.Columns, warnings = s.Warnings.Take(100).ToArray() },
             "note" => new { text = widget.Note },
             "matrix" => s.Matrices.FirstOrDefault(m => m.Key == widget.SourceKey) is { } matrix ? AnalyticsMatrix(matrix) : null,
@@ -284,6 +296,10 @@ public sealed partial class PilotApplication
             "timeline" => new[] { "created", "resolved", "closed" }.Any(key =>
                 s.DateValues.GetValueOrDefault(key)?.Count > 0 || s.RowCount == 0 && s.Column(key)?.Index is not null),
             "attention" => s.Column("status")?.Index is not null,
+            "oldest" => s.OldestGroups?.Available == true,
+            "participation" => s.Participation.StatusAvailable && (widget.SourceKey == "authors"
+                ? s.Participation.FollowupsAvailable || s.Participation.TasksAvailable : s.Participation.Available),
+            "sites" => s.SiteWorkload.Available,
             "quality" or "note" or "history" => true,
             "matrix" => s.Matrices.FirstOrDefault(m => m.Key == widget.SourceKey)?.Available == true,
             "histogram" => s.NumericSeries.FirstOrDefault(n => n.Key == widget.SourceKey)?.Values.Count > 0,
@@ -298,6 +314,9 @@ public sealed partial class PilotApplication
             "timeline" => "Aucune date d’ouverture, de résolution ou de clôture exploitable dans ce périmètre.",
             "weather" => "Les indicateurs disponibles ne permettent pas de calculer cette météo.",
             "attention" => "Une colonne Statut reconnue est nécessaire pour identifier les tickets actifs.",
+            "oldest" => s.OldestGroups?.UnavailableReason ?? "Les colonnes Statut, Date d’ouverture et Groupe sont nécessaires.",
+            "participation" => "Vérifiez le statut et les colonnes des rédacteurs de suivis, de tâches ou des techniciens attribués.",
+            "sites" => s.SiteWorkload.UnavailableReason,
             _ => "Les colonnes ou les valeurs nécessaires à ce widget ne sont pas disponibles dans ce périmètre."
         };
         return new { id = widget.Id, settings = widget, content, rowCount = s.RowCount, s.ScopeLabel, available, unavailableReason };
@@ -390,12 +409,15 @@ public sealed partial class PilotApplication
         var label = Text(args, "label", 1000); int[] rows = kind switch
         {
             "scope" => s.ScopeRows,
+            "record" => s.ScopeRows.Contains(Number(args, "rowIndex", -1, -1)) ? new[] { Number(args, "rowIndex", -1, -1) }
+                : throw new InvalidDataException("Cette ligne n’appartient pas au périmètre du widget."),
             "metric" => s.Metric(key)?.Rows ?? throw new InvalidDataException("Indicateur absent."),
             "distribution" => s.Distributions.SingleOrDefault(d => d.Key == key)?.Buckets.Where(b => b.Label == label).SelectMany(b => b.Rows).Distinct().Order().ToArray() ?? throw new InvalidDataException("Répartition absente."),
             "map" => s.Geography.SingleOrDefault(p => p.Key == key) is { } point ? Flag(args, "active") ? point.ActiveRows : point.Rows : throw new InvalidDataException("Localisation absente."),
             "matrix" => s.Matrices.SingleOrDefault(m => m.Key == key)?.Cells.Where(c => c.RowLabel == label && c.ColumnLabel == Text(args, "columnLabel", 1000)).SelectMany(c => c.Rows).Distinct().Order().ToArray() ?? throw new InvalidDataException("Matrice absente."),
             "boxplot" => s.BoxSeries.SingleOrDefault(b => b.Key == key)?.Boxes.Where(b => b.Label == label).SelectMany(b => b.Rows).Distinct().Order().ToArray() ?? throw new InvalidDataException("Série absente."),
             "histogram" => AnalyticsHistogramRows(run, s, args, label),
+            "oldest" or "participation" or "sites" => AnalyticsStockRows(run, s, args, kind, key),
             _ => throw new InvalidDataException("Type de détail inconnu.")
         };
         return AnalyticsRowPage(run.Source, rows, args, run.Revision, ct);
@@ -421,6 +443,16 @@ public sealed partial class PilotApplication
     {
         var run = RequireAnalyticsRun(args); var s = AnalyticsSnapshot(run, args); var kind = Text(args, "kind", 40); var key = Text(args, "key", 200);
         var offset = Number(args, "offset"); var limit = Number(args, "limit", 100, 1, 500);
+        if (kind is "oldest" or "participation" or "sites")
+        {
+            var widget = AnalyticsDetailWidget(run, args);
+            return kind switch
+            {
+                "oldest" => AnalyticsOldestContent(s, widget, offset, limit) ?? throw new InvalidDataException("Classement absent."),
+                "participation" => AnalyticsParticipationContent(s, widget, offset, limit),
+                _ => AnalyticsSitesContent(run, s, widget, offset, limit)
+            };
+        }
         IEnumerable<object> values = kind switch
         {
             "distribution" => (s.Distributions.FirstOrDefault(d => d.Key == key)?.Buckets ?? throw new InvalidDataException("Répartition absente.")).Select(AnalyticsBucket),
