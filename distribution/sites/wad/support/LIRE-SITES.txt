@@ -42,8 +42,12 @@ Un nouvel import CSV d’incidents reprend les réglages du profil dans une
 simulation isolée. Les modifications d’essai ne changent pas ce profil.
 La démonstration sans fichier utilise ses propres références fictives.
 
-GOOGLE MAPS
-Les outils des sites et tournées ouvrent Google Maps sans clé API.
-La carte intégrée est facultative et demande une clé Maps Embed API.
-L’affichage Google nécessite Internet ; préparer les données et tournées
-reste possible hors ligne. Aucun envoi avant le clic d’ouverture.
+CARTES INTÉGRÉES — GLPI-Pilot 3.3.4
+Les cartes des sites et tournées s’affichent directement dans l’application,
+sans compte ni clé API. Elles utilisent les coordonnées du référentiel.
+En usage normal, ouvrir une carte charge les rues OpenStreetMap avec Internet.
+En simulation, le fond local sans rues est utilisé par défaut ;
+« Afficher les rues » active le fond détaillé si Internet est disponible.
+Les lieux et l’ordre des visites restent consultables hors ligne.
+Les pointillés montrent l’ordre des visites à vol d’oiseau, pas un trajet routier.
+Le fichier de sites reste compatible avec GLPI-Pilot 3.3.3 ou ultérieur.

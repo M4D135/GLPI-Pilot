@@ -6,7 +6,7 @@ Vérification du 24 octobre 2026. Le fichier contient **26 sites, rattachés à 
 
 Les coordonnées de commune proviennent du point **mairie** de l’API Découpage administratif. Ce repère urbain sert au regroupement des villes. Il évite de placer un centre géométrique de commune loin de la zone urbaine, notamment pour Arles. Il ne représente pas une adresse de site.
 
-Les coordonnées de site sont issues d’un numéro de voie géocodé, d’un point publié pour un bureau ou d’un bâtiment identifié. Les décimales conservées décrivent les valeurs des sources ; elles ne garantissent pas une entrée ou un portail précis. Les adresses complètes sont utilisées en priorité pour une recherche Google Maps.
+Les coordonnées de site sont issues d’un numéro de voie géocodé, d’un point publié pour un bureau ou d’un bâtiment identifié. Les décimales conservées décrivent les valeurs des sources ; elles ne garantissent pas une entrée ou un portail précis. Dans GLPI-Pilot 3.3.4, les cartes intégrées placent les repères aux coordonnées enregistrées. Les adresses sont affichées en complément, sans géocodage automatique.
 
 **La Ciotat est conservée comme référence historique.** Son accueil au 10 passage Gamet a fait l’objet d’une annonce de fermeture au 1er mars 2024. L’usage actuel du bâtiment n’est pas confirmé. Cette référence permet de reconnaître les tickets existants ; vérifier la destination avant une intervention.
 

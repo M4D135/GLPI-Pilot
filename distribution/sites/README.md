@@ -4,9 +4,11 @@ Ce complément contient **26 sites et leurs termes de détection**, rattachés �
 
 ## Téléchargement
 
-- [sites.csv](https://github.com/M4D135/GLPI-Pilot/releases/download/v3.3.3/sites.csv) : le fichier seul.
-- [GLPI-Pilot-Sites.zip](https://github.com/M4D135/GLPI-Pilot/releases/download/v3.3.3/GLPI-Pilot-Sites.zip) : les fichiers rangés dans le dossier `wad`, prêts à ajouter à une installation.
-- [SITES-SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v3.3.3/SITES-SHA256SUMS.txt) : les empreintes des deux fichiers.
+- [sites.csv](https://github.com/M4D135/GLPI-Pilot/releases/download/v3.3.4/sites.csv) : le fichier seul.
+- [GLPI-Pilot-Sites.zip](https://github.com/M4D135/GLPI-Pilot/releases/download/v3.3.4/GLPI-Pilot-Sites.zip) : les fichiers rangés dans le dossier `wad`, prêts à ajouter à une installation.
+- [SITES-SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v3.3.4/SITES-SHA256SUMS.txt) : les empreintes des deux fichiers.
+
+Le complément joint à la version **3.3.4** conserve exactement les données de 3.3.3. Il reste compatible avec GLPI-Pilot 3.3.3 ou ultérieur. Dans la version 3.3.4, les coordonnées alimentent directement les cartes intégrées des sites et des tournées ; aucune clé de cartographie n’est nécessaire.
 
 Le [CSV dans le dépôt](wad/sites.csv), la [notice](wad/support/LIRE-SITES.txt) et les [sources et précisions géographiques](wad/support/SOURCES-SITES.md) sont également consultables directement.
 
