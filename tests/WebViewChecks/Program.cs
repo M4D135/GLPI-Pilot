@@ -60,6 +60,12 @@ internal static partial class Program
                 Console.WriteLine($"{_passed}/{_passed} navigation WebView checks passed.");
                 return;
             }
+            if (args.Contains("--motion-only"))
+            {
+                await CheckMotionInterfaceAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} continuous motion WebView checks passed.");
+                return;
+            }
             if (args.Contains("--library-only"))
             {
                 await CheckLibraryInterfaceAsync(args);
@@ -183,11 +189,15 @@ internal static partial class Program
         var executable = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM");
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true, ExecutablePath = string.IsNullOrEmpty(executable) ? null : executable, Args = new[] { "--no-sandbox", "--disable-dev-shm-usage" } });
         await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 1000 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.Reduce });
-        var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000); var errors = new ConcurrentQueue<string>();
+        var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000); var errors = new ConcurrentQueue<string>(); PilotApplication? mapApplication = null;
         page.PageError += (_, error) => { errors.Enqueue(error); Console.WriteLine("BROWSER: " + error); };
         page.Console += (_, message) => { if (message.Type == "error") { errors.Enqueue(message.Text); Console.WriteLine("CONSOLE: " + message.Text); } };
         await context.RouteAsync("**/*", async route =>
         {
+            if (EmbeddedMapsService.IsTileUrl(route.Request.Url) && mapApplication?.AllowsMapTileRequest(route.Request.Url) == true)
+            {
+                await route.FulfillAsync(new() { ContentType = "image/png", BodyBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=") }); return;
+            }
             var uri = new Uri(route.Request.Url); if (uri.Host != "glpi-pilot.local") { await route.AbortAsync(); return; }
             var relative = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'); if (relative.Length == 0) relative = "index.html";
             var path = Path.GetFullPath(Path.Combine(web, relative));
@@ -201,7 +211,7 @@ internal static partial class Program
             lock (gate) delivery = delivery.ContinueWith(async _ =>
             { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
-        await using var application = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), new AppSettings { Theme = "dark", ExportFolder = Path.Combine(_root, "Exports") });
+        await using var application = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), new AppSettings { Theme = "dark", ExportFolder = Path.Combine(_root, "Exports") }); mapApplication = application;
         await using var actualBridge = new WebBridge(application.Operations.Concat(new[] { "app.ready", "host.editor", "host.screens", "host.screen" }), async (op, data, ct) =>
         {
             if (op == "app.ready") return new { ready = true };
@@ -239,10 +249,10 @@ internal static partial class Program
             }
             """), "Ticket labels remove only proven decimal grouping and preserve leading zeroes, nonnumeric IDs and digit precision.");
         await page.GetByRole(AriaRole.Button, new() { Name = "Simulation avec données fictives", Exact = true }).ClickAsync();
-        await page.Locator(".page-content[data-page=pilot-weather]").WaitForAsync();
+        await page.Locator(".page-content[data-page=pilot]").WaitForAsync();
         await WaitForPageAsync(page, "document.querySelector('#content')?.getAttribute('aria-busy') === null");
-        Require(application.Result?.Rows.Count == 180 && await page.Locator(".page-content[data-page=pilot-weather] .notice.danger").CountAsync() == 0, "The native weather view opens after a demo and computes its indicators in C#.");
-        var routes = (await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)")).Concat(OptionalNavigationRoutes).Distinct().ToArray();
+        Require(application.Result?.Rows.Count == 180 && await page.Locator(".page-content[data-page=pilot] .notice.danger").CountAsync() == 0, "The unified Pilotage workspace opens after a demo and computes its indicators in C#.");
+        var routes = (await NavigationRouteIdsAsync(page)).Distinct().ToArray();
         foreach (var route in routes)
         {
             await ClickNavigationAsync(page, route);
@@ -254,11 +264,13 @@ internal static partial class Program
         await page.GetByRole(AriaRole.Textbox, new() { Name = "Recherche du relevé" }).FillAsync("Site exemple A");
         await WaitForPageAsync(page, "document.querySelector('.page-content').innerText.includes('45 / 180 lignes')");
         Require(await page.Locator(".data-table tbody tr").CountAsync() == 45, "Typing a record search returns the complete matching rows from the C# query engine.");
-        await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtrer ID", Exact = true }).FillAsync("180");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Outils du tableau", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Vue des colonnes", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtre de colonne ID", Exact = true }).FillAsync("180");
         await WaitForPageAsync(page, "document.querySelector('.page-content').innerText.includes('1 / 180 lignes')");
         Require(await page.Locator(".data-table tbody tr").CountAsync() == 1, "Inline column filters combine with the full-source search before pagination.");
-        Require(await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtrer ID", Exact = true }).EvaluateAsync<bool>("node => node === document.activeElement"), "Refreshing filtered rows preserves the typing focus in the column header.");
-        await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtrer ID", Exact = true }).FillAsync("");
+        Require(await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtre de colonne ID", Exact = true }).EvaluateAsync<bool>("node => node === document.activeElement"), "Refreshing filtered rows preserves the typing focus in the column header.");
+        await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtre de colonne ID", Exact = true }).FillAsync("");
         await WaitForPageAsync(page, "document.querySelector('.page-content').innerText.includes('45 / 180 lignes')");
         await page.Locator("thead").GetByRole(AriaRole.Button, new() { Name = "ID", Exact = true }).ClickAsync();
         await page.Locator("thead").GetByRole(AriaRole.Button, new() { Name = "ID ↑ 1", Exact = true }).ClickAsync();
@@ -267,18 +279,19 @@ internal static partial class Program
         await page.Locator("thead").GetByRole(AriaRole.Button, new() { Name = "Priorité", Exact = true }).ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Shift } });
         await page.Locator("thead").GetByRole(AriaRole.Button, new() { Name = "Priorité ↑ 2", Exact = true }).WaitForAsync();
         Require(true, "Shift-click adds a second sort criterion while retaining the primary one.");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Colonnes", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Outils du tableau", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Choisir les colonnes", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Textbox, new() { Name = "Rechercher une colonne", Exact = true }).FillAsync("titre");
         Require(await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").CountAsync() == 1, "The column selector searches the schema without changing hidden columns or their order.");
         await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
         await ClickNavigationAsync(page, "settings");
         await page.Locator(".page-content[data-page=settings]").GetByRole(AriaRole.Combobox, new() { Name = "Thème", Exact = true }).SelectOptionAsync("light");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light'");
         Require(application.Settings.Theme == "light", "A real appearance form updates both persisted C# preferences and the shell.");
         await page.Keyboard.PressAsync("Control+k");
-        await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync("Relevé de données");
+        await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync("Tickets");
         await page.Locator(".command-palette [data-command-id='page:records']").ClickAsync();
         await page.Locator(".page-content[data-page=records]").WaitForAsync();
         Require(await page.GetByRole(AriaRole.Dialog).CountAsync() == 0, "The keyboard command palette navigates and restores focus without a native modal.");
@@ -297,11 +310,11 @@ internal static partial class Program
         {
             application.LoadQualityFixture(data); await delivery;
             var observations = new List<string>();
-            foreach (var route in new[] { "home", "collect", "records", "quality" })
+            foreach (var route in new[] { "home", "data", "records", "quality" })
             {
                 await ClickNavigationAsync(page, route);
-                await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
-                observations.Add(await page.Locator(".page-content").InnerTextAsync());
+                await WaitForNavigationTargetAsync(page, route);
+                observations.Add(await page.Locator(route == "quality" ? "dialog[data-workspace-panel=quality]" : ".page-content").InnerTextAsync());
             }
             return observations.ToArray();
         }
@@ -312,14 +325,14 @@ internal static partial class Program
             && receivedScreens[3].Contains("Concordance à vérifier") && receivedScreens[3].Contains(received.Warnings[0])
             && !received.Complete && await page.Locator(".source-status.warning").CountAsync() == 0
             && !(await page.Locator(".source-status").InnerTextAsync()).Contains("concordance à vérifier"),
-            "Complete receipt stays unobtrusive across collection screens while the quality page retains sample differences and source warnings without certifying the result.");
-        await ClickNavigationAsync(page, "home");
-        await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='home' && !document.querySelector('#content').hasAttribute('aria-busy')");
-        await page.Locator(".page-content [aria-label='Bilan de la collecte']").GetByRole(AriaRole.Button, new() { Name = "Qualité du relevé", Exact = true }).ClickAsync();
-        await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='quality' && !document.querySelector('#content').hasAttribute('aria-busy')");
-        Require((await page.Locator(".page-content").InnerTextAsync()).Contains(received.Warnings[0])
-            && (await page.Locator(".page-content").InnerTextAsync()).Contains("Concordance à vérifier"),
-            "The compact receipt notice opens the actual quality page with the retained comparison details and warning.");
+            "Complete receipt stays unobtrusive across Accueil, Données and Tickets while the contextual quality tool retains sample differences and source warnings without certifying the result.");
+        await ClickNavigationAsync(page, "data"); await WaitForNavigationTargetAsync(page, "data");
+        await page.Locator(".workspace-data-metrics [data-open-panel=quality]").ClickAsync();
+        await WaitForNavigationTargetAsync(page, "quality");
+        var qualityPanel = page.Locator("dialog[data-workspace-panel=quality]");
+        Require((await qualityPanel.InnerTextAsync()).Contains(received.Warnings[0])
+            && (await qualityPanel.InnerTextAsync()).Contains("Concordance à vérifier"),
+            "The compact source metric opens its real contextual quality tool with the retained comparison details and warning.");
         await page.GetByRole(AriaRole.Button, new() { Name = "Voir les cellules divergentes", Exact = true }).ClickAsync();
         var divergenceEntry = page.Locator(".cell-divergence-entry");
         await divergenceEntry.Locator("summary").ClickAsync();

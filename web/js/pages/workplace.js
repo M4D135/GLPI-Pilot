@@ -4,7 +4,7 @@ import { renderTechnicians, renderPlanning } from './workplace-technicians.js';
 import { simulationNotice } from '../ui.js';
 
 export const pages = [
-  { id: 'day', title: 'Mon espace', group: 'Travailler', icon: 'sun', render: renderDay },
+  { id: 'day', title: 'Mes priorités', group: 'Travailler', icon: 'sun', render: renderDay },
   { id: 'tickets', title: 'Tickets', group: 'Travailler', icon: 'ticket', render: renderTickets },
   { id: 'enrichment', title: 'Lectures ciblées', group: 'Travailler', icon: 'list', render: renderEnrichment },
   { id: 'technicians', title: 'Équipe', group: 'Organiser', icon: 'users', render: renderTechnicians },

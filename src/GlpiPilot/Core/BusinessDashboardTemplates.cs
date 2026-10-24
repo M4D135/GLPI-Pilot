@@ -8,7 +8,7 @@ public sealed record BusinessDashboardValues(IReadOnlyList<string> Groups, IRead
 public sealed record BusinessWeatherThresholdPreset(string Kind, string SourceKey, double OrangeAbove, double RedAbove);
 
 /// <summary>Generic native views. Local profiles take precedence over editable starter thresholds.</summary>
-public static class BusinessDashboardTemplates
+public static partial class BusinessDashboardTemplates
 {
     // These are starting points for stock counts, not capacity or SLA targets.
     // Apply them only while constructing an unconfigured native profile. A saved
@@ -28,6 +28,7 @@ public static class BusinessDashboardTemplates
 
     public static readonly BusinessDashboardView[] Views =
     {
+        new("workspace", "Pilotage", "La météo, les risques et l’activité du service dans un périmètre commun."),
         new("weather", "Météo", "Stock, types, catégories et équipes : les volumes du relevé, leurs seuils et les actions du service."),
         new("pilotage", "Pilotage", "Chiffres clés des incidents et demandes, statut, affectation et ancienneté."),
         new("groups", "Groupes", "Stock actif de chaque groupe, avec les quatre statuts et leurs zéros connus."),
@@ -109,6 +110,7 @@ public static class BusinessDashboardTemplates
 
     public static DashboardBoardSettings Create(string key, DashboardSettings settings, BusinessDashboardValues observed)
     {
+        if (key == "workspace") return Workspace(settings, observed);
         var view = Views.FirstOrDefault(view => view.Key == key) ?? throw new System.IO.InvalidDataException("Rubrique de pilotage inconnue.");
         if (settings.Business.BoardOverrides.FirstOrDefault(board => board.Id == "business-" + key) is { } saved)
         {

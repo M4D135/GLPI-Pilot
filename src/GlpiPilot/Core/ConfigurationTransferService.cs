@@ -556,8 +556,8 @@ public static class ConfigurationTransferService
             ValidateStringList(board, "CollapsedSections", 60, 80);
             var boardId = Find(board, "Id")!.Value.GetString()!;
             if (!boardIds.Add(boardId)) throw Invalid("Chaque tableau de bord doit posséder un identifiant unique.");
-            if (Find(board, "Widgets") is not { } widgets || widgets.ValueKind != JsonValueKind.Array || widgets.GetArrayLength() > 60)
-                throw Invalid("Chaque tableau de bord peut contenir au maximum 60 widgets.");
+            if (Find(board, "Widgets") is not { } widgets || widgets.ValueKind != JsonValueKind.Array || widgets.GetArrayLength() > DashboardLayoutSettings.MaximumWidgets(Find(board, "Id")?.GetString() ?? ""))
+                throw Invalid($"Cette composition peut contenir au maximum {DashboardLayoutSettings.MaximumWidgets(boardId)} widgets.");
             var widgetIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var widget in widgets.EnumerateArray())
             {

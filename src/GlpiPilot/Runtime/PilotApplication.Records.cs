@@ -8,7 +8,7 @@ namespace GlpiPilot.Runtime;
 
 public sealed partial class PilotApplication
 {
-    private sealed record LocalTestImportDraft(string Path, string Token, string Fingerprint, long Revision, DateTimeOffset ExpiresAt, WorkbookPilotInspection Inspection);
+    private sealed record LocalTestImportDraft(string Path, string Token, string Fingerprint, long Revision, DateTimeOffset ExpiresAt, WorkbookPilotInspection? Inspection);
     private LocalTestImportDraft? _testImportDraft;
     private readonly HashSet<int> _testRecordBasket = new();
     private int[] RecordBasketRows(ExtractionResult data, DashboardSettings settings) => IsTestMode ? _testRecordBasket.Order().ToArray() : _basket.Find(data, settings);
@@ -34,10 +34,9 @@ public sealed partial class PilotApplication
             var token = Text(args, "token", 96);
             draft = _testImportDraft;
             if (draft is null || draft.Token != token || draft.Revision != Revision || draft.ExpiresAt < DateTimeOffset.UtcNow)
-                throw new InvalidOperationException("La sélection de feuille a expiré. Ouvrez à nouveau le fichier de simulation.");
+                throw new InvalidOperationException("La sélection du fichier a expiré. Ouvrez à nouveau le fichier de simulation.");
             if (Flag(args, "cancelled")) { _testImportDraft = null; return new { cancelled = true }; }
             path = draft.Path; sheetName = Text(args, "sheetName", 128);
-            if (sheetName.Length == 0) throw new InvalidDataException("Choisissez la feuille contenant la liste des incidents.");
             headerRow = Number(args, "headerRow", 0, 0, 1048576);
             if (await TestImportFingerprintAsync(path, ct).ConfigureAwait(false) != draft.Fingerprint)
                 throw new InvalidOperationException("Le fichier a changé depuis sa sélection. Ouvrez à nouveau le fichier de simulation.");
@@ -53,6 +52,8 @@ public sealed partial class PilotApplication
         var isWorkbook = extension is ".xlsx" or ".xlsm";
         if (extension is not (".csv" or ".xlsx" or ".xlsm" or ".tsv" or ".txt"))
             throw new InvalidDataException("Choisissez un fichier CSV, XLSX ou XLSM (TSV/TXT également acceptés). Pour un ancien classeur XLS, enregistrez une copie XLSX ou CSV dans Excel.");
+        if (isWorkbook && draft is not null && string.IsNullOrEmpty(sheetName))
+            throw new InvalidDataException("Choisissez la feuille contenant la liste des incidents.");
         if (isWorkbook && draft is null)
         {
             var fingerprint = await TestImportFingerprintAsync(path, ct).ConfigureAwait(false);
@@ -64,6 +65,15 @@ public sealed partial class PilotApplication
             return new { selectionRequired = true, token = selection.Token, fileName = Path.GetFileName(path), sheets = inspection.Sheets,
                 suggestedSheet = inspection.SuggestedSheet, suggestedHeaderRow = inspection.SuggestedHeaderRow,
                 workbookProfile = WorkbookProfileSummary(inspection.Profile), warnings = inspection.Warnings };
+        }
+        if (!isWorkbook && draft is null && Flag(args, "prepareOnly"))
+        {
+            // The UI chooses a file before flushing its current editors. Cancelling
+            // the chooser therefore leaves their live DOM and source context intact.
+            var selection = new LocalTestImportDraft(path, Guid.NewGuid().ToString("N"), await TestImportFingerprintAsync(path, ct).ConfigureAwait(false),
+                Revision, DateTimeOffset.UtcNow.AddMinutes(20), null);
+            _testImportDraft = selection;
+            return new { readyToImport = true, token = selection.Token, fileName = Path.GetFileName(path) };
         }
         var data = isWorkbook ? XlsxImportService.Read(path, Settings.MaxRows, ct, sheetName, headerRow)
             : NativeCsvImportService.Read(path, "", null, Settings.MaxRows, false, ct);
@@ -81,7 +91,7 @@ public sealed partial class PilotApplication
         data.Status = $"Simulation · fichier local · {data.Rows.Count:N0} lignes · {data.Headers.Count:N0} colonnes · {receipt}";
         // Validate and initialize a complete isolated session before replacing any
         // visible state. The real application and its stores remain untouched.
-        var interpretation = draft?.Inspection.Profile is { } profile && Flag(args, "useWorkbookProfile", true) ? profile.ApplyTo(Settings) : Settings.Copy();
+        var interpretation = draft?.Inspection?.Profile is { } profile && Flag(args, "useWorkbookProfile", true) ? profile.ApplyTo(Settings) : Settings.Copy();
         var result = await EnterSimulationAsync(data, interpretation, fileName, sourceRows, fileReadComplete, missingFormulaValues, ct, path).ConfigureAwait(false);
         _testImportDraft = null; return result;
     }

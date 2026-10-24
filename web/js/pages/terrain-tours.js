@@ -5,7 +5,9 @@ import { openMap } from './maps.js';
 
 export async function renderTours(ctx) {
   const p = page(ctx, 'Tournées et interventions', 'Préparez un panier, ordonnez les étapes et vérifiez les horaires, les compétences et les capacités déclarées avant le départ.');
-  let state = await p.call('terrain.tours.state'), tab = ctx.params?.tourId ? 'planning' : 'basket';
+  let state = await p.call('terrain.tours.state'), tab = ctx.params?.tourId || ctx.params?.openDraft ? 'planning' : 'basket';
+  const embedded = ['basket', 'planning', 'saved', 'services'].includes(ctx.params?.terrainPanel);
+  if (embedded && !ctx.params?.tourId && !ctx.params?.openDraft) tab = ctx.params.terrainPanel;
   let headerForm = null, headerInitial = '', pointForms = null, headerTechnician = null;
   let projectionOffset = 0, basketOffset = 0, stopsOffset = 0, scheduleOffset = 0, manualOrder = false;
   let selectedCity = '', visibleBasket = [];
@@ -23,12 +25,14 @@ export async function renderTours(ctx) {
   function args(extra = {}) { return { revision: state.revision, draftVersion: state.draftVersion, ...extra }; }
   function filterArgs() { return { revision: state.revision, technician: scope.read(), allStatuses: allStatuses.checked }; }
   function paintSummary() {
-    summary.replaceChildren(el('div', { class: 'terrain-statbar' }, badge(`${state.selected} tickets dans le panier`),
+    summary.replaceChildren(el('div', { class: 'terrain-statbar' }, !embedded || tab === 'basket' ? badge(`${state.selected} tickets dans le panier`)
+      : state.draft ? badge(`${state.draft.tickets} ticket${state.draft.tickets === 1 ? '' : 's'} dans la tournée`) : null,
       state.draft ? badge(`${state.draft.name} · ${stateLabels[state.draft.state]}`, state.draft.state === 'ready' ? 'ok' : '') : badge('Aucune tournée ouverte'),
       state.dirty ? badge('Brouillon à enregistrer', 'warn') : ''));
   }
   function paintTabs() {
-    tabs.replaceChildren(...[['basket', 'Panier et villes'], ['planning', 'Planning daté'], ['saved', 'Tournées et calendrier'], ['services', 'Routes et météo']].map(([id, label]) =>
+    tabs.hidden = embedded;
+    if (!embedded) tabs.replaceChildren(...[['basket', 'Panier et villes'], ['planning', 'Planning daté'], ['saved', 'Tournées et calendrier'], ['services', 'Routes et météo']].map(([id, label]) =>
       button(label, p.act(async () => { if (headerChanged()) await applyHeader(); tab = id; paintTabs(); await loadTab(); }), { primary: tab === id })));
     content.replaceChildren(sections[tab]);
   }
@@ -319,7 +323,9 @@ export async function renderTours(ctx) {
   }))));
   paintSummary(); paintTabs();
   if (ctx.params?.tourId) await openTour(String(ctx.params.tourId)); else await loadTab();
-  return () => p.cleanup();
+  const cleanup = () => p.cleanup();
+  cleanup.beforeClose = async () => { if (headerChanged()) await applyHeader(); };
+  return cleanup;
 }
 
 function minutesClock(value) { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }

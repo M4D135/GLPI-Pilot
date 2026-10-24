@@ -18,6 +18,7 @@ public sealed partial class PilotApplication
     {
         TerrainRegister("maps.preview", MapPreviewData);
         TerrainRegister("maps.tiles", MapTiles);
+        RegisterMapWorkspaceOperations();
     }
 
     private object MapPreviewData(JsonElement args, CancellationToken ct)
@@ -96,15 +97,21 @@ public sealed partial class PilotApplication
         if (routes.Count == 0) Add("Tournée sans étape", true, Array.Empty<EmbeddedMapPlace>());
         if (routes.Any(route => route.Ordered)) notes.Add("Les pointillés indiquent l’ordre des visites à vol d’oiseau, pas un trajet routier. Les durées du planning restent inchangées.");
         ct.ThrowIfCancellationRequested();
+        var token = MapCreatePreview(reference, draftReference, tourVersion);
+        return new { token, title = routes.Count == 1 ? routes[0].Title : "Carte des tournées", routes, notes,
+            simulation = IsSimulationInstance,
+            notice = "Les repères et étapes sont consultables hors ligne. Le fond de rues OpenStreetMap utilise Internet, sans clé ni compte." };
+    }
+
+    private string MapCreatePreview(CitySettings reference, bool draftReference = false, int? tourVersion = null)
+    {
         foreach (var value in _mapPreviews.Values.Where(value => value.Created < DateTimeOffset.UtcNow.AddMinutes(-30)).ToArray())
             _mapPreviews.Remove(value.Token);
         if (_mapPreviews.Count >= 50) _mapPreviews.Remove(_mapPreviews.Values.MinBy(value => value.Created)!.Token);
         var token = Guid.NewGuid().ToString("N");
         _mapPreviews[token] = new(token, Revision, TerrainDigest(reference), draftReference,
             draftReference ? _terrainCityDraftVersion : null, tourVersion, DateTimeOffset.UtcNow);
-        return new { token, title = routes.Count == 1 ? routes[0].Title : "Carte des tournées", routes, notes,
-            simulation = IsSimulationInstance,
-            notice = "Les repères et étapes sont consultables hors ligne. Le fond de rues OpenStreetMap utilise Internet, sans clé ni compte." };
+        return token;
     }
 
     private object MapTiles(JsonElement args, CancellationToken ct)

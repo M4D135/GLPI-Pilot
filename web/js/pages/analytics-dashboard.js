@@ -30,17 +30,24 @@ export async function renderDashboard(ctx) {
   loading.remove(); ctx.analyticsRevision = model.revision;
   const layout = model.layout; let board = layout.boards.find(b => b.id === model.boardId); const personal = model.technicianKey.length > 0;
   ensureSections(board); let savedLayout = clone(layout); let saving = false;
+  const layoutAnimations = new Set();
+  const stopLayoutAnimations = () => { for (const animation of layoutAnimations) animation.cancel(); layoutAnimations.clear(); };
+  const motionObserver = new MutationObserver(() => {
+    if (document.documentElement.dataset.domeniaMotion !== 'on' || editing) stopLayoutAnimations();
+  });
+  motionObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-domenia-motion'] });
   const runArgs = { runId: model.runId, revision: model.revision }; const selected = new Set();
   const go = extra => ctx.navigate(business?.route || 'dashboard', { ...params, boardId: board.id, editing, ...extra });
   const persist = async (focus = null) => {
     if (saving) throw new Error('L’enregistrement précédent est encore en cours.');
     saving = true; ctx.root.dataset.ready = 'false'; ctx.root.setAttribute('aria-busy', 'true');
-    const lockedUi = [boardHost, editorHost, selectionHost, controls, visibilityHost, provenanceRow, ...document.querySelectorAll('dialog')].map(node => ({ node, wasInert: node.inert }));
+    const lockedUi = [boardHost, editorHost, selectionHost, controls, toolsPanel, visibilityHost, provenanceRow, ...document.querySelectorAll('dialog')].filter(Boolean).map(node => ({ node, wasInert: node.inert }));
     for (const { node } of lockedUi) node.inert = true;
     const positions = new Map([...boardHost.querySelectorAll('[data-widget-id]')].map(node => [node.dataset.widgetId, node.getBoundingClientRect()]));
     historyController?.abort(); let committed = false;
     try {
       await call(ctx, 'dashboard.layout.save', { personal, layout }); committed = true;
+      if (business) business.customLayout = true;
       // A saved native layout can carry its own edited threshold values.
       // Its starter provenance must not linger until the next navigation.
       weatherDefaultsNotice?.remove();
@@ -52,9 +59,13 @@ export async function renderDashboard(ctx) {
       list.replaceChildren(...layout.boards.map(item => el('option', { value: item.id, text: item.name, selected: item.id === board.id })));
       undoControl.disabled = !fresh.layoutHistory.undo; redoControl.disabled = !fresh.layoutHistory.redo;
       cross.control.checked = board.crossFilterOnClick; draw(); editStatus.textContent = 'Disposition enregistrée';
-      if (document.documentElement.dataset.motion !== 'reduce' && !matchMedia('(prefers-reduced-motion: reduce)').matches) for (const node of boardHost.querySelectorAll('[data-widget-id]')) {
+      if (!editing && document.documentElement.dataset.domeniaMotion === 'on') for (const node of boardHost.querySelectorAll('[data-widget-id]')) {
         const before = positions.get(node.dataset.widgetId); if (!before) continue; const after = node.getBoundingClientRect();
-        if (before.left !== after.left || before.top !== after.top) node.animate([{ transform: `translate(${before.left - after.left}px, ${before.top - after.top}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)' });
+        if (before.left !== after.left || before.top !== after.top) {
+          const animation = node.animate([{ transform: `translate(${before.left - after.left}px, ${before.top - after.top}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)' });
+          animation.id = 'domenia-widget-reorder'; layoutAnimations.add(animation);
+          animation.finished.catch(() => {}).finally(() => layoutAnimations.delete(animation));
+        }
       }
     } catch (reason) {
       if (!committed) { Object.assign(layout, clone(savedLayout)); board = layout.boards.find(item => item.id === model.boardId); draw(); }
@@ -90,14 +101,17 @@ export async function renderDashboard(ctx) {
   // Open synchronously without disabling the trigger: closing the dialog can
   // then restore keyboard focus to this same control.
   focusButton?.addEventListener('click', () => focusDialog());
-  const focus = focusButton ? el('div', { class: 'business-group-filter' }, toolbar(focusButton,
-    command(ctx, 'Toutes', () => go({ focusKeys: [], crossFilters: [] }), { disabled: !focusLabels.length, title: 'Afficher toutes les équipes et tous les groupes' })),
-    el('span', { class: 'business-group-summary', role: 'status', 'aria-live': 'polite', text: focusText, title: focusLabels.join('\n') || focusText })) : null;
-  const advancedTools = business ? el('details', { class: 'business-dashboard-tools' }, el('summary', { text: 'Outils du tableau' })) : null;
+  const focus = focusButton ? el('div', { class: 'business-group-filter' }, focusButton,
+    command(ctx, 'Toutes', () => go({ focusKeys: [], crossFilters: [] }), { disabled: !focusLabels.length, title: 'Afficher toutes les équipes et tous les groupes' })) : null;
+  const focusSummary = focusButton ? el('p', { class: 'business-group-summary', role: 'status', 'aria-live': 'polite', text: focusText, title: focusLabels.join('\n') || focusText }) : null;
+  const toolsId = `dashboard-tools-${uuid()}`;
+  const toolsPanel = business ? el('div', { class: 'business-dashboard-tools-content no-print', id: toolsId, hidden: true }) : null;
+  const advancedTools = business ? el('details', { class: 'business-dashboard-tools' }, el('summary', { text: 'Outils du tableau', 'aria-controls': toolsId, 'aria-expanded': 'false' })) : null;
+  advancedTools?.addEventListener('toggle', () => { toolsPanel.hidden = !advancedTools.open; advancedTools.firstElementChild.setAttribute('aria-expanded', String(advancedTools.open)); });
   const expertControls = toolbar(field('Périmètre personnel', people), editControl,
     command(ctx, 'Filtres et comparaison', () => filtersDialog()), organization);
   const controls = business ? toolbar(command(ctx, 'Paramètres du pilotage', () => ctx.navigate('pilot-settings'), { icon: 'settings' }),
-    focus, command(ctx, 'Exporter', () => exportDialog()), advancedTools)
+    focus, command(ctx, 'Exporter', () => exportDialog(), { icon: 'download' }), advancedTools)
     : toolbar(field('Disposition', list), ...expertControls.children, command(ctx, 'Exporter', () => exportDialog()));
   controls.classList.add('analytics-primary-toolbar', 'no-print');
   const provenance = el('details', { class: 'analytics-provenance print-provenance', 'aria-label': 'Provenance du tableau de bord' });
@@ -123,8 +137,11 @@ export async function renderDashboard(ctx) {
     command(ctx, business?.key === 'sites' ? 'Effectifs des sites (facultatif)' : 'Effectifs datés',
       () => ctx.navigate('populations', business?.key === 'sites' ? { returnPage: 'pilot-sites' } : {})),
     navigationVisible('assistant', ctx.state.settings?.interface) ? command(ctx, 'Assistant sur ce périmètre', () => ctx.navigate('assistant', runArgs)) : null);
-  if (advancedTools) advancedTools.append(el('div', { class: 'business-dashboard-tools-content' }, expertControls, scopeTools, visibilityHost, controlsAccess));
-  ctx.root.append(controls, provenanceRow, receptionIssue, freshnessIssue);
+  toolsPanel?.append(expertControls, scopeTools, visibilityHost, controlsAccess);
+  ctx.root.append(controls);
+  if (focusSummary) ctx.root.append(focusSummary);
+  if (toolsPanel) ctx.root.append(toolsPanel);
+  ctx.root.append(provenanceRow, receptionIssue, freshnessIssue);
   if (business?.focusWarning) ctx.root.append(caption(business.focusWarning, 'warning'));
   const weatherDefaultsNotice = business?.key === 'weather' && business.usingWeatherDefaults
     ? caption('Seuils de départ à adapter dans Paramètres du pilotage.') : null;
@@ -264,6 +281,7 @@ export async function renderDashboard(ctx) {
     await load(0);
   }
   function draw() {
+    stopLayoutAnimations();
     ctx.root.dataset.businessEditing = String(editing);
     if (advancedTools) advancedTools.open = editing;
     editControl.textContent = editing ? 'Quitter l’édition' : 'Modifier le dashboard';
@@ -351,12 +369,15 @@ export async function renderDashboard(ctx) {
           controls.append(check.element, command(ctx, 'Régler', () => widgetDialog(setting)));
         } else controls.append(command(ctx, 'Lignes', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: setting.id, kind: 'scope' }, title)));
         header.append(controls);
-        const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}${widget.available === false ? ' is-unavailable' : ''}`,
+        const compactMetric = business && !editing && setting.kind === 'metric' && setting.presentation !== 'weather-volume' && setting.showDescription;
+        const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}${widget.available === false ? ' is-unavailable' : ''}${setting.kind === 'metric' && setting.presentation !== 'weather-volume' ? ' analytics-kpi-card' : ''}`,
           style: { '--span': setting.span, '--widget-height': `${setting.height}px` }, 'data-widget-id': setting.id, 'data-widget-kind': setting.kind,
-          'data-available': widget.available ?? 'unknown', 'data-auto-height': setting.autoHeight }, header,
+          'data-available': widget.available ?? 'unknown', 'data-auto-height': setting.autoHeight, 'data-compact-metadata': !!compactMetric }, header,
           caption(`${formatNumber(widget.rowCount)} lignes · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
             { snapshot: model.snapshot, historical: model.historical, compactWeather: business?.key === 'weather' && !editing,
+              preserveWidgetAccent: !business || business.customLayout || editing,
+              scopeDescription: setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel,
               onControls: () => controlsDialog(widget.content?.warnings), copyIds: selection => copyIds(widget, selection) }));
         if (business?.key === 'weather' && setting.kind === 'metric') {
           const disabledWeather = business.rules?.some(rule => rule.label === setting.title && rule.sourceKey === setting.sourceKey && rule.weatherEnabled === false);
@@ -628,7 +649,7 @@ export async function renderDashboard(ctx) {
     announce: text => { editStatus.textContent = text; }, signal: ctx.signal });
   draw();
   if (board.widgets.some(w => !w.hidden && (w.kind === 'history' || w.kind === 'metric' && w.showMiniHistory))) void loadHistory();
-  return () => { historyController?.abort(); cleanup(); };
+  return () => { historyController?.abort(); stopLayoutAnimations(); motionObserver.disconnect(); cleanup(); };
 }
 
 function newWidget(kind, sourceKey) { return { id: uuid(), kind, sourceKey, title: '', span: kind === 'metric' ? 3 : 6, height: kind === 'metric' ? 220 : 380, autoHeight: true,
@@ -661,7 +682,7 @@ function catalogEntries(catalog) {
     { kind: 'map', key: 'all', label: 'Carte des tickets · tous', available: true }, { kind: 'map', key: 'active', label: 'Carte des tickets · actifs', available: true }];
 }
 function widgetTitle(widget, catalog) { return widget.settings.title || catalogEntries(catalog).find(e => e.kind === widget.settings.kind && e.key === widget.settings.sourceKey)?.label || widget.content?.label || widget.content?.title || kindNames[widget.settings.kind]; }
-function comparisonCard(a, b) {
+export function comparisonCard(a, b) {
   const keys = new Set([...a.metrics.map(m => m.key), ...b.metrics.map(m => m.key)]);
   const rows = [...keys].map(key => { const left = a.metrics.find(m => m.key === key); const right = b.metrics.find(m => m.key === key); return { label: left?.label ?? right.label,
     a: number(left?.value, left?.unit), b: number(right?.value, right?.unit), difference: left?.value != null && right?.value != null && left.unit === right.unit ? number(left.value - right.value, left.unit) : 'Indisponible',

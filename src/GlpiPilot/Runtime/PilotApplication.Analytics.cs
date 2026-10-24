@@ -99,7 +99,7 @@ public sealed partial class PilotApplication
         var board = layout.Boards.FirstOrDefault(b => b.Id == boardId)?.Copy() ?? throw new InvalidDataException("Tableau de bord introuvable.");
         var cross = args.TryGetProperty("crossFilters", out var crossJson) ? Read<List<DashboardScopeFilter>>(crossJson) : new();
         var common = DashboardScopeFilter.CopyList(board.Filters.Concat(cross));
-        if (businessView.Length > 0) AnalyticsBusinessFocus(args, common, ct);
+        if (businessView.Length > 0 || args.TryGetProperty("focusKeys", out _)) AnalyticsBusinessFocus(args, common, ct);
         DashboardScopeFilter.ValidateList(common);
         var historical = HistoricalDocument; var locations = historical?.LocationEvidence?.ToReport(source) ?? Locations;
         var historySource = IsSimulationInstance && historical is null ? SimulationObservation() : source;
@@ -409,9 +409,17 @@ public sealed partial class PilotApplication
         var layout = JsonSerializer.Deserialize<DashboardLayoutSettings>(await File.ReadAllTextAsync(path, ct), Json) ?? throw new InvalidDataException("Disposition vide.");
         layout.Validate(); layout.Normalize(); layout.Validate();
         var personal = Flag(args, "personal"); var current = AnalyticsLayout(personal); var canAppend = current.Boards.Count + layout.Boards.Count <= 12;
-        var additions = canAppend ? DashboardLayoutSettings.AppendBoards(current, layout).AddedBoards : Array.Empty<DashboardAppendedBoard>();
+        IReadOnlyList<DashboardAppendedBoard> additions = Array.Empty<DashboardAppendedBoard>();
+        var appendReason = canAppend ? "" : $"L’ajout dépasserait 12 tableaux ({current.Boards.Count} existants + {layout.Boards.Count} importés).";
+        if (canAppend)
+        {
+            // A valid layout may be replaceable while collision remapping makes
+            // an additive import invalid. Keep its full, read-only preview.
+            try { additions = DashboardLayoutSettings.AppendBoards(current, layout).AddedBoards; }
+            catch (InvalidDataException error) { canAppend = false; appendReason = error.Message; }
+        }
         return new { layout, preview = true, baseFingerprint = AnalyticsLayoutFingerprint(personal), existingBoards = current.Boards.Count, canAppend,
-            addedBoards = additions, appendReason = canAppend ? "" : $"L’ajout dépasserait 12 tableaux ({current.Boards.Count} existants + {layout.Boards.Count} importés)." };
+            addedBoards = additions, appendReason };
     }
 
     private static DashboardSnapshot AnalyticsSnapshot(AnalyticsRun run, JsonElement args)

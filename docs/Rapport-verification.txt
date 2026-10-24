@@ -1,4 +1,120 @@
-GLPI Pilot 3.3.4 — Cartes intégrées, Mon espace, animations et météo
+GLPI Pilot 3.4.0 — Refonte des six espaces et carte centrale des tickets
+Contrôles locaux du 24 octobre 2026, avant validation native du pack
+Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
+
+PORTÉE DE LA REFONTE
+Six destinations principales : Accueil, Pilotage, Tickets, Terrain,
+Données, Réglages. Les anciennes routes sont des liens de compatibilité
+vers un espace et son action contextuelle ; elles ne créent pas un
+second menu ni une barre de vues historiques.
+
+Pilotage exécute une composition commune : météo, stock, points
+à traiter, équipes, demandes, contributions, notes. Les règles météo,
+leurs seuils stricts, catégories descendantes, ordre exclusif des équipes,
+visibilité et géométrie personnalisée sont conservés. La composition
+intégrée accepte 120 cartes ; les tableaux personnalisés gardent leur
+limite de 60. Les 48 règles météo maximales restent présentes avec les
+analyses opérationnelles. Les filtres d’équipes sont cumulés sans
+multiplier une même ligne. Les filtres persistés restent visibles et
+réinitialisables ; les comparaisons et historiques utilisent le moteur.
+
+Tickets réunit la liste et le dossier ; recherche, sélection, position
+et brouillons de lecture sont conservés. Les notes personnelles ont une
+action d’enregistrement explicite. Les écritures en attente du suivi
+se terminent dans l’ancien contexte avant une bascule de simulation.
+La sélection d’un fichier est préparée avant le remplacement de la
+session ; l’annulation du sélecteur ne détruit pas la page courante.
+
+Terrain réunit carte, tickets et visites prévues. Équipes et techniciens
+se cumulent, le statut et le type bornent le stock. Une position de site,
+un repère approximatif de commune et une absence de coordonnées restent
+distincts. Les affectations observées et visites datées ne sont jamais
+présentées comme une position GPS réelle d’un agent. Une sélection est
+prévisualisée avant la création explicite d’un brouillon de tournée.
+La limite de 2 000 tickets est refusée avant toute troncature.
+
+À l’ouverture explicite d’une carte, les rues sont demandées aussi en
+simulation. Seules les images GET HTTPS OpenStreetMap validées par la
+permission native sont admises ; les données métier et marqueurs sont
+locaux. Si le fond distant échoue, le fond vectoriel Natural Earth garde
+les repères et les listes. Le fond local ne contient pas de rues ; les
+pointillés ne calculent pas un trajet routier.
+
+Les animations s’appuient sur la référence Domenia v2 réellement examinée.
+Soleil, rayons, plans de nuages, pluie, reflets et entrées sont distincts.
+Trois politiques : Expressives, Suivre Windows, Réduites. Les surfaces
+hors écran sont suspendues ; tableaux et valeurs ne changent pas sous
+l’effet décoratif. Le contraste renforcé supprime ces effets.
+
+VALIDATIONS LOCALES ÉTABLIES
+- DashboardChecks : 145/145 ; règles, seuils, composition intégrée,
+  conservation des 48 règles, visibilité et géométrie, sauvegarde.
+- DashboardLayoutChecks : 46/46 ; capacité intégrée et limites conservées.
+- FoundationChecks : 36/36 ; migration des six espaces et réglages.
+- AnalyticsBridgeChecks : 146/146 ; dont 27 nouveaux contrôles Terrain.
+  Périmètres, identités, pagination de 2 001 lignes, révisions, aperçus,
+  brouillon protégé et isolation du CSV réel sont vérifiés. L'import
+  d'une composition de 120 cartes reste prévisualisable si l'ajout est
+  impossible ; son remplacement explicite conserve toutes les cartes.
+- TerrainWebChecks : 30/30 ; Chromium et runtime C# réels, carte/liste,
+  panneaux, préconisations, erreurs dans le dialogue et filtre transmis
+  depuis Pilotage. Les 21 contrôles métier précédents sont conservés.
+- Navigation WebView : 24/24 ; six espaces, menus lisibles, préférences,
+  mobile/clavier, alias métier, ancrages et simulation depuis Données.
+- Mouvement WebView : 10/10 ; horloges et matrices SVG réellement
+  différentes, pixels clair/sombre, chiffres et dimensions stables,
+  arrêt/reprise, Windows réduit, mode expressif et pause hors écran.
+- Palette WebView : 15/15 ; commandes, cache, identités, retours de focus,
+  réponses tardives et conservation des saisies.
+- Pilotage WebView : 42/42 ; météo complète, seuils, filtres cumulés,
+  56 lignes exactes sans doublons, détails bornés, contextes enregistrés,
+  comparaison, édition transactionnelle, export CSV, aperçu d'import
+  et ajout de composition, section personnalisée et fenêtre de 1 280 px.
+- Workplace WebView : 61/61 ; liste et dossier, notes explicites,
+  brouillon conservé après un refus de fermeture et nouvelle tentative,
+  panneaux contextuels et nettoyage unique dans le contexte d'origine.
+- Recherche de résolutions WebView : 17/17 ; recherche, filtres et
+  précédents locaux dans le nouvel espace Tickets.
+- Bibliothèque WebView : 14/14 ; lecture, versions, notes, conflits et
+  connexions dans les panneaux de Données.
+- Parcours Bibliothèque WebView : 13/13 ; contributions, échanges,
+  corpus et intégration des outils d'équipe.
+- Opérations partagées WebView : 8/8 ; parcours avec le runtime réel,
+  carte intégrée et requêtes externes strictement bornées.
+- RuntimeSessionChecks : 94/94 ; acquisition, navigateur et session.
+- Simulation et import WebView : 81/81 ; fichier à 19 champs, six espaces
+  et outils contextuels, actions simulées, carte de rues et repli local,
+  tournées, bibliothèque, partage et mise à jour virtuels. Annuler le
+  sélecteur conserve le DOM et la saisie ; import refusé, import confirmé,
+  démonstration et sortie attendent l'écriture déjà engagée. La note du
+  profil habituel reste identique octet pour octet.
+- Intégration WebView complète : 128/128 ; les 47 contrôles du pont,
+  des tableaux et de la qualité passent avec les 81 contrôles de
+  simulation dans la même exécution finale.
+- Syntaxe JavaScript : 49/49 modules ; aucun échec de syntaxe.
+- Compilation croisée de l'application 3.4.0 : 0 avertissement,
+  0 erreur, y compris le correctif final d'import de compositions.
+
+Ces résultats sont issus des sources finales de la refonte. Ce rapport
+ne vaut pas validation native Windows avant réussite du workflow du
+commit publié.
+
+LIMITES DES ESSAIS
+Les parcours Chromium utilisent les modules réels et le backend C# avec
+des données synthétiques. Les tuiles de test sont interceptées localement :
+le comportement des couches et des permissions est vérifié, sans tester
+la disponibilité d’OpenStreetMap sur le réseau de l’utilisateur. Aucun
+portail métier ou SSO privé n’est utilisé. Les copies du classeur et les
+captures contenant des informations métier ne sont pas publiées.
+
+PUBLICATION
+Les packs PROD et DEV sont publiés après les contrôles Windows et
+PostgreSQL de leur commit : démarrage natif, mise à jour, retour arrière,
+reconstruction DEV et intégrité. La compilation croisée ne remplace pas
+ces étapes. Le SHA source et les empreintes de wad identifient la livraison.
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.4 — Cartes intégrées, Mon espace, animations et météo
 Contrôles locaux du 24 octobre 2026, avant validation native du pack
 Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
 

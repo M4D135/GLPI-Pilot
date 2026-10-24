@@ -26,7 +26,7 @@ internal static class BusinessViewChecks
                 new DashboardLayoutSettings { ActiveBoardId = board.Id, Boards = new() { board } }.Validate();
                 check(board.Widgets.Count > 0 && board.Id == "business-" + view.Key, "Each native route has a stable ready-to-use board.");
             }
-            check(BusinessDashboardTemplates.Views.Length == 8 && JsonSerializer.Serialize(settings) == before, "All native views leave custom settings intact.");
+            check(BusinessDashboardTemplates.Views.Length == 9 && JsonSerializer.Serialize(settings) == before, "The integrated workspace and compatibility calculations leave custom settings intact.");
         });
         test("Unconfigured native weather uses editable starter thresholds for all stock cards", () =>
         {

@@ -40,7 +40,7 @@ export async function renderDay(ctx) {
       body.replaceChildren(enabled.element, note('Pendant l’ouverture de GLPI Pilot, les rappels restent visibles dans cette liste. Les notifications affichent uniquement un nombre. Les plages de silence et le verrouillage de session suspendent l’affichage sans consommer les rappels.'), button('Vérifier les rappels maintenant', run(ctx, async () => { const result = await call(ctx, 'workplace.reminders.check'); ctx.notify(`${result.count} rappel(s) à traiter` + (result.notified ? ' · notification affichée.' : result.deferred ? ' · notification différée.' : '.')); })));
     }
   }
-  ctx.root.replaceChildren(heading('Mon espace', 'Votre file, vos rappels et les changements observés depuis la précédente session.'), intro, content);
+  ctx.root.replaceChildren(heading('Mes priorités', 'Votre file, vos rappels et les changements observés depuis la précédente session.'), intro, content);
   scope.addEventListener('change', run(ctx, async () => { page = 0; await saveView(); await load(); }));
   search.addEventListener('keydown', e => { if (e.key === 'Enter') run(ctx, async () => { page = 0; await saveView(); await load(); })(); });
   await load();

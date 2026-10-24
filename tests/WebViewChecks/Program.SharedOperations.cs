@@ -24,12 +24,21 @@ internal static partial class Program
         { ViewportSize = new() { Width = 1440, Height = 1000 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.Reduce });
         var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000);
         var errors = new ConcurrentQueue<string>(); var externalRequests = 0;
+        var tileRequests = new ConcurrentQueue<string>(); PilotApplication? mapApplication = null;
         var replies = new ConcurrentQueue<(string Operation, JsonElement Result)>();
         page.PageError += (_, error) => errors.Enqueue(error);
         page.Console += (_, message) => { if (message.Type == "error") errors.Enqueue(message.Text); };
         await context.RouteAsync("**/*", async route =>
         {
             var uri = new Uri(route.Request.Url);
+            if (EmbeddedMapsService.IsTileUrl(route.Request.Url) && mapApplication?.AllowsMapTileRequest(route.Request.Url) == true)
+            {
+                // Opening Terrain explicitly shows its map. Fulfil only the
+                // exact native image allow-list locally; no Internet is used.
+                tileRequests.Enqueue(route.Request.Url);
+                await route.FulfillAsync(new() { ContentType = "image/png", BodyBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=") });
+                return;
+            }
             if (uri.Host != "glpi-pilot.local") { Interlocked.Increment(ref externalRequests); await route.AbortAsync(); return; }
             var relative = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'); if (relative.Length == 0) relative = "index.html";
             var path = Path.GetFullPath(Path.Combine(web, relative));
@@ -54,6 +63,7 @@ internal static partial class Program
         settings.Dashboard.ColumnMappings = new(StringComparer.Ordinal)
         { ["id"] = "ID", ["title"] = "Titre", ["status"] = "Statut", ["priority"] = "Priorité", ["assignee"] = "Technicien", ["location"] = "Lieu", ["category"] = "Catégorie" };
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);
+        mapApplication = app;
         app.LoadQualityFixture(new()
         {
             Title = "Travail partagé synthétique", SourceUrl = sourceUrl, Complete = true, ExpectedTotal = 2, ExtractedAt = DateTimeOffset.UtcNow,
@@ -101,8 +111,7 @@ internal static partial class Program
             }; window.__pilotDeliver = message => { for (const listener of listeners) listener({ data: message }); }; })();
             """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
-        async Task Ready(string id) => await WaitForPageAsync(page,
-            "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
+        async Task Ready(string id) => await WaitForNavigationTargetAsync(page, id);
         async Task Go(string id) { await ClickNavigationAsync(page, id); await Ready(id); }
         async Task Idle() => await WaitForPageAsync(page, "!document.querySelector('.page-content button[aria-busy=true]')");
         async Task<TeamWorkspaceItem> Published(string operation)
@@ -120,9 +129,9 @@ internal static partial class Program
         }
         async Task<ILocator> Preview(TeamWorkspaceItem item, string title)
         {
-            await Go("library");
-            await page.GetByRole(AriaRole.Navigation, new() { Name = "Vues de la bibliothèque", Exact = true })
-                .GetByRole(AriaRole.Button, new() { Name = "Équipe", Exact = true }).ClickAsync();
+            await Go("data");
+            await page.Locator(".page-content [data-open-panel='team']").ClickAsync();
+            await page.Locator("dialog[open][data-workspace-panel='team']").WaitForAsync();
             var card = page.Locator(".library-result").Filter(new()
             { Has = page.GetByRole(AriaRole.Heading, new() { Name = item.Title, Exact = true }) });
             await card.GetByRole(AriaRole.Button, new() { Name = "Examiner et reprendre", Exact = true }).ClickAsync();
@@ -134,12 +143,19 @@ internal static partial class Program
             var count = replies.Count(reply => reply.Operation == "workspace.operation.apply");
             await modal.GetByRole(AriaRole.Button, new() { Name = label, Exact = true }).ClickAsync();
             await Until(() => replies.Count(reply => reply.Operation == "workspace.operation.apply") == count + 1);
-            await Ready(route);
+            if (route == "tours")
+            {
+                await WaitForNavigationTargetAsync(page, "terrain-map");
+                await page.Locator("dialog[open][data-workspace-panel='planning']").WaitForAsync();
+            }
+            else await Ready(route);
             return replies.Last(reply => reply.Operation == "workspace.operation.apply").Result;
         }
 
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await page.Locator("body[data-ready=true]").WaitForAsync();
-        await Go("tickets"); await Button("Mon travail").ClickAsync();
+        await Go("records");
+        await page.Locator(".tickets-record-grid tbody tr").Filter(new() { HasText = "#8200001" }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
+        await Button("Notes et rappels").ClickAsync();
         await page.GetByRole(AriaRole.Textbox, new() { Name = "Mes notes", Exact = true }).FillAsync(SharedNote);
         await Button("Enregistrer et partager la note").ClickAsync();
         var noteItem = await Published("workspace.publishPersonalNote");
@@ -150,7 +166,9 @@ internal static partial class Program
             && personal.GetProperty("notes").GetString() == SharedNote && personal.GetProperty("pinned").GetBoolean(),
             "The ticket editor saves and publishes the exact note through its real action while private checklist, draft and pinning stay on the workstation.");
 
-        await Go("tours"); await Button("Planning daté").ClickAsync(); await Idle();
+        await Go("terrain-map");
+        await page.Locator(".page-content [data-open-panel='planning']").ClickAsync();
+        await page.Locator("dialog[open][data-workspace-panel='planning']").WaitForAsync(); await Idle();
         await Button("Enregistrer et partager la tournée").ClickAsync();
         var tourItem = await Published("workspace.publishTour");
         Require(tourItem.Kind == "tour" && tourItem.Payload is not null
@@ -233,14 +251,26 @@ internal static partial class Program
         var appliedTechnicians = await Apply(technicianPreview, "Appliquer les données métier", "technicians");
         var technicianBackup = Path.Combine(_root, "SharedImports", appliedTechnicians.GetProperty("backupName").GetString()!);
         var received = TechnicianPreferences.Load(preferencePath).Get("Alice");
+        Console.WriteLine("TECHNICIAN RECEIPT: " + JsonSerializer.Serialize(new
+        {
+            previewReadOnly = preferencesUnchanged,
+            backupExact = Enumerable.SequenceEqual(preferencesBefore, await File.ReadAllBytesAsync(technicianBackup)),
+            skills = received.Skills.SequenceEqual(["Réseau"]), capacity = received.DailyCapacityMinutes,
+            favorite = received.Favorite, target = received.ActiveTarget,
+            privateNoteRetained = received.Notes == recipientPreference.Notes,
+            privateAvailabilityRetained = received.AvailabilityNote == recipientPreference.AvailabilityNote,
+            externalRequests, mapTiles = tileRequests.Count, errors = errors.ToArray(),
+            forbiddenOperations = replies.Where(reply => reply.Operation is "workplace.ticket.read" or "workplace.ticket.browser" or "workplace.ticket.tab"
+                or "workplace.actions.inspect" or "workplace.actions.preview" or "workplace.actions.confirm").Select(reply => reply.Operation).ToArray()
+        }));
         Require(preferencesUnchanged && Enumerable.SequenceEqual(preferencesBefore, await File.ReadAllBytesAsync(technicianBackup))
             && received.Skills.SequenceEqual(["Réseau"]) && received.DailyCapacityMinutes == 240
             && !received.Favorite && received.ActiveTarget == 17 && received.Notes == recipientPreference.Notes
             && received.AvailabilityNote == recipientPreference.AvailabilityNote
-            && externalRequests == 0 && errors.IsEmpty
+            && externalRequests == 0 && errors.IsEmpty && !tileRequests.IsEmpty && tileRequests.All(EmbeddedMapsService.IsTileUrl)
             && !replies.Any(reply => reply.Operation is "workplace.ticket.read" or "workplace.ticket.browser" or "workplace.ticket.tab"
                 or "workplace.actions.inspect" or "workplace.actions.preview" or "workplace.actions.confirm"),
-            "Receiving shared skills updates business declarations after review, preserves personal favorites, objectives and notes, retains an exact backup, and performs no GLPI read or write.");
+            "Receiving shared skills updates business declarations after review, preserves private preferences and exact backups, and performs no GLPI read/write or unauthorized request; explicitly opened map tiles are intercepted locally.");
         await Capture("shared-technicians-applied");
         await delivery;
     }

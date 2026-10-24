@@ -1,4 +1,4 @@
-# GLPI Pilot 3.3.4 — Windows x64
+# GLPI Pilot 3.4.0 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -25,27 +25,54 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 | `wad/sources/` dans DEV | Sources C#, sources web, tests et scripts de reconstruction |
 
+## Six espaces, une interface reconstruite
+
+La version **3.4.0** remplace le catalogue d’écrans par six espaces conçus autour du travail à accomplir. Les outils détaillés s’ouvrent dans leur contexte ; le menu ne propose plus les anciennes vues comme une série d’onglets.
+
+| Espace | Travail proposé |
+| --- | --- |
+| **Accueil** | Priorités personnelles, alertes, rendez-vous et tournées du jour ; accès direct aux tickets et à la carte |
+| **Pilotage** | Météo, stock, tickets à traiter, répartition des équipes, catégories, ancienneté et contribution dans une seule composition |
+| **Tickets** | Liste du relevé et dossier réunis, recherche, sélection, notes, rappels et actions assistées |
+| **Terrain** | Carte centrale des tickets, affectations observées, visites prévues, sélection et préparation d’une tournée |
+| **Données** | Import CSV/Excel, collecte GLPI, qualité, correspondances, bibliothèque, recherche de précédents et espace d’équipe |
+| **Réglages** | Apparence, animations, météo et équipes, automatisations, stockage, mises à jour et diagnostic |
+
+**Pilotage partage un même périmètre** entre ses sept sections : météo, stock, attention, équipes, demandes, contributions et notes. Cumuler plusieurs équipes et groupes ne compte pas deux fois un ticket commun. Les limites et la source des chiffres restent visibles ; chaque mesure ouvre les lignes qui la composent. **Composer** permet de modifier les cartes, leur taille, leur visibilité et leur ordre. Les compositions personnalisées restent disponibles.
+
+**Tickets fusionne le relevé et le dossier.** Sur grand écran, la liste et la fiche sont côte à côte ; les fenêtres plus étroites disposent d’un retour à la liste. Les filtres, la sélection et la position de lecture sont conservés. Les notes personnelles se sauvegardent par leur action explicite ; le brouillon de suivi termine sa sauvegarde dans le contexte courant avant un changement de simulation.
+
+**Terrain devient un outil de préparation.** Filtrer les équipes, techniciens, types et statuts, ouvrir les tickets d’un lieu, sélectionner un périmètre puis prévisualiser une tournée. Les affectations proviennent des tickets observés ; les visites affichées sont datées et prévues. Elles n’indiquent pas la position GPS actuelle d’une personne. Les lieux inconnus, ambigus ou sans coordonnées restent comptés et accessibles dans les listes. Une position de commune est indiquée comme approximative.
+
+Les **rues OpenStreetMap se chargent à l’ouverture d’une carte, y compris en simulation**. Le fond vectoriel local prend le relais si elles sont indisponibles ; **Fond hors ligne** permet de le choisir. Tout reste intégré dans l’application, sans clé cartographique. Les marqueurs et les données métier sont locaux ; seules les images de rues sont demandées au fournisseur. Les pointillés montrent l’ordre des visites à vol d’oiseau.
+
+Le style reprend la référence réelle de **Domenia v2** : surfaces translucides, orbes colorées, lumières, entrées et reflets, scènes météo animées et KPI illustrés. **Réglages → Animations** propose Expressives, Suivre Windows et Réduites. Les scènes hors écran sont suspendues ; les valeurs et tableaux restent stables. Les barres d’action ont des hauteurs communes et se réorganisent lorsque la fenêtre rétrécit.
+
+Assistant, Lectures ciblées et Effectifs des sites sont **masqués par défaut**. Leur activation dans Réglages ajoute l’outil dans l’espace concerné. Aucun modèle de langage n’est nécessaire pour les fonctions de pilotage ou la recherche locale de précédents.
+
+Voir les [notes 3.4.0](docs/RELEASE-3.4.0.md), le [guide actuel](docs/Guide-GLPI-Pilot.html) et le [rapport de vérification](docs/Rapport-verification.txt).
+
 ## Premier réglage, puis un clic
 
-1. Dans **Collecte GLPI**, renseigner l’adresse **complète de la recherche**, filtres compris, et choisir Edge ou Chrome. Enregistrer la source ; le dossier des exports se règle dans Configuration.
-2. Cliquer **Lancer la collecte**. Le navigateur réservé à la collecte reste réduit ; il s’affiche temporairement si une validation SSO visible demande une intervention, puis la collecte reprend discrètement.
-3. Examiner le relevé, son état d’exhaustivité et le dashboard. Cliquer une valeur retrouve les tickets correspondants.
-4. Dans **Équipe**, choisir son nom et **C’est moi** pour le travail personnel. Définir les villes, sites, bâtiments et variantes dans **Référentiel géographique** si besoin.
-5. Aux sessions suivantes, réutiliser la source enregistrée. Les vues nommées, tableaux de bord et réglages de présentation restent mémorisés.
+1. Dans **Données**, renseigner l’adresse complète de la recherche GLPI, filtres compris, puis choisir Edge ou Chrome. Les profils de sources et leurs réglages sont accessibles dans le même espace.
+2. Cliquer **Lancer la collecte**. Le navigateur dédié reste réduit ; il s’affiche temporairement lorsqu’une validation SSO visible demande une intervention, puis la collecte reprend discrètement.
+3. Vérifier les contrôles de données, puis ouvrir **Tickets**, **Pilotage** ou **Terrain**. Les chiffres utilisent le même relevé.
+4. Dans **Pilotage → Analyser et organiser → Charge des techniciens**, choisir son identité avec **C’est moi**. Le référentiel se gère dans **Terrain → Gérer le référentiel**.
+5. Réutiliser les sources et réglages enregistrés aux ouvertures suivantes. **Réglages → Seuils, équipes et règles météo** permet d’adapter le pilotage au service.
 
-**Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
+**Afficher le navigateur** redonne la main à tout moment ; cet affichage manuel reste visible après connexion. L’utilisateur actionne les formulaires, la case « Se souvenir de moi » et le bouton de connexion. Une interface GLPI personnalisée peut demander l’apprentissage initial du tableau ou des sections.
 
-## Nouveautés de la version 3.3.4
+## Tester tout le logiciel avec un fichier local
 
-**Les cartes sont intégrées directement dans l’application, sans clé ni compte.** Depuis Sites, le référentiel ou les tournées, la carte Leaflet affiche les lieux enregistrés, les repères cliquables et les étapes numérotées. Elle reste dans l’écran GLPI Pilot : aucune fenêtre de navigateur n’est ouverte. Les journées et affectations conservent leurs parcours distincts ; les étapes sans coordonnées restent listées et interrompent les liaisons, sans position inventée.
+Choisir **Importer en simulation** sur Accueil, **Importer CSV / Excel** dans Données, ou utiliser **Ctrl+K**. CSV, TSV, TXT, XLSX et XLSM sont acceptés. Pour Excel, choisir la feuille et la ligne d’en-têtes ; un profil compatible peut reprendre la météo, les équipes et les sites du classeur. Les valeurs enregistrées sont lues sans exécuter les macros ni les formules. L’ancien XLS doit être enregistré en XLSX ou CSV.
 
-Le fond local Natural Earth et les repères fonctionnent hors ligne. En usage normal, ouvrir la carte charge les rues OpenStreetMap dans le même écran. **En simulation, le fond local est utilisé par défaut** ; **Afficher les rues** permet d’ajouter le fond détaillé avec Internet, puis **Fond hors ligne** le retire. Les pointillés représentent l’ordre des visites à vol d’oiseau ; ils ne constituent pas un calcul routier. Le réglage d’une clé Google et les liens vers une carte externe ont été retirés.
+Les six espaces et leurs outils utilisent l’extrait importé dans un contexte isolé : fiches, actions simulées, météo, bibliothèque, requêtes, sites, tournées, partage simulé et mise à jour virtuelle. Les données absentes du fichier restent signalées comme absentes. Annuler le choix du fichier conserve le travail courant. **Quitter la simulation** retrouve le relevé et le profil habituels. Les rues demandent Internet ; le fond local conserve les repères hors ligne.
 
-**La section du menu s’appelle Mon espace.** Les épingles, l’ordre des rubriques et les choix de visibilité restent conservés. Le thème Domenia renforce les apparitions progressives des cartes, les transitions et les retours d’activité, sans déplacer les tableaux ni modifier les chiffres. Les effets se réduisent avec les préférences de l’application ou du système et en contraste renforcé.
+Les seuils météo initiaux sont **100/200** pour le stock, **50/100** pour incidents ou demandes et **10/20** par équipe ou catégorie. Le dépassement est strict. Les règles personnalisées, les cartes masquées et leur ordre de priorité restent conservés.
 
-**La météo de stock possède des seuils de départ.** Sans règles personnalisées, le stock global utilise **100 / 200**, les incidents et demandes **50 / 100**, les catégories et équipes **10 / 20**. Le passage au nuage puis à la pluie utilise un dépassement strict, comme dans le classeur. Ces repères sont modifiables dans **Paramètres du pilotage** ; les seuils importés ou déjà enregistrés restent conservés. **Remplir les seuils vides** complète explicitement les seules cases non renseignées.
+## Historique des versions précédentes
 
-Voir les [notes 3.3.4](docs/RELEASE-3.3.4.md) et le [rapport de vérification](docs/Rapport-verification.txt) pour les contrôles du commit livré.
+Les descriptions ci-dessous documentent leur version d’origine. Les nouveaux parcours et le comportement cartographique de **3.4.0** sont ceux présentés ci-dessus. Les [notes 3.3.4](docs/RELEASE-3.3.4.md) conservent le détail de la première carte intégrée.
 
 ## Nouveautés de la version 3.3.3
 
@@ -199,7 +226,7 @@ Les fonctions métier de la version précédente sont raccordées aux nouvelles 
 
 Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livré et les prérequis restants. La validation du portail/SSO et du matériel de l’entreprise nécessite cet environnement ; la signature de confiance de l’EXE nécessite un certificat de l’éditeur. Aucun de ces deux prérequis n’est présenté comme accompli par les tests synthétiques.
 
-## Fonctions disponibles
+## Fonctions disponibles dans la version actuelle
 
 ### Interface et relevé
 
@@ -224,7 +251,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 
 - Identité personnelle mémorisée, tableaux de bord par technicien, gestion de l’équipe, favoris et objectifs locaux.
 - Compétences, territoires, relais, absences, capacité déclarée et estimations de durée. Scénarios de répartition avec explications et comparaison avant/après.
-- **Mon espace** : file ordonnée, sélection depuis le relevé, notes, checklists, modèles, rappels locaux, report et passation.
+- **Accueil et Tickets** : file ordonnée, sélection depuis le relevé, notes, checklists, modèles, rappels locaux, report et passation, dans des espaces intégrés.
 - Jusqu’à 12 onglets de tickets, épingles et sections préférées ; chronologie du traitement, filtres et recherche, changements observés entre deux lectures.
 - Cache de lecture facultatif, explicitement daté ; rapprochements locaux entre tickets et solutions réellement lues, avec leurs références.
 
@@ -235,7 +262,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - File des lieux à vérifier, corrections locales par installation et identifiant unique ; import CSV du référentiel avec comparatif avant application.
 - Colonnes enrichies, indicateurs de couverture et répartitions par ville/site/territoire.
 - Initialisation facultative par `wad/sites.csv`, avec termes de détection, communes, adresses et coordonnées. Enrichissement des champs manquants sans écraser les corrections locales.
-- Cartes intégrées Leaflet sans clé pour les sites et les tournées : repères locaux, étapes numérotées et fond détaillé OpenStreetMap facultatif. En simulation, le fond local est actif par défaut ; aucun navigateur externe n’est ouvert.
+- **Terrain** : carte intégrée Leaflet des tickets, sites et visites prévues, sélection de tickets et création explicite de tournées. Rues OpenStreetMap par défaut, y compris en simulation ; repli local hors ligne, sans navigateur externe.
 - Tableau des sites avec stock actif, zéros, inconnus, préconisations configurables et copie de tous les identifiants du périmètre.
 - Tournées datées à partir d’un panier explicite, états et historique motivé, départ/retour, durées, calendriers de sites et étapes verrouillées. Répartition sur plusieurs jours et techniciens selon compétences, absences, plages de présence et budgets du matin et de l’après-midi ; les capacités inconnues restent exclues de la proposition.
 - Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs par défaut. Un service OSRM compatible peut fournir distances et durées routières après configuration et consentement ; sa provenance et sa date restent visibles.
@@ -282,6 +309,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.4.0](docs/RELEASE-3.4.0.md)
 - [Notes de version 3.3.4](docs/RELEASE-3.3.4.md)
 - [Notes de version 3.3.3](docs/RELEASE-3.3.3.md)
 - [Notes de version 3.3.2](docs/RELEASE-3.3.2.md)

@@ -118,6 +118,10 @@ function Assert-PackContents {
             'wad/web/js/pages/library.js', 'wad/web/css/library.css',
             'wad/web/js/navigation.js', 'wad/web/css/navigation.css',
             'wad/web/js/domenia-motion.js', 'wad/web/css/domenia.css',
+            'wad/web/js/workspace-panels.js', 'wad/web/css/workspaces.css', 'wad/web/css/home.css', 'wad/web/css/tickets.css',
+            'wad/web/js/pages/home-workspace.js', 'wad/web/js/pages/pilot-workspace.js', 'wad/web/js/pages/data-workspace.js',
+            'wad/web/js/pages/settings-workspace.js', 'wad/web/js/pages/tickets-workspace.js', 'wad/web/js/pages/terrain-map.js',
+            'wad/web/js/pages/workspace-widget-editor.js', 'wad/web/js/pages/weather-scene.js', 'wad/docs/RELEASE-3.4.0.md',
             'wad/web/js/pages/shared-operations.js',
             'wad/web/js/command-palette.js', 'wad/web/js/library-ticket.js', 'wad/web/css/command-palette.css',
             'wad/web/js/library-resolution.js', 'wad/web/css/library-resolution.css',
@@ -133,6 +137,11 @@ function Assert-PackContents {
             $required += @(
                 'wad/sources/build.ps1', 'wad/sources/README.md', 'wad/sources/.gitattributes',
                 'wad/sources/src/GlpiPilot/GlpiPilot.csproj',
+                'wad/sources/src/GlpiPilot/Core/BusinessDashboardWorkspace.cs',
+                'wad/sources/tests/AnalyticsBridgeChecks/Program.MapWorkspace.cs',
+                'wad/sources/tests/DashboardChecks/WorkspaceChecks.cs',
+                'wad/sources/tests/WebViewChecks/Program.Motion.cs',
+                'wad/sources/src/GlpiPilot/Runtime/PilotApplication.MapWorkspace.cs',
                 'wad/sources/tests/WindowsStartupChecks/Program.cs',
                 'wad/sources/build-tools/Invoke-WindowsCi.ps1', 'wad/sources/web/index.html',
                 'wad/sources/src/GlpiPilot/Desktop/MainForm.cs', 'wad/sources/src/GlpiPilot/Core/SiteReferenceInitializer.cs', 'wad/sources/build-tools/WebView2Runtime.json',
@@ -253,8 +262,8 @@ try {
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '\d+/\d+ Foundation checks passed\.' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '66/66 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '142/142' },
-                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '45/45 checks passed.' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '145/145' },
+                @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '46/46 checks passed.' },
                 @{ Project = 'WorkbookProfileChecks'; Log = 'workbook-profile-checks.log'; Summary = '21/21 workbook profile checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },
                 @{ Project = 'TechnicianWorkloadChecks'; Log = 'technician-workload-checks.log'; Summary = '35/35' },
@@ -311,7 +320,9 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--library-only', '--screenshots', (Join-Path $logs 'library-preview')) `
                 -LogName 'ticket-library-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 ticket library WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--navigation-only', '--screenshots', (Join-Path $logs 'navigation-preview')) `
-                -LogName 'navigation-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '23/23 navigation WebView checks passed.'
+                -LogName 'navigation-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 navigation WebView checks passed\.\r?$'
+            Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--motion-only', '--screenshots', (Join-Path $logs 'motion-preview')) `
+                -LogName 'motion-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 continuous motion WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--business-preview-only', '--screenshots', (Join-Path $logs 'business-preview')) `
                 -LogName 'native-pilot-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 native pilot views WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--shared-operations-only', '--screenshots', (Join-Path $logs 'shared-operations-preview')) `
@@ -325,7 +336,7 @@ try {
             $driver = Join-Path $repository 'tests/TerrainBridgeChecks/bin/Release/net10.0/.playwright'
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') -Arguments @('tests/TerrainWebChecks/run.cjs') `
-                -LogName 'terrain-webview-checks.log' -TimeoutSeconds 180 -ExpectedSummary '21/21 terrain WebView page checks passed.'
+                -LogName 'terrain-webview-checks.log' -TimeoutSeconds 180 -ExpectedSummary '30/30 terrain WebView page checks passed.'
         }
         'BuildPack' {
             $release = Join-Path $OutputDirectory 'release'

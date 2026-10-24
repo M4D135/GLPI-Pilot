@@ -13,6 +13,7 @@ export function initializeDomeniaMotion() {
   const surfaces = new WeakSet();
   const queuedSurfaces = new Set();
   const revealingSurfaces = new Set();
+  const trackedSurfaces = new Set();
   const surfaceSelector = '.hero,.metric,.analytics-widget,.library-result,.library-stat,.quick-link,.page-content > .card,.page-content > .grid > .card';
   let revealFrame = 0;
   let frame = 0;
@@ -20,7 +21,29 @@ export function initializeDomeniaMotion() {
   let spotlight = null;
 
   const allowed = () => !document.hidden && root.dataset.motion !== 'reduce'
-    && root.dataset.contrast !== 'true' && !reduced.matches && !contrast.matches;
+    && root.dataset.contrast !== 'true' && !contrast.matches
+    && (root.dataset.motionPolicy === 'full' || !reduced.matches);
+  const editing = node => node?.closest('.is-editing,[data-business-editing=true],[data-layout-editing=true]');
+  const viewport = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      entry.target.dataset.motionVisible = String(entry.isIntersecting);
+      if (entry.isIntersecting) queueSurface(entry.target);
+      else if (spotlight === entry.target) resetPointer();
+    }
+  }, {rootMargin: '40px 0px', threshold: 0});
+
+  function observeSurface(node) {
+    if (trackedSurfaces.has(node) || !node.closest('.page-content')) return;
+    trackedSurfaces.add(node);
+    node.classList.add('domenia-motion-surface', 'domenia-spot');
+    node.dataset.motionVisible = 'false';
+    if (!node.querySelector(':scope > .domenia-spotlight')) {
+      const shine = document.createElement('span');
+      shine.className = 'domenia-spotlight'; shine.setAttribute('aria-hidden', 'true');
+      node.prepend(shine);
+    }
+    viewport.observe(node);
+  }
 
   function finishSurface(node) {
     node.classList.remove('domenia-surface-enter');
@@ -36,7 +59,7 @@ export function initializeDomeniaMotion() {
     if (surfaces.has(node) || !node.closest('.page-content')) return;
     surfaces.add(node);
     // An existing card moved by the editor must never replay its entrance.
-    if (!allowed() || node.closest('dialog,[hidden],[draggable=true],.is-editing')) return;
+    if (!allowed() || editing(node) || node.closest('dialog,[hidden],[draggable=true]')) return;
     queuedSurfaces.add(node);
     if (revealFrame) return;
     revealFrame = requestAnimationFrame(() => {
@@ -45,8 +68,8 @@ export function initializeDomeniaMotion() {
       if (!allowed()) return;
       let index = 0;
       for (const surface of pending) {
-        if (!surface.isConnected || surface.closest('dialog,[hidden],[draggable=true],.is-editing')) continue;
-        surface.style.setProperty('--d-card-delay', `${Math.min(index++, 9) * 20}ms`);
+        if (!surface.isConnected || editing(surface) || surface.closest('dialog,[hidden],[draggable=true]')) continue;
+        surface.style.setProperty('--d-card-delay', `${Math.min(index++, 6) * 55}ms`);
         surface.classList.add('domenia-surface-enter'); revealingSurfaces.add(surface);
       }
     });
@@ -56,6 +79,8 @@ export function initializeDomeniaMotion() {
     frame = 0; pending = null;
     if (spotlight) {
       spotlight.style.removeProperty('--d-mx'); spotlight.style.removeProperty('--d-my');
+      spotlight.style.removeProperty('--d-rx'); spotlight.style.removeProperty('--d-ry');
+      spotlight.removeAttribute('data-motion-pointer');
       spotlight = null;
     }
   }
@@ -69,7 +94,7 @@ export function initializeDomeniaMotion() {
       // its busy selector disappears. Cancel only our named decorative effects,
       // including such detached animations, when the preference is switched off.
       for (const animation of document.getAnimations()) {
-        if (animation.animationName?.startsWith('domenia-')) animation.cancel();
+        if (/^(domenia-|pilot-weather-)/.test(animation.animationName || '')) animation.cancel();
       }
     }
   }
@@ -89,25 +114,30 @@ export function initializeDomeniaMotion() {
     if (node.closest('table,[role=grid],dialog')) return;
     if (node.matches('.hero')) decorateHero(node);
     node.querySelectorAll('.hero').forEach(decorateHero);
-    if (node.matches(surfaceSelector)) queueSurface(node);
-    node.querySelectorAll(surfaceSelector).forEach(queueSurface);
+    if (node.matches(surfaceSelector)) observeSurface(node);
+    node.querySelectorAll(surfaceSelector).forEach(observeSurface);
   }
   new MutationObserver(changes => {
     for (const change of changes) for (const node of change.addedNodes) decorate(node);
     for (const node of revealingSurfaces) if (!node.isConnected) finishSurface(node);
+    for (const node of trackedSurfaces) if (!node.isConnected) { viewport.unobserve(node); trackedSurfaces.delete(node); }
   }).observe(document.body, {childList: true, subtree: true});
-  new MutationObserver(sync).observe(root, {attributes: true, attributeFilter: ['data-motion', 'data-contrast']});
+  new MutationObserver(sync).observe(root, {attributes: true, attributeFilter: ['data-motion', 'data-motion-policy', 'data-contrast']});
   const finishEntrance = event => {
     if (event.animationName === 'domenia-surface-enter' && event.target instanceof Element) finishSurface(event.target);
   };
   document.addEventListener('animationend', finishEntrance);
   document.addEventListener('animationcancel', finishEntrance);
   document.addEventListener('dragstart', clearSurfaces, true);
+  document.addEventListener('focusin', event => {
+    const surface = event.target instanceof Element ? event.target.closest('.domenia-surface-enter') : null;
+    if (surface) finishSurface(surface);
+  });
 
   document.addEventListener('pointermove', event => {
     if (!allowed() || !pointer.matches || event.pointerType === 'touch' || event.buttons) { resetPointer(); return; }
-    const host = event.target instanceof Element ? event.target.closest('.quick-link') : null;
-    if (!host) { resetPointer(); return; }
+    const host = event.target instanceof Element ? event.target.closest('.domenia-spot,.quick-link') : null;
+    if (!host || editing(host) || host.dataset.motionVisible === 'false') { resetPointer(); return; }
     pending = {host, x: event.clientX, y: event.clientY};
     if (frame) return;
     frame = requestAnimationFrame(() => {
@@ -116,11 +146,16 @@ export function initializeDomeniaMotion() {
       const {host, x, y} = pending; pending = null;
       if (spotlight && spotlight !== host) {
         spotlight.style.removeProperty('--d-mx'); spotlight.style.removeProperty('--d-my');
+        spotlight.style.removeProperty('--d-rx'); spotlight.style.removeProperty('--d-ry');
+        spotlight.removeAttribute('data-motion-pointer');
       }
       spotlight = host;
       const bounds = host.getBoundingClientRect();
       host.style.setProperty('--d-mx', `${Math.round(x - bounds.left)}px`);
       host.style.setProperty('--d-my', `${Math.round(y - bounds.top)}px`);
+      host.style.setProperty('--d-rx', `${Math.max(-3, Math.min(3, ((y - bounds.top) / bounds.height - .5) * -6)).toFixed(2)}deg`);
+      host.style.setProperty('--d-ry', `${Math.max(-3, Math.min(3, ((x - bounds.left) / bounds.width - .5) * 6)).toFixed(2)}deg`);
+      host.dataset.motionPointer = 'true';
     });
   }, {passive: true});
 
@@ -129,7 +164,7 @@ export function initializeDomeniaMotion() {
     const surface = event.target instanceof Element ? event.target.closest('.domenia-surface-enter') : null;
     if (surface) finishSurface(surface);
     if (!allowed() || event.button !== 0) return;
-    const host = event.target instanceof Element ? event.target.closest('.button.primary') : null;
+    const host = event.target instanceof Element ? event.target.closest('.button') : null;
     // Do not decorate data cells, tabs, widget handles or controls participating in a drag.
     if (!host || host.disabled || host.closest('table,[role=tablist],[role=tab],[draggable=true],.work-tabs,.work-open-tabs,.library-modes,.analytics-tabs,.analytics-widget-controls,.navigation-handle')) return;
     const bounds = host.getBoundingClientRect(); const size = Math.max(bounds.width, bounds.height);

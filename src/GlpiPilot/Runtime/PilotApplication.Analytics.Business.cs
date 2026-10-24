@@ -75,17 +75,21 @@ public sealed partial class PilotApplication
     }
     private void AnalyticsBusinessRefreshWeatherOverride(BusinessDashboardSettings business)
     {
-        var saved = business.BoardOverrides.FirstOrDefault(board => board.Id == "business-weather");
-        if (saved is null) return;
+        var savedBoards = business.BoardOverrides.Where(board => board.Id is "business-weather" or "business-workspace").ToArray();
+        if (savedBoards.Length == 0) return;
         var settings = AnalyticsBusinessSettings(); var observed = BusinessDashboardTemplates.Observe(Result, settings);
         var previous = BusinessDashboardTemplates.WeatherRules(settings, observed);
         settings.Business = business.Copy(); settings.Business.BoardOverrides.RemoveAll(board => board.Id == "business-weather");
         var generated = BusinessDashboardTemplates.Create("weather", settings, observed);
+        foreach (var saved in savedBoards)
+        {
+        var workspace = saved.Id == "business-workspace";
         var oldWeather = saved.Widgets.Where(widget => widget.Id.StartsWith("weather-rule-", StringComparison.Ordinal)
-            || previous.Any(rule => rule.Id == widget.Id || rule.Label == widget.Title && widget.Kind == "metric")).ToArray();
-        var freshWeather = generated.Widgets.Where(widget => widget.Id.StartsWith("weather-rule-", StringComparison.Ordinal)).ToArray();
+            || (!workspace || widget.Section == "weather") && previous.Any(rule => rule.Id == widget.Id || rule.Label == widget.Title && widget.Kind == "metric")).ToArray();
+        var freshWeather = generated.Widgets.Where(widget => widget.Id.StartsWith("weather-rule-", StringComparison.Ordinal)).Select(widget => widget.Copy()).ToArray();
         foreach (var fresh in freshWeather)
         {
+            if (workspace) fresh.Section = "weather";
             var old = oldWeather.FirstOrDefault(widget => widget.Id == fresh.Id || widget.Title == fresh.Title);
             if (old is null) continue;
             fresh.Span = old.Span; fresh.Height = old.Height; fresh.AutoHeight = old.AutoHeight; fresh.StartNewRow = old.StartNewRow;
@@ -99,6 +103,7 @@ public sealed partial class PilotApplication
         saved.FreshnessWarningHours = business.FreshnessWarningHours;
         var notes = saved.Widgets.FirstOrDefault(widget => widget.Kind == "note" && widget.Section == "actions");
         if (notes is not null) notes.Note = business.Notes;
+        }
         business.Validate();
     }
     private AnalyticsLayoutJournal AnalyticsBusinessJournal(string key, DashboardLayoutSettings? layout = null)

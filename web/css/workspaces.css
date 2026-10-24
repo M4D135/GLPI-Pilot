@@ -1,0 +1,143 @@
+/* Six workspaces share a rhythm. Data stays still; decoration carries motion. */
+.workspace-eyebrow{font-size:10px;font-weight:750;letter-spacing:1.8px;color:var(--accent);margin:0 0 10px;text-transform:uppercase}
+.workspace-intro{margin:0 0 22px;min-width:0}
+.workspace-intro>div:first-child{min-width:0;max-width:780px}
+.workspace-intro p:not(.workspace-eyebrow){max-width:720px;line-height:1.65}
+.workspace-intro-meta{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:18px;color:var(--muted);font-size:12px}
+.workspace-commandbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:14px 16px;background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid var(--border);border-radius:16px;position:relative;z-index:12;box-shadow:var(--shadow)}
+.workspace-filter-cluster,.workspace-action-cluster{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+.workspace-commandbar :is(.button,select,input),.workspace-menu>summary{height:var(--control);min-height:var(--control);margin:0;white-space:nowrap}
+.workspace-filter-cluster>select{max-width:230px;width:auto;min-width:145px}
+.workspace-scope-summary{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px 4px;color:var(--muted);font-size:12px;min-height:48px}
+.workspace-scope-summary strong{color:var(--text);max-width:60%;overflow-wrap:anywhere}
+.workspace-scope-summary .button{margin-left:auto;font-size:11px}
+.scope-dot{height:7px;width:7px;flex:none;border-radius:50%;background:var(--c3,var(--success));box-shadow:0 0 0 4px color-mix(in srgb,var(--c3,var(--success)) 13%,transparent)}
+.workspace-provenance{padding:10px 14px;border-left-width:1px;background:color-mix(in srgb,var(--surface) 70%,transparent);margin-bottom:18px}
+.workspace-provenance>summary{display:flex;align-items:center;flex-wrap:wrap;gap:9px;cursor:pointer;color:var(--muted);font-size:12px}
+.workspace-provenance[open]>summary{margin-bottom:12px}
+.workspace-menu{position:relative}
+.workspace-menu>summary{display:flex;align-items:center;gap:8px;list-style:none}
+.workspace-menu>summary::after{content:'⌄';font-size:15px}
+.workspace-menu>summary::-webkit-details-marker{display:none}
+.workspace-menu-content{position:absolute;right:0;top:calc(100% + 8px);width:max-content;max-width:min(360px,85vw);padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow-raised);display:grid;gap:4px}
+.workspace-menu-content>.button{justify-content:flex-start;text-align:left;width:100%;border-color:transparent;height:auto;white-space:normal}
+.workspace-menu-content>.button:hover{background:var(--surface-hover)}
+.pilot-section-index{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 18px;border-bottom:1px solid var(--border);margin:0 0 26px}
+.pilot-section-index>.button{font-size:11px;padding:7px 10px;background:transparent;border-color:transparent;color:var(--muted)}
+.pilot-section-index>.button:hover{background:var(--accent-soft);color:var(--accent)}
+.pilot-section-index .icon{width:15px;height:15px}
+.pilot-composition{display:grid;gap:32px}
+.pilot-block{min-width:0;scroll-margin-top:18px}
+.pilot-block-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 15px}
+.pilot-block-heading>div{min-width:0}
+.pilot-block-heading .workspace-eyebrow{float:left;margin:3px 12px 0 0;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:8px;padding:6px 8px;font-size:11px;letter-spacing:0;background:var(--accent-soft)}
+.pilot-block-heading h2{font-size:21px;margin:0 0 5px;letter-spacing:-.45px}
+.pilot-block-heading .analytics-caption{margin:0;max-width:850px}
+.pilot-widget-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;align-items:stretch}
+.pilot-workspace .pilot-widget{display:flex;flex-direction:column;padding:18px;border-radius:17px;min-height:0}
+.pilot-widget>.analytics-widget-heading{align-items:flex-start;min-height:33px;margin:0 0 12px;gap:10px}
+.pilot-widget .analytics-widget-heading h3{font-size:13px;line-height:1.45;margin:2px 0 0;flex:1;min-width:0;color:var(--muted);font-weight:650}
+.pilot-widget .analytics-widget-heading>.button{font-size:10px;padding:3px 7px;min-height:26px;flex:none;color:var(--muted);border-color:color-mix(in srgb,var(--border) 65%,transparent);background:transparent}
+.pilot-widget .analytics-widget-heading>.toolbar{margin:0;justify-content:flex-end;gap:4px}
+.pilot-widget .analytics-widget-heading>.toolbar .button{padding:3px 7px;font-size:11px;min-height:27px}
+.pilot-widget>.analytics-widget-body{flex:1;min-height:0}
+.pilot-workspace .business-weather-card .pilot-weather-scene{width:108px;height:88px;max-width:45%;flex:none}
+.pilot-workspace .business-weather-card .analytics-volume-weather-summary{gap:10px}
+.pilot-workspace .business-weather-card .analytics-metric-value{font-size:37px}
+.pilot-workspace .business-weather-hero{padding:24px 30px!important}
+.pilot-workspace .business-weather-hero .analytics-volume-weather-summary{max-width:100%;padding:0 5%;min-height:138px}
+.pilot-workspace .business-weather-hero .pilot-weather-scene{width:220px;height:146px;max-width:38%}
+.pilot-workspace .business-weather-hero .analytics-metric-value{font-size:clamp(50px,5.3vw,78px)}
+.pilot-workspace .business-weather-hero .analytics-widget-heading h3{font-size:16px;color:var(--text)}
+.pilot-workspace .analytics-volume-weather>.analytics-details{margin-top:auto}
+.pilot-workspace .analytics-kpi-main{min-height:65px}
+.pilot-workspace .analytics-kpi-emblem{width:45px;height:45px}
+.pilot-workspace .analytics-kpi .analytics-metric-value{font-size:34px}
+.pilot-workspace .analytics-details{padding-top:10px;margin-top:12px}
+.pilot-workspace .analytics-widget-body.kind-history{min-height:120px}
+.workspace-composition-tools{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:16px;border:1px dashed var(--accent);border-radius:14px;background:var(--accent-soft)}
+.workspace-composition-tools .analytics-caption{max-width:620px;margin:0}
+.workspace-composition-tools .toolbar{margin:0}
+.workspace-choice-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:16px;max-height:55vh;overflow:auto;padding:3px}
+.workspace-choice-grid>.analytics-check{display:flex;align-items:center;flex-wrap:wrap;gap:9px;border:1px solid var(--border);border-radius:10px;padding:12px;min-width:0}
+.workspace-choice-grid small{margin-left:24px;flex-basis:100%;font-size:10px}
+.workspace-visibility-group{display:grid;gap:9px;margin:12px 0;padding:15px;border:1px solid var(--border);border-radius:12px}
+.workspace-visibility-group>.analytics-check:first-child{font-weight:700}
+.workspace-catalog{display:grid;gap:6px;max-height:60vh;overflow:auto}
+.workspace-catalog>div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+.workspace-catalog>div>span{display:grid;gap:3px}
+.workspace-tool-panel{width:min(1220px,94vw);max-width:94vw;max-height:91vh}
+.workspace-tool-panel>.modal-body{padding:20px;overflow:auto}
+.workspace-tool-body{min-width:0;display:grid;gap:18px}
+.workspace-tool-body>.analytics-heading{display:none}
+.workspace-tool-body .card{margin:0}
+.workspace-tool-body .toolbar{row-gap:10px}
+.workspace-tool-body :is(.table-scroll,.table-wrap){max-width:100%}
+.workspace-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.workspace-section-grid>.card{height:100%;display:flex;flex-direction:column;margin:0}
+.workspace-section-grid>.card>.toolbar:last-child{margin-top:auto;padding-top:16px}
+.workspace-entry{display:flex;gap:14px;align-items:flex-start;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:17px}
+.workspace-entry>.icon{width:26px;height:26px;color:var(--accent);margin-top:4px}
+.workspace-entry>div{min-width:0;flex:1}
+.workspace-entry h3{font-size:17px;margin-bottom:7px}
+.workspace-entry .toolbar{margin-bottom:0}
+.workspace-data-source{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:18px;background:var(--surface);border:1px solid var(--border);border-radius:16px}
+.workspace-data-source>div:first-child{min-width:0;flex:1}
+.workspace-data-source h3{font-size:19px;margin:0 0 5px}
+.workspace-data-source .toolbar{margin:0}
+.workspace-data-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+.workspace-data-metrics .metric{margin:0;padding:17px}
+.workspace-data-metrics .metric-value{font-size:28px}
+.workspace-settings-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:22px}
+.workspace-settings-grid>.card{margin:0}
+.workspace-settings-tools{display:grid;gap:10px}
+.workspace-settings-tools>.button{min-height:64px;justify-content:flex-start;text-align:left;padding:12px 16px;border-radius:13px}
+.workspace-settings-tools>.button>span:last-child{display:grid;gap:3px}
+.workspace-settings-tools strong{font-size:13px}
+.workspace-settings-tools small{font-size:11px;line-height:1.45}
+@media(max-width:1250px){.pilot-widget-grid>.pilot-widget[data-span="3"],.pilot-widget-grid>.pilot-widget[data-span="4"]{grid-column:span 4}.workspace-commandbar{align-items:flex-start}.workspace-filter-cluster{flex:1}.workspace-filter-cluster>select{max-width:200px}.workspace-settings-grid{grid-template-columns:1fr}}
+@media(max-width:1000px){.pilot-widget-grid>.pilot-widget{grid-column:span 6}.pilot-widget-grid>.pilot-widget[data-span="12"],.pilot-widget-grid>.business-weather-hero{grid-column:1/-1}.workspace-data-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.workspace-section-grid{grid-template-columns:1fr}.workspace-commandbar{padding:12px}.workspace-action-cluster{width:100%;justify-content:flex-end}.pilot-block-heading{flex-wrap:wrap}}
+@media(max-width:680px){.pilot-widget-grid>.pilot-widget{grid-column:1/-1!important}.workspace-commandbar :is(.workspace-filter-cluster,.workspace-action-cluster){width:100%;justify-content:flex-start}.workspace-filter-cluster>select{max-width:100%;flex:1}.pilot-section-index{gap:3px}.pilot-section-index>.button{font-size:10px;padding:6px}.pilot-workspace .business-weather-hero{padding:18px!important}.pilot-workspace .business-weather-hero .analytics-volume-weather-summary{padding:0}.workspace-scope-summary strong{max-width:85%}.workspace-tool-panel>.modal-body{padding:12px}.workspace-tool-panel{max-width:98vw;width:98vw}}
+@media print{.workspace-intro{min-height:0!important;padding:16px!important}.workspace-commandbar,.pilot-section-index,.workspace-composition-tools{display:none!important}.pilot-widget-grid{gap:12px}.pilot-block{break-inside:auto}.pilot-widget{break-inside:avoid}.workspace-provenance{display:block!important}}
+
+/* Workspace headings remain useful without pushing the first result off screen. */
+.workspace:has(.page-content[data-workspace]:not(.home-workspace))>.page-heading{min-height:40px;margin-bottom:14px}
+.workspace:has(.page-content[data-workspace]:not(.home-workspace))>.page-heading h1{font-size:25px;line-height:1.2}
+.workspace:has(.page-content[data-workspace]:not(.home-workspace))>.page-heading :is(small,p){display:none}
+.pilot-workspace{gap:10px}
+.pilot-workspace .pilot-intro{min-height:0;padding:18px 24px;margin:0}
+.pilot-intro>div:first-child{max-width:none}
+.pilot-intro .workspace-eyebrow{display:none}
+.pilot-intro h2{font-size:29px;margin:0 0 8px}
+.pilot-intro p:not(.workspace-eyebrow){max-width:none;margin:0;font-size:13px;line-height:1.5}
+.pilot-intro .workspace-intro-meta{margin-top:10px;font-size:11px}
+.pilot-intro .hero-icon{width:62px;height:62px;border-radius:19px}
+.pilot-intro .hero-icon>.icon{width:30px;height:30px}
+.pilot-workspace .workspace-scope-summary{min-height:30px;padding:5px 3px}
+.pilot-workspace .workspace-provenance{margin:0;padding:8px 12px}
+.pilot-workspace .pilot-section-index{margin:0;padding:0 0 10px}
+.pilot-workspace .workspace-operation-status:empty{display:none}
+.pilot-workspace .workspace-operation-status>.analytics-caption{margin:0}
+.pilot-workspace .pilot-block-heading{margin-bottom:12px}
+.data-workspace .workspace-intro,.settings-workspace .workspace-intro{min-height:170px;padding:24px 28px;margin-bottom:0}
+@media(max-width:680px){.pilot-intro h2{font-size:24px}.pilot-workspace .pilot-intro{padding:18px}.pilot-intro .workspace-intro-meta{gap:6px}.workspace:has(.page-content[data-workspace]:not(.home-workspace))>.page-heading h1{font-size:23px}}
+
+.pilot-widget-grid[hidden]{display:none}.pilot-composition[data-density=compact] .pilot-widget-grid{gap:10px}.pilot-composition[data-density=compact] .pilot-widget{padding:14px}.pilot-block-heading>.toolbar{margin:0;flex:none}.pilot-block-heading>.toolbar>.button{font-size:11px;min-height:30px}.workspace-catalog .toolbar{margin:0;flex:none}
+
+.workspace-data-metrics .metric{display:flex;flex-direction:column;align-items:flex-start;gap:5px}.workspace-data-metrics .metric>small{display:block;line-height:1.5;margin-bottom:8px}.workspace-data-metrics .metric>.button{margin-top:auto}
+
+.workspace:has(.local-test-banner:not([hidden])) .pilot-block{scroll-margin-top:96px}
+.workspace:has(.local-test-banner:not([hidden])) .home-workspace [data-home-section]{scroll-margin-top:96px}
+@media(max-width:1400px){
+  .pilot-workspace .pilot-intro{padding:14px 20px}
+  .pilot-intro h2{font-size:25px;margin:0}
+  .pilot-intro p:not(.workspace-eyebrow),.pilot-intro .workspace-intro-meta{display:none}
+  .pilot-intro .hero-icon{width:44px;height:44px;border-radius:14px}
+  .pilot-intro .hero-icon>.icon{width:25px;height:25px}
+  .pilot-workspace .workspace-commandbar{padding:12px;gap:8px}
+  .pilot-workspace .workspace-commandbar :is(button,select,summary){font-size:11px;padding-inline:8px}
+  .pilot-workspace .workspace-filter-cluster,.pilot-workspace .workspace-action-cluster{gap:6px}
+  .pilot-workspace .business-weather-hero[data-auto-height=true]{padding:18px 24px!important}
+  .pilot-workspace .business-weather-hero[data-auto-height=true] .analytics-volume-weather-summary{min-height:96px}
+  .pilot-workspace .business-weather-hero[data-auto-height=true] .pilot-weather-scene{width:160px;height:104px}
+}

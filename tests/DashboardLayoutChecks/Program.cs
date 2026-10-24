@@ -280,6 +280,16 @@ Test("Native pilot settings reject duplicate rules foreign overrides and contrad
     settings.WeatherRules.RemoveAt(1); settings.BoardOverrides.Add(DashboardLayoutSettings.CreateBoard("Foreign", "empty")); Invalid(settings.Validate);
     settings.BoardOverrides.Clear(); settings.WeatherRules[0].Kind = "team"; settings.WeatherRules[0].Values = Enumerable.Range(1, 33).Select(index => "Group " + index).ToList(); Invalid(settings.Validate);
 });
+Test("Integrated composition accepts its 120 cards while ordinary boards retain a sixty-card bound", () =>
+{
+    var layout = Layout("empty"); var board = layout.Boards[0];
+    board.Id = "business-workspace"; layout.ActiveBoardId = board.Id;
+    board.Widgets = Enumerable.Range(0, 120).Select(index => new DashboardWidgetSettings { Id = "w" + index, Kind = "note" }).ToList();
+    layout.Validate(); layout.Normalize(); Assert(board.Widgets.Count == 120);
+    board.Widgets.Add(new() { Id = "too-many", Kind = "note" }); Invalid(layout.Validate);
+    board.Widgets.RemoveAt(120); board.Id = "ordinary"; layout.ActiveBoardId = board.Id; Invalid(layout.Validate);
+    board.Widgets.RemoveRange(60, 60); layout.Validate();
+});
 var failures = 0;
 foreach (var (name, run) in checks) { try { run(); Console.WriteLine("PASS " + name); } catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex.Message); } }
 Console.WriteLine($"{checks.Count - failures}/{checks.Count} checks passed.");

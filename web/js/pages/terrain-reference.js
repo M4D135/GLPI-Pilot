@@ -8,6 +8,7 @@ const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi',
 export async function renderReference(ctx) {
   const p = page(ctx, 'Référentiel géographique', 'Villes, sites, bâtiments et règles de localisation. Préparez vos modifications, puis vérifiez leur effet sur le relevé complet.');
   let state = await p.call('terrain.reference.state'), kind = !state.cities && state.sites ? 'site' : 'city', offset = 0;
+  if (['site', 'city', 'building'].includes(ctx.params?.referenceKind)) kind = ctx.params.referenceKind;
   const summary = el('div'), listing = el('div'), configuration = el('div'), warningArea = el('div');
   const search = input('', { placeholder: 'Nom, alias ou rattachement', maxLength: 120 });
   const type = select(Object.entries(labels).map(([value, label]) => ({ value, label })), kind);
@@ -133,7 +134,11 @@ export async function renderReference(ctx) {
   }
   search.addEventListener('keydown', event => { if (event.key === 'Enter') p.run(async () => { offset = 0; await loadList(); }); });
   p.on('session.changed', () => p.message('Le relevé a changé. Actualisez cet écran avant une nouvelle simulation.'));
-  await reload(); return () => p.cleanup();
+  await reload();
+  if (ctx.params?.referenceId) {
+    const result = await p.call('terrain.reference.detail', { kind, id: ctx.params.referenceId }); state.draftVersion = result.draftVersion; await edit(kind, result.entry);
+  }
+  return () => p.cleanup();
 }
 
 function ruleEditor(p, rules) {

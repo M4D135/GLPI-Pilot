@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Globalization;
 using System.Security;
 using System.Text;
+using System.Text.Json;
 using GlpiPilot.Core;
 using GlpiPilot.Runtime;
 using Microsoft.Playwright;
@@ -21,7 +22,11 @@ internal static partial class Program
         var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000);
         var errors = new ConcurrentQueue<string>(); var offlineLibraryRequests = new ConcurrentQueue<string>(); var externalRequests = 0;
         var tileRequests = new ConcurrentQueue<string>(); var blockedTileRequests = new ConcurrentQueue<string>(); PilotApplication? mapApplication = null;
-        var failMapTiles = false;
+        var failMapTiles = false; var failedMapTileRequests = 0;
+        var contextCalls = new ConcurrentQueue<(string Operation, bool Simulation, JsonElement Args)>();
+        var personalSaves = new ConcurrentQueue<(string Notes, bool Simulation)>();
+        (TaskCompletionSource Started, TaskCompletionSource Release)? heldPersonalSave = null;
+        string? changeFileBeforeCommit = null;
         page.PageError += (_, error) => errors.Enqueue(error);
         await context.RouteAsync("**/*", async route =>
         {
@@ -33,7 +38,7 @@ internal static partial class Program
                 if (mapApplication?.AllowsMapTileRequest(route.Request.Url) != true)
                 { blockedTileRequests.Enqueue(route.Request.Url); await route.AbortAsync(); return; }
                 tileRequests.Enqueue(route.Request.Url);
-                if (failMapTiles) await route.AbortAsync();
+                if (failMapTiles) { Interlocked.Increment(ref failedMapTileRequests); await route.AbortAsync(); }
                 else await route.FulfillAsync(new() { ContentType = "image/png", BodyBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=") });
                 return;
             }
@@ -52,16 +57,36 @@ internal static partial class Program
             lock (gate) delivery = delivery.ContinueWith(async _ =>
             { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
-        await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), new AppSettings { Theme = "dark", ExportFolder = Path.Combine(_root, "Exports") });
+        await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), new AppSettings
+        { Theme = "dark", PortalUrl = QualityFixture().SourceUrl, ExportFolder = Path.Combine(_root, "Exports") });
         mapApplication = app;
         app.LoadQualityFixture(QualityFixture()); var original = app.Result;
         var originalLibrary = (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32();
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
         {
+            if (op is "records.test.import" or "records.test.exit" or "app.demo" or "workplace.ticket.position" or "workplace.personal.save")
+                contextCalls.Enqueue((op, app.IsTestMode, data.Clone()));
+            if (op == "workplace.personal.save" && heldPersonalSave is { } held)
+            {
+                heldPersonalSave = null;
+                held.Started.TrySetResult();
+                // Delay admission, not the result: this remains the real C#
+                // write and exposes a replacement sent before reader cleanup.
+                await held.Release.Task.WaitAsync(ct);
+            }
+            if (op == "records.test.import" && data.TryGetProperty("token", out _) && !data.TryGetProperty("cancelled", out _)
+                && changeFileBeforeCommit is { } changedPath)
+            {
+                changeFileBeforeCommit = null;
+                await File.AppendAllTextAsync(changedPath, "\r\n", ct);
+            }
             if (app.IsTestMode && op.StartsWith("library.", StringComparison.Ordinal)) offlineLibraryRequests.Enqueue(op);
             if (op == "app.ready") return new { ready = true };
             if (op == "host.editor") { app.EditorOpen = data.GetProperty("open").GetBoolean(); return new { updated = true }; }
-            return await app.ExecuteAsync(op, data, ct);
+            var result = await app.ExecuteAsync(op, data, ct);
+            if (op == "workplace.personal.save" && data.TryGetProperty("notes", out var notes))
+                personalSaves.Enqueue((notes.GetString()!, app.IsTestMode));
+            return result;
         }, Post); bridge = actualBridge;
         await page.ExposeBindingAsync("__pilotSend", (BindingSource _, string json) => bridge.Receive(json));
         await page.AddInitScriptAsync("""
@@ -72,7 +97,7 @@ internal static partial class Program
             }; window.__pilotDeliver = message => { for (const listener of listeners) listener({ data: message }); }; })();
             """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
-        async Task Ready(string id) => await WaitForPageAsync(page, "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
+        async Task Ready(string id) => await WaitForNavigationTargetAsync(page, id);
         async Task Capture(string name)
         {
             var argument = Array.IndexOf(args, "--screenshots"); if (argument < 0 || argument + 1 >= args.Length) return;
@@ -135,9 +160,11 @@ internal static partial class Program
             && app.Result.Rows.Count == 2 && app.Settings.Cities.Sites.Single().Address == "12 rue de l’Essai, Commune fictive",
             "The real CSV chooser imports all nineteen fields and keeps the configured reference before the complete navigation journey.");
 
-        var allPages = (await page.Locator(".nav-item[data-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.page)")).Concat(OptionalNavigationRoutes).Distinct().ToArray();
-        var businessPages = new[] { "pilot-weather", "pilot-summary", "pilot-groups", "pilot-categories", "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings" };
-        Require(businessPages.All(allPages.Contains), "Every workbook business section and its settings is a native navigation entry.");
+        var allPages = (await NavigationRouteIdsAsync(page)).Distinct().ToArray();
+        var sections = await page.Locator(".pilot-block[data-section-key]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.sectionKey)");
+        Require(allPages.SequenceEqual(WorkspaceRoutes) && new[] { "weather", "flow", "attention", "teams", "analysis", "people", "actions" }.All(sections.Contains)
+            && await page.Locator(".workspace-view").CountAsync() == 0,
+            "The six new workspaces expose one complete Pilotage composition with every workbook analysis and no old-view tab strip.");
         foreach (var id in allPages)
         {
             await Navigate(id);
@@ -148,19 +175,35 @@ internal static partial class Program
                 $"The {id} page is usable after the real CSV import, without the former restricted-mode screen.");
         }
 
-        await Navigate("pilot-sites");
-        await page.Locator(".business-dashboard-tools > summary").ClickAsync();
-        await Button("Effectifs des sites (facultatif)").ClickAsync(); await Ready("populations");
-        Require(await Button("+ Période d’effectif").IsEnabledAsync()
-            && (await page.Locator(".page-content").InnerTextAsync()).Contains("Option facultative", StringComparison.Ordinal),
-            "The optional site-population settings open from Sites with a usable form for an imported simulation.");
-        await Button("+ Période d’effectif").ClickAsync();
+        await Navigate("settings");
+        foreach (var label in new[] { "Assistant de langage", "Lectures ciblées", "Effectifs des sites" })
+            await page.GetByRole(AriaRole.Checkbox, new() { Name = label, Exact = true }).CheckAsync();
+        await Button("Appliquer les fonctions visibles").ClickAsync();
+        await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
+        var contextRoutes = new[] { "queries", "history", "technicians", "planning", "assistant", "sources", "collect", "library", "quality", "mapping", "enrichment", "terrain-reference", "terrain-review", "populations", "tours", "automation", "updates", "help", "operations", "pilot-settings" };
+        foreach (var route in contextRoutes)
+        {
+            await Navigate(route);
+            var tool = page.Locator("dialog[open][data-workspace-panel]").Last;
+            Require(await tool.Locator(".notice.danger").CountAsync() == 0 && await page.Locator(".workspace-view").CountAsync() == 0,
+                "The " + route + " capability opens as a usable contextual tool of its new workspace after a real CSV import.");
+        }
+
+        await Navigate("terrain-map");
+        await page.Locator(".maps-terrain-tools > summary").ClickAsync();
+        await Button("Effectifs des sites · facultatif").ClickAsync();
+        var terrainPanel = page.Locator("dialog.terrain-workspace-panel");
+        await terrainPanel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();
+        Require(await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "+ Période d’effectif", Exact = true }).IsEnabledAsync()
+            && (await terrainPanel.InnerTextAsync()).Contains("Option facultative", StringComparison.Ordinal),
+            "Optional site-population controls open inside Terrain with a usable form for the imported simulation, without an extra navigation space.");
+        await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "+ Période d’effectif", Exact = true }).ClickAsync();
         var populationEditor = page.GetByRole(AriaRole.Dialog, new() { Name = "Ajouter un effectif daté", Exact = true });
         await populationEditor.GetByLabel("Effectif entier positif", new() { Exact = true }).FillAsync("200");
         await populationEditor.GetByLabel("Référence de l’inventaire", new() { Exact = true }).FillAsync("Inventaire fictif de simulation");
         await populationEditor.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync();
         await populationEditor.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
-        await page.GetByRole(AriaRole.Cell, new() { Name = "Inventaire fictif de simulation", Exact = true }).WaitForAsync();
+        await terrainPanel.GetByRole(AriaRole.Cell, new() { Name = "Inventaire fictif de simulation", Exact = true }).WaitForAsync();
         var populationState = await Call(app, "populations.list");
         var withRatio = await Call(app, "dashboard.get", new { revision = app.Revision, businessView = "sites" });
         var ratio = withRatio.GetProperty("snapshot").GetProperty("metrics").EnumerateArray().Single(metric => metric.GetProperty("key").GetString() == "site-per100-people");
@@ -168,70 +211,117 @@ internal static partial class Program
             && !app.Result!.Provenance.SearchVerified && !app.Result.Provenance.ScopeVerified,
             "Saving the real form computes one localized ticket per 200 people without certifying GLPI provenance.");
         await Capture("simulation-site-populations");
-        await Button("Retour aux sites").ClickAsync(); await Ready("pilot-sites");
-        Require(await page.Locator(".analytics-sites").CountAsync() > 0, "The optional population settings return directly to Sites.");
+        await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await terrainPanel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await WaitForPageAsync(page, "document.querySelector('.maps-inline-host .maps-canvas')?.dataset.tiles==='online'");
+        Require(await page.Locator(".maps-inline-host .maps-workspace").CountAsync() == 1
+            && await page.Locator(".page-content").GetAttributeAsync("data-page") == "terrain-map",
+            "Closing the optional population panel returns directly to the central Terrain map.");
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Carte · Site fictif Nord", Exact = true }).ClickAsync();
-        var mapPreview = page.Locator("dialog.maps-dialog");
-        await mapPreview.WaitForAsync();
-        Require(tileRequests.IsEmpty && blockedTileRequests.IsEmpty && !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png")
+        var mapPreview = page.Locator(".maps-inline-host .maps-workspace");
+        await Until(() => !tileRequests.IsEmpty);
+        Require(app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png")
             && await mapPreview.Locator(".maps-marker").CountAsync() == 1 && await mapPreview.Locator("iframe").CountAsync() == 0 && context.Pages.Count == 1,
-            "Opening a real CSV site renders a Leaflet map directly in the main dialog, offline by default, without an iframe, extra window, API key or external navigation.");
-        await mapPreview.Locator(".maps-place").ClickAsync();
+            "Opening Terrain after a real CSV import loads its detailed embedded map directly in simulation, without an iframe, extra window, API key or external navigation.");
+        await mapPreview.Locator(".maps-place[data-located=true]").ClickAsync();
         Require(await mapPreview.Locator(".maps-place[aria-pressed=true]").CountAsync() == 1
             && (await mapPreview.Locator(".maps-popup").InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal),
-            "Selecting the site in the map list focuses its recorded coordinates and opens the same reference address on the map.");
+            "Selecting the site synchronizes the map popup, reference address and scoped ticket list.");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fond hors ligne", Exact = true }).ClickAsync();
+        var requestsBeforeFailure = tileRequests.Count;
+        var failuresBefore = Volatile.Read(ref failedMapTileRequests);
         failMapTiles = true;
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
-        await WaitForPageAsync(page, "document.querySelector('.maps-state')?.textContent.includes('indisponible') === true");
-        await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
-        Require(await mapPreview.Locator(".maps-marker").CountAsync() == 1 && await mapPreview.Locator(".leaflet-tile").CountAsync() == 0,
-            "A failed tile request returns to the offline map with a concise status and keeps the site usable.");
+        // Reopening the layer may reuse decoded images for its original zoom.
+        // Request a fresh zoom through the real control to exercise a network
+        // failure instead of relying on the browser to refetch the same tiles.
+        await mapPreview.Locator(".leaflet-control-zoom-in").ClickAsync();
+        try
+        {
+            await WaitForPageAsync(page, "document.querySelector('.maps-inline-host .maps-state')?.textContent.includes('indisponible') === true");
+            await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
+        }
+        catch
+        {
+            Console.WriteLine("MAP_TILE_FALLBACK " + JsonSerializer.Serialize(new
+            {
+                state = await mapPreview.Locator(".maps-state").TextContentAsync(),
+                tiles = await mapPreview.Locator(".leaflet-tile").CountAsync(),
+                requests = tileRequests.Count - requestsBeforeFailure,
+                rejected = Volatile.Read(ref failedMapTileRequests) - failuresBefore,
+                deniedByLease = blockedTileRequests.Count,
+                leaseActive = app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png")
+            }));
+            await Capture("simulation-map-tile-fallback-failure");
+            throw;
+        }
+        Require(Volatile.Read(ref failedMapTileRequests) > failuresBefore
+            && await mapPreview.Locator(".maps-marker").CountAsync() == 1 && await mapPreview.Locator(".leaflet-tile").CountAsync() == 0,
+            "A failed tile request automatically restores the offline vector map and preserves its real ticket marker.");
         failMapTiles = false;
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
-        await Until(() => !tileRequests.IsEmpty); await WaitForPageAsync(page, "document.querySelector('.maps-state')?.textContent === 'Rues · OpenStreetMap'");
-        Require(app.AllowsMapTileRequest(tileRequests.First()) && tileRequests.All(EmbeddedMapsService.IsTileUrl)
+        await WaitForPageAsync(page, "document.querySelector('.maps-state')?.textContent === 'Rues · OpenStreetMap'");
+        Require(app.AllowsMapTileRequest(tileRequests.Last()) && tileRequests.All(EmbeddedMapsService.IsTileUrl)
             && !tileRequests.Any(value => value.Contains("Agent", StringComparison.Ordinal) || value.Contains("?", StringComparison.Ordinal))
             && await mapPreview.EvaluateAsync<bool>("node => { const land=node.querySelector('.leaflet-maps-land-pane'), tiles=node.querySelector('.leaflet-tile-pane'); return !!land?.querySelector('.maps-land') && Number(getComputedStyle(land).zIndex) < Number(getComputedStyle(tiles).zIndex); }"),
-            "The explicit streets control grants only standard OSM tiles above the local land layer; intercepted image URLs contain no ticket, agent or address text.");
+            "The streets layer appears above the local land and grants only standard OSM tile URLs, containing no ticket, agent or address text.");
         await mapPreview.Locator(".maps-attribution a").ClickAsync();
         Require(await mapPreview.Locator(".maps-sources").GetAttributeAsync("open") is not null && context.Pages.Count == 1,
             "Visible OpenStreetMap attribution opens its local licence notice and keeps the user inside the application.");
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fond hors ligne", Exact = true }).ClickAsync();
         await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
         Require(await mapPreview.Locator(".leaflet-tile").CountAsync() == 0 && await mapPreview.Locator(".maps-marker").CountAsync() == 1,
-            "Returning offline removes all remote tiles and revokes the lease while preserving the site's marker and local map.");
-        await Capture("simulation-embedded-site-map");
+            "Returning offline removes all remote tiles and revokes the lease while preserving the ticket marker and local map.");
+        await Capture("simulation-central-terrain-map");
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
-        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await Navigate("home");
         await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
         Require(await page.Locator(".maps-canvas").CountAsync() == 0,
-            "Closing the dialog destroys the Leaflet surface and releases its native tile permission.");
+            "Leaving Terrain destroys the Leaflet surface and releases its native tile permission.");
 
         await CheckEmbeddedMapOverviewAsync(page, app, Navigate, Capture);
         await CheckEmbeddedMapRendererAsync(page);
-
-        await Navigate("tours");
-        await Button("Carte · ordre des communes").ClickAsync(); await mapPreview.WaitForAsync();
-        Require((await mapPreview.InnerTextAsync()).Contains("Ordre des communes", StringComparison.Ordinal)
-            && (await mapPreview.InnerTextAsync()).Contains("44, 5", StringComparison.Ordinal)
-            && await mapPreview.Locator(".maps-marker").CountAsync() == 1,
-            "The current city projection opens its integrated map with explicit city-level precision.");
-        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
-        await Call(app, "terrain.tours.select", new { revision = app.Revision, rows = new[] { 0 }, selected = true });
-        await Call(app, "terrain.tours.create", new { revision = app.Revision, name = "Tournée cartographique fictive", date = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) });
-        await Navigate("home"); await Navigate("tours");
-        await Button("Planning daté").ClickAsync(); await Button("Carte de la tournée").ClickAsync(); await mapPreview.WaitForAsync();
-        Require((await mapPreview.InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal)
-            && !(await mapPreview.InnerTextAsync()).Contains("Agent fictif", StringComparison.Ordinal),
-            "The real tour button renders its ordered site visits from the imported CSV inside the application, without participant or ticket text.");
+        await Navigate("terrain-map");
+        await page.Locator(".maps-terrain-tools > summary").ClickAsync();
+        await Button("Panier et ordre des communes").ClickAsync();
+        await terrainPanel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();
+        await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "Carte · ordre des communes", Exact = true }).ClickAsync();
+        var contextualMap = page.Locator("dialog.maps-dialog"); await contextualMap.WaitForAsync();
+        Require((await contextualMap.InnerTextAsync()).Contains("Ordre des communes", StringComparison.Ordinal)
+            && (await contextualMap.InnerTextAsync()).Contains("44, 5", StringComparison.Ordinal)
+            && await contextualMap.Locator(".maps-marker").CountAsync() == 1,
+            "The municipality projection remains available from a focused Terrain panel with honest city-level map precision.");
+        await contextualMap.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await terrainPanel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 42", Exact = true }).CheckAsync();
+        await Button("Préparer une tournée").ClickAsync();
+        var tourEditor = page.GetByRole(AriaRole.Dialog, new() { Name = "Préparer une tournée", Exact = true });
+        await tourEditor.GetByLabel("Nom de la tournée", new() { Exact = true }).FillAsync("Tournée cartographique fictive");
+        await tourEditor.GetByRole(AriaRole.Button, new() { Name = "Voir l’aperçu", Exact = true }).ClickAsync();
+        var tourPreview = page.GetByRole(AriaRole.Dialog, new() { Name = "Vérifier le brouillon de tournée", Exact = true }); await tourPreview.WaitForAsync();
+        var beforeMapApply = await Call(app, "terrain.tours.state");
+        Require(beforeMapApply.GetProperty("draft").ValueKind == JsonValueKind.Null && (await tourPreview.InnerTextAsync()).Contains("1 ticket", StringComparison.Ordinal),
+            "The real map selection opens a stop preview before creating any planning draft.");
+        await tourPreview.GetByRole(AriaRole.Button, new() { Name = "Créer le brouillon", Exact = true }).ClickAsync();
+        await terrainPanel.Locator(".terrain-function-panel[data-terrain-panel=planning][data-ready=true]").WaitForAsync();
+        Require(await terrainPanel.Locator(".terrain-tabs button").CountAsync() == 0
+            && (await terrainPanel.InnerTextAsync()).Contains("Tournée cartographique fictive", StringComparison.Ordinal)
+            && await page.Locator(".page-content").GetAttributeAsync("data-page") == "terrain-map",
+            "Confirming the map preview opens its functional planning panel inside Terrain without restoring legacy navigation tabs.");
+        await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "Carte de la tournée", Exact = true }).ClickAsync(); await contextualMap.WaitForAsync();
+        Require((await contextualMap.InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal)
+            && !(await contextualMap.InnerTextAsync()).Contains("Agent fictif", StringComparison.Ordinal),
+            "The contextual tour map reuses its ordered site coordinates and address inside the main application.");
         await Capture("simulation-embedded-tour-map");
-        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await contextualMap.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await terrainPanel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
 
         await Navigate("records");
         var openRow = page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true });
         Require(await openRow.CountAsync() == 2, "Each imported row provides an actual ticket reader in simulation.");
-        await openRow.First.ClickAsync(); await Ready("tickets");
+        await openRow.First.ClickAsync(); await page.Locator(".tickets-detail-pane .work-ticket-heading h2").WaitForAsync();
         Require((await page.Locator(".work-ticket-heading h2").InnerTextAsync()).Contains("#42", StringComparison.Ordinal)
             && await Button("Afficher la fiche simulée").IsEnabledAsync(),
             "Opening the first imported row reaches its usable simulated ticket reader.");
@@ -251,9 +341,13 @@ internal static partial class Program
         await confirmation.GetByRole(AriaRole.Button, new() { Name = "Appliquer la simulation", Exact = true }).ClickAsync();
         await Until(() => app.Result!.Rows[0][2] == "Résolu");
         await page.GetByText("Modification simulée appliquée", new() { Exact = true }).WaitForAsync();
-        await WaitForPageAsync(page, "document.querySelector('.work-ticket-browser')?.textContent.includes('Résolu')");
-        Require((await page.Locator(".work-ticket-browser").InnerTextAsync()).Contains("Résolu", StringComparison.Ordinal),
-            "Confirming the simulation really updates the row and the visible ticket list, and retains an explicit simulated receipt.");
+        var actionsPanel = page.GetByRole(AriaRole.Dialog, new() { Name = "Actions assistées", Exact = true });
+        await actionsPanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await actionsPanel.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await Button("Retour à la liste").ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.tickets-record-grid')?.textContent.includes('Résolu')");
+        Require((await page.Locator(".tickets-record-grid").InnerTextAsync()).Contains("Résolu", StringComparison.Ordinal),
+            "Confirming the simulation really updates the row and its integrated source list, and retains an explicit simulated receipt.");
         await Capture("simulation-applied-action");
         await Navigate("pilot-weather");
         Require((await page.Locator(".business-weather-hero .analytics-metric-value").InnerTextAsync()).Trim() == "1",
@@ -282,10 +376,16 @@ internal static partial class Program
         await Navigate("library");
         Require(await page.Locator(".library-result").CountAsync() == 2 && !offlineLibraryRequests.IsEmpty,
             "The real library is populated from the imported rows inside the isolated simulation.");
+        await Navigate("data");
+        await page.Locator(".page-content [data-open-panel=connection]").ClickAsync();
+        await page.Locator("dialog[data-workspace-panel=connection]").WaitForAsync();
         await Button("Synchroniser le central simulé").ClickAsync();
         await page.Locator(".library-outcome[aria-label='Bilan de la bibliothèque']").WaitForAsync();
         Require(await page.Locator(".page-content .notice.danger").CountAsync() == 0,
             "The shared-library synchronization produces a visible local result through the simulation adapter.");
+        var connectionPanel = page.Locator("dialog[data-workspace-panel=connection]");
+        await connectionPanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await connectionPanel.WaitForAsync(new() { State = WaitForSelectorState.Detached });
         await page.Keyboard.PressAsync("Control+k");
         var palette = page.GetByRole(AriaRole.Dialog, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }); await palette.WaitForAsync();
         await palette.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync("42");
@@ -300,11 +400,13 @@ internal static partial class Program
             "A palette ticket opens the library reader with the simulation context retained.");
         await page.Keyboard.PressAsync("Escape"); await libraryTicket.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
 
-        await Navigate("collect");
+        await Navigate("data");
         await Button("Connecter la source simulée").ClickAsync();
-        await page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Inspecter", Exact = true }).ClickAsync();
-        await page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Choisir", Exact = true }).ClickAsync();
-        await Button("Extraire cette page seulement").ClickAsync(); await Ready("records");
+        await Button("Inspection et reprise").ClickAsync();
+        var collectPanel = page.Locator("dialog[data-workspace-panel=collect]");
+        await collectPanel.GetByRole(AriaRole.Button, new() { Name = "Détecter les tableaux", Exact = true }).ClickAsync();
+        await collectPanel.GetByRole(AriaRole.Button, new() { Name = "Utiliser ce tableau", Exact = true }).ClickAsync();
+        await collectPanel.GetByRole(AriaRole.Button, new() { Name = "Extraire cette page", Exact = true }).ClickAsync(); await Ready("records");
         Require(app.Result!.Rows.Count == 2 && app.Result.Rows[0][2] == "Résolu",
             "The full connect-inspect-select-collect workflow preserves the current simulation rows and their applied changes.");
 
@@ -313,7 +415,7 @@ internal static partial class Program
         await Button("Utiliser le pack de démonstration").ClickAsync();
         await Button("Vérifier le ZIP local").ClickAsync();
         await Button("Simuler l’installation de cette version").ClickAsync();
-        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Appliquer la simulation", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog, new() { Name = "Installer le pack vérifié", Exact = true }).GetByRole(AriaRole.Button, new() { Name = "Appliquer la simulation", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('.terrain-status')?.textContent.includes('Installation simulée terminée')");
         var update = await Call(app, "update.state");
         Require(update.GetProperty("version").GetString() != installed && update.GetProperty("outcome").ValueKind == System.Text.Json.JsonValueKind.Object
@@ -321,7 +423,10 @@ internal static partial class Program
             "The simulated installer changes its virtual version and redraws the outcome without closing the application.");
         await Capture("simulation-update-result");
 
-        await Button("Quitter la simulation").ClickAsync(); await Ready("pilot-weather");
+        var updatePanel = page.Locator("dialog[data-workspace-panel=updates]");
+        await updatePanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await updatePanel.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await PaletteAction("test-exit"); await Ready("pilot-weather");
         Require(!app.IsTestMode && ReferenceEquals(app.Result, original) && !await page.Locator(".local-test-banner").IsVisibleAsync()
             && app.Result!.Rows[0][2] == "Nouveau" && !app.Settings.Cities.Sites.Any(site => site.Name.StartsWith("Site fictif Nord", StringComparison.Ordinal))
             && (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32() == originalLibrary,
@@ -346,6 +451,117 @@ internal static partial class Program
             "Explicitly applying the workbook profile persists its weather/site settings in the normal workspace and recalculates weather from the original four rows.");
         await Capture("workbook-profile-applied-normal");
         await CheckNormalMapDefaultAsync(page, app, Navigate);
+
+        async Task PaletteAction(string command)
+        {
+            await page.Keyboard.PressAsync("Control+k");
+            var commands = page.Locator("dialog.command-palette"); await commands.WaitForAsync();
+            await commands.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync(command switch { "test-file" => "Simuler avec un fichier", "test-exit" => "Quitter la simulation", _ => "Explorer la simulation" });
+            await commands.Locator($"[data-command-id='action:{command}']").ClickAsync();
+        }
+        async Task BridgeIdle() => await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
+        async Task<string> AnnotateReader(string text, string readingFilter)
+        {
+            await Navigate("records");
+            await page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
+            await page.Locator(".tickets-detail-pane .work-ticket-heading h2").WaitForAsync();
+            await Button("Notes et rappels").ClickAsync();
+            await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync(text);
+            await Button("Enregistrer mon travail").ClickAsync(); await BridgeIdle();
+            var work = await Call(app, "workplace.get"); var key = work.GetProperty("activeTicketKey").GetString()!;
+            if (work.GetProperty("openTickets").EnumerateArray().Single(ticket => ticket.GetProperty("key").GetString() == key).GetProperty("notes").GetString() != text)
+                throw new InvalidOperationException("The real personal editor did not save the context-test note.");
+            if (app.IsTestMode)
+            {
+                await Button("Consulter les observations").ClickAsync();
+                await page.GetByPlaceholder("Filtrer cette rubrique", new() { Exact = true }).FillAsync(readingFilter);
+                await CloseObservations();
+            }
+            return key;
+        }
+        async Task CloseObservations()
+        {
+            var observations = page.GetByRole(AriaRole.Dialog, new() { Name = "Observations du ticket", Exact = true });
+            await observations.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+            await observations.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        }
+        async Task<bool> TransitionWithPendingSave(string command, string note)
+        {
+            await Button("Notes et rappels").ClickAsync();
+            await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync(note);
+            var held = (Started: new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                Release: new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+            heldPersonalSave = held;
+            await Button("Enregistrer mon travail").ClickAsync();
+            await held.Started.Task.WaitAsync(TimeSpan.FromSeconds(8));
+            var oldSource = app.Result; var start = contextCalls.Count;
+            try
+            {
+                await PaletteAction(command);
+                await WaitForPageAsync(page, "document.querySelector('.workspace')?.inert === true");
+                // The UI has begun the replacement, but its pending explicit
+                // save must finish before any mutating replacement reaches C#.
+                return ReferenceEquals(app.Result, oldSource) && !personalSaves.Any(value => value.Notes == note)
+                    && !contextCalls.Skip(start).Any(value => value.Operation is "app.demo" or "records.test.exit"
+                        || value.Operation == "records.test.import" && value.Args.TryGetProperty("token", out _) && !value.Args.TryGetProperty("cancelled", out _));
+            }
+            finally { held.Release.TrySetResult(); }
+        }
+
+        await AnnotateReader("Note habituelle à conserver", "");
+        var normalWork = await File.ReadAllBytesAsync(Path.Combine(_root, "workplace.json"));
+        host.NextOpen = csvPath;
+        await PaletteAction("test-file"); await Ready("pilot-weather");
+        await AnnotateReader("Annotation du premier fichier de simulation", "Position conservée après annulation");
+        await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync("Saisie personnelle non enregistrée à conserver");
+        var sourceBeforeCancel = app.Result; var cancelStart = contextCalls.Count;
+        await page.EvaluateAsync("window.__simulationReader=document.querySelector('.tickets-detail-pane')");
+        host.NextOpen = null;
+        await PaletteAction("test-file"); await BridgeIdle();
+        var cancelPreservesDom = await page.EvaluateAsync<bool>("window.__simulationReader===document.querySelector('.tickets-detail-pane') && window.__simulationReader.isConnected");
+        var cancelDidNotFlush = !contextCalls.Skip(cancelStart).Any(call => call.Operation is "workplace.ticket.position" or "workplace.personal.save");
+        await Button("Notes et rappels").ClickAsync();
+        Require(ReferenceEquals(app.Result, sourceBeforeCancel) && cancelPreservesDom && cancelDidNotFlush
+            && await page.GetByLabel("Mes notes", new() { Exact = true }).InputValueAsync() == "Saisie personnelle non enregistrée à conserver",
+            "Cancelling the CSV chooser keeps the same live ticket reader, its source and unsaved annotation; no save or cleanup runs and the editor remains usable.");
+
+        await Button("Consulter les observations").ClickAsync();
+        await page.GetByPlaceholder("Filtrer cette rubrique", new() { Exact = true }).FillAsync("Position conservée après refus");
+        await CloseObservations();
+        var changingCsv = Path.Combine(_root, "changing-source.csv"); File.Copy(csvPath, changingCsv);
+        host.NextOpen = changingCsv; changeFileBeforeCommit = changingCsv;
+        var waitedBeforeRejection = await TransitionWithPendingSave("test-file", "Note enregistrée avant le refus d’empreinte");
+        await WaitForPageAsync(page, "document.querySelector('#notifications')?.textContent.includes('Le fichier a changé')");
+        await Ready("records");
+        await page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
+        await Button("Consulter les observations").ClickAsync();
+        Require(ReferenceEquals(app.Result, sourceBeforeCancel) && waitedBeforeRejection
+            && personalSaves.Any(value => value is ("Note enregistrée avant le refus d’empreinte", true))
+            && await page.GetByPlaceholder("Filtrer cette rubrique", new() { Exact = true }).InputValueAsync() == "Position conservée après refus"
+            && (await File.ReadAllBytesAsync(Path.Combine(_root, "workplace.json"))).SequenceEqual(normalWork),
+            "A changed CSV is rejected by the real fingerprint guard after waiting for the explicit note save; the same simulation is remounted and its reading position is usable without writing to the normal profile.");
+
+        await page.GetByPlaceholder("Filtrer cette rubrique", new() { Exact = true }).FillAsync("Avant remplacement CSV");
+        await CloseObservations(); host.NextOpen = csvPath;
+        var importWaited = await TransitionWithPendingSave("test-file", "Note enregistrée avant remplacement CSV"); await Ready("pilot-weather");
+        Require(app.IsTestMode && !ReferenceEquals(app.Result, sourceBeforeCancel) && importWaited
+            && personalSaves.Any(value => value is ("Note enregistrée avant remplacement CSV", true))
+            && (await File.ReadAllBytesAsync(Path.Combine(_root, "workplace.json"))).SequenceEqual(normalWork),
+            "Replacing an annotated CSV simulation awaits its pending explicit save before committing the prepared import and preserves the original personal store byte for byte.");
+
+        await AnnotateReader("Annotation avant démonstration", "Avant démonstration");
+        var demoWaited = await TransitionWithPendingSave("demo", "Note enregistrée avant démonstration"); await Ready("pilot-weather");
+        Require(app.IsTestMode && app.Result!.Rows.Count == 180 && demoWaited
+            && personalSaves.Any(value => value is ("Note enregistrée avant démonstration", true))
+            && (await File.ReadAllBytesAsync(Path.Combine(_root, "workplace.json"))).SequenceEqual(normalWork),
+            "Starting the demonstration from an annotated simulation awaits the old explicit save and opens a new isolated fictitious source without changing real notes.");
+
+        await AnnotateReader("Annotation dans la démonstration", "Avant sortie de simulation");
+        var exitWaited = await TransitionWithPendingSave("test-exit", "Note enregistrée avant sortie de simulation"); await Ready("pilot-weather");
+        Require(!app.IsTestMode && ReferenceEquals(app.Result, original) && exitWaited
+            && personalSaves.Any(value => value is ("Note enregistrée avant sortie de simulation", true))
+            && (await File.ReadAllBytesAsync(Path.Combine(_root, "workplace.json"))).SequenceEqual(normalWork),
+            "Leaving a live annotated reader waits for its explicit save inside the simulation before disposal and restores the exact original source and personal store.");
         Require(externalRequests == 0 && errors.IsEmpty, "The complete real CSV journey has no unauthorized external request or JavaScript error; explicitly requested map tiles were intercepted locally."
             + (errors.IsEmpty ? "" : "\n" + string.Join("\n", errors)));
         await delivery;

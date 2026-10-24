@@ -12,8 +12,13 @@ export function localFileTestSummary(session) {
 }
 
 export async function importLocalTestFile(ctx) {
-  let session=await ctx.api.call('records.test.import');
+  let session=await ctx.api.call('records.test.import',{prepareOnly:true});
   if(session?.selectionRequired)session=await chooseTestSheet(ctx,session);
+  else if(session?.readyToImport){
+    const token=session.token;
+    try{session=await ctx.api.call('records.test.import',{token});}
+    catch(error){await ctx.api.call('records.test.import',{token,cancelled:true}).catch(()=>{});throw error;}
+  }
   if(session?.cancelled)return;
   ctx.state.session=session;
   ctx.notify(`Simulation ouverte : ${session.testFileName||'fichier local'}.`);
@@ -63,14 +68,10 @@ export function localFileTestCard(ctx) {
     el('p',{class:'help',text:localFileTestSummary(session)}),
     el('p',{class:'help',text:session.demo?'Les calculs portent sur le jeu fictif de démonstration. Vos essais peuvent faire évoluer ses tickets et ses indicateurs.':'Les calculs portent sur ce fichier local. Ils ne confirment ni la recherche ni le périmètre GLPI.'}),
     el('p',{class:'help',text:'Explorez toutes les rubriques, ouvrez les fiches, préparez vos tournées et essayez les actions, les collectes et le partage. Ces essais utilisent les données de la simulation et restent séparés de votre espace habituel.'}),
-    toolbar(button('Relevé',()=>ctx.navigate('records'),{icon:'table'}),
-      button('Météo du pilotage',()=>ctx.navigate('pilot-weather'),{primary:true,icon:'sun'}),
-      button('Dashboard',()=>ctx.navigate('dashboard'),{icon:'chart'}),
-      button('Tickets et actions',()=>ctx.navigate('tickets'),{icon:'ticket'}),
-      button('Mon espace',()=>ctx.navigate('day'),{icon:'sun'}),
-      button('Tournées',()=>ctx.navigate('tours'),{icon:'route'}),
-      button('Correspondances',()=>ctx.navigate('mapping')),
-      button('Sites',()=>ctx.navigate('terrain-reference'),{icon:'map'}),
+    toolbar(button('Pilotage',()=>ctx.navigate('pilot'),{primary:true,icon:'chart'}),
+      button('Tickets',()=>ctx.navigate('records'),{icon:'ticket'}),
+      button('Terrain',()=>ctx.navigate('terrain-map'),{icon:'map'}),
+      button('Données',()=>ctx.navigate('data'),{icon:'folder'}),
       button('Charger un autre fichier',()=>importLocalTestFile(ctx),{icon:'folder'})),
     el('details',{class:'local-test-help'},el('summary',{text:'Formats et règles de lecture'}),el('p',{class:'help',text:localFileTestHelp})));
 }

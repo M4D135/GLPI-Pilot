@@ -1,92 +1,217 @@
-import { navigationVisible } from '../navigation.js';
 import { el, replaceChildren, button, card, toolbar, input, select, field, table, dialog, confirm, badge, empty, isSimulation } from '../ui.js';
-import { call, run, message, revision, note, pre, date, label, heading, dataTable, pager, tabs, personalEditor, ticketButton } from './workplace-common.js';
+import { call, run, message, note, pre, date, dataTable, pager, ticketButton, checkbox, textArea, toLocalInput, toIso } from './workplace-common.js';
 import { renderDraft, renderActions, renderInsights } from './workplace-actions.js';
 import { openLibraryPrecedents } from '../library-ticket.js';
-
-const readerPages = [
-  { key: 'reader', label: 'Fiche GLPI' }, { key: 'summary', label: 'Synthèse' }, { key: 'personal', label: 'Mon travail' },
-  { key: 'search', label: 'Chercher partout' }, { key: 'handover', label: 'Passation' }, { key: 'intelligence', label: 'Rapprochements' },
-  { key: 'insights', label: 'Planification et relations' }, { key: 'draft', label: 'Brouillon de suivi' }, { key: 'actions', label: 'Actions assistées' }
-];
+import { publishSharedOperation } from './shared-operations.js';
+const personalDrafts = new Map();
 
 export async function renderTickets(ctx) {
-  const simulation=isSimulation(ctx.state.session);
-  let state = await call(ctx, 'workplace.get'); let current = null; let sectionCleanup = null; let readerPage = ctx.params?.section || 'reader'; let sourcePage = 0;
-  let searchText = ''; let sourceSaved = !ctx.state.session?.loaded; let disposed = false; let sectionVersion = 0;
-  const top = el('div'); const openTabs = el('div', { class: 'work-open-tabs', 'aria-label': 'Tickets ouverts' });
-  const browser = el('div', { class: 'work-ticket-browser' }); const reader = el('section', { class: 'work-ticket-reader', 'aria-label': 'Lecture du ticket' });
-  const sourceSearch = input('', { placeholder: 'ID, titre ou texte du relevé', maxLength: 300 }); const savedChoice = select([{ value: 'source', label: 'Relevé courant' }, { value: 'saved', label: 'Dossiers conservés' }], sourceSaved ? 'saved' : 'source');
-  ctx.root.replaceChildren(heading('Tickets', 'Une fiche dédiée par ticket, des observations datées et votre travail conservé sur ce poste.'), top, openTabs, el('div', { class: 'work-ticket-layout' }, browser, reader));
-  top.replaceChildren(toolbar(sourceSearch, savedChoice, button('Rechercher', run(ctx, async () => { searchText = sourceSearch.value; sourceSaved = savedChoice.value === 'saved'; sourcePage = 0; await loadSource(); })), button('Mon espace', () => ctx.navigate('day')), navigationVisible('enrichment', ctx.state.settings?.interface) ? button('Lectures ciblées', () => ctx.navigate('enrichment')) : null));
-  sourceSearch.addEventListener('keydown', e => { if (e.key === 'Enter') run(ctx, async () => { searchText = sourceSearch.value; sourcePage = 0; await loadSource(); })(); });
-  savedChoice.addEventListener('change', run(ctx, async () => { sourceSaved = savedChoice.value === 'saved'; sourcePage = 0; await loadSource(); }));
-  function drawTabs() {
-    openTabs.replaceChildren(...state.openTickets.map(p => el('div', { class: 'work-open-ticket' },
-      button((p.pinned ? '★ ' : '') + p.id + ' · ' + p.title, run(ctx, () => open({ ticketKey: p.key })), { primary: current?.personal.key === p.key, title: p.title }),
-      button('×', run(ctx, async () => { if (current?.personal.key === p.key) { await sectionCleanup?.(); sectionCleanup = null; } state = await call(ctx, 'workplace.ticket.close', { ticketKey: p.key }); if (current?.personal.key === p.key) { current = null; reader.replaceChildren(empty('Choisissez un ticket', 'Ses notes restent disponibles dans les dossiers conservés.')); if (state.activeTicketKey) await open({ ticketKey: state.activeTicketKey }, false); } drawTabs(); }), { title: 'Fermer l’onglet ' + p.id }))));
+  const { renderTicketsWorkspace } = await import('./tickets-workspace.js');
+  return renderTicketsWorkspace(ctx, { resumeActive: true });
+}
+
+// A working panel, not a second ticket page: source facts, personal notes and
+// collected observations share one layout. Specialist tools open in context.
+export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged, onTicketClosed } = {}) {
+  const simulation = isSimulation(ctx.state.session);
+  let state = await call(ctx, 'workplace.get'), current = null, source = null, opened = null;
+  let personal = null, tool = null, disposed = false, version = 0;
+  const reader = el('section', { class: 'work-ticket-reader tickets-working-panel', 'aria-label': 'Lecture du ticket' });
+  ctx.root.replaceChildren(reader);
+  const savePosition = async (ticket, patch = {}) => {
+    ticket.personal.readingPosition = { ...ticket.personal.readingPosition, pageIndex: 0, ...patch };
+    await ctx.api.call('workplace.ticket.position', { ticketKey: ticket.personal.key, position: ticket.personal.readingPosition });
+  };
+  async function closeTool() {
+    if (!tool) return;
+    const closing = tool; await closing.close(); if (tool === closing) tool = null;
   }
-  async function loadSource() {
-    const result = await call(ctx, 'workplace.ticket.list', { revision: revision(ctx), saved: sourceSaved, search: searchText, page: sourcePage });
-    if (disposed) return;
-    browser.replaceChildren(dataTable(result.rows, [{ key: 'id', label: 'Ticket', width: '1%', render: row => ticketButton(row.id, run(ctx, () => open(row.ticketKey ? { ticketKey: row.ticketKey } : { rowIndex: row.rowIndex, revision: result.revision }))) }, { key: 'title', label: 'Titre' }, { key: 'status', label: 'État du relevé' }], { key: sourceSaved ? 'ticketKey' : 'rowIndex' }), pager(result.page, result.pageSize, result.total, run(ctx, async page => { sourcePage = page; await loadSource(); })));
+  async function loadSource(args) {
+    if (args?.rowIndex == null) { source = null; return; }
+    const data = await call(ctx, 'records.list', { revision: ctx.state.session.revision, indices: [args.rowIndex], limit: 1 });
+    source = data.rows[0] ? { headers: data.headers, row: data.rows[0], revision: data.revision } : null;
   }
-  async function open(args, allowAutoRead = true) {
-    await sectionCleanup?.(); sectionCleanup = null;
-    current = await call(ctx, 'workplace.ticket.open', args); state = await call(ctx, 'workplace.get');
-    if (!ctx.params?.section) readerPage = readerPages[current.personal.readingPosition?.pageIndex || 0]?.key || 'reader';
-    if (allowAutoRead && state.autoRead && !current.loaded && current.canRead) {
-      reader.replaceChildren(note(simulation?'Préparation de la fiche à partir des données de simulation…':'Lecture de la fiche dans la session GLPI…'));
-      try { current = await call(ctx, 'workplace.ticket.read', { ticketKey: current.personal.key }); }
-      catch (error) { message(ctx, error); }
+  async function open(args) {
+    const generation = ++version;
+    await closeTool(); await personal?.dispose(); personal = null;
+    const ticket = await call(ctx, 'workplace.ticket.open', args), next = await call(ctx, 'workplace.get');
+    if (disposed || ctx.signal?.aborted || generation !== version) return;
+    current = ticket; state = next; opened = args; await loadSource(args);
+    await draw();
+    if (disposed || generation !== version) return;
+    onTicketOpened?.(current, args);
+    if (args.section === 'personal') focusPersonal();
+    else if (args.section && args.section !== 'reader') await openTool(args.section);
+  }
+  function focusPersonal() {
+    const control = reader.querySelector('.tickets-personal textarea');
+    if (control) { control.scrollIntoView({ block: 'nearest' }); control.focus({ preventScroll: true }); }
+  }
+  function sourceFacts(ticket) {
+    const body = el('div', { class: 'tickets-source-facts' });
+    if (!source) { body.append(note('Dossier conservé. Les valeurs du relevé ne sont pas déduites de vos notes.')); return body; }
+    const normalize = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/[^a-z0-9]+/g, ' ').trim();
+    const wanted = [['Statut', 'État'], ['Priorité'], ['Attribué à - Technicien', 'Technicien'], ['Attribué à - Groupe de techniciens', 'Groupe'], ['Catégorie'], ["Date d'ouverture", 'Date d’ouverture']];
+    for (const names of wanted) {
+      const index = source.headers.findIndex(header => names.some(name => normalize(header) === normalize(name)));
+      if (index >= 0) body.append(el('div', {}, el('span', { text: source.headers[index] }), el('strong', { text: source.row.cells[index] || 'Non renseigné' })));
     }
-    drawTabs(); await showReader();
+    const frozen = source;
+    body.append(button('Toutes les données du relevé', () => {
+      const content = dataTable(frozen.headers.map((name, index) => ({ name, index, value: frozen.row.cells[index] || '—' })), [
+        { key: 'name', label: 'Champ' }, { label: 'Valeur source', render: row => el('div', {}, pre(row.value), button('Lire la valeur complète', run(ctx, async () => {
+          const cell = await call(ctx, 'records.cell', { revision: frozen.revision, row: frozen.row.index, column: row.index });
+          dialog(cell.header, pre(cell.raw), [{ label: 'Copier', action: () => ctx.api.call('app.copy', { text: cell.raw }) }]);
+        }))) }]);
+      dialog(`Ticket ${ticket.personal.id} · données source`, content);
+    }, { icon: 'table' }));
+    return body;
   }
-  async function savePosition(patch = {}) {
+  async function journal(ticket) {
+    const section = ticket.sections?.find(value => value.kind === 'timeline');
+    const body = el('div', { class: 'tickets-journal' });
+    const heading = el('div', { class: 'tickets-panel-section-title' }, el('h3', { text: 'Journal recueilli' }),
+      button('Consulter les observations', () => openTool('reader'), { icon: 'search', disabled: !ticket.loaded, attributes: { 'aria-haspopup': 'dialog' } }));
+    body.append(heading);
+    if (!section) { body.append(note(ticket.loaded ? 'Aucun suivi ou tâche recueilli dans les rubriques lues.' : 'La fiche n’a pas encore été lue. Actualisez-la explicitement pour recueillir ses rubriques.')); return body; }
+    const result = await call(ctx, 'workplace.ticket.section', { ticketKey: ticket.personal.key, sectionIndex: section.index, page: 0 });
+    for (const row of result.rows.slice(0, 4)) body.append(el('article', { class: 'tickets-journal-event' },
+      toolbar(badge(row.values[0] || 'Événement'), el('small', { text: row.values[1] || 'Date non renseignée' })),
+      el('strong', { text: row.values[2] || 'Auteur non renseigné' }), el('p', { text: (row.values[3] || row.values.join(' · ')).slice(0, 420) }),
+      (row.values[3] || '').length > 420 || row.truncatedColumns?.length ? button('Lire le texte complet', run(ctx, async () => {
+        const cell = await call(ctx, 'workplace.ticket.cell', { ticketKey: ticket.personal.key, sectionIndex: section.index, rowIndex: row.index, columnIndex: Math.min(3, result.headers.length - 1), readAt: result.readAt });
+        dialog(cell.section + ' · ' + cell.header, pre(cell.text));
+      })) : null));
+    if (result.total > 4) body.append(note(`${result.total} événements dans cette rubrique · les quatre premiers sont affichés.`));
+    if (!result.complete) body.append(note('Couverture de cette rubrique partielle ou non confirmée.'));
+    return body;
+  }
+  async function draw() {
+    const ticket = current, generation = version;
+    const refresh = run(ctx, async () => {
+      personal?.remember(); const updated = await call(ctx, 'workplace.ticket.read', { ticketKey: ticket.personal.key });
+      if (disposed || current?.personal.key !== ticket.personal.key) return;
+      await personal?.dispose(); current = updated; await draw();
+    });
+    const facts = sourceFacts(ticket), journalHost = el('div');
+    personal = ticketPersonalEditor(ctx, ticket.personal, state.checklistTemplates, value => { if (current?.personal.key === ticket.personal.key) current.personal = value; }, () => { current = null; onTicketClosed?.(); });
+    replaceChildren(reader,
+      el('header', { class: 'work-ticket-heading tickets-panel-heading' },
+        toolbar(badge(`#${ticket.personal.id}`, 'info'), badge(simulation ? 'Simulation locale' : ticket.loaded ? 'Observation datée' : 'Lecture à demander')),
+        el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
+        el('p', { class: 'help', text: ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue' }),
+        toolbar(button('Actualiser la fiche', refresh, { icon: 'refresh', disabled: !ticket.canRead }),
+          button(simulation ? 'Afficher la fiche simulée' : 'Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: ticket.personal.key }); if (simulation) await refresh(); }), { disabled: !ticket.canRead }))),
+      !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(note), facts,
+      el('div', { class: 'tickets-actionbar' }, button('Notes et rappels', focusPersonal, { icon: 'log' }),
+        button('Brouillon de suivi', () => openTool('draft'), { icon: 'log', attributes: { 'aria-haspopup': 'dialog' } }), button('Actions assistées', () => openTool('actions'), { icon: 'check', primary: true, attributes: { 'aria-haspopup': 'dialog' } }),
+        button('Autres outils', moreTools, { icon: 'settings' })),
+      button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({ api: ctx.api, signal: ctx.signal, state: ctx.state, navigate: ctx.navigate }, { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget })), { icon: 'search' }),
+      personal.element, journalHost);
+    const content = await journal(ticket);
+    if (!disposed && generation === version && current?.personal.key === ticket.personal.key) journalHost.replaceChildren(content);
+  }
+  function moreTools() {
+    let modal; const item = (label, key) => button(label, () => { modal.close(); return openTool(key); });
+    modal = dialog('Outils du ticket', el('div', { class: 'tickets-tools-menu' },
+      item('Synthèse des observations', 'summary'), item('Chercher dans les rubriques', 'search'), item('Passation', 'handover'),
+      item('Rapprochements', 'intelligence'), item('Planification et relations', 'insights')));
+  }
+  async function openTool(kind) {
     if (!current) return;
-    current.personal.readingPosition = { ...current.personal.readingPosition, pageIndex: Math.max(0, readerPages.findIndex(p => p.key === readerPage)), ...patch };
-    await ctx.api.call('workplace.ticket.position', { ticketKey: current.personal.key, position: current.personal.readingPosition });
-  }
-  async function showReader() {
-    await sectionCleanup?.(); sectionCleanup = null; const generation = ++sectionVersion;
-    if (!current || disposed) return;
-    const ticket = current; const body = el('div', { class: 'work-reader-body' }); const key = ticket.personal.key;
-    replaceChildren(reader, el('div', { class: 'work-ticket-heading' }, el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
-      toolbar(badge(ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue'), ticket.personal.offline ? badge('Copie conservée') : null,
-        button('Actualiser la fiche', run(ctx, async () => { current = await call(ctx, 'workplace.ticket.read', { ticketKey: key }); await showReader(); }), { disabled: !ticket.canRead }),
-        button(simulation?'Afficher la fiche simulée':'Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); if(simulation){current=await call(ctx,'workplace.ticket.read',{ticketKey:key});readerPage='reader';await showReader();} }), { disabled: !ticket.canRead }),
-        button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({api: ctx.api, signal: ctx.signal, state:ctx.state, navigate:ctx.navigate}, {id: ticket.personal.id, url: ticket.personal.url}, {returnFocus: event.currentTarget})), { icon: 'search' }))),
-      !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(w => note(w)),
-      ticket.changes ? note(ticket.changes.summary + (ticket.changes.rowComparisonComplete ? '' : ' Comparaison de lignes incomplète.')) : null,
-      tabs(readerPages.map(page=>simulation&&page.key==='reader'?{...page,label:'Fiche simulée'}:page), readerPage, run(ctx, async page => { readerPage = page; await savePosition(); await showReader(); })), body);
-    if (!ticket.loaded && !['personal', 'draft', 'actions', 'handover'].includes(readerPage)) { body.replaceChildren(empty('Lire la fiche', 'Lisez ce ticket pour afficher les rubriques. Aucune donnée n’est déduite d’une fiche non collectée.')); return; }
-    try {
-      let cleanup;
-      if (readerPage === 'personal') body.replaceChildren(personalEditor(ctx, ticket.personal, state.checklistTemplates, async p => { current.personal = p; state = await call(ctx, 'workplace.get'); drawTabs(); }));
-      else if (readerPage === 'summary') body.replaceChildren(dataTable((ticket.summary || []).map(row => ({ label: row[0], value: row[1] })), [{ key: 'label', label: 'Élément' }, { key: 'value', label: 'Observation', render: row => pre(row.value) }]));
-      else if (readerPage === 'reader') cleanup = await renderSections(ctx, body, ticket, state, savePosition, async updated => { current = updated; await showReader(); });
-      else if (readerPage === 'search') {
-        const search = input(ticket.personal.readingPosition?.wholeTicketSearch || '', { maxLength: 500, placeholder: 'Rechercher dans toutes les rubriques lues' }); const results = el('div');
-        const find = run(ctx, async () => { await savePosition({ wholeTicketSearch: search.value }); const hits = await call(ctx, 'workplace.ticket.search', { ticketKey: key, search: search.value });
-          results.replaceChildren(note(`${hits.length} résultat(s), limite 2 000. Les documents joints ne sont pas indexés.`), dataTable(hits.slice(0, 100), [{ key: 'section', label: 'Rubrique' }, { key: 'text', label: 'Texte recueilli', render: hit => el('details', {}, el('summary', { text: hit.text.slice(0, 200) }), pre(hit.text)) }, { key: 'open', label: 'Lire', render: hit => button('Voir la rubrique', run(ctx, async () => { readerPage = 'reader'; await savePosition({ sectionKey: ticket.sections.find(s => s.index === hit.sectionIndex)?.key || '', rowIndex: hit.rowIndex, search: '', type: '', author: '', from: null, to: null }); await showReader(); })) }]));
-          // Results remain bounded in the DOM; subsequent pages are available without repeating the engine search.
-          if (hits.length > 100) { let page = 0; const pageHost = el('div'); const draw = () => { pageHost.replaceChildren(dataTable(hits.slice(page * 100, page * 100 + 100), [{ key: 'section', label: 'Rubrique' }, { key: 'text', label: 'Extrait', render: hit => pre(hit.text) }, { key: 'open', label: 'Lire', render: hit => button('Ouvrir', run(ctx, async () => { readerPage = 'reader'; await savePosition({ sectionKey: ticket.sections.find(s => s.index === hit.sectionIndex)?.key || '', rowIndex: hit.rowIndex, search: '', type: '', author: '', from: null, to: null }); await showReader(); })) }]), pager(page, 100, hits.length, value => { page = value; draw(); })); }; draw(); results.replaceChildren(note(`${hits.length} résultats, limite 2 000.`), pageHost); }
-        }); body.replaceChildren(toolbar(search, button('Chercher', find, { primary: true })), results); search.addEventListener('keydown', e => { if (e.key === 'Enter') find(); }); if (search.value) await find();
+    if (kind === 'personal') { focusPersonal(); return; }
+    personal?.remember(); await closeTool();
+    const ticket = current, titles = { reader: 'Observations du ticket', summary: 'Synthèse du ticket', search: 'Rechercher dans le ticket', handover: 'Passation du ticket', intelligence: 'Rapprochements', insights: 'Planification et relations', draft: 'Brouillon de suivi', actions: 'Actions assistées' };
+    if (!titles[kind]) return;
+    const content = el('div', { class: 'work-reader-body tickets-tool-content' }), modal = dialog(titles[kind], content);
+    modal.element.classList.add('tickets-tool-modal');
+    const nativeClose = modal.close;
+    const record = { modal, cleanup: null, ready: null, finishing: null, closing: null,
+      finish() {
+        return this.finishing ||= Promise.resolve(this.ready).catch(() => {}).then(async () => { await this.cleanup?.(); this.cleanup = null; })
+          .catch(error => { this.finishing = null; throw error; });
+      },
+      close() {
+        if (this.closing) return this.closing;
+        content.inert = true;
+        return this.closing = this.finish().then(() => { nativeClose(); if (tool === record) tool = null; })
+          .catch(error => { content.inert = false; this.closing = null; throw error; });
       }
-      else if (readerPage === 'handover') { const result = await call(ctx, 'workplace.ticket.handover', { ticketKey: key }); body.replaceChildren(toolbar(button('Copier la passation', run(ctx, async () => { await call(ctx, 'workplace.ticket.handover', { ticketKey: key, copy: true }); ctx.notify('Passation copiée.'); }))), pre(result.text)); }
-      else if (readerPage === 'intelligence') await renderIntelligence(ctx, body, ticket, savePosition);
-      else if (readerPage === 'insights') await renderInsights(ctx, body, ticket);
-      else if (readerPage === 'draft') cleanup = await renderDraft(ctx, body, ticket);
-      else if (readerPage === 'actions') cleanup = await renderActions(ctx, body, ticket, async updated => {current=updated;await loadSource();});
-      if (generation !== sectionVersion || disposed) await cleanup?.(); else sectionCleanup = cleanup;
-    } catch (error) { message(ctx, error); if (!ctx.signal?.aborted) body.replaceChildren(empty('Cet espace n’est pas disponible', error.message)); }
+    };
+    modal.close = () => record.close(); tool = record;
+    const requestClose = event => { event.preventDefault(); event.stopImmediatePropagation(); void record.close().catch(error => message(ctx, error)); };
+    modal.element.querySelector(':scope > .modal-heading button')?.addEventListener('click', requestClose, { capture: true });
+    modal.element.addEventListener('cancel', requestClose, { capture: true });
+    record.ready = (async () => {
+      const persist = patch => savePosition(ticket, patch);
+      if (kind === 'reader') record.cleanup = await renderSections(ctx, content, ticket, state, persist, async updated => {
+        if (current?.personal.key === ticket.personal.key) { current = updated; await closeTool(); await personal?.dispose(); await draw(); }
+      });
+      else if (kind === 'draft') record.cleanup = await renderDraft(ctx, content, ticket);
+      else if (kind === 'actions') record.cleanup = await renderActions(ctx, content, ticket, async updated => {
+        if (disposed || current?.personal.key !== updated.personal.key) return;
+        current = updated; await onSourceChanged?.(updated); await loadSource(opened);
+        const facts = reader.querySelector('.tickets-source-facts'); if (facts) facts.replaceWith(sourceFacts(updated));
+      });
+      else if (kind === 'insights') await renderInsights(ctx, content, ticket);
+      else if (kind === 'intelligence') await renderIntelligence(ctx, content, ticket, persist);
+      else if (kind === 'summary') content.replaceChildren(dataTable((ticket.summary || []).map(row => ({ label: row[0], value: row[1] })), [{ key: 'label', label: 'Élément' }, { key: 'value', label: 'Observation', render: row => pre(row.value) }]));
+      else if (kind === 'handover') { const result = await call(ctx, 'workplace.ticket.handover', { ticketKey: ticket.personal.key }); content.replaceChildren(pre(result.text), button('Copier la passation', run(ctx, async () => { await call(ctx, 'workplace.ticket.handover', { ticketKey: ticket.personal.key, copy: true }); ctx.notify('Passation copiée.'); }))); }
+      else if (kind === 'search') {
+        const query = input(ticket.personal.readingPosition?.wholeTicketSearch || '', { maxLength: 500, placeholder: 'Dans les rubriques effectivement lues' }), results = el('div');
+        const find = run(ctx, async () => {
+          await persist({ wholeTicketSearch: query.value }); const hits = await call(ctx, 'workplace.ticket.search', { ticketKey: ticket.personal.key, search: query.value }); let page = 0;
+          const paint = () => results.replaceChildren(note(`${hits.length} résultats · documents joints non indexés.`), dataTable(hits.slice(page * 100, page * 100 + 100), [{ key: 'section', label: 'Rubrique' }, { key: 'text', label: 'Extrait', render: hit => pre(hit.text) }, { label: '', render: hit => button('Voir la rubrique', run(ctx, async () => { await persist({ sectionKey: ticket.sections.find(section => section.index === hit.sectionIndex)?.key || '', rowIndex: hit.rowIndex, search: '', type: '', author: '', from: null, to: null }); await closeTool(); await openTool('reader'); })) }]), pager(page, 100, hits.length, value => { page = value; paint(); })); paint();
+        });
+        content.replaceChildren(toolbar(query, button('Chercher', find, { primary: true })), results); query.addEventListener('keydown', event => { if (event.key === 'Enter') find(); }); if (query.value) await find();
+      }
+    })();
+    try { await record.ready; } catch (error) { content.replaceChildren(empty('Cet outil n’a pas pu être chargé', error.message)); throw error; }
   }
-  await loadSource(); drawTabs();
-  if (ctx.params?.rowIndex != null) await open({ rowIndex: Number(ctx.params.rowIndex), revision: Number(ctx.params.revision) });
-  else if (ctx.params?.ticketKey) await open({ ticketKey: ctx.params.ticketKey });
-  else if (state.activeTicketKey) await open({ ticketKey: state.activeTicketKey }, false);
-  else reader.replaceChildren(empty('Choisissez un ticket', 'Le lecteur conserve jusqu’à douze fiches ouvertes, leurs notes et leurs positions de lecture.'));
-  return async () => { await sectionCleanup?.(); disposed = true; sectionVersion++; };
+  if (ctx.params?.rowIndex != null) await open({ ...ctx.params, rowIndex: Number(ctx.params.rowIndex), revision: Number(ctx.params.revision) });
+  else if (ctx.params?.ticketKey) await open({ ...ctx.params });
+  const cleanup = async () => { await closeTool(); await personal?.dispose(); personal = null; disposed = true; version++; };
+  cleanup.openTicket = open; cleanup.ticketKey = () => current?.personal.key; return cleanup;
+}
+
+function ticketPersonalEditor(ctx, personal, templates, onSaved, onRemoved) {
+  const simulation = isSimulation(ctx.state.session), draftKey = JSON.stringify([simulation ? ctx.state.settings.exportFolder : 'normal', personal.key]);
+  const draft = personalDrafts.get(draftKey), notes = textArea(draft?.notes ?? personal.notes, 8000, 4);
+  const pinned = checkbox(draft?.pinned ?? personal.pinned, 'Épingler ce ticket'), queued = checkbox(draft?.queued ?? personal.queueOrder != null, 'Dans ma file personnelle'), offline = checkbox(draft?.offline ?? personal.offline, 'Conserver les rubriques lues hors connexion');
+  const reminder = input(toLocalInput(draft?.reminderAt ?? personal.reminderAt), { type: 'datetime-local' }), snooze = input(toLocalInput(draft?.snoozedUntil ?? personal.snoozedUntil), { type: 'datetime-local' }), reason = input(draft?.snoozeReason ?? personal.snoozeReason ?? '', { maxLength: 1200 });
+  const checklist = (draft?.checklist || personal.checklist || []).map(item => ({ ...item })), list = el('div', { class: 'work-checklist' }), status = el('span', { class: 'tickets-save-status', text: draft ? 'Brouillon personnel · à enregistrer' : simulation ? 'Notes privées de simulation' : 'Notes privées sur ce poste' });
+  let dirty = !!draft, disposed = false, saving = Promise.resolve();
+  const patch = () => ({ ticketKey: personal.key, notes: notes.value, pinned: pinned.control.checked, queued: queued.control.checked, offline: offline.control.checked, checklist: checklist.filter(item => item.text.trim()), reminderAt: toIso(reminder.value), snoozedUntil: toIso(snooze.value), snoozeReason: reason.value });
+  const remember = () => { if (dirty) { personalDrafts.set(draftKey, structuredClone(patch())); while (personalDrafts.size > 24) personalDrafts.delete(personalDrafts.keys().next().value); } else personalDrafts.delete(draftKey); };
+  const save = (announce = false) => {
+    saving = saving.catch(() => {}).then(async () => {
+      if (!dirty && !announce) return;
+      const value = patch(), signature = JSON.stringify(value); const result = await ctx.api.call('workplace.personal.save', value);
+      if (signature === JSON.stringify(patch())) dirty = false;
+      remember();
+      onSaved?.(result); if (!disposed) status.textContent = dirty ? 'Modifications en cours…' : simulation ? 'Enregistré dans la simulation' : 'Enregistré sur ce poste';
+      if (announce) ctx.notify(simulation ? 'Travail personnel enregistré dans la simulation.' : 'Travail personnel enregistré.', 'success');
+    });
+    return saving;
+  };
+  const changed = () => { if (disposed) return; dirty = true; status.textContent = 'Brouillon personnel · à enregistrer'; remember(); };
+  const renderList = () => list.replaceChildren(...checklist.map((item, index) => {
+    const done = checkbox(item.done, ''); done.control.setAttribute('aria-label', `Terminé : ${item.text}`); const text = input(item.text, { maxLength: 500, 'aria-label': 'Action personnelle' });
+    done.control.addEventListener('change', () => { item.done = done.control.checked; changed(); }); text.addEventListener('input', () => { item.text = text.value; changed(); });
+    return toolbar(done.element, text, button('Retirer', () => { checklist.splice(index, 1); renderList(); changed(); }));
+  })); renderList();
+  const template = select(Object.keys(templates || {}).map(name => ({ value: name, label: name })), Object.keys(templates || {})[0] || '');
+  const advanced = el('details', { class: 'tickets-personal-options' }, el('summary', { text: 'Checklist, rappels et conservation' }), list,
+    toolbar(button('Ajouter une action', () => { if (checklist.length >= 40) throw new Error('La liste est limitée à 40 actions.'); checklist.push({ text: '', done: false }); renderList(); }), template,
+      button('Reprendre le modèle', () => { checklist.splice(0, checklist.length, ...(templates[template.value] || []).map(text => ({ text, done: false }))); renderList(); changed(); })),
+    field('Rappel personnel', reminder), field('Reporter jusqu’au', snooze), field('Motif du report', reason), offline.element,
+    button('Rappel traité', run(ctx, async () => { await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, acknowledge: true }); ctx.notify('Rappel marqué comme traité.'); })),
+    button('Retirer le dossier conservé…', run(ctx, async () => { if (!await confirm('Retirer ce dossier ?', 'Les notes, le brouillon, la liste et la copie hors connexion de ce dossier seront retirés. Les reçus d’actions restent conservés.', 'Retirer le dossier')) return; await saving; await call(ctx, 'workplace.personal.remove', { ticketKey: personal.key, confirmed: true }); dirty = false; personalDrafts.delete(draftKey); onRemoved?.(); await ctx.navigate('records'); }), { danger: true }));
+  const element = el('section', { class: 'tickets-personal' }, el('div', { class: 'tickets-panel-section-title' }, el('h3', { text: 'Mon suivi' }), status),
+    toolbar(pinned.element, queued.element), field('Mes notes', notes), advanced,
+    toolbar(button('Enregistrer mon travail', () => save(true), { primary: true, icon: 'check' }), button('Enregistrer et partager la note', run(ctx, async () => { await save(); await publishSharedOperation(ctx, 'workspace.publishPersonalNote', { ticketKey: personal.key }); }), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))));
+  for (const control of [notes, pinned.control, queued.control, offline.control, reminder, snooze, reason]) { control.addEventListener('input', changed); control.addEventListener('change', changed); }
+  return { element, save, remember, async dispose() { await saving; remember(); disposed = true; } };
 }
 
 async function renderSections(ctx, root, ticket, state, savePosition, replaceTicket) {

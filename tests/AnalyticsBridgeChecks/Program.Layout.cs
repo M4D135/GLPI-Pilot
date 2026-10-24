@@ -63,6 +63,43 @@ internal static partial class Program
             && serviceBoard.Widgets.Any(widget => widget.Kind == "matrix" && widget.SourceKey == "group-status")
             && serviceBoard.Widgets.Any(widget => widget.Kind == "matrix" && widget.SourceKey == "type-status"),
             "The runtime creates the service preset with editable sections, neutral weather and active group/type matrices.");
+
+        var largeBoard = DashboardLayoutSettings.CreateBoard("Composition volumineuse enregistrée", "empty");
+        largeBoard.Id = "business-workspace";
+        for (var index = 0; index < 120; index++) largeBoard.Widgets.Add(new()
+        { Id = "large-widget-" + index, Kind = "metric", SourceKey = "total", Title = "Carte synthétique " + index, ShowMiniHistory = false });
+        var large = new DashboardLayoutSettings { ActiveBoardId = largeBoard.Id, Boards = new() { largeBoard } };
+        large.Normalize(); large.Validate();
+        await Call(app, "dashboard.layout.save", new { personal = false, layout = large });
+        var importedLarge = large.Copy(); importedLarge.Boards[0].Name = "Composition volumineuse reprise";
+        importedLarge.Boards[0].Widgets[119].Title = "Dernière carte conservée sans troncature";
+        host.OpenPath = Path.Combine(_root, "large-service-layout.json");
+        var expectedLarge = JsonSerializer.Serialize(importedLarge, PilotApplication.Json);
+        await File.WriteAllTextAsync(host.OpenPath, expectedLarge);
+        var sourceBytes = await File.ReadAllBytesAsync(host.OpenPath);
+        var beforeLargePreview = JsonSerializer.Serialize(app.Settings, PilotApplication.Json);
+        var settingsBytes = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
+        var personalBeforeLarge = JsonSerializer.Serialize(app.Settings.Dashboard.PersonalLayout, PilotApplication.Json);
+        var largePreview = await Call(app, "dashboard.layout.import", new { personal = false });
+        Check(largePreview.GetProperty("preview").GetBoolean() && !largePreview.GetProperty("canAppend").GetBoolean()
+            && !string.IsNullOrWhiteSpace(Str(largePreview, "appendReason")) && largePreview.GetProperty("addedBoards").GetArrayLength() == 0
+            && largePreview.GetProperty("layout").GetProperty("boards")[0].GetProperty("widgets").GetArrayLength() == 120
+            && JsonSerializer.Serialize(largePreview.GetProperty("layout"), PilotApplication.Json) == expectedLarge
+            && JsonSerializer.Serialize(app.Settings, PilotApplication.Json) == beforeLargePreview
+            && Enumerable.SequenceEqual(settingsBytes, await File.ReadAllBytesAsync(AppPaths.SettingsFile)),
+            "A valid 120-card service layout remains fully previewable without mutation when an identity collision makes additive import invalid.");
+        var largeCommit = new { personal = false, layout = largePreview.GetProperty("layout"), baseFingerprint = Str(largePreview, "baseFingerprint") };
+        await Reject<InvalidDataException>(async () => { await Call(app, "dashboard.layout.append", largeCommit); },
+            "The append endpoint still rejects a remapped 120-card custom composition instead of relaxing its limit or truncating it.");
+        Check(JsonSerializer.Serialize(app.Settings, PilotApplication.Json) == beforeLargePreview
+            && Enumerable.SequenceEqual(settingsBytes, await File.ReadAllBytesAsync(AppPaths.SettingsFile)),
+            "The refused additive action leaves both working settings and the persisted profile exactly unchanged.");
+        await Call(app, "dashboard.layout.save", largeCommit);
+        Check(JsonSerializer.Serialize(app.Settings.Dashboard.Layout, PilotApplication.Json) == expectedLarge
+            && JsonSerializer.Serialize(AppSettings.Load().Dashboard.Layout, PilotApplication.Json) == expectedLarge
+            && JsonSerializer.Serialize(app.Settings.Dashboard.PersonalLayout, PilotApplication.Json) == personalBeforeLarge
+            && Enumerable.SequenceEqual(sourceBytes, await File.ReadAllBytesAsync(host.OpenPath)),
+            "Explicit replacement from that preview persists all 120 cards exactly and preserves the personal layout and import file.");
     }
 
     private static async Task CheckWeatherSourceReliability()

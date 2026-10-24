@@ -154,6 +154,12 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; backg
 .button .icon { width: 16px; height: 16px; }
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .toolbar:last-child { margin-bottom: 0; }
+.toolbar-fields, .toolbar:has(> .field) { align-items: flex-end; row-gap: 12px; }
+.toolbar-fields > .field { margin: 0; flex: 0 1 auto; }
+.toolbar-fields > .field:has(input[type=checkbox]) { min-height: var(--control); }
+.toolbar-fields > .button, .toolbar-fields > .field > :is(input:not([type=checkbox]),select) { min-height: var(--control); height: var(--control); }
+.toolbar-field-notes { flex-basis: 100%; display: grid; gap: 5px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.toolbar-field-notes .help { margin: 0; font-size: inherit; }
 .toolbar .field { min-width: 130px; }
 .toolbar input:not([type=checkbox]), .toolbar select { width: auto; max-width: 280px; }
 .spacer { flex: 1; }
@@ -404,8 +410,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: .6; background: va
 :root[data-motion=reduce] .nav-item:hover .icon, :root[data-motion=reduce] .quick-link:hover .icon, :root[data-motion=reduce] .brand:hover .brand-mark,
 :root[data-motion=reduce] .button:active, :root[data-motion=reduce] .search-command:active { transform: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .nav-item:hover .icon, .quick-link:hover .icon, .brand:hover .brand-mark, .button:active, .search-command:active { transform: none !important; }
+  :root:not([data-motion-policy=full]) *, :root:not([data-motion-policy=full]) *::before, :root:not([data-motion-policy=full]) *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  :root:not([data-motion-policy=full]) :is(.nav-item:hover .icon, .quick-link:hover .icon, .brand:hover .brand-mark, .button:active, .search-command:active) { transform: none !important; }
 }
 :root[data-contrast=true] .hero::before, :root[data-contrast=true] .brand-mark::before { display: none; }
 :root[data-contrast=true] .workspace { background: var(--bg); }

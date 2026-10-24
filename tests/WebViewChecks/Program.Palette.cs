@@ -82,8 +82,7 @@ internal static partial class Program
         ILocator Sources() => Palette().GetByRole(AriaRole.Combobox, new() { Name = "Installation des tickets conservés", Exact = true });
         ILocator Result(string id) => Palette().Locator("[role=option]").Filter(new() { Has = page.Locator("strong").Filter(new() { HasText = "#" + id + " ·" }) });
         async Task Open() { await page.Keyboard.PressAsync("Control+k"); await Palette().WaitForAsync(); }
-        async Task Ready(string id) => await WaitForPageAsync(page,
-            "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
+        async Task Ready(string id) => await WaitForNavigationTargetAsync(page, id);
         async Task Query(string text)
         {
             await Search().FillAsync(text);
@@ -101,7 +100,7 @@ internal static partial class Program
             await page.Locator("body[data-ready=true]").WaitForAsync();
             await page.GetByRole(AriaRole.Button, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }).FocusAsync();
             await Open();
-            Require(await Palette().Locator("[data-command-id^='page:']").CountAsync() == 35
+            Require(await Palette().Locator("[data-command-id^='page:']").CountAsync() == 6
                 && await Palette().Locator("[data-command-id^='action:']").CountAsync() == 7
                 && await Palette().Locator("[data-command-id='action:test-file']").CountAsync() == 1
                 && await Palette().Locator("[data-command-id='action:test-exit']").CountAsync() == 0
@@ -119,9 +118,9 @@ internal static partial class Program
                 && await page.Locator(".search-command").EvaluateAsync<bool>("node => document.activeElement===node"),
                 "Repeated Ctrl K closes the sole palette and restores its triggering control.");
 
-            await Open(); await Query("repartition");
-            Require(await Palette().Locator("[data-command-id='page:planning']").CountAsync() == 1, "Screen lookup ignores French accents without changing the stored ticket values.");
-            await Search().PressAsync("Enter"); await Ready("planning");
+            await Open(); await Query("donnees");
+            Require(await Palette().Locator("[data-command-id='page:data']").CountAsync() == 1, "Screen lookup ignores French accents without changing the stored ticket values.");
+            await Search().PressAsync("Enter"); await Ready("data");
             Require(await page.Locator("dialog[open]").CountAsync() == 0, "Enter executes the selected screen command and closes the palette.");
             await page.GetByRole(AriaRole.Button, new() { Name = "Personnaliser la navigation", Exact = true }).ClickAsync();
             var editor = page.Locator("dialog.navigation-modal"); await editor.WaitForAsync();
@@ -133,8 +132,8 @@ internal static partial class Program
             await editor.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
             await ClickNavigationAsync(page, "settings"); await Ready("settings");
-            var retained = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Pages maximales", Exact = true });
-            await retained.FillAsync("321"); await retained.FocusAsync();
+            var retained = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Zoom (%)", Exact = true });
+            await retained.FillAsync("123"); await retained.FocusAsync();
             var retainedNode = await retained.ElementHandleAsync();
             var beforeScroll = await page.Locator(".workspace").EvaluateAsync<double>("node => node.scrollTop");
             await Open(); await Query("42");
@@ -151,7 +150,7 @@ internal static partial class Program
                 && app.Revision == revision && ReferenceEquals(app.Result, report),
                 "The cached ticket reader keeps literal HTML and C1 characters and leaves the loaded report unchanged.");
             await page.Keyboard.PressAsync("Escape");
-            Require(await retained.InputValueAsync() == "321"
+            Require(await retained.InputValueAsync() == "123"
                 && await page.EvaluateAsync<bool>("node => node===document.activeElement && node.isConnected", retainedNode)
                 && Math.Abs(await page.Locator(".workspace").EvaluateAsync<double>("node => node.scrollTop") - beforeScroll) <= 1,
                 "Closing the cached reader preserves the original screen, unsaved input, focused element and reading position.");
@@ -180,6 +179,7 @@ internal static partial class Program
                 && await page.Locator(".library-result").CountAsync() == 1,
                 "Opening the full library carries the entered query and installation as explicit filters.");
 
+            await page.Locator("dialog[data-workspace-panel=library]").GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).First.ClickAsync();
             await Call(app, "app.appearance", new { theme = "light" }); await delivery;
             await Open(); await Query("42"); await Capture("palette-tickets-light");
             await page.SetViewportSizeAsync(600, 850); await Capture("palette-compact");

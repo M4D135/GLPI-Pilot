@@ -14,8 +14,11 @@ internal static partial class Program
         });
         expanded.Cities.Sites.Add(new SiteDefinition { Name = "Site sans coordonnées", CityId = expanded.Cities.Cities.Single().Id, Address = "Adresse sans géocodage" });
         await Call(app, "settings.save", new { revision = app.Revision, settings = expanded });
-        await navigate("home"); await navigate("pilot-sites");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Carte des sites du référentiel", Exact = true }).ClickAsync();
+        await navigate("home"); await navigate("terrain-map");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Gérer le référentiel", Exact = true }).ClickAsync();
+        var panel = page.Locator("dialog.terrain-workspace-panel");
+        await panel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();
+        await panel.GetByRole(AriaRole.Button, new() { Name = "Carte des sites", Exact = true }).ClickAsync();
         var map = page.Locator("dialog.maps-dialog"); await map.WaitForAsync();
         Require(await map.Locator(".maps-marker").CountAsync() == 26 && await map.Locator(".maps-place").CountAsync() == 27
             && await map.Locator(".maps-missing li").InnerTextAsync() == "Site sans coordonnées"
@@ -29,7 +32,10 @@ internal static partial class Program
             "At a small window equivalent to 125% zoom the integrated map remains within the viewport and its list and attribution stay accessible by scrolling.");
         await page.SetViewportSizeAsync(viewport.Width, viewport.Height);
         await map.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await panel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await panel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
         await Call(app, "settings.save", new { revision = app.Revision, settings = original });
+        await navigate("home");
     }
 
     private static async Task CheckEmbeddedMapRendererAsync(IPage page)
@@ -85,7 +91,6 @@ internal static partial class Program
               await openMap({api,signal:controller.signal},{kind:'site'});
             }
             """);
-        await map.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "typeof globalThis.__mapEnable === 'function'");
         await page.EvaluateAsync("globalThis.__mapController.abort(); globalThis.__mapEnable({enabled:true,tileUrl:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',maxZoom:19})");
         await WaitForPageAsync(page, "globalThis.__mapCalls.filter(call=>call.operation==='maps.tiles'&&call.args.enabled===false).length>=2");
@@ -99,12 +104,19 @@ internal static partial class Program
         var settings = app.Settings.Copy(); var site = settings.Cities.Sites.First(value => value.Name == "Site fictif Nord");
         site.Latitude = 44.1; site.Longitude = 5.1;
         await Call(app, "settings.save", new { revision = app.Revision, settings });
-        await navigate("pilot-sites");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Carte · Site fictif Nord", Exact = true }).ClickAsync();
-        await WaitForPageAsync(page, "document.querySelector('.maps-canvas')?.dataset.tiles === 'online'");
+        await navigate("terrain-map");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Gérer le référentiel", Exact = true }).ClickAsync();
+        var panel = page.Locator("dialog.terrain-workspace-panel");
+        await panel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();
+        await panel.GetByRole(AriaRole.Button, new() { Name = "Carte des sites", Exact = true }).ClickAsync();
+        var map = page.Locator("dialog.maps-dialog"); await map.WaitForAsync();
+        await WaitForPageAsync(page, "document.querySelector('dialog.maps-dialog .maps-canvas')?.dataset.tiles === 'online'");
         Require(!app.IsTestMode && app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"),
-            "In the normal workspace the explicit site-map click loads the detailed embedded background directly, without a second confirmation or external window.");
-        await page.Locator("dialog.maps-dialog").GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+            "The normal Terrain reference map loads its detailed embedded background directly, without a second confirmation or external window.");
+        await map.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await panel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await panel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await navigate("home");
         await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
     }
 }

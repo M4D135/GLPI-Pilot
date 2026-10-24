@@ -33,7 +33,8 @@ internal static class TerrainWebFixture
             try
             {
                 var operation = request.GetProperty("op").GetString()!;
-                if (!(operation.StartsWith("terrain.", StringComparison.Ordinal) || operation.StartsWith("update.", StringComparison.Ordinal))
+                if (!(operation.StartsWith("terrain.", StringComparison.Ordinal) || operation.StartsWith("update.", StringComparison.Ordinal)
+                    || operation.StartsWith("maps.", StringComparison.Ordinal))
                     || operation is "terrain.tours.route" or "terrain.tours.weather" or "update.findOfficial" or "update.downloadOfficial" or "update.install")
                     throw new InvalidOperationException("Network or installer execution is prohibited in this offline fixture.");
                 var result = await app.ExecuteAsync(operation, request.GetProperty("args")); Write(new { id, result });

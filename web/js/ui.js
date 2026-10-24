@@ -31,7 +31,20 @@ export function button(label,handler,options={}) {
   return result;
 }
 export const card=(title,...children)=>el('section',{class:'card'},title?el('div',{class:'card-heading'},el('h2',{text:title})):null,...children);
-export const toolbar=(...children)=>el('div',{class:'toolbar'},...children);
+export function toolbar(...children) {
+ const bar=el('div',{class:'toolbar'},...children);
+ const fields=[...bar.children].filter(node=>node.classList.contains('field'));
+ if(fields.length){
+  bar.classList.add('toolbar-fields');
+  const notes=el('div',{class:'toolbar-field-notes'});
+  for(const item of fields){
+   const help=item.querySelector(':scope > .help');
+   if(help)notes.append(el('div',{},el('strong',{text:(item.querySelector('.field-label')?.textContent||'Précision')+' : '}),help));
+  }
+  if(notes.childNodes.length)bar.append(notes);
+ }
+ return bar;
+}
 export const empty=(title,detail='')=>el('div',{class:'empty'},icon('layers'),el('h3',{text:title}),detail?el('p',{text:detail}):null);
 export const badge=(text,tone='')=>el('span',{class:`badge ${tone}`,text});
 export const isSimulation=session=>session?.simulation===true||session?.testMode===true;

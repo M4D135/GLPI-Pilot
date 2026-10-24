@@ -5,6 +5,9 @@ namespace GlpiPilot.Core;
 /// <summary>Portable presentation only. Ticket data and local technician identity are never stored here.</summary>
 public sealed class DashboardLayoutSettings
 {
+    // The integrated service workspace keeps every weather rule alongside the
+    // operational analyses. User compositions retain their existing bound.
+    public static int MaximumWidgets(string boardId) => boardId == "business-workspace" ? 120 : 60;
     public int Version { get; set; } = 1;
     public string ActiveBoardId { get; set; } = "";
     public List<DashboardBoardSettings> Boards { get; set; } = new();
@@ -51,7 +54,7 @@ public sealed class DashboardLayoutSettings
         foreach (var board in Boards)
         {
             if (board is null || !ValidText(board.Id, 96) || !ids.Add(board.Id) || !ValidText(board.Name, 120)
-                || board.Widgets is null || board.Widgets.Count > 60)
+                || board.Widgets is null || board.Widgets.Count > MaximumWidgets(board.Id))
                 throw new InvalidDataException("Un tableau de bord possède un nom, un identifiant ou une liste de widgets incorrects.");
             if (board.Description is null || board.Description.Length > 600 || board.Density is not ("comfortable" or "compact")
                 || board.Sections is null || board.Sections.Count > 60 || board.FreshnessWarningHours is < 1 or > 8760)
@@ -275,7 +278,7 @@ public sealed class DashboardBoardSettings
         Description = (Description ?? "")[..Math.Min(Description?.Length ?? 0, 600)];
         if (Density is not ("comfortable" or "compact")) Density = "comfortable";
         if (FreshnessWarningHours is < 1 or > 8760) FreshnessWarningHours = null;
-        Widgets = Widgets?.Where(x => x is not null).Take(60).ToList() ?? new();
+        Widgets = Widgets?.Where(x => x is not null).Take(DashboardLayoutSettings.MaximumWidgets(Id)).ToList() ?? new();
         Filters ??= new(); ComparisonFilters ??= new();
         CollapsedSections = (CollapsedSections ?? new()).Where(x => x is not null && x.Length <= 80).Distinct(StringComparer.Ordinal).Take(60).ToList();
         var ids = new HashSet<string>(StringComparer.Ordinal);

@@ -84,7 +84,7 @@ public sealed class DashboardSettings
 /// <summary>Native pilot views, independent of the twelve user-created dashboards.</summary>
 public sealed class BusinessDashboardSettings
 {
-    public static readonly string[] ViewKeys = { "weather", "pilotage", "groups", "categories", "oldest", "followup", "participants", "sites" };
+    public static readonly string[] ViewKeys = { "workspace", "weather", "pilotage", "groups", "categories", "oldest", "followup", "participants", "sites" };
     public List<BusinessWeatherRule> WeatherRules { get; set; } = new();
     public List<DashboardBoardSettings> BoardOverrides { get; set; } = new();
     public string Notes { get; set; } = "";

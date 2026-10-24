@@ -35,7 +35,7 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     const fixture = await timeout(ready, 15000, 'C# fixture startup timed out');
     server = http.createServer((request, response) => {
       const pathname = new URL(request.url, 'http://localhost').pathname;
-      if (pathname === '/') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end('<!doctype html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="/web/css/app.css"><link rel="stylesheet" href="/web/css/terrain.css"></head><body><main id="root"></main></body></html>'); return; }
+      if (pathname === '/') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end('<!doctype html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="/web/css/app.css"><link rel="stylesheet" href="/web/css/terrain.css"><link rel="stylesheet" href="/web/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/web/css/maps.css"><script src="/web/vendor/leaflet/leaflet.js"></script></head><body><main id="root"></main></body></html>'); return; }
       const file = path.resolve(project, '.' + pathname);
       if (!file.startsWith(path.join(project, 'web') + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { response.statusCode = 404; response.end(); return; }
       response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8'); response.end(fs.readFileSync(file));
@@ -49,7 +49,13 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     await page.exposeFunction('terrainCall', call);
     await page.goto(origin);
     await page.evaluate(async revision => {
-      const { pages } = await import('/web/js/pages/terrain.js');
+      // Exercise the reusable editors directly: the application presents these
+      // controls inside Terrain/Settings panels, not as legacy navigation pages.
+      const [{ renderReference }, { renderReview }, { renderTours }, { renderUpdates }, { renderTicketMap }] = await Promise.all([
+        import('/web/js/pages/terrain-reference.js'), import('/web/js/pages/terrain-review.js'),
+        import('/web/js/pages/terrain-tours.js'), import('/web/js/pages/terrain-update.js'), import('/web/js/pages/terrain-map.js')
+      ]);
+      const renderers = { 'terrain-reference': renderReference, 'terrain-review': renderReview, tours: renderTours, updates: renderUpdates, 'terrain-map': renderTicketMap };
       let controller, cleanup;
       window.renderTerrain = async (id, params = {}) => {
         controller?.abort(); cleanup?.(); controller = new AbortController(); document.querySelector('#root').replaceChildren();
@@ -58,11 +64,12 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
         const ctx = { root: document.querySelector('#root'), state, signal: controller.signal, params,
           api: { call: (op, args = {}) => window.terrainCall(op, args), on: () => () => {} },
           navigate: (next, args) => { window.lastNavigation = { id: next, params: args }; }, notify: () => {}, refresh: () => window.renderTerrain(id, params) };
-        cleanup = await pages.find(page => page.id === id).render(ctx); window.currentTerrain = id;
+        cleanup = await renderers[id](ctx); window.currentTerrain = id;
       };
     }, fixture.revision);
     const render = id => page.evaluate(id => window.renderTerrain(id), id);
     const lastDialog = () => page.getByRole('dialog').last();
+    const capture = async name => { if (process.env.GLPI_TEST_SCREENSHOTS) { fs.mkdirSync(process.env.GLPI_TEST_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, name + '.png'), fullPage: true }); } };
 
     await render('terrain-reference');
     ok(await page.getByRole('heading', { name: 'Référentiel géographique', exact: true }).count() === 1, 'reference page renders through the real C# API');
@@ -153,6 +160,56 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     await page.getByRole('row').filter({ hasText: 'Atelier indépendant' }).getByText('Alpha', { exact: true }).waitFor();
     const attached = (await call('terrain.reference.list', { kind: 'site', search: 'Atelier indépendant' })).items[0];
     ok(attached.id === independent.id && attached.parent === 'Alpha', 'site editor attaches a commune later while preserving the original site identity');
+
+    await render('terrain-map');
+    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.getByText('Fond détaillé indisponible · le plan local reste affiché', { exact: true }).waitFor();
+    ok(await page.locator('.maps-inline-host .maps-marker').count() === 2
+      && await page.locator('.maps-ticket-rows tbody tr').count() === 3,
+      'central Terrain retains every active ticket and uses the local map automatically when its default detailed tiles are unavailable');
+    await capture('terrain-central-map');
+    await page.locator('.maps-place[data-located="true"]').first().click();
+    await page.locator('.maps-ticket-rows[data-total="1"]').waitFor();
+    ok(await page.locator('.maps-popup').count() === 1 && await page.getByRole('button', { name: 'Sélectionner les tickets de ce lieu', exact: true }).isEnabled(),
+      'selecting a real marker synchronizes its popup, ticket list and whole-place selection action');
+    await page.getByRole('button', { name: 'Sélectionner les tickets de ce lieu', exact: true }).click();
+    await page.getByText('1 ticket sélectionné', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Préparer une tournée', exact: true }).click();
+    await lastDialog().getByLabel('Nom de la tournée', { exact: true }).fill('Intervention depuis Terrain');
+    await lastDialog().getByRole('button', { name: 'Voir l’aperçu', exact: true }).click();
+    await lastDialog().getByRole('heading', { name: 'Vérifier le brouillon de tournée', exact: true }).waitFor();
+    ok((await call('terrain.tours.state')).draft.name === 'Tournée interface', 'map preview preserves the existing draft until the explicit create action');
+    await lastDialog().getByRole('button', { name: 'Créer le brouillon', exact: true }).click();
+    const panel = page.locator('dialog.terrain-workspace-panel');
+    await panel.locator('.terrain-function-panel[data-terrain-panel="planning"][data-ready="true"]').waitFor();
+    ok(await panel.locator('.terrain-tabs button').count() === 0 && (await call('terrain.tours.state')).draft.name === 'Intervention depuis Terrain',
+      'map confirmation opens a real local planning editor inside Terrain with no legacy tabs');
+    await capture('terrain-planning-panel');
+    await panel.locator('summary').filter({ hasText: 'Nom, horaires, départ, retour et consignes' }).click();
+    await panel.getByLabel('Nom', { exact: true }).fill('');
+    await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
+    await panel.locator('.terrain-panel-errors .notice.danger').waitFor();
+    ok(await panel.isVisible() && (await call('terrain.tours.state')).draft.name === 'Intervention depuis Terrain',
+      'an invalid planning header keeps the panel open with its error visible and preserves the previous draft');
+    await panel.getByLabel('Nom', { exact: true }).fill('Intervention renommée');
+    await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
+    await panel.waitFor({ state: 'hidden' });
+    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    ok((await call('terrain.tours.state')).draft.name === 'Intervention renommée' && await page.locator('.maps-inline-host .maps-canvas').count() === 1,
+      'closing a planning panel applies its pending header edits to the local draft and returns to the central map');
+    await page.getByRole('button', { name: 'Gérer le référentiel', exact: true }).click();
+    await panel.locator('.terrain-function-panel[data-terrain-panel="reference"][data-ready="true"]').waitFor();
+    ok(await panel.getByRole('button', { name: 'Ajouter une référence', exact: true }).isEnabled(), 'the complete reference editor remains functional inside the new Terrain panel');
+    await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
+    await panel.waitFor({ state: 'hidden' });
+    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.locator('.maps-ticket-rows').getByRole('button', { name: 'Ouvrir', exact: true }).first().click();
+    ok(await page.evaluate(() => window.lastNavigation.id === 'tickets' && Number.isInteger(window.lastNavigation.params.rowIndex)
+      && Number.isInteger(window.lastNavigation.params.revision)), 'a map ticket opens the shared ticket reader with its original row and revision');
+    await page.evaluate(() => window.renderTerrain('terrain-map', { technicianKeys: ['ALICE'] }));
+    await page.locator('.maps-ticket-rows[data-total="2"]').waitFor();
+    ok((await page.locator('.maps-scope-summary').innerText()).includes('Alice') && await page.locator('.maps-ticket-rows tbody tr').count() === 2,
+      'opening Terrain from another workspace preserves the explicitly supplied technician scope instead of returning to everyone');
     ok(consoleErrors.length === 0, `no unhandled JavaScript errors: ${consoleErrors.join('; ')}`);
     ok(!calls.some(value => ['update.findOfficial', 'update.downloadOfficial', 'update.install', 'terrain.tours.route', 'terrain.tours.weather'].includes(value)), 'all UI tests completed offline without provider or installer execution');
     console.log(`${checks}/${checks} terrain WebView page checks passed.`);

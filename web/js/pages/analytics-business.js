@@ -47,6 +47,7 @@ async function renderBusiness(ctx, view) {
   const focusKeys = requested.filter(key => available.has(key));
   const removed = requested.length - focusKeys.length;
   const business = { ...view, groups: bootstrap.groups, focus: bootstrap.focus, rules: bootstrap.business.weatherRules,
+    customLayout: bootstrap.business.boardOverrides?.some(board => board.id === `business-${view.key}`) === true,
     usingWeatherDefaults: bootstrap.usingWeatherDefaults === true,
     focusWarning: removed ? `${formatNumber(removed)} sélection(s) ne sont plus disponibles dans ce relevé. Le filtre a été actualisé ; vérifiez les équipes et groupes retenus.` : '',
     focusEnabled: ['oldest', 'followup', 'participants', 'sites', 'groups'].includes(view.key) };
@@ -57,7 +58,7 @@ async function renderBusiness(ctx, view) {
   return result;
 }
 
-async function renderBusinessSettings(ctx) {
+export async function renderBusinessSettings(ctx) {
   const cleanup = heading(ctx, 'Paramètres du pilotage', 'Seuils, correspondances d’équipes, catégories, notes et référentiel de sites.');
   ctx.root.classList.add('business-settings'); ctx.root.dataset.businessView = 'settings';
   const model = await call(ctx, 'dashboard.business.settings.get'); if (ctx.signal.aborted) return cleanup;

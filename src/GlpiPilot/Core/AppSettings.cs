@@ -270,7 +270,7 @@ public sealed class AutomationRecipeStep
 
 public sealed class InterfacePreferences
 {
-    public const int CurrentNavigationDefaultsVersion = 1;
+    public const int CurrentNavigationDefaultsVersion = 2;
     // Stable route/group keys only. Labels and group organization belong to the UI.
     private static readonly HashSet<string> NavigationIds = new(StringComparer.Ordinal)
     {
@@ -278,7 +278,7 @@ public sealed class InterfacePreferences
         "dashboard", "queries", "history", "populations", "assistant", "day", "tickets", "enrichment",
         "technicians", "planning", "terrain-reference", "terrain-review", "tours", "updates",
         "automation", "alerts", "settings", "help", "pilot-weather", "pilot-summary", "pilot-groups", "pilot-categories",
-        "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings"
+        "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings", "pilot", "data", "terrain-map"
     };
     private static readonly HashSet<string> NavigationGroupIds = new(StringComparer.Ordinal)
         { "pinned", "workspace", "collect", "pilot", "analyze", "work", "terrain", "admin" };
@@ -322,13 +322,11 @@ public sealed class InterfacePreferences
         if (WindowPixelBounds == null || WindowPixelBounds.Length != 4 || WindowPixelBounds.Any(v => !double.IsFinite(v)) || WindowPixelBounds[2] <= 0 || WindowPixelBounds[3] <= 0) WindowPixelBounds = Array.Empty<double>();
         NavigationOrder = NavigationList(NavigationOrder);
         HiddenNavigation = NavigationList(HiddenNavigation).Where(value => value is not ("home" or "settings")).ToList();
-        // Apply new navigation defaults once to both fresh and existing profiles.
-        // A later explicit reveal must survive normalization, copies and restarts.
-        if (NavigationDefaultsVersion < CurrentNavigationDefaultsVersion)
+        // Retain the explicit optional-tool preferences introduced in version 1.
+        if (NavigationDefaultsVersion < 1)
         {
             foreach (var route in new[] { "assistant", "enrichment", "populations" })
                 if (!HiddenNavigation.Contains(route, StringComparer.Ordinal)) HiddenNavigation.Add(route);
-            NavigationDefaultsVersion = CurrentNavigationDefaultsVersion;
         }
         PinnedNavigation = NavigationList(PinnedNavigation);
         NavigationGroupOrder = (NavigationGroupOrder ?? new()).Where(value => value != null && NavigationGroupIds.Contains(value)).Distinct(StringComparer.Ordinal).Take(NavigationGroupIds.Count).ToList();
@@ -336,6 +334,11 @@ public sealed class InterfacePreferences
         NavigationGroups = (NavigationGroups ?? new()).Where(pair => NavigationIds.Contains(pair.Key)
             && pair.Value != null && pair.Value != "pinned" && NavigationGroupIds.Contains(pair.Value))
             .Take(NavigationIds.Count).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        if (NavigationDefaultsVersion < 2) MigrateNavigationSpaces();
+        NavigationOrder = NavigationOrder.Select(NavigationSpace).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        PinnedNavigation = PinnedNavigation.Select(NavigationSpace).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        HiddenNavigation = HiddenNavigation.Where(value => value is "pilot" or "records" or "terrain-map" or "data" or "assistant" or "enrichment" or "populations").ToList();
+        NavigationGroupOrder.Clear(); NavigationGroups.Clear();
         FrozenColumns = Math.Clamp(FrozenColumns, 0, 8);
         if (!double.IsFinite(WindowWidth) || WindowWidth < 0) WindowWidth = 0;
         if (!double.IsFinite(WindowHeight) || WindowHeight < 0) WindowHeight = 0;
@@ -344,6 +347,58 @@ public sealed class InterfacePreferences
     }
     private static List<string> NavigationList(List<string>? values) => (values ?? new())
         .Where(value => value != null && NavigationIds.Contains(value)).Distinct(StringComparer.Ordinal).Take(NavigationIds.Count).ToList();
+    private static string NavigationSpace(string route) => route switch
+    {
+        "home" or "day" or "alerts" => "home",
+        "records" or "tickets" => "records",
+        "pilot" or "pilot-weather" or "pilot-summary" or "pilot-groups" or "pilot-categories" or "pilot-oldest" or "pilot-followup" or "pilot-participants"
+            or "dashboard" or "queries" or "history" or "technicians" or "planning" or "assistant" => "pilot",
+        "terrain-map" or "pilot-sites" or "terrain-reference" or "terrain-review" or "populations" or "tours" => "terrain-map",
+        "data" or "collect" or "sources" or "library" or "quality" or "mapping" or "enrichment" => "data",
+        "settings" or "automation" or "updates" or "help" or "operations" or "pilot-settings" => "settings",
+        _ => ""
+    };
+    private void MigrateNavigationSpaces()
+    {
+        // Flatten the user's former group/page order, then merge duplicate
+        // destinations. A hidden sub-tool must never hide its entire new space.
+        var legacy = new (string Group, string[] Pages)[]
+        {
+            ("pinned", Array.Empty<string>()), ("workspace", ["home", "day", "alerts"]),
+            ("pilot", ["pilot-weather", "pilot-summary", "pilot-groups", "pilot-categories", "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings"]),
+            ("collect", ["collect", "sources", "records", "quality", "mapping"]),
+            ("analyze", ["dashboard", "queries", "history", "populations", "assistant"]),
+            ("work", ["tickets", "enrichment", "library", "technicians", "planning"]),
+            ("terrain", ["terrain-map", "terrain-reference", "terrain-review", "tours"]),
+            ("admin", ["settings", "automation", "updates", "operations", "help"])
+        };
+        if (NavigationOrder.Count > 0 || NavigationGroupOrder.Count > 0 || NavigationGroups.Count > 0)
+        {
+            var groups = NavigationGroupOrder.ToList();
+            foreach (var group in legacy.Select(value => value.Group))
+            {
+                if (groups.Contains(group, StringComparer.Ordinal)) continue;
+                var before = legacy.TakeWhile(value => value.Group != group).Select(value => value.Group).LastOrDefault(value => groups.Contains(value, StringComparer.Ordinal));
+                groups.Insert(before is null ? 0 : groups.IndexOf(before) + 1, group);
+            }
+            var routes = NavigationOrder.Concat(legacy.SelectMany(value => value.Pages)).Distinct(StringComparer.Ordinal).ToList();
+            string Group(string route) => PinnedNavigation.Contains(route, StringComparer.Ordinal) ? "pinned" : NavigationGroups.GetValueOrDefault(route)
+                ?? legacy.FirstOrDefault(value => value.Pages.Contains(route, StringComparer.Ordinal)).Group ?? "admin";
+            NavigationOrder = routes.OrderBy(route => groups.IndexOf(Group(route))).ThenBy(route => routes.IndexOf(route))
+                .Select(NavigationSpace).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        }
+        var hidden = HiddenNavigation.ToHashSet(StringComparer.Ordinal);
+        var converted = HiddenNavigation.Where(value => value is "assistant" or "enrichment" or "populations").ToList();
+        foreach (var (space, core) in new (string Space, string[] Core)[]
+        {
+            ("pilot", ["pilot-weather", "pilot-summary", "pilot-groups", "dashboard", "history"]),
+            ("records", ["records", "tickets"]),
+            ("terrain-map", ["terrain-map", "pilot-sites", "terrain-reference", "terrain-review", "tours"]),
+            ("data", ["collect", "sources", "library", "quality", "mapping"])
+        }) if ((hidden.Contains(space) && space is "pilot" or "data") || core.All(hidden.Contains)) converted.Add(space);
+        HiddenNavigation = converted.Distinct(StringComparer.Ordinal).ToList();
+        NavigationDefaultsVersion = CurrentNavigationDefaultsVersion;
+    }
 }
 
 /// <summary>Atomic settings with bounded local versions. Browser sessions and ticket data are never included.</summary>

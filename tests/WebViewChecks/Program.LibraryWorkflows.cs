@@ -117,8 +117,7 @@ internal static partial class Program
         ILocator CaptureDialog() => Modal("Détail et reprise de la collecte");
         ILocator VersionDialog() => Modal("Versions conservées");
         ILocator ComparisonDialog() => Modal("Comparer les versions de la contribution");
-        async Task Ready(string id) => await WaitForPageAsync(page,
-            "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
+        async Task Ready(string id) => await WaitForNavigationTargetAsync(page, id);
         async Task OpenLibrary()
         {
             await ClickNavigationAsync(page, "library"); await Ready("library");
@@ -238,8 +237,9 @@ internal static partial class Program
             && await store.GetAsync(portal.Seed("70").Ticket) is not null,
             "The retry button resumes the selected durable run, rereads only its still-accessible targets, and retains both confirmed and now-absent cached tickets.");
 
-        await page.GetByRole(AriaRole.Navigation, new() { Name = "Vues de la bibliothèque", Exact = true })
-            .GetByRole(AriaRole.Button, new() { Name = "Équipe", Exact = true }).ClickAsync();
+        await ClickNavigationAsync(page, "data"); await WaitForNavigationTargetAsync(page, "data");
+        await page.Locator("[data-open-panel=team]").ClickAsync();
+        await page.Locator("dialog[data-workspace-panel=team]").WaitForAsync();
         var card = page.Locator(".library-result[data-workspace-id='" + contribution.Id + "']");
         await card.GetByRole(AriaRole.Button, new() { Name = "Examiner les versions", Exact = true }).ClickAsync();
         var versions = VersionDialog();
@@ -323,7 +323,12 @@ internal static partial class Program
         var previousDialogFocus = await versions.IsVisibleAsync()
             && await page.EvaluateAsync<bool>("document.activeElement?.textContent.includes('Comparer tous les champs')===true");
         await page.Keyboard.PressAsync("Escape"); await versions.WaitForAsync(new() { State = WaitForSelectorState.Detached });
-        await page.SetViewportSizeAsync(1440, 1000); await Button("Changer de thème").ClickAsync();
+        await page.SetViewportSizeAsync(1440, 1000);
+        await page.Locator("dialog[data-workspace-panel=team]").GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).First.ClickAsync();
+        await Button("Changer de thème").ClickAsync();
+        await ClickNavigationAsync(page, "data"); await Ready("data");
+        await page.Locator("[data-open-panel=team]").ClickAsync();
+        await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
         await Capture("library-workflows-team-light");
         Require(compact && nativeSearchCleared && previousDialogFocus && errors.IsEmpty && externalRequests == 0 && host.OpenedUrls.IsEmpty
             && await page.EvaluateAsync<bool>("document.documentElement.dataset.domeniaMotion==='off'")

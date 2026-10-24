@@ -12,7 +12,7 @@ const check = (label, checked = false) => {
   return { control, element: el('label', { class: 'library-check' }, control, el('span', { text: label })) };
 };
 
-async function library(ctx) {
+export async function renderLibrary(ctx) {
   const { root, api, signal, navigate, notify } = ctx;
   const simulation=isSimulation(ctx.state.session);
   const call = (op, args = {}, options = {}) => api.call(op, args, { signal, ...options });
@@ -169,13 +169,14 @@ async function library(ctx) {
         action('Exporter le corpus RAG', async () => { const result = await call('library.export'); if (!result.cancelled) notify('Corpus exporté : ' + result.path); }, { icon: 'download' }))));
     if (model.sync?.lastError) storage.append(el('p', { class: 'library-conflict', text: model.sync.lastError }));
     if (busy) lock(true);
+    if (ctx.params?.embedded) { header.hidden = true; statistics.hidden = true; storage.hidden = view !== 'connection'; }
   }
   async function setView(next) { if (next === view) return; view = next; offset = 0; await drawView(); }
   async function drawView() {
     if (disposed) return;
     if (passwordInput) { passwordInput.value = ''; passwordInput = null; }
     searchVersion++;
-    tabs.replaceChildren(...[['library', 'Bibliothèque', 'layers'], ['resolution', 'Résolution', 'spark'], ['team', 'Équipe', 'users'], ['connection', 'Connexion', 'settings']].map(([id, label, symbol]) =>
+    tabs.replaceChildren(...(ctx.params?.embedded ? [] : [['library', 'Bibliothèque', 'layers'], ['resolution', 'Résolution', 'spark'], ['team', 'Équipe', 'users'], ['connection', 'Connexion', 'settings']]).map(([id, label, symbol]) =>
       button(label, () => setView(id), { icon: symbol, attributes: { 'aria-pressed': String(view === id) } })));
     content.replaceChildren();
     if (view === 'connection') drawSettings();
@@ -456,4 +457,4 @@ async function library(ctx) {
   return () => { disposed = true; searchVersion++; operation?.abort(); stopProgress(); stopLibrary(); signal?.removeEventListener('abort', abort); if (passwordInput) passwordInput.value = ''; };
 }
 
-export const pages = [{ id: 'library', title: 'Bibliothèque de tickets', group: 'Collecter', icon: 'layers', render: library }];
+export const pages = [{ id: 'library', title: 'Bibliothèque de tickets', group: 'Collecter', icon: 'layers', render: renderLibrary }];

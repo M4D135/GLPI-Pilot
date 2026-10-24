@@ -65,10 +65,17 @@ internal static partial class Program
             }; window.__pilotDeliver = message => { for (const listener of listeners) listener({ data: message }); }; })();
             """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
-        ILocator View(string name) => page.GetByRole(AriaRole.Navigation, new() { Name = "Vues de la bibliothèque", Exact = true }).GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
+        async Task View(string name)
+        {
+            var panel = name switch { "Résolution" => "resolution", "Équipe" => "team", "Connexion" => "connection", _ => "library" };
+            await ClickNavigationAsync(page, "data"); await WaitForNavigationTargetAsync(page, "data");
+            await page.Locator($".page-content [data-open-panel='{panel}']").First.ClickAsync();
+            await page.Locator($"dialog[data-workspace-panel='{panel}']").WaitForAsync();
+            await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
+        }
         async Task Ready(string id)
         {
-            try { await WaitForPageAsync(page, "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id); }
+            try { await WaitForNavigationTargetAsync(page, id); }
             catch
             {
                 Console.Error.WriteLine("Library route did not settle: expected=" + id
@@ -92,15 +99,15 @@ internal static partial class Program
         await page.Locator("body[data-ready=true]").WaitForAsync();
         await ClickNavigationAsync(page, "library"); await Ready("library");
         var first = await Call(app, "library.get");
-        Require(first.GetProperty("stats").GetProperty("ticketCount").GetInt64() == 3
+        var initialLocalState = first.GetProperty("stats").GetProperty("ticketCount").GetInt64() == 3
             && first.GetProperty("stats").GetProperty("conflictCount").GetInt64() > 0
             && await page.Locator(".library-result").CountAsync() == 3
-            && await page.Locator(".library-result .library-conflict").CountAsync() == 1
-            && await Button("Synchroniser").IsDisabledAsync(),
-            "The library reads the real local store, exposes all three tickets and a preserved same-version conflict, and keeps central synchronization disabled until configured.");
-        await Capture("library-local");
+            && await page.Locator(".library-result .library-conflict").CountAsync() == 1;
+        await Capture("library-local"); await View("Connexion");
+        Require(initialLocalState && await Button("Synchroniser").IsDisabledAsync(),
+            "The local-store panel exposes all three tickets and a preserved same-version conflict; the connection panel keeps central synchronization disabled until configured.");
 
-        await View("Résolution").ClickAsync();
+        await View("Résolution");
         await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("imprimante");
         await Button("Rechercher").ClickAsync();
         await WaitForPageAsync(page, "document.querySelectorAll('.library-result').length===1 && !document.querySelector('.library-results').hasAttribute('aria-busy')");
@@ -113,7 +120,7 @@ internal static partial class Program
         await Capture("library-resolution");
 
         await Button("Lire le contenu conservé").ClickAsync();
-        var modal = page.GetByRole(AriaRole.Dialog);
+        var modal = page.Locator("dialog:not(.workspace-tool-panel)");
         await modal.Locator(".library-detail:not([aria-busy])").WaitForAsync();
         Require((await modal.InnerTextAsync()).Contains(LibrarySolution)
             && (await modal.InnerTextAsync()).Contains(seed.Ticket.Url)
@@ -126,12 +133,12 @@ internal static partial class Program
         await modal.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
         await Button("Ajouter une note d’équipe").ClickAsync();
-        modal = page.GetByRole(AriaRole.Dialog);
+        modal = page.Locator("dialog:not(.workspace-tool-panel)");
         await modal.GetByRole(AriaRole.Textbox, new() { Name = "Titre", Exact = true }).FillAsync("Note d’équipe synthétique");
         await modal.GetByRole(AriaRole.Textbox, new() { Name = "Texte de la contribution", Exact = true }).FillAsync("Procédure locale <script>texte</script> à conserver.");
         await modal.GetByRole(AriaRole.Button, new() { Name = "Enregistrer la contribution", Exact = true }).ClickAsync();
         await modal.WaitForAsync(new() { State = WaitForSelectorState.Detached });
-        await View("Équipe").ClickAsync();
+        await View("Équipe");
         await page.GetByRole(AriaRole.Heading, new() { Name = "Note d’équipe synthétique", Exact = true }).WaitForAsync();
         var team = await Call(app, "workspace.list", new { kind = "note", text = "Note d’équipe synthétique" });
         var saved = team.GetProperty("items")[0];
@@ -141,7 +148,8 @@ internal static partial class Program
             "A note entered from a library ticket persists through the actual shared-workspace operation with its ticket link and literal content.");
 
         await Button("Modifier").ClickAsync();
-        modal = page.GetByRole(AriaRole.Dialog);
+        modal = page.Locator("dialog:not(.workspace-tool-panel)");
+        await modal.GetByRole(AriaRole.Textbox, new() { Name = "Texte de la contribution", Exact = true }).WaitForAsync();
         await Call(app, "workspace.save", new { item = new { id = saved.GetProperty("id").GetString(), kind = "note", title = "Note d’équipe synthétique", body = "Modification concurrente conservée", ticketKey = TicketLibraryRules.Key(seed.Ticket), status = "draft" }, expectedRevision = saved.GetProperty("revision").GetInt64() });
         await modal.GetByRole(AriaRole.Textbox, new() { Name = "Texte de la contribution", Exact = true }).FillAsync("Modification obsolète à refuser");
         await modal.GetByRole(AriaRole.Button, new() { Name = "Enregistrer la contribution", Exact = true }).ClickAsync();
@@ -155,18 +163,19 @@ internal static partial class Program
         var longBody = string.Concat(Enumerable.Repeat("Texte complet <b>littéral</b> de la connaissance.\n", 80));
         var currentNote = await Call(app, "workspace.get", new { id = saved.GetProperty("id").GetString() });
         await Call(app, "workspace.save", new { item = new { id = currentNote.GetProperty("id").GetString(), kind = "note", title = "Note d’équipe synthétique", body = longBody, ticketKey = TicketLibraryRules.Key(seed.Ticket), status = "draft" }, expectedRevision = currentNote.GetProperty("revision").GetInt64() });
-        await View("Bibliothèque").ClickAsync(); await View("Équipe").ClickAsync();
+        await View("Bibliothèque"); await View("Équipe");
         await Button("Lire la contribution").ClickAsync();
-        modal = page.GetByRole(AriaRole.Dialog);
+        modal = page.Locator("dialog:not(.workspace-tool-panel)");
         var fullRead = await modal.Locator("pre").TextContentAsync();
         await modal.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await Button("Modifier").ClickAsync();
-        modal = page.GetByRole(AriaRole.Dialog);
+        modal = page.Locator("dialog:not(.workspace-tool-panel)");
         Require(fullRead == longBody && await modal.GetByRole(AriaRole.Textbox, new() { Name = "Texte de la contribution", Exact = true }).InputValueAsync() == longBody
             && await modal.Locator("b").CountAsync() == 0,
             "Opening or editing an existing long contribution fetches its full document rather than the truncated list preview, with markup preserved as text.");
         await modal.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
+        await View("Connexion");
         host.NextSave = Path.Combine(_root, "library-corpus.jsonl");
         await Button("Exporter le corpus RAG").ClickAsync();
         await Until(() => File.Exists(host.NextSave));
@@ -181,7 +190,7 @@ internal static partial class Program
             && solutionChunk.GetProperty("citation").GetProperty("url").GetString() == seed.Ticket.Url,
             "The corpus export writes a versioned manifest, complete tickets and source-linked RAG chunks retaining the exact collected solution.");
 
-        await View("Connexion").ClickAsync();
+        await View("Connexion");
         await Button("Choisir le dossier").ClickAsync();
         await Until(() => host.FolderPicks == 1);
         Require(await page.GetByRole(AriaRole.Textbox, new() { Name = "Dossier de la bibliothèque", Exact = true }).InputValueAsync() == preferences.LocalFolder && host.FolderPicks == 1,
@@ -215,7 +224,7 @@ internal static partial class Program
         await Button("Enregistrer la connexion").ClickAsync();
         await WaitForPageAsync(page, "!document.querySelector('.library-settings button[aria-busy=true]')");
 
-        await View("Bibliothèque").ClickAsync();
+        await View("Bibliothèque");
         await Button("Utiliser le cache comme relevé").ClickAsync(); await Ready("dashboard");
         Require(app.Result?.Rows.Count == 3 && app.Result.Headers.Contains("ID") && !app.Result.Complete,
             "The local library can populate a real analytical source while retaining its non-certified collection status.");

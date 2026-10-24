@@ -110,8 +110,8 @@ internal static partial class Program
             await page.GotoAsync("https://glpi-pilot.local/index.html"); await page.Locator("body[data-ready=true]").WaitForAsync();
             await ClickNavigationAsync(page, "settings");
             await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='settings' && !document.querySelector('#content').hasAttribute('aria-busy')");
-            var input = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Pages maximales", Exact = true });
-            await input.FillAsync("321"); await input.FocusAsync(); var inputNode = await input.ElementHandleAsync();
+            var input = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Zoom (%)", Exact = true });
+            await input.FillAsync("123"); await input.FocusAsync(); var inputNode = await input.ElementHandleAsync();
             await Open(source.Ticket.Id);
             await Button("Lignes suivantes").ClickAsync(); var originalView = await Modal().Locator(".library-ticket-content").ElementHandleAsync();
             await Button("Retrouver des précédents résolus").ClickAsync(); await Settled();
@@ -151,7 +151,7 @@ internal static partial class Program
                 && (await Modal().InnerTextAsync()).Contains("Observation source 51") && !(await Modal().InnerTextAsync()).Contains("Observation source 1\n"),
                 "Returning to the original ticket preserves its already paged content instead of rebuilding the source reader.");
             await page.Keyboard.PressAsync("Escape");
-            Require(await input.InputValueAsync() == "321" && await page.EvaluateAsync<bool>("node => node===document.activeElement && node.isConnected", inputNode)
+            Require(await input.InputValueAsync() == "123" && await page.EvaluateAsync<bool>("node => node===document.activeElement && node.isConnected", inputNode)
                 && app.Revision == revision && ReferenceEquals(app.Result, receipt),
                 "Closing the resolution reader returns to the unchanged screen, unsaved field, focus and loaded report.");
 
@@ -189,8 +189,11 @@ internal static partial class Program
             Require(invalidReferenceRefused, "The work-ticket cache lookup refuses an ID paired with another ticket URL before any resolution search.");
 
             await page.SetViewportSizeAsync(1440, 1000);
-            await ClickNavigationAsync(page, "tickets");
-            await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='tickets' && !document.querySelector('#content').hasAttribute('aria-busy')");
+            await ClickNavigationAsync(page, "records");
+            await WaitForNavigationTargetAsync(page, "records");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Mes dossiers", Exact = true }).ClickAsync();
+            await page.Locator(".tickets-saved-item").Filter(new() { HasText = "#" + source.Ticket.Id }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir le dossier", Exact = true }).ClickAsync();
+            await page.Locator(".work-ticket-heading h2").Filter(new() { HasText = "#" + source.Ticket.Id }).WaitForAsync();
             var notes = page.GetByRole(AriaRole.Textbox, new() { Name = "Mes notes", Exact = true });
             const string unsavedNote = "Observation encore en cours de saisie, sans enregistrement.";
             await notes.FillAsync(unsavedNote); var noteNode = await notes.ElementHandleAsync();
@@ -207,7 +210,7 @@ internal static partial class Program
             referenceRelease.TrySetResult(); await Settled();
             Require(await cards.CountAsync() == 2 && await cards.First.GetAttributeAsync("data-resolution-key") == saved.Document.Key
                 && !(await Modal().InnerTextAsync()).Contains("étranger")
-                && await page.EvaluateAsync<bool>("document.querySelector('.page-content')?.dataset.page==='tickets'")
+                && await page.EvaluateAsync<bool>("document.querySelector('.page-content')?.dataset.page==='records'")
                 && await notes.InputValueAsync() == unsavedNote && app.Revision == revision && ReferenceEquals(app.Result, receipt),
                 "The real work-ticket button opens the same confirmed predecessors through its validated ID and installation while the work screen, note draft and report remain intact despite a foreign ID collision.");
             await Capture("resolution-work-ticket"); await Button("Fermer").ClickAsync();
@@ -222,7 +225,8 @@ internal static partial class Program
             Require(closeChecks.Values.All(value => value),
                 "Closing work-ticket predecessors restores the initiating button and the same unsaved personal editor without persisting its draft.");
 
-            await page.Locator(".work-open-ticket").GetByRole(AriaRole.Button, new() { Name = absent.Ticket.Id + " · " + absent.Title, Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Mes dossiers", Exact = true }).ClickAsync();
+            await page.Locator(".tickets-saved-item").Filter(new() { HasText = "#" + absent.Ticket.Id }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir le dossier", Exact = true }).ClickAsync();
             // A browser click dispatches the asynchronous open; wait for the new
             // ticket identity before typing, rather than editing the previous DOM.
             await page.Locator(".work-ticket-heading h2").Filter(new() { HasText = "#" + absent.Ticket.Id + " · " + absent.Title }).WaitForAsync();
@@ -238,7 +242,7 @@ internal static partial class Program
                 ["no fallback query"] = calls.Count(operation => operation == "library.resolution") == resolutionCount && await Modal().CountAsync() == 0,
                 ["same editor"] = await page.EvaluateAsync<bool>("node => node.isConnected", missingNoteNode),
                 ["unsaved note"] = await notes.InputValueAsync() == "Saisie de la fiche absente conservée.",
-                ["same screen"] = await page.EvaluateAsync<bool>("document.querySelector('.page-content')?.dataset.page==='tickets'"),
+                ["same screen"] = await page.EvaluateAsync<bool>("document.querySelector('.page-content')?.dataset.page==='records'"),
                 ["no hidden operation"] = !calls.Any(operation => operation is "library.capture" or "library.sync" or "library.loadRecords" or "workplace.ticket.read"),
                 ["no runtime/network error"] = errors.IsEmpty && externalRequests == 0
             };

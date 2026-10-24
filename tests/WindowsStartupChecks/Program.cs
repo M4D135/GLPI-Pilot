@@ -48,17 +48,18 @@ internal sealed class WindowsWebViewFixture
             var settingsPath = Path.Combine(_state, "settings.json"); File.WriteAllText(settingsPath, initial, new UTF8Encoding(false));
             var initialHash = Digest(settingsPath); var archiveHash = Digest(_pack);
             using var playwright = await Playwright.CreateAsync();
-            // First launch: no interaction, exact preference preservation.
+            // First launch: inspect the complete navigation without saving preferences.
             var first = Start(Port()); var firstPort = int.Parse(first.StartInfo.ArgumentList[1]);
             await using (var connected = await ConnectAsync(playwright, first, firstPort))
             {
                 var page = await ReadyPageAsync(connected, first);
                 Check(Visible(first), "The actual packaged EXE owns a visible, nonzero Windows window after the WebView handshake.");
-                Check(await page.Locator(".hero").CountAsync() == 1 && await page.Locator(".nav-item").CountAsync() >= 20, "All local modules load in the embedded fixed WebView2 runtime.");
+                var registeredRoutes = await NavigationRouteIdsAsync(page);
+                Check(await page.Locator(".hero").CountAsync() == 1 && registeredRoutes.SequenceEqual(new[] { "home", "pilot", "records", "terrain-map", "data", "settings" }) && await page.Locator(".workspace-view,.nav-group-toggle").CountAsync() == 0, "The six redesigned workspaces load in the embedded fixed WebView2 runtime without the old screen inventory or local-view tabs.");
                 Check(File.ReadAllText(Path.Combine(_state, "Logs", "demarrage-dernier.log")).Contains("[PRÊT]", StringComparison.Ordinal), "Startup readiness is recorded after bootstrap and first web paint.");
                 await StopNormallyAsync(first);
             }
-            Check(Digest(settingsPath) == initialHash, "Without the optional sites CSV, an untouched startup and shutdown preserve the exact synthetic settings bytes.");
+            Check(Digest(settingsPath) == initialHash, "Without the optional sites CSV, startup, read-only navigation inspection and shutdown preserve the exact synthetic settings bytes.");
             // Add only synthetic reference data to the extracted fixture copy.
             // This is the first launch on which the optional file is present.
             File.WriteAllText(siteCsvPath, """
@@ -90,25 +91,29 @@ internal sealed class WindowsWebViewFixture
                 await NavigateAsync(page, "settings");
                 await page.GetByLabel("Zoom de l’interface (%)", new() { Exact = true }).FillAsync("125");
                 await page.GetByRole(AriaRole.Combobox, new() { Name = "Thème", Exact = true }).SelectOptionAsync("light");
-                await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light' && document.querySelector('#zoom-label').innerText.includes('125')");
                 Check(await page.EvaluateAsync<double>("innerWidth") < width * .9, "The interface zoom changes native WebView2 scaling rather than just a displayed number.");
                 await page.Keyboard.PressAsync("Control+0"); await WaitForPageAsync(page, "document.querySelector('#zoom-label').innerText.includes('100')");
                 Check(Math.Abs(await page.EvaluateAsync<double>("innerWidth") - width) <= 2, "Ctrl 0 restores the actual web viewport to 100 percent.");
                 await NavigateAsync(page, "home");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Simulation avec données fictives", Exact = true }).ClickAsync();
-                await page.Locator(".page-content[data-page=pilot-weather]").WaitForAsync();
+                await page.Locator(".page-content[data-page=pilot]").WaitForAsync();
                 await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
                 Check(await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() == 0, "The native pack computes and renders the real C# dashboard from synthetic records.");
                 await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "dashboard-light.png"), FullPage = true });
-                var routes = (await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)"))
-                    .Concat(new[] { "assistant", "enrichment", "populations" }).Distinct().ToArray();
+                await NavigateAsync(page, "settings");
+                foreach (var label in new[] { "Assistant de langage", "Lectures ciblées", "Effectifs des sites" })
+                    await page.GetByRole(AriaRole.Checkbox, new() { Name = label, Exact = true }).CheckAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer les fonctions visibles", Exact = true }).ClickAsync();
+                await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
+                var routes = (await NavigationRouteIdsAsync(page)).Concat(new[] { "queries", "history", "technicians", "planning", "assistant", "sources", "collect", "library", "quality", "mapping", "enrichment", "terrain-reference", "terrain-review", "pilot-sites", "populations", "tours", "automation", "updates", "help", "operations", "pilot-settings" }).Distinct().ToArray();
                 foreach (var route in routes)
                 {
                     await NavigateAsync(page, route);
-                    if (await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() > 0) throw new InvalidOperationException("Screen failure: " + route + " · " + await page.Locator(".page-content").InnerTextAsync());
+                    if (await page.Locator(".page-content > .notice.danger[role=alert],dialog[data-workspace-panel] .notice.danger[role=alert]").CountAsync() > 0) throw new InvalidOperationException("Screen failure: " + route + " · " + await page.Locator(".page-content").InnerTextAsync());
                 }
-                Check(true, "Every feature screen opens inside the real Windows WebView2 host.");
+                Check(true, "All six workspaces and every contextual analysis, source, library, ticket-data, terrain and configuration tool open inside the real Windows WebView2 host.");
                 await NavigateAsync(page, "home");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Changer de thème", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
@@ -281,31 +286,42 @@ internal sealed class WindowsWebViewFixture
             await Task.Delay(100, timeout.Token);
         }
     }
+    private static async Task<string[]> NavigationRouteIdsAsync(IPage page)
+    {
+        if (!await page.Locator(".sidebar").IsVisibleAsync()) await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
+        await page.Locator(".sidebar .nav-customize").ClickAsync();
+        var editor = page.Locator("dialog.navigation-modal"); await editor.WaitForAsync();
+        var routes = await editor.Locator("[data-nav-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.navPage)");
+        await editor.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        await editor.WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        return routes;
+    }
+
     private static async Task NavigateAsync(IPage page, string route)
     {
-        var item = page.Locator($".nav-item[data-page='{route}']");
-        if (await item.CountAsync() == 0)
+        var panels = page.Locator("dialog[open][data-workspace-panel]");
+        while (await panels.CountAsync() > 0)
         {
-            var search = route switch
-            {
-                "assistant" => "Assistant", "enrichment" => "Lectures ciblées", "populations" => "Effectifs",
-                _ => throw new InvalidOperationException("Missing navigation shortcut: " + route)
-            };
-            await page.GetByRole(AriaRole.Button, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }).ClickAsync();
-            await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync(search);
-            await page.Locator($".command-palette [data-command-id='page:{route}']").ClickAsync();
+            var panel = panels.Last;
+            await panel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).First.ClickAsync();
+            await panel.WaitForAsync(new() { State = WaitForSelectorState.Detached });
         }
-        else
+        var target = await page.EvaluateAsync<JsonElement>("async route=>(await import('/js/navigation.js')).navigationTarget(route)", route);
+        var id = target.GetProperty("id").GetString()!;
+        if (!await page.Locator(".sidebar").IsVisibleAsync()) await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
+        await page.Locator($".nav-item[data-page='{id}']").ClickAsync();
+        await WaitForPageAsync(page, "id=>document.querySelector('.page-content')?.dataset.page===id&&!document.querySelector('#content').hasAttribute('aria-busy')", id);
+        if (target.GetProperty("params").TryGetProperty("panel", out var panelValue) && panelValue.GetString() is { } panelName && panelName != "compositions")
         {
-            // A small VM desktop or higher Windows DPI can collapse the sidebar.
-            // Open both the sidebar and the actual group before choosing a page.
-            if (!await page.Locator(".sidebar").IsVisibleAsync())
-                await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
-            var toggle = page.Locator($".nav-section:has(.nav-item[data-page='{route}']) .nav-group-toggle");
-            if (await toggle.CountAsync() > 0 && await toggle.GetAttributeAsync("aria-expanded") == "false") await toggle.ClickAsync();
-            await item.ClickAsync();
+            var control = page.Locator($".page-content [data-open-panel='{panelName}']").First;
+            if (await control.CountAsync() == 0) throw new InvalidOperationException("Missing contextual action: " + route + " in " + id);
+            var details = control.Locator("xpath=ancestor::details");
+            for (var index = 0; index < await details.CountAsync(); index++)
+                if (await details.Nth(index).GetAttributeAsync("open") is null) await details.Nth(index).Locator(":scope > summary").ClickAsync();
+            await control.ClickAsync();
+            if (id != "home") await page.Locator($"dialog[open][data-workspace-panel='{panelName}']").WaitForAsync();
         }
-        await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
+        await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
     }
     // Poll from the test process: WaitForFunction injects eval, forbidden by the real app CSP.
     private static async Task WaitForPageAsync(IPage page, string expression, object? argument = null)

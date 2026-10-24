@@ -2,6 +2,8 @@ import { el, button, card, toolbar, badge, table, empty, caption, command, detai
 import { renderOldestGroups } from './analytics-oldest.js';
 import { renderParticipation } from './analytics-participation.js';
 import { renderSites } from './analytics-sites.js';
+import { icon } from '../ui.js';
+import { weatherScene } from './weather-scene.js';
 
 const palette = ['var(--c1, #066ddb)', 'var(--c2, #8265c9)', 'var(--c3, #20877e)', 'var(--c4, #c45586)', 'var(--c5, #31748b)', 'var(--c6, #bf7334)', 'var(--c7, #9867ac)', 'var(--c8, #667b35)'];
 function valueOf(bucket) { return bucket.isAggregate ? bucket.value : bucket.value ?? bucket.count; }
@@ -14,7 +16,8 @@ function clickable(node, callback, label) {
 export function widgetContent(ctx, widget, activate, more, options = {}) {
   const setting = widget.settings; const data = widget.content;
   if (setting.kind === 'history') return el('div', { class: 'analytics-history-mount' }, sparkline(data));
-  if (widget.available === false) return el('div', { class: 'analytics-widget-unavailable' },
+  const illustratedWeather = data && (setting.kind === 'weather' || setting.presentation === 'weather-volume');
+  if (widget.available === false && !illustratedWeather) return el('div', { class: 'analytics-widget-unavailable' },
     el('strong', { text: 'Donnée indisponible' }),
     caption(widget.unavailableReason || 'Les champs ou les valeurs nécessaires à ce calcul ne sont pas disponibles dans ce périmètre.'),
     command(ctx, 'Vérifier les correspondances', () => ctx.navigate('mapping')));
@@ -31,12 +34,32 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
       metric.setAttribute('aria-label', `${unavailable ? 'Donnée indisponible' : number(data.value)} ${data.unit} · ${weather.title} · Voir les lignes contributrices`);
       body.append(el('div', { class: 'analytics-volume-weather-summary' },
         el('div', { class: 'analytics-volume-weather-numbers' }, metric, caption(unavailable ? 'Donnée indisponible' : data.unit),
-          el('strong', { class: 'analytics-volume-weather-status', text: weather.title })), volumeWeatherIcon(weather.state)));
+          el('strong', { class: 'analytics-volume-weather-status', text: weather.title })), weatherScene(weather.state)));
+      const thresholds = weatherThresholds(data, setting, weather.state); if (thresholds) body.append(thresholds);
       if (setting.note && !options.compactWeather) body.append(el('p', { class: 'analytics-volume-weather-note', text: setting.note }));
       if (setting.showDescription || options.compactWeather && setting.note) body.append(details(options.compactWeather ? 'Seuils et définition' : 'Seuils, périmètre et définition',
         options.compactWeather && setting.note ? caption(setting.note) : null, caption(weather.explanation), caption(data.explanation),
+        caption(`${formatNumber(widget.rowCount)} lignes · ${options.scopeDescription || widget.scopeLabel}`),
         caption(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`)));
-    } else body.append(metric, caption(unavailable ? 'Donnée indisponible' : data.unit), badge(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`));
+    } else {
+      body.classList.add('analytics-kpi');
+      body.dataset.metricTone = data.tone || 'normal';
+      body.dataset.metricKey = data.key;
+      const visual = metricVisual(data, setting, options.preserveWidgetAccent !== false);
+      body.style.setProperty('--kpi-tone', visual.color);
+      body.append(el('div', { class: 'analytics-kpi-main' },
+        el('div', { class: 'analytics-kpi-reading' }, metric, el('span', { class: 'analytics-kpi-unit', text: unavailable ? 'Donnée indisponible' : data.unit })),
+        el('span', { class: 'analytics-kpi-emblem', 'aria-hidden': 'true' }, icon(visual.icon))));
+      const share = metricShare(data);
+      if (share && !unavailable && !['gauge'].includes(setting.presentation) && setting.targetValue == null) {
+        body.append(el('div', { class: 'analytics-kpi-share', dataset: { numerator: data.value, denominator: data.sample } },
+          el('div', { class: 'analytics-kpi-share-label' }, el('strong', { text: `${formatNumber(share.percent, { maximumFractionDigits: 1 })} %` }),
+            el('span', { text: share.label })),
+          el('div', { class: 'analytics-kpi-track', role: 'img', 'aria-label': `${number(data.value)} sur ${formatNumber(data.sample)} · ${share.label}` },
+            el('span', { class: 'analytics-kpi-fill', style: { width: `${share.percent}%` } })),
+          el('small', { text: `${number(data.value)} sur ${formatNumber(data.sample)} ${share.population}` })));
+      } else body.append(caption(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `${formatNumber(data.sample)} valeurs dans l’échantillon`, 'analytics-kpi-sample'));
+    }
     if (setting.presentation === 'gauge' && data.value != null) {
       const maximum = setting.targetValue ?? (data.unit === '%' ? 100 : null);
       if (maximum > 0) body.append(gauge(data.value, maximum, `Objectif ${number(maximum, data.unit)}`));
@@ -48,14 +71,19 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
       body.append(badge(exceeded(setting.criticalValue) ? 'Seuil critique atteint' : exceeded(setting.warningValue) ? 'Seuil de vigilance atteint' : 'Dans les seuils configurés', exceeded(setting.criticalValue) ? 'danger' : exceeded(setting.warningValue) ? 'warning' : 'success'));
     }
     if (setting.showMiniHistory) body.append(el('div', { class: 'analytics-mini-history', 'data-history-widget': widget.id }, caption('Historique : calcul des observations en attente.')));
-    if (setting.showDescription && !volumeWeather) body.append(details('Définition et échantillon', caption(data.explanation)));
+    if (setting.showDescription && !volumeWeather) body.append(details('Définition et échantillon', caption(data.explanation),
+      caption(`${formatNumber(widget.rowCount)} lignes · ${options.scopeDescription || widget.scopeLabel}`),
+      caption(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`)));
   } else if (setting.kind === 'distribution' || setting.kind === 'histogram') {
     body.append(distribution(ctx, data, setting, bucket => activate({ kind: setting.kind, key: data.key, label: bucket.label })));
     if (data.truncated) body.append(command(ctx, `Toutes les catégories (${formatNumber(data.totalBuckets)})`, () => more('distribution', data.key)));
   } else if (setting.kind === 'weather') {
     const states = { sun: 'Situation calme', watch: 'Vigilance', rain: 'Points à traiter', storm: 'Vigilance forte', partial: 'Lecture à compléter', unknown: 'Données insuffisantes' };
-    body.append(el('div', { class: 'analytics-weather-state' }, el('span', { text: data.symbol, 'aria-hidden': 'true' }),
-      el('div', {}, el('strong', { text: states[data.state] || data.title }), caption(data.score == null ? data.title : `Indice descriptif ${number(data.score)} / 100`))));
+    body.classList.add('analytics-weather-profile'); body.dataset.state = data.state;
+    body.append(el('div', { class: 'analytics-weather-state' },
+      el('div', { class: 'analytics-weather-profile-reading' }, el('strong', { text: states[data.state] || data.title }),
+        data.score == null ? caption(data.title) : el('div', { class: 'analytics-weather-score' }, el('strong', { text: number(data.score) }), el('span', { text: '/ 100' }), caption('Indice descriptif'))),
+      weatherScene(data.state)));
     if (data.signals?.length) body.append(el('div', { class: 'analytics-weather-signals' }, ...data.signals.map(signal => el('div', {},
       el('strong', { text: formatNumber(signal.count) }), el('span', { text: signal.label }), el('small', { text: `sur ${formatNumber(signal.sample)}` })))));
     if (setting.showDescription) body.append(details('Méthode, échantillons et limites', caption(data.title), caption(data.description),
@@ -93,22 +121,54 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
   return body;
 }
 
-function volumeWeatherIcon(state) {
-  const icon = svg('svg', { viewBox: '0 0 112 96', class: 'analytics-volume-weather-icon', 'aria-hidden': 'true', focusable: 'false' });
-  if (state === 'sun' || state === 'watch') {
-    const rays = svg('g', { class: 'weather-sun-rays', fill: 'none', stroke: 'currentColor', 'stroke-width': 3.5, 'stroke-linecap': 'round' });
-    for (let index = 0; index < 8; index++) {
-      const angle = index * Math.PI / 4;
-      rays.append(svg('line', { x1: 48 + Math.cos(angle) * 29, y1: 40 + Math.sin(angle) * 29, x2: 48 + Math.cos(angle) * 36, y2: 40 + Math.sin(angle) * 36 }));
-    }
-    icon.append(rays, svg('circle', { cx: 48, cy: 40, r: 21, class: 'weather-sun-disc' }));
+function metricVisual(data, setting, preserveAccent) {
+  const key = data.key || '';
+  const symbol = /location|site|city/.test(key) ? 'map' : /author|technician|assignee/.test(key) ? 'users'
+    : /group|category/.test(key) ? 'layers' : /age|old|stale|delay|time/.test(key) ? 'clock'
+      : /priority|high|overdue/.test(key) ? 'bell' : /missing|unknown|invalid|quality/.test(key) ? 'shield' : 'ticket';
+  // An explicitly chosen widget accent remains authoritative. Otherwise these
+  // small illustrations distinguish documented states, not invented urgency.
+  const custom = preserveAccent || setting.accent && setting.accent !== 'blue';
+  const color = custom ? 'var(--widget-accent,var(--accent))'
+    : data.tone === 'error' ? 'var(--danger)' : data.tone === 'warning' ? 'var(--warning)'
+      : /location-matched|site-matched/.test(key) ? 'var(--c3,var(--accent))'
+        : /author|technician|assignee/.test(key) ? 'var(--c2,var(--accent))' : 'var(--widget-accent,var(--accent))';
+  return { icon: symbol, color };
+}
+
+function metricShare(data) {
+  if (!Number.isFinite(data.value) || !Number.isFinite(data.sample) || data.sample <= 0 || data.value < 0 || data.value > data.sample || data.value !== data.count) return null;
+  const populations = {
+    'without-technician': ['des tickets actifs', 'tickets actifs'], 'without-group': ['des tickets actifs', 'tickets actifs'],
+    'active-no-author': ['des tickets actifs', 'tickets actifs'], 'active-multiple-groups': ['des tickets actifs', 'tickets actifs'],
+    'active-no-category': ['des tickets actifs', 'tickets actifs'],
+    'location-matched': ['du périmètre', 'lignes du périmètre'], 'location-review': ['du périmètre', 'lignes du périmètre'],
+    'active-incidents': ['des actifs au type reconnu', 'actifs au type reconnu'], 'active-requests': ['des actifs au type reconnu', 'actifs au type reconnu']
+  };
+  const population = populations[data.key];
+  return population ? { percent: 100 * data.value / data.sample, label: population[0], population: population[1] } : null;
+}
+
+function weatherThresholds(data, setting, state) {
+  const warning = setting.warningValue, critical = setting.criticalValue, value = data.value;
+  if (![warning, critical, value].every(Number.isFinite)) return null;
+  const minimum = Math.min(0, warning, critical, value), maximum = Math.max(0, warning, critical, value);
+  const direction = setting.lowerIsBetter === false ? '<' : '>';
+  const labels = el('div', { class: 'pilot-weather-threshold-labels' },
+    el('span', {}, el('i', { class: 'threshold-watch', 'aria-hidden': 'true' }), `Vigilance ${direction} ${number(warning)}`),
+    el('span', {}, el('i', { class: 'threshold-rain', 'aria-hidden': 'true' }), `Tension ${direction} ${number(critical)}`));
+  const root = el('div', { class: 'pilot-weather-thresholds', dataset: { state }, 'aria-label': 'Repères de volume configurés' });
+  if (maximum > minimum) {
+    const position = number => 100 * (number - minimum) / (maximum - minimum);
+    const first = Math.min(position(warning), position(critical)), second = Math.max(position(warning), position(critical));
+    const reverse = setting.lowerIsBetter === false;
+    root.append(el('div', { class: 'pilot-weather-threshold-track', role: 'img', 'aria-label': `Valeur ${number(value)} · vigilance ${direction} ${number(warning)} · tension ${direction} ${number(critical)}` },
+      el('span', { class: `threshold-zone ${reverse ? 'zone-rain' : 'zone-sun'}`, style: { width: `${first}%` } }),
+      el('span', { class: 'threshold-zone zone-watch', style: { width: `${second - first}%` } }),
+      el('span', { class: `threshold-zone ${reverse ? 'zone-sun' : 'zone-rain'}`, style: { width: `${100 - second}%` } }),
+      el('span', { class: 'threshold-current', style: { left: `${position(value)}%` }, title: `Volume : ${number(value)}` })));
   }
-  if (state !== 'sun') {
-    icon.append(svg('path', { class: 'weather-cloud', d: 'M30 69C18 69 16 50 28 46C27 31 47 23 57 36C71 27 86 38 85 51C103 51 105 74 87 75H34Z' }));
-    if (state === 'rain') for (let index = 0; index < 3; index++) icon.append(svg('path', { class: `weather-rain-drop drop-${index}`, d: `M${41 + index * 18} 81l-4 7`, fill: 'none', stroke: 'currentColor', 'stroke-width': 5, 'stroke-linecap': 'round' }));
-    if (state === 'unknown' || state === 'partial') icon.append(svg('text', { x: 60, y: 63, 'text-anchor': 'middle', class: 'weather-unknown-mark' }, '?'));
-  }
-  return icon;
+  root.append(labels); return root;
 }
 
 function qualityOverview(ctx, data, { snapshot, historical = false, onControls } = {}) {

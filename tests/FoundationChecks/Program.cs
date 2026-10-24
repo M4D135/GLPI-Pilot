@@ -207,78 +207,76 @@ Check("Settings: version retention bounded and local defaults survive legacy loa
     path = FilePath(); File.WriteAllText(path, "{\"Theme\":\"light\",\"Dashboard\":null,\"Interface\":null}"); var migrated = SettingsRecovery.Load(path);
     Equal(100, migrated.InterfaceZoomPercent); Equal("balanced", migrated.Interface.Density); Assert(migrated.Dashboard.Layout.Boards.Count > 0);
 });
-Check("Navigation: only stable routes and groups survive normalization; essential entries remain visible", () =>
+Check("Navigation: only six workspace destinations and optional tools survive normalization", () =>
 {
     var preferences = new InterfacePreferences
     {
-        NavigationOrder = new() { "library", "unknown", "home", "library", "Home", "", null! },
-        HiddenNavigation = new() { "home", "settings", "tickets", "tickets", "unknown" },
-        PinnedNavigation = new() { "day", "day", "help", "unknown" },
-        NavigationGroupOrder = new() { "work", "pinned", "work", "admin", "future", null! },
-        NavigationGroups = new() { ["library"] = "work", ["day"] = "workspace", ["unknown"] = "work", ["tickets"] = "pinned", ["help"] = "future", ["settings"] = null! }
+        NavigationDefaultsVersion = 2,
+        NavigationOrder = new() { "data", "unknown", "home", "data", "Home", "", null! },
+        HiddenNavigation = new() { "home", "settings", "records", "records", "unknown", "assistant" },
+        PinnedNavigation = new() { "pilot", "pilot", "settings", "unknown" },
+        NavigationGroupOrder = new() { "work", "pinned", "future", null! },
+        NavigationGroups = new() { ["library"] = "work", ["unknown"] = "work" }
     };
     preferences.Normalize();
-    Assert(preferences.NavigationOrder.SequenceEqual(new[] { "library", "home" }));
-    Assert(preferences.HiddenNavigation.SequenceEqual(new[] { "tickets", "assistant", "enrichment", "populations" }));
-    Assert(preferences.PinnedNavigation.SequenceEqual(new[] { "day", "help" }));
-    Assert(preferences.NavigationGroupOrder.SequenceEqual(new[] { "work", "pinned", "admin" }));
-    Equal(2, preferences.NavigationGroups.Count); Equal("work", preferences.NavigationGroups["library"]);
+    Assert(preferences.NavigationOrder.SequenceEqual(new[] { "data", "home" }));
+    Assert(preferences.HiddenNavigation.SequenceEqual(new[] { "records", "assistant" }));
+    Assert(preferences.PinnedNavigation.SequenceEqual(new[] { "pilot", "settings" }));
+    Equal(0, preferences.NavigationGroupOrder.Count); Equal(0, preferences.NavigationGroups.Count);
     var missing = JsonSerializer.Deserialize<InterfacePreferences>("{\"NavigationOrder\":null,\"HiddenNavigation\":null,\"PinnedNavigation\":null,\"NavigationGroupOrder\":null,\"NavigationGroups\":null}")!;
     missing.Normalize(); Equal(0, missing.NavigationGroups.Count); Equal(0, missing.NavigationGroupOrder.Count); Equal(0, missing.NavigationOrder.Count);
 });
-Check("Navigation: new and legacy profiles receive hidden defaults once without resetting custom organization", () =>
+Check("Navigation: old groups migrate once into spaces without hiding a whole space for one hidden tool", () =>
 {
     var fresh = SettingsRecovery.Load(FilePath());
-    Equal(1, fresh.Interface.NavigationDefaultsVersion);
+    Equal(2, fresh.Interface.NavigationDefaultsVersion);
     Assert(fresh.Interface.HiddenNavigation.SequenceEqual(new[] { "assistant", "enrichment", "populations" }));
     var path = FilePath();
     File.WriteAllText(path, """
-        {"Interface":{"Density":"compact","NavigationOrder":["tickets","home"],"HiddenNavigation":["queries","assistant"],
+        {"Interface":{"Density":"compact","NavigationOrder":["tickets","home"],"HiddenNavigation":["queries","assistant","records","tickets","terrain-map"],
           "PinnedNavigation":["library","assistant"],"NavigationGroupOrder":["work","workspace"],"NavigationGroups":{"library":"work"}}}
         """);
     var original = File.ReadAllText(path); var migrated = SettingsRecovery.Read(path);
-    Equal(1, migrated.Interface.NavigationDefaultsVersion); Equal("compact", migrated.Interface.Density);
-    Assert(migrated.Interface.HiddenNavigation.SequenceEqual(new[] { "queries", "assistant", "enrichment", "populations" }));
-    Assert(migrated.Interface.NavigationOrder.SequenceEqual(new[] { "tickets", "home" }));
-    Assert(migrated.Interface.PinnedNavigation.SequenceEqual(new[] { "library", "assistant" }));
-    Assert(migrated.Interface.NavigationGroupOrder.SequenceEqual(new[] { "work", "workspace" }));
-    Equal("work", migrated.Interface.NavigationGroups["library"]); Equal(original, File.ReadAllText(path));
+    Equal(2, migrated.Interface.NavigationDefaultsVersion); Equal("compact", migrated.Interface.Density);
+    Assert(migrated.Interface.HiddenNavigation.SequenceEqual(new[] { "assistant", "enrichment", "populations", "records" }));
+    Assert(!migrated.Interface.HiddenNavigation.Contains("pilot") && !migrated.Interface.HiddenNavigation.Contains("terrain-map"));
+    Assert(migrated.Interface.NavigationOrder.Count == 6 && migrated.Interface.NavigationOrder.Distinct().Count() == 6);
+    Assert(migrated.Interface.NavigationOrder.IndexOf("records") < migrated.Interface.NavigationOrder.IndexOf("home"));
+    Assert(migrated.Interface.PinnedNavigation.SequenceEqual(new[] { "data", "pilot" }));
+    Equal(0, migrated.Interface.NavigationGroupOrder.Count); Equal(0, migrated.Interface.NavigationGroups.Count); Equal(original, File.ReadAllText(path));
     migrated.Normalize(); Equal(4, migrated.Interface.HiddenNavigation.Count);
     SettingsRecovery.Save(path, migrated); var reopened = SettingsRecovery.Read(path);
-    Equal(1, reopened.Interface.NavigationDefaultsVersion); Assert(reopened.Interface.HiddenNavigation.SequenceEqual(migrated.Interface.HiddenNavigation));
+    Equal(2, reopened.Interface.NavigationDefaultsVersion); Assert(reopened.Interface.HiddenNavigation.SequenceEqual(migrated.Interface.HiddenNavigation));
     var versions = SettingsRecovery.List(path).Count; SettingsRecovery.Save(path, reopened); Equal(versions, SettingsRecovery.List(path).Count);
 });
-Check("Navigation: explicit reveals on the current defaults survive copy persistence and future-version normalization", () =>
+Check("Navigation: explicit space and optional-tool reveals survive copy persistence and future-version normalization", () =>
 {
     var settings = Settings(); settings.Interface.HiddenNavigation.Clear();
-    var copy = settings.Copy(); Equal(1, copy.Interface.NavigationDefaultsVersion); Equal(0, copy.Interface.HiddenNavigation.Count);
-    copy.Interface.HiddenNavigation.Add("help"); Equal(0, settings.Interface.HiddenNavigation.Count);
+    var copy = settings.Copy(); Equal(2, copy.Interface.NavigationDefaultsVersion); Equal(0, copy.Interface.HiddenNavigation.Count);
+    copy.Interface.HiddenNavigation.Add("data"); Equal(0, settings.Interface.HiddenNavigation.Count);
     settings.Normalize(); Equal(0, settings.Interface.HiddenNavigation.Count);
     var path = FilePath(); SettingsRecovery.Save(path, settings); var reopened = SettingsRecovery.Read(path);
-    Equal(1, reopened.Interface.NavigationDefaultsVersion); Equal(0, reopened.Interface.HiddenNavigation.Count);
-    reopened.Interface.NavigationDefaultsVersion = 2; reopened.Normalize();
     Equal(2, reopened.Interface.NavigationDefaultsVersion); Equal(0, reopened.Interface.HiddenNavigation.Count);
+    reopened.Interface.NavigationDefaultsVersion = 3; reopened.Normalize();
+    Equal(3, reopened.Interface.NavigationDefaultsVersion); Equal(0, reopened.Interface.HiddenNavigation.Count);
 });
-Check("Navigation: local groups and order survive copy, restart and recovery without entering shared configuration", () =>
+Check("Navigation: local workspace order survives copy restart and recovery without entering shared configuration", () =>
 {
-    var settings = Settings(); settings.Interface.NavigationOrder = new() { "library", "tickets", "home" };
-    settings.Interface.NavigationGroupOrder = new() { "work", "pinned", "collect", "workspace" };
-    settings.Interface.NavigationGroups = new() { ["library"] = "work", ["help"] = "workspace" };
-    settings.Interface.HiddenNavigation = new() { "queries" }; settings.Interface.PinnedNavigation = new() { "day" };
-    var copy = settings.Copy(); copy.Interface.NavigationGroups["library"] = "collect"; copy.Interface.NavigationGroupOrder.Reverse();
-    copy.Interface.NavigationOrder.Clear(); copy.Interface.PinnedNavigation.Clear(); copy.Interface.HiddenNavigation.Clear();
-    Equal("work", settings.Interface.NavigationGroups["library"]); Equal("work", settings.Interface.NavigationGroupOrder[0]);
-    Equal(3, settings.Interface.NavigationOrder.Count); Equal(1, settings.Interface.PinnedNavigation.Count); Equal(1, settings.Interface.HiddenNavigation.Count);
+    var settings = Settings(); settings.Interface.NavigationOrder = new() { "data", "records", "home", "pilot", "terrain-map", "settings" };
+    settings.Interface.HiddenNavigation = new() { "pilot" }; settings.Interface.PinnedNavigation = new() { "terrain-map" };
+    var copy = settings.Copy(); copy.Interface.NavigationOrder.Reverse(); copy.Interface.PinnedNavigation.Clear(); copy.Interface.HiddenNavigation.Clear();
+    Equal("data", settings.Interface.NavigationOrder[0]);
+    Equal(6, settings.Interface.NavigationOrder.Count); Equal(1, settings.Interface.PinnedNavigation.Count); Equal(1, settings.Interface.HiddenNavigation.Count);
     var path = FilePath(); SettingsRecovery.Save(path, settings); settings.Theme = "light"; SettingsRecovery.Save(path, settings);
-    var reopened = SettingsRecovery.Read(path); Equal("work", reopened.Interface.NavigationGroups["library"]);
-    Assert(reopened.Interface.NavigationGroupOrder.SequenceEqual(settings.Interface.NavigationGroupOrder));
+    var reopened = SettingsRecovery.Read(path); Assert(reopened.Interface.NavigationOrder.SequenceEqual(settings.Interface.NavigationOrder));
     File.WriteAllText(path, "{broken"); var recovered = SettingsRecovery.Load(path);
-    Equal("work", recovered.Interface.NavigationGroups["library"]); Assert(recovered.Interface.NavigationOrder.SequenceEqual(settings.Interface.NavigationOrder));
+    Assert(recovered.Interface.NavigationOrder.SequenceEqual(settings.Interface.NavigationOrder));
     Equal("{broken", File.ReadAllText(path));
     var sharedPath = FilePath(); ConfigurationTransferService.Export(sharedPath, settings);
-    Assert(!File.ReadAllText(sharedPath).Contains("NavigationGroups", StringComparison.Ordinal));
+    Assert(!File.ReadAllText(sharedPath).Contains("NavigationOrder", StringComparison.Ordinal));
     var imported = ConfigurationTransferService.Import(sharedPath, reopened);
-    Equal("work", imported.Interface.NavigationGroups["library"]); Assert(imported.Interface.NavigationGroupOrder.SequenceEqual(reopened.Interface.NavigationGroupOrder));
+    Assert(imported.Interface.NavigationOrder.SequenceEqual(reopened.Interface.NavigationOrder));
+    Assert(imported.Interface.HiddenNavigation.SequenceEqual(reopened.Interface.HiddenNavigation));
 });
 Check("Settings: authentic v2 active source inherits its current acquisition without rewriting the file", () =>
 {
