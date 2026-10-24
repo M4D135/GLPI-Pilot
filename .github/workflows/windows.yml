@@ -86,7 +86,9 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
 
       - name: Vérifier les moteurs C# et toutes les interfaces WebView
-        timeout-minutes: 10
+        # Six complete workspaces, simulation transitions and continuous-motion checks.
+        # Individual suites keep their own bounded deadlines in Invoke-WindowsCi.ps1.
+        timeout-minutes: 15
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage WebViewChecks
 
       - name: Construire les packs PROD et DEV (exe + wad)

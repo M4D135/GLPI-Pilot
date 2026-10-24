@@ -89,7 +89,7 @@ internal sealed class WindowsWebViewFixture
                 }
                 var width = await page.EvaluateAsync<double>("innerWidth");
                 await NavigateAsync(page, "settings");
-                await page.GetByLabel("Zoom de l’interface (%)", new() { Exact = true }).FillAsync("125");
+                await page.GetByLabel("Zoom (%)", new() { Exact = true }).FillAsync("125");
                 await page.GetByRole(AriaRole.Combobox, new() { Name = "Thème", Exact = true }).SelectOptionAsync("light");
                 await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light' && document.querySelector('#zoom-label').innerText.includes('125')");
@@ -187,11 +187,23 @@ internal sealed class WindowsWebViewFixture
                     catch (System.ComponentModel.Win32Exception) { }
                     catch (Exception error) { Log("Cleanup: " + error.Message); success = false; }
             foreach (var process in _owned) process.Dispose();
-            if (_state.Length > 0 && Directory.Exists(Path.Combine(_state, "Logs")))
-                foreach (var file in Directory.GetFiles(Path.Combine(_state, "Logs"), "*.log")) File.Copy(file, Path.Combine(_output, Path.GetFileName(file)), true);
-            if (_sandbox.Length > 0 && File.Exists(Path.Combine(_sandbox, "fixture-owner.txt")) && File.ReadAllText(Path.Combine(_sandbox, "fixture-owner.txt")) == _owner)
-            { try { Directory.Delete(_sandbox, true); } catch (IOException error) { Log("Cleanup: " + error.Message); success = false; } }
-            if (_output.Length > 0) File.WriteAllLines(Path.Combine(_output, "native-webview.log"), _log, new UTF8Encoding(false));
+            try
+            {
+                if (_state.Length > 0 && Directory.Exists(Path.Combine(_state, "Logs")))
+                    foreach (var file in Directory.GetFiles(Path.Combine(_state, "Logs"), "*.log")) File.Copy(file, Path.Combine(_output, Path.GetFileName(file)), true);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { Log("Cleanup diagnostics: " + error.Message); success = false; }
+            try
+            {
+                if (_sandbox.Length > 0 && File.Exists(Path.Combine(_sandbox, "fixture-owner.txt")) && File.ReadAllText(Path.Combine(_sandbox, "fixture-owner.txt")) == _owner)
+                    await DeleteOwnedSandboxAsync();
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { Log("Cleanup: " + error.Message); success = false; }
+            try { if (_output.Length > 0) File.WriteAllLines(Path.Combine(_output, "native-webview.log"), _log, new UTF8Encoding(false)); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { Log("Cleanup evidence: " + error.Message); success = false; }
             _deadline.Dispose();
         }
         if (success) Console.WriteLine($"{_passed}/{_passed} native Windows WebView checks passed; isolated profile, no GLPI session accessed.");
@@ -199,6 +211,28 @@ internal sealed class WindowsWebViewFixture
     }
     private void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); _passed++; Log("PASS: " + message); }
     private void Log(string message) { _log.Add(message); Console.WriteLine(message); }
+    private async Task DeleteOwnedSandboxAsync()
+    {
+        // The caller has verified this fixture's owner marker. Recursive deletion
+        // may remove it before a runtime DLL is released; retain that proof only
+        // for this bounded call and never target another installation or profile.
+        var watch = Stopwatch.StartNew(); var retried = false;
+        while (Directory.Exists(_sandbox))
+        {
+            try
+            {
+                Directory.Delete(_sandbox, true);
+                if (retried) Log("Cleanup: owned runtime files released after " + watch.ElapsedMilliseconds + " ms.");
+                return;
+            }
+            catch (Exception error) when (OperatingSystem.IsWindows() && (error is IOException or UnauthorizedAccessException)
+                && (error.HResult & 0xffff) is 5 or 32 or 33 && watch.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                if (!retried) Log("Cleanup: waiting up to 10 seconds for owned runtime files to be released (Windows " + (error.HResult & 0xffff) + ").");
+                retried = true; await Task.Delay((int)Math.Min(100, Math.Max(1, 10000 - watch.ElapsedMilliseconds)));
+            }
+        }
+    }
     private Process Start(int port)
     {
         var start = new ProcessStartInfo(_executable) { WorkingDirectory = Path.GetDirectoryName(_executable)!, UseShellExecute = false };
