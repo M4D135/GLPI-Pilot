@@ -57,6 +57,9 @@ VALIDATIONS LOCALES ÉTABLIES
   l’enrichissement géographique, leurs sauvegardes et leur non-réapplication.
 - AnalyticsBridgeChecks : 115/115 pour les opérations métier, compteurs,
   filtres multiples, exports et géographie utilisée depuis un import local.
+- AnalyticsChecks : 39/39. Le cumul de groupes accepte 33 à 2 048 choix
+  dans la matrice des statuts de groupe et rejette le dépassement ; les
+  autres types de filtres restent limités à 32 choix.
 - CityDetectionChecks : 105/105 ; DashboardChecks : 140/140 ;
   DashboardLayoutChecks : 45/45.
 - Navigation WebView : 23/23 avec Chromium et le vrai backend C#.

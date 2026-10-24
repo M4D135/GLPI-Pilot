@@ -346,7 +346,18 @@ Test("Filter alternatives are bounded, deeply copied and preserved in portable c
     ConfigurationTransferService.Export(path, settings);
     var imported = ConfigurationTransferService.Import(path, Settings());
     Assert(imported.Dashboard.Layout.Boards[0].Filters.Single().Selections().SequenceEqual(new[] { "Alpha", "Beta" }));
-    filter.Values = Enumerable.Repeat("A", 33).ToList(); Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
+    filter.Values = Enumerable.Range(1, 33).Select(index => "Group " + index).ToList();
+    DashboardScopeFilter.ValidateList(new[] { filter });
+    filter.Values = Enumerable.Range(1, DashboardScopeFilter.MaximumGroupSelections).Select(index => "Group " + index).ToList();
+    DashboardScopeFilter.ValidateList(new[] { filter });
+    filter.Values.Add("Overflow"); Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
+    foreach (var (kind, sourceKey) in new[] { ("distribution", "group"), ("distribution", "group-status"), ("matrix-row", "technician-status") })
+    {
+        var ordinary = filter.Copy(); ordinary.Kind = kind; ordinary.SourceKey = sourceKey;
+        ordinary.Values = Enumerable.Range(1, 32).Select(index => "Choice " + index).ToList();
+        DashboardScopeFilter.ValidateList(new[] { ordinary });
+        ordinary.Values.Add("Overflow"); Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { ordinary }));
+    }
     filter.Values = new() { " " }; Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
     filter.Values = new() { "A" }; filter.Kind = "metric"; Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
     filter.Values = null!; Reject<InvalidDataException>(() => DashboardScopeFilter.ValidateList(new[] { filter }));
