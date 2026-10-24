@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/GlpiPilot/Core/AppPaths.cs" Link="Core/AppPaths.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ScheduledTour*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/TourExternalServices.cs" Link="Core/TourExternalServices.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TourPlanningService.cs" Link="Core/TourPlanningService.cs" />
