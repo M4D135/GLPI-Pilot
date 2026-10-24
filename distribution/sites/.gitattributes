@@ -1,0 +1,2 @@
+# Preserve the Windows files exactly as packaged, including their CRLF endings.
+wad/** -text whitespace=cr-at-eol

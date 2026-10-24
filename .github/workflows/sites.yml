@@ -1,0 +1,77 @@
+name: Sites — complément de données
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'distribution/sites/**'
+      - '.github/workflows/sites.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sites-data-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Joindre le complément à la version déjà publiée
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      SITES_OUTPUT: artifacts/sites
+    steps:
+      - name: Récupérer les données du commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Vérifier la version et préparer les trois fichiers
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, xml.etree.ElementTree as ET
+          version = ET.parse('src/GlpiPilot/GlpiPilot.csproj').findtext('PropertyGroup/Version', '')
+          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version) or tuple(map(int, version.split('.'))) < (3, 3, 2):
+              raise SystemExit('Le complément exige une version stable de GLPI Pilot au moins égale à 3.3.2.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'tag=v{version}\n')
+          PY
+          python3 distribution/sites/package.py --output-dir "$SITES_OUTPUT"
+      - name: Joindre uniquement les données à la release publiée
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/glpi-sites-release.json"
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$release_json"; then
+            echo "La release $RELEASE_TAG doit déjà être publiée. Aucun tag ni aucune release ne sera créé." >&2
+            exit 1
+          fi
+          python3 - "$release_json" "$RELEASE_TAG" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as source:
+              release = json.load(source)
+          if release.get('tag_name') != sys.argv[2] or release.get('draft') is not False or release.get('prerelease') is not False or not release.get('published_at'):
+              raise SystemExit('La cible doit être une release stable déjà publiée, sans statut brouillon ou préversion.')
+          PY
+          # Keep the application ZIPs, their checksums, the tag and release notes unchanged.
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            "$SITES_OUTPUT/sites.csv" \
+            "$SITES_OUTPUT/GLPI-Pilot-Sites.zip" \
+            "$SITES_OUTPUT/SITES-SHA256SUMS.txt"
+          verify_dir="$RUNNER_TEMP/glpi-sites-downloaded"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$verify_dir" \
+            --pattern sites.csv --pattern GLPI-Pilot-Sites.zip --pattern SITES-SHA256SUMS.txt
+          cmp "$SITES_OUTPUT/SITES-SHA256SUMS.txt" "$verify_dir/SITES-SHA256SUMS.txt"
+          cd "$verify_dir"
+          sha256sum --check SITES-SHA256SUMS.txt
+          printf '## Complément de sites publié\n\n[GLPI-Pilot-Sites.zip](https://github.com/%s/releases/download/%s/GLPI-Pilot-Sites.zip)\n\nLes deux packs Windows existants sont conservés.\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
