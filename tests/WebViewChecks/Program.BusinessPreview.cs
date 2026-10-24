@@ -52,8 +52,6 @@ internal static partial class Program
             Id = "synthetic-team-" + index, Kind = "team", Label = "Équipe " + index, Values = new() { "Groupe " + index }, Visible = index != 1,
             OrangeAbove = index % 3 == 0 ? 40 : index % 3 == 1 ? 20 : 10, RedAbove = index % 3 == 2 ? 20 : 50
         });
-        await Call(app, "dashboard.business.settings.save", new { business, baseFingerprint = bootstrap.GetProperty("fingerprint").GetString(),
-            sites = new[] { new SiteDefinition { Name = "Site exemple Nord" }, new SiteDefinition { Name = "Site exemple Sud" }, new SiteDefinition { Name = "Site exemple sans ticket" } } });
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
         {
             if (op == "app.ready") return new { ready = true };
@@ -83,6 +81,45 @@ internal static partial class Program
             await page.SetViewportSizeAsync(1380, 960);
         }
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await page.Locator("body[data-ready=true]").WaitForAsync();
+        await Navigate("pilot-weather");
+        Require(await page.Locator(".business-weather-card").CountAsync() == 17
+            && await page.Locator(".business-weather-card[data-weather-state=unknown], .business-weather-card[data-weather-state=partial]").CountAsync() == 0
+            && await page.Locator(".business-weather-card[data-weather-state=watch]").CountAsync() > 0
+            && await page.Locator(".business-weather-card[data-weather-state=rain]").CountAsync() > 0
+            && await page.GetByText("Seuils de départ à adapter dans Paramètres du pilotage.", new() { Exact = true }).IsVisibleAsync(),
+            "A CSV without a pilot profile immediately renders stock, type, category and team weather with clearly identified starter thresholds.");
+        await Capture("native-weather-starter-thresholds");
+        await Navigate("pilot-settings");
+        ILocator Threshold(string colour, string label) => page.GetByLabel("Seuil " + colour + " de " + label, new() { Exact = true });
+        Require(await Threshold("orange", "Tickets en cours").InputValueAsync() == "100" && await Threshold("rouge", "Tickets en cours").InputValueAsync() == "200"
+            && await Threshold("orange", "Incidents en cours").InputValueAsync() == "50" && await Threshold("rouge", "Demandes en cours").InputValueAsync() == "100"
+            && await Threshold("orange", "Catégorie 1").InputValueAsync() == "10" && await Threshold("rouge", "Groupe 1").InputValueAsync() == "20",
+            "The generic weather pairs are editable in the existing pilot settings fields.");
+        await Threshold("orange", "Tickets en cours").FillAsync(""); await Threshold("rouge", "Tickets en cours").FillAsync("");
+        await Threshold("orange", "Incidents en cours").FillAsync(""); await Threshold("rouge", "Incidents en cours").FillAsync("5");
+        await Threshold("orange", "Demandes en cours").FillAsync("300"); await Threshold("rouge", "Demandes en cours").FillAsync("");
+        await Threshold("orange", "Catégorie 1").FillAsync("0"); await Threshold("rouge", "Catégorie 1").FillAsync("");
+        await Threshold("orange", "Catégorie 2").FillAsync(""); await Threshold("rouge", "Catégorie 2").FillAsync("");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Remplir les seuils vides", Exact = true }).ClickAsync();
+        Require(await Threshold("orange", "Tickets en cours").InputValueAsync() == "100" && await Threshold("rouge", "Tickets en cours").InputValueAsync() == "200"
+            && await Threshold("orange", "Incidents en cours").InputValueAsync() == "" && await Threshold("rouge", "Incidents en cours").InputValueAsync() == "5"
+            && await Threshold("orange", "Demandes en cours").InputValueAsync() == "300" && await Threshold("rouge", "Demandes en cours").InputValueAsync() == ""
+            && await Threshold("orange", "Catégorie 1").InputValueAsync() == "0" && await Threshold("rouge", "Catégorie 1").InputValueAsync() == "20"
+            && await Threshold("orange", "Catégorie 2").InputValueAsync() == "10" && await Threshold("rouge", "Catégorie 2").InputValueAsync() == "20"
+            && (await page.Locator(".business-settings-status").InnerTextAsync()).Contains("2 règle(s) à compléter manuellement", StringComparison.Ordinal)
+            && (await Call(app, "dashboard.business.settings.get")).GetProperty("usingWeatherDefaults").GetBoolean(),
+            "Fill empty thresholds edits only the local form, preserves zeroes and custom limits, and leaves incompatible partial pairs to be completed manually.");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Enregistrer les paramètres", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page === 'pilot-settings' && document.querySelector('.business-settings-status')?.textContent === '' && !document.querySelector('#content').hasAttribute('aria-busy')");
+        await Navigate("pilot-weather");
+        var explicitlySaved = await Call(app, "dashboard.business.settings.get");
+        Require(!explicitlySaved.GetProperty("usingWeatherDefaults").GetBoolean()
+            && await page.GetByText("Seuils de départ à adapter dans Paramètres du pilotage.", new() { Exact = true }).CountAsync() == 0
+            && await page.Locator(".business-weather-card[data-weather-state=unknown]").CountAsync() == 2,
+            "Saving explicit settings preserves incomplete pairs and stops labelling that profile as an automatic starter profile.");
+        bootstrap = explicitlySaved;
+        await Call(app, "dashboard.business.settings.save", new { business, baseFingerprint = bootstrap.GetProperty("fingerprint").GetString(),
+            sites = new[] { new SiteDefinition { Name = "Site exemple Nord" }, new SiteDefinition { Name = "Site exemple Sud" }, new SiteDefinition { Name = "Site exemple sans ticket" } } });
         await Navigate("pilot-weather");
         Require(await page.Locator(".business-weather-card").CountAsync() == 14
             && await page.Locator("[data-section-key=categories] .business-weather-card").CountAsync() == 8

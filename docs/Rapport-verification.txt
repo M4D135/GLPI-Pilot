@@ -1,4 +1,94 @@
-GLPI Pilot 3.3.3 — Simulation, sites et tournées
+GLPI Pilot 3.3.4 — Cartes intégrées, Mon espace, animations et météo
+Contrôles locaux du 24 octobre 2026, avant validation native du pack
+Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
+
+PORTÉE
+Les cartes des sites et des tournées sont rendues dans le dialogue DOM de
+l’interface principale, avec Leaflet 1.9.4 fourni localement. Il n’y a plus
+ni réglage de clé Google, ni opération d’ouverture de carte externe,
+ni fenêtre native dédiée. Les anciens fichiers de clé ne sont plus lus.
+
+Les repères du référentiel, leur liste et l’ordre des visites sont locaux.
+Chaque journée et affectation garde son parcours ; aucun nom d’agent ou
+contenu de ticket n’est présent dans le modèle cartographique. Les étapes
+sans coordonnées restent listées et interrompent les liaisons, sans
+substitution par une position de commune. Les traits sont explicitement
+l’ordre des visites à vol d’oiseau, pas un trajet routier.
+
+Le fond terrestre Natural Earth fonctionne hors ligne. Son pane dédié
+reste sous les images de rues : les polygones opaques ne les masquent pas.
+Un site seul est cadré régionalement sur le fond local, puis en détail
+avec les rues. Les repères et la liste se synchronisent aussi au clavier.
+
+En simulation, aucune tuile distante n’est demandée avant Afficher les
+rues. En usage normal, le clic carte autorise ce fond dans la même vue.
+Le garde natif accepte uniquement des requêtes Image GET de tuiles OSM
+HTTPS aux indices validés, sans paramètre, fragment ni port alternatif.
+Les scripts, cadres et documents distants restent interdits. Le User-Agent
+identifie l’application ; le cache HTTP et l’attribution restent présents.
+Les cartes actives sont révoquées à la fermeture, au changement de contexte
+ou de brouillon. Une activation achevée après fermeture est révoquée.
+L’erreur de tuile retire la couche distante sans laisser un écouteur
+Leaflet sur une instance détruite ; le plan local reste utilisable.
+
+Mon espace remplace le titre du groupe principal sans modifier sa clé ni
+les préférences de menu. Les animations Domenia ajoutent des apparitions
+d’opacité et des retours de chargement, sans déplacer les surfaces de
+tableau ou réécrire les compteurs. Le contrôle de réduction en cours de
+session couvre aussi les animations relancées par les captures Chromium.
+
+La météo de stock sans règles explicites utilise des seuils de départ :
+100/200 global, 50/100 incidents et demandes, 10/20 catégories et équipes.
+Le dépassement reste strict. Les profils importés/personnalisés, zéros et
+cases vides explicites restent conservés. Remplir les seuils vides est une
+action du formulaire : les cases saisies restent intactes, les paires
+incompatibles restent à régler manuellement, et Enregistrer reste nécessaire.
+
+VALIDATIONS LOCALES ÉTABLIES
+- DashboardChecks : 142/142, seuils par défaut, frontières strictes,
+  règles existantes, seuils vides ou zéro et personnalisation préservés.
+- RuntimeSessionChecks complet avec Chromium : 94/94, dont 7/7 cartes
+  intégrées. Couverture des sélections exactes, coordonnées manquantes,
+  13 étapes conservées sans découpage, parcours séparés, révocation et
+  isolation entre simulation CSV et profil ordinaire.
+- Import CSV et interface : 83/83. Les 35 écrans sont parcourus après
+  l’import réel du CSV à 19 champs. Carte locale, liste/repères, 26 sites
+  géocodés, site sans coordonnées, activation/retrait des rues, erreur
+  réseau simulée, attribution et fenêtre compacte sont contrôlés.
+- Navigation et mouvement avec captures : 23/23. Renommage, préférences,
+  replis, clavier, déplacement et arrêt des animations en cours sont
+  vérifiés sans modification des dimensions ni des valeurs.
+- Seuils et aperçu métier WebView : 27/27, dont remplissage compatible,
+  zéros préservés, conflit explicite et sauvegarde réelle des réglages.
+- Suite WebView complète : 159/159, exécution en 39,899 secondes après
+  un build de 8,731 secondes. Le délai CI de 240 secondes est conservé.
+- Compilation croisée du desktop Windows 3.3.4 : aucune erreur,
+  aucun avertissement.
+- Syntaxe JavaScript : 42/42 fichiers valides ; git diff --check valide.
+- Leaflet JS/CSS : octets comparés aux SRI officiels de 1.9.4 ; les
+  attributs Git empêchent leur conversion de fins de ligne sous Windows.
+  La CI compare à nouveau les SHA-256 des deux fichiers dans les packs.
+- Fond Natural Earth : 127 polygones, 126 045 octets ; géométrie source
+  inchangée, bornes et anneaux vérifiés, reproduction et empreinte
+  documentées dans la licence du pack.
+
+LIMITES ET PUBLICATION
+Les parcours d’interface utilisent les modules réels et le backend C#,
+avec données fictives. Les images OSM de test sont interceptées localement :
+ces contrôles établissent le rendu, les couches et le comportement réseau,
+mais pas la disponibilité du serveur de tuiles sur le réseau de l’utilisateur.
+Les rues demandent une connexion Internet ; le fond local ne contient pas
+les rues et ne calcule pas de tracé routier. Aucun portail métier ni SSO
+réel n’est utilisé pour ces essais.
+
+Les packs PROD et DEV sont publiés seulement après réussite du workflow
+Windows et PostgreSQL de leur commit : démarrage natif, mise à jour,
+retour arrière, reconstruction DEV et intégrité du pack. La compilation
+croisée locale ne remplace pas ces étapes. Le SHA source et les empreintes
+incluses dans wad identifient exactement la livraison.
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.3 — Simulation, sites et tournées
 Contrôles locaux du 24 octobre 2026, avant la validation native de livraison
 Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
 

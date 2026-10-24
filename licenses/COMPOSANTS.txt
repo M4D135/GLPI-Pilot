@@ -35,6 +35,13 @@ installé sur le poste. Il n’est pas redistribué avec le pilote Playwright.
 Le Chromium utilisé pendant les tests sous Linux ne fait pas partie du pack.
 GLPI Pilot est un outil indépendant et n’est pas un produit officiel GLPI.
 
+Leaflet 1.9.4 : licence BSD-2-Clause dans Leaflet-LICENSE.txt ; ressources
+originales embarquées et empreintes dans Embedded-Maps-Notices.txt.
+Natural Earth 110m land : domaine public ; source et transformation
+documentées dans NaturalEarth-PUBLIC-DOMAIN.txt. Le fond détaillé
+OpenStreetMap est facultatif et distant, avec attribution visible ;
+aucune tuile n’est redistribuée ou préchargée dans le pack.
+
 Sources techniques consultées pour la construction :
 https://playwright.dev/dotnet/docs/browsers
 https://playwright.dev/dotnet/docs/api/class-browsertype

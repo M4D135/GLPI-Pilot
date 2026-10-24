@@ -47,6 +47,7 @@ async function renderBusiness(ctx, view) {
   const focusKeys = requested.filter(key => available.has(key));
   const removed = requested.length - focusKeys.length;
   const business = { ...view, groups: bootstrap.groups, focus: bootstrap.focus, rules: bootstrap.business.weatherRules,
+    usingWeatherDefaults: bootstrap.usingWeatherDefaults === true,
     focusWarning: removed ? `${formatNumber(removed)} sélection(s) ne sont plus disponibles dans ce relevé. Le filtre a été actualisé ; vérifiez les équipes et groupes retenus.` : '',
     focusEnabled: ['oldest', 'followup', 'participants', 'sites', 'groups'].includes(view.key) };
   const api = { ...ctx.api, call: (operation, args = {}, options) => ctx.api.call(operation,
@@ -75,6 +76,23 @@ async function renderBusinessSettings(ctx) {
     await call(ctx, 'dashboard.business.settings.save', { business, sites, baseFingerprint: model.fingerprint, revision: model.revision });
     dirty = false; ctx.notify('Paramètres du pilotage enregistrés.'); await ctx.navigate('pilot-settings');
   }, { primary: true, icon: 'check' });
+  const fillThresholds = command(ctx, 'Remplir les seuils vides', () => {
+    let count = 0, skipped = 0;
+    for (const rule of business.weatherRules) {
+      if (rule.orangeAbove != null && rule.redAbove != null) continue;
+      const preset = (model.weatherThresholdPresets || []).find(preset => preset.kind === rule.kind && preset.sourceKey === rule.sourceKey);
+      if (!preset) { skipped++; continue; }
+      const orange = rule.orangeAbove ?? preset.orangeAbove, red = rule.redAbove ?? preset.redAbove;
+      // A partial custom pair may be incompatible with a starter threshold.
+      // Keep it unchanged instead of silently overwriting a value already set.
+      if (orange > red) { skipped++; continue; }
+      if (rule.orangeAbove == null) { rule.orangeAbove = orange; count++; }
+      if (rule.redAbove == null) { rule.redAbove = red; count++; }
+    }
+    if (count) { changed(); drawRules(); }
+    status.textContent = `${formatNumber(count)} seuil(s) complété(s)${count ? ' · modifications à enregistrer' : ''}.`
+      + (skipped ? ` ${formatNumber(skipped)} règle(s) à compléter manuellement : indicateur sans repère ou seuil existant incompatible.` : ' Les valeurs déjà saisies sont conservées.');
+  }, { icon: 'spark' });
   const profileImport = command(ctx, 'Reprendre les paramètres d’un classeur Excel', async () => {
     const preview = await call(ctx, 'dashboard.business.profile.preview'); if (preview.cancelled) return;
     const profile = preview.profile;
@@ -92,6 +110,7 @@ async function renderBusinessSettings(ctx) {
   }, { icon: 'download' });
   ctx.root.append(toolbar(save, button('Voir la météo', () => ctx.navigate('pilot-weather'), { icon: 'chart' }), profileImport), status,
     card('Règles de lecture', caption('Un seuil orange ou rouge n’est franchi qu’au-delà de la valeur saisie. Laisser les seuils vides affiche le volume avec « Seuils à définir ».'),
+      caption('Repères de départ à adapter : stock global 100 / 200 ; incidents et demandes 50 / 100 ; catégories, équipes et autres compteurs de stock 10 / 20 (orange / rouge). Ce ne sont pas des objectifs de capacité ou de SLA.'),
       caption('Les équipes suivent l’ordre ci-dessous : chaque ticket est rattaché à la première équipe correspondante, même si cette équipe est masquée. « Météo » désactive seulement la couleur ; « Afficher » masque la carte.'),
       !model.configured ? caption('Les règles proposées reprennent une disposition existante ou les groupes et catégories du relevé. Enregistrer les rend explicites pour les prochains relevés.') : null),
     card('Actualité du service', el('div', { class: 'analytics-form-grid' }, field('Rappel de fraîcheur · heures', freshness, 'Vide : aucun rappel. Ce délai ne recolore pas la météo.'),
@@ -99,7 +118,7 @@ async function renderBusinessSettings(ctx) {
     card('Météo · seuils et correspondances', toolbar(command(ctx, 'Ajouter une règle', () => {
       if (business.weatherRules.length >= 48) throw new Error('Quarante-huit règles météo au maximum.');
       business.weatherRules.push({ id: uuid(), label: 'Nouvelle règle', kind: 'metric', sourceKey: 'active', values: [], orangeAbove: null, redAbove: null, visible: true, weatherEnabled: true, includeDescendants: false, note: '' }); changed(); drawRules();
-    }, { icon: 'plus' }), caption(`${business.weatherRules.length} règles · valeurs multiples séparées par une ligne ou un point-virgule`)), ruleHost),
+    }, { icon: 'plus' }), fillThresholds, caption(`${business.weatherRules.length} règles · valeurs multiples séparées par une ligne ou un point-virgule`)), ruleHost),
     card('Sites · noms et alias', toolbar(command(ctx, 'Ajouter un site', () => {
       if (sites.length >= 2000) throw new Error('Deux mille sites au maximum.');
       sites.push({ id: uuid(), name: 'Nouveau site', cityId: '', aliases: [], address: '', latitude: null, longitude: null, openings: [], closedDates: [], contact: '', equipment: '' }); changed(); drawSites();

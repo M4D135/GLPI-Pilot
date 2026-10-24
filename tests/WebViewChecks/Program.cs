@@ -411,10 +411,6 @@ internal static partial class Program
     private static async Task Until(Func<bool> predicate) { using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10)); while (!predicate()) await Task.Delay(10, deadline.Token); }
     private sealed class TestHost(string root) : IPilotHost
     {
-        public List<string> GoogleMapUrls { get; } = new();
-        public List<GoogleMapFrame> GoogleMapFrames { get; } = new();
-        public Task OpenGoogleMapsAsync(string url) { if (!GoogleMapsService.IsExternalMapUrl(url)) throw new InvalidDataException(); GoogleMapUrls.Add(url); return Task.CompletedTask; }
-        public Task ShowGoogleMapAsync(GoogleMapFrame frame) { if (!GoogleMapsService.IsEmbedUrl(frame.EmbedUrl)) throw new InvalidDataException(); GoogleMapFrames.Add(frame); return Task.CompletedTask; }
         public string? NextOpen { get; set; }
         public string? NextSave { get; set; }
         public IPage? Page { get; set; }

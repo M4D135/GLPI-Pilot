@@ -10,6 +10,11 @@ export function initializeDomeniaMotion() {
   const contrast = matchMedia('(forced-colors: active)');
   const pointer = matchMedia('(hover: hover) and (pointer: fine)');
   const decorations = new WeakSet();
+  const surfaces = new WeakSet();
+  const queuedSurfaces = new Set();
+  const revealingSurfaces = new Set();
+  const surfaceSelector = '.hero,.metric,.analytics-widget,.library-result,.library-stat,.quick-link,.page-content > .card,.page-content > .grid > .card';
+  let revealFrame = 0;
   let frame = 0;
   let pending = null;
   let spotlight = null;
@@ -17,6 +22,35 @@ export function initializeDomeniaMotion() {
   const allowed = () => !document.hidden && root.dataset.motion !== 'reduce'
     && root.dataset.contrast !== 'true' && !reduced.matches && !contrast.matches;
 
+  function finishSurface(node) {
+    node.classList.remove('domenia-surface-enter');
+    node.style.removeProperty('--d-card-delay');
+    revealingSurfaces.delete(node);
+  }
+  function clearSurfaces() {
+    if (revealFrame) cancelAnimationFrame(revealFrame);
+    revealFrame = 0; queuedSurfaces.clear();
+    for (const node of revealingSurfaces) finishSurface(node);
+  }
+  function queueSurface(node) {
+    if (surfaces.has(node) || !node.closest('.page-content')) return;
+    surfaces.add(node);
+    // An existing card moved by the editor must never replay its entrance.
+    if (!allowed() || node.closest('dialog,[hidden],[draggable=true],.is-editing')) return;
+    queuedSurfaces.add(node);
+    if (revealFrame) return;
+    revealFrame = requestAnimationFrame(() => {
+      revealFrame = 0;
+      const pending = [...queuedSurfaces]; queuedSurfaces.clear();
+      if (!allowed()) return;
+      let index = 0;
+      for (const surface of pending) {
+        if (!surface.isConnected || surface.closest('dialog,[hidden],[draggable=true],.is-editing')) continue;
+        surface.style.setProperty('--d-card-delay', `${Math.min(index++, 9) * 20}ms`);
+        surface.classList.add('domenia-surface-enter'); revealingSurfaces.add(surface);
+      }
+    });
+  }
   function resetPointer() {
     if (frame) cancelAnimationFrame(frame);
     frame = 0; pending = null;
@@ -29,8 +63,14 @@ export function initializeDomeniaMotion() {
     const active = allowed();
     root.dataset.domeniaMotion = active ? 'on' : 'off';
     if (!active) {
-      resetPointer();
+      resetPointer(); clearSurfaces();
       document.querySelectorAll('.domenia-ripple').forEach(node => node.remove());
+      // A capture or a browser animation control can resume a CSS animation after
+      // its busy selector disappears. Cancel only our named decorative effects,
+      // including such detached animations, when the preference is switched off.
+      for (const animation of document.getAnimations()) {
+        if (animation.animationName?.startsWith('domenia-')) animation.cancel();
+      }
     }
   }
   function decorateHero(hero) {
@@ -46,13 +86,23 @@ export function initializeDomeniaMotion() {
   }
   function decorate(node) {
     if (!(node instanceof Element)) return;
+    if (node.closest('table,[role=grid],dialog')) return;
     if (node.matches('.hero')) decorateHero(node);
     node.querySelectorAll('.hero').forEach(decorateHero);
+    if (node.matches(surfaceSelector)) queueSurface(node);
+    node.querySelectorAll(surfaceSelector).forEach(queueSurface);
   }
   new MutationObserver(changes => {
     for (const change of changes) for (const node of change.addedNodes) decorate(node);
+    for (const node of revealingSurfaces) if (!node.isConnected) finishSurface(node);
   }).observe(document.body, {childList: true, subtree: true});
   new MutationObserver(sync).observe(root, {attributes: true, attributeFilter: ['data-motion', 'data-contrast']});
+  const finishEntrance = event => {
+    if (event.animationName === 'domenia-surface-enter' && event.target instanceof Element) finishSurface(event.target);
+  };
+  document.addEventListener('animationend', finishEntrance);
+  document.addEventListener('animationcancel', finishEntrance);
+  document.addEventListener('dragstart', clearSurfaces, true);
 
   document.addEventListener('pointermove', event => {
     if (!allowed() || !pointer.matches || event.pointerType === 'touch' || event.buttons) { resetPointer(); return; }
@@ -76,6 +126,8 @@ export function initializeDomeniaMotion() {
 
   document.addEventListener('pointerdown', event => {
     resetPointer();
+    const surface = event.target instanceof Element ? event.target.closest('.domenia-surface-enter') : null;
+    if (surface) finishSurface(surface);
     if (!allowed() || event.button !== 0) return;
     const host = event.target instanceof Element ? event.target.closest('.button.primary') : null;
     // Do not decorate data cells, tabs, widget handles or controls participating in a drag.

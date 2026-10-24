@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'web/**'
       - 'package.json'
+      - '.gitattributes'
       - 'tests/**'
       - 'docs/**'
       - 'support/**'

@@ -20,16 +20,29 @@ internal static partial class Program
         { ViewportSize = new() { Width = 1380, Height = 960 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.Reduce });
         var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000);
         var errors = new ConcurrentQueue<string>(); var offlineLibraryRequests = new ConcurrentQueue<string>(); var externalRequests = 0;
+        var tileRequests = new ConcurrentQueue<string>(); var blockedTileRequests = new ConcurrentQueue<string>(); PilotApplication? mapApplication = null;
+        var failMapTiles = false;
         page.PageError += (_, error) => errors.Enqueue(error);
         await context.RouteAsync("**/*", async route =>
         {
             var uri = new Uri(route.Request.Url);
+            if (EmbeddedMapsService.IsTileUrl(route.Request.Url))
+            {
+                // Reproduce the native image gate, including late image jobs
+                // which were queued before a layer or its lease was removed.
+                if (mapApplication?.AllowsMapTileRequest(route.Request.Url) != true)
+                { blockedTileRequests.Enqueue(route.Request.Url); await route.AbortAsync(); return; }
+                tileRequests.Enqueue(route.Request.Url);
+                if (failMapTiles) await route.AbortAsync();
+                else await route.FulfillAsync(new() { ContentType = "image/png", BodyBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=") });
+                return;
+            }
             if (uri.Host != "glpi-pilot.local") { Interlocked.Increment(ref externalRequests); await route.AbortAsync(); return; }
             var relative = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'); if (relative.Length == 0) relative = "index.html";
             var path = Path.GetFullPath(Path.Combine(web, relative));
             if (!path.StartsWith(web + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path))
             { await route.FulfillAsync(new() { Status = 404, Body = "Not found" }); return; }
-            var mime = Path.GetExtension(path) switch { ".html" => "text/html", ".js" => "text/javascript", ".css" => "text/css", ".svg" => "image/svg+xml", _ => "application/octet-stream" };
+            var mime = Path.GetExtension(path) switch { ".html" => "text/html", ".js" => "text/javascript", ".css" => "text/css", ".svg" => "image/svg+xml", ".png" => "image/png", _ => "application/octet-stream" };
             await route.FulfillAsync(new() { Status = 200, ContentType = mime, BodyBytes = await File.ReadAllBytesAsync(path) });
         });
         var host = new TestHost(_root) { Page = page, NextOpen = CreateLocalFileTestWorkbook() };
@@ -40,6 +53,7 @@ internal static partial class Program
             { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), new AppSettings { Theme = "dark", ExportFolder = Path.Combine(_root, "Exports") });
+        mapApplication = app;
         app.LoadQualityFixture(QualityFixture()); var original = app.Result;
         var originalLibrary = (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32();
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
@@ -112,6 +126,8 @@ internal static partial class Program
         simulationSettings.Cities.Cities.Add(mapCity);
         simulationSettings.Cities.Sites.Single().CityId = mapCity.Id;
         simulationSettings.Cities.Sites.Single().Address = "12 rue de l’Essai, Commune fictive";
+        simulationSettings.Cities.Sites.Single().Latitude = 44.1;
+        simulationSettings.Cities.Sites.Single().Longitude = 5.1;
         await Call(app, "settings.save", new { revision = app.Revision, settings = simulationSettings });
         host.NextOpen = csvPath;
         await Navigate("home"); await Button("Importer en simulation").ClickAsync(); await Ready("pilot-weather");
@@ -155,46 +171,61 @@ internal static partial class Program
         await Button("Retour aux sites").ClickAsync(); await Ready("pilot-sites");
         Require(await page.Locator(".analytics-sites").CountAsync() > 0, "The optional population settings return directly to Sites.");
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Google Maps · Site fictif Nord", Exact = true }).ClickAsync();
-        var mapPreview = page.GetByRole(AriaRole.Dialog, new() { Name = "Google Maps · lieux et parcours", Exact = true });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Carte · Site fictif Nord", Exact = true }).ClickAsync();
+        var mapPreview = page.Locator("dialog.maps-dialog");
         await mapPreview.WaitForAsync();
-        Require(host.GoogleMapUrls.Count == 0 && host.GoogleMapFrames.Count == 0
-            && await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Ouvrir Google Maps", Exact = true }).IsEnabledAsync()
-            && await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher la carte intégrée", Exact = true }).IsDisabledAsync(),
-            "The Sites map preview stays local and offers a working no-key link while clearly requiring a key for the embedded map.");
-        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Ouvrir Google Maps", Exact = true }).ClickAsync();
-        await Until(() => host.GoogleMapUrls.Count > 0);
-        Require(host.GoogleMapUrls.Count == 1 && Uri.UnescapeDataString(host.GoogleMapUrls.Single()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal)
-            && !host.GoogleMapUrls.Single().Contains("Agent", StringComparison.Ordinal),
-            "The explicit map click delegates only the reference address from the CSV simulation to the native host.");
-        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Réglages Google Maps", Exact = true }).ClickAsync();
-        var mapSettings = page.GetByRole(AriaRole.Dialog, new() { Name = "Réglages Google Maps", Exact = true });
-        await mapSettings.GetByLabel("Clé Maps Embed API", new() { Exact = true }).FillAsync("SYNTHETIC_UI_MAP_KEY");
-        Require(await mapSettings.GetByLabel("Mémoriser la clé pour ce compte Windows", new() { Exact = true }).IsDisabledAsync(),
-            "A map key entered during simulation cannot be persisted into the normal Windows profile.");
-        await mapSettings.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync();
-        await mapSettings.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
-        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher la carte intégrée", Exact = true }).ClickAsync();
-        await Until(() => host.GoogleMapFrames.Count > 0);
-        Require(host.GoogleMapFrames.Count == 1 && host.GoogleMapFrames.Single().Simulation && host.GoogleMapFrames.Single().EmbedUrl.Contains("/maps/embed/v1/place?", StringComparison.Ordinal),
-            "The dedicated embedded-map request is created only after its explicit button and uses the documented API.");
-        await Capture("simulation-google-maps-preview");
-        await CheckGoogleMapFrameAsync(browser, web, host.GoogleMapFrames.Single());
+        Require(tileRequests.IsEmpty && blockedTileRequests.IsEmpty && !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png")
+            && await mapPreview.Locator(".maps-marker").CountAsync() == 1 && await mapPreview.Locator("iframe").CountAsync() == 0 && context.Pages.Count == 1,
+            "Opening a real CSV site renders a Leaflet map directly in the main dialog, offline by default, without an iframe, extra window, API key or external navigation.");
+        await mapPreview.Locator(".maps-place").ClickAsync();
+        Require(await mapPreview.Locator(".maps-place[aria-pressed=true]").CountAsync() == 1
+            && (await mapPreview.Locator(".maps-popup").InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal),
+            "Selecting the site in the map list focuses its recorded coordinates and opens the same reference address on the map.");
+        failMapTiles = true;
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.maps-state')?.textContent.includes('indisponible') === true");
+        await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
+        Require(await mapPreview.Locator(".maps-marker").CountAsync() == 1 && await mapPreview.Locator(".leaflet-tile").CountAsync() == 0,
+            "A failed tile request returns to the offline map with a concise status and keeps the site usable.");
+        failMapTiles = false;
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
+        await Until(() => !tileRequests.IsEmpty); await WaitForPageAsync(page, "document.querySelector('.maps-state')?.textContent === 'Rues · OpenStreetMap'");
+        Require(app.AllowsMapTileRequest(tileRequests.First()) && tileRequests.All(EmbeddedMapsService.IsTileUrl)
+            && !tileRequests.Any(value => value.Contains("Agent", StringComparison.Ordinal) || value.Contains("?", StringComparison.Ordinal))
+            && await mapPreview.EvaluateAsync<bool>("node => { const land=node.querySelector('.leaflet-maps-land-pane'), tiles=node.querySelector('.leaflet-tile-pane'); return !!land?.querySelector('.maps-land') && Number(getComputedStyle(land).zIndex) < Number(getComputedStyle(tiles).zIndex); }"),
+            "The explicit streets control grants only standard OSM tiles above the local land layer; intercepted image URLs contain no ticket, agent or address text.");
+        await mapPreview.Locator(".maps-attribution a").ClickAsync();
+        Require(await mapPreview.Locator(".maps-sources").GetAttributeAsync("open") is not null && context.Pages.Count == 1,
+            "Visible OpenStreetMap attribution opens its local licence notice and keeps the user inside the application.");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fond hors ligne", Exact = true }).ClickAsync();
+        await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
+        Require(await mapPreview.Locator(".leaflet-tile").CountAsync() == 0 && await mapPreview.Locator(".maps-marker").CountAsync() == 1,
+            "Returning offline removes all remote tiles and revokes the lease while preserving the site's marker and local map.");
+        await Capture("simulation-embedded-site-map");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher les rues", Exact = true }).ClickAsync();
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await Until(() => !app.AllowsMapTileRequest("https://tile.openstreetmap.org/0/0/0.png"));
+        Require(await page.Locator(".maps-canvas").CountAsync() == 0,
+            "Closing the dialog destroys the Leaflet surface and releases its native tile permission.");
+
+        await CheckEmbeddedMapOverviewAsync(page, app, Navigate, Capture);
+        await CheckEmbeddedMapRendererAsync(page);
 
         await Navigate("tours");
-        await Button("Google Maps · ordre des communes").ClickAsync(); await mapPreview.WaitForAsync();
+        await Button("Carte · ordre des communes").ClickAsync(); await mapPreview.WaitForAsync();
         Require((await mapPreview.InnerTextAsync()).Contains("Ordre des communes", StringComparison.Ordinal)
-            && (await mapPreview.InnerTextAsync()).Contains("44,5", StringComparison.Ordinal),
-            "The current city projection opens its own map preview with its explicit city-level precision.");
+            && (await mapPreview.InnerTextAsync()).Contains("44, 5", StringComparison.Ordinal)
+            && await mapPreview.Locator(".maps-marker").CountAsync() == 1,
+            "The current city projection opens its integrated map with explicit city-level precision.");
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await Call(app, "terrain.tours.select", new { revision = app.Revision, rows = new[] { 0 }, selected = true });
         await Call(app, "terrain.tours.create", new { revision = app.Revision, name = "Tournée cartographique fictive", date = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) });
         await Navigate("home"); await Navigate("tours");
-        await Button("Planning daté").ClickAsync(); await Button("Google Maps · tournée").ClickAsync(); await mapPreview.WaitForAsync();
+        await Button("Planning daté").ClickAsync(); await Button("Carte de la tournée").ClickAsync(); await mapPreview.WaitForAsync();
         Require((await mapPreview.InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal)
             && !(await mapPreview.InnerTextAsync()).Contains("Agent fictif", StringComparison.Ordinal),
-            "The real tour button opens its ordered site itinerary from the imported CSV without participant or ticket text.");
+            "The real tour button renders its ordered site visits from the imported CSV inside the application, without participant or ticket text.");
+        await Capture("simulation-embedded-tour-map");
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
         await Navigate("records");
@@ -314,7 +345,8 @@ internal static partial class Program
             && (await page.Locator(".business-weather-hero .analytics-metric-value").InnerTextAsync()).Trim() == "4",
             "Explicitly applying the workbook profile persists its weather/site settings in the normal workspace and recalculates weather from the original four rows.");
         await Capture("workbook-profile-applied-normal");
-        Require(externalRequests == 0 && errors.IsEmpty, "The complete real simulation journey completes without an external WebView request or JavaScript error."
+        await CheckNormalMapDefaultAsync(page, app, Navigate);
+        Require(externalRequests == 0 && errors.IsEmpty, "The complete real CSV journey has no unauthorized external request or JavaScript error; explicitly requested map tiles were intercepted locally."
             + (errors.IsEmpty ? "" : "\n" + string.Join("\n", errors)));
         await delivery;
     }

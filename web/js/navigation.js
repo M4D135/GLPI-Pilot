@@ -2,7 +2,7 @@ import {el,button,icon,dialog,select} from './ui.js';
 
 export const navigationGroups = [
   {key:'pinned',label:'Épinglés',icon:'spark',pages:[]},
-  {key:'workspace',label:'Mon quotidien',icon:'home',pages:['home','day','alerts']},
+  {key:'workspace',label:'Mon espace',icon:'home',pages:['home','day','alerts']},
   {key:'pilot',label:'Pilotage GLPI',icon:'chart',pages:['pilot-weather','pilot-summary','pilot-groups','pilot-categories','pilot-oldest','pilot-followup','pilot-participants','pilot-sites','pilot-settings']},
   {key:'collect',label:'Collecter et vérifier',icon:'download',pages:['collect','sources','records','quality','mapping','library']},
   {key:'analyze',label:'Analyser',icon:'chart',pages:['dashboard','queries','history','populations','assistant']},

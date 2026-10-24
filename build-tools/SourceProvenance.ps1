@@ -22,7 +22,7 @@ function Assert-GlpiBuildRelativePath([string]$Path) {
 function Test-GlpiBuildSourceSelection([string]$Path) {
     $parts = $Path.Split('/')
     if ($parts.Count -eq 1) {
-        return ($Path -in @('README.md', 'build.ps1', '.gitignore', 'global.json', 'NuGet.Config', 'nuget.config', 'Directory.Packages.props', 'package.json', 'package-lock.json') -or $Path -like 'Directory.Build.*')
+        return ($Path -in @('README.md', 'build.ps1', '.gitignore', '.gitattributes', 'global.json', 'NuGet.Config', 'nuget.config', 'Directory.Packages.props', 'package.json', 'package-lock.json') -or $Path -like 'Directory.Build.*')
     }
     if ($parts[0] -notin @('src', 'tests', 'web', 'docs', 'support', 'licenses', '.github', 'build-tools')) { return $false }
     foreach ($part in $parts[0..($parts.Count - 2)]) { if ($part -in @('.git', 'bin', 'obj', 'node_modules', 'artifacts', '__pycache__')) { return $false } }

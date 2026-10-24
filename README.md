@@ -1,4 +1,4 @@
-# GLPI Pilot 3.3.3 — Windows x64
+# GLPI Pilot 3.3.4 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -35,6 +35,18 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
+## Nouveautés de la version 3.3.4
+
+**Les cartes sont intégrées directement dans l’application, sans clé ni compte.** Depuis Sites, le référentiel ou les tournées, la carte Leaflet affiche les lieux enregistrés, les repères cliquables et les étapes numérotées. Elle reste dans l’écran GLPI Pilot : aucune fenêtre de navigateur n’est ouverte. Les journées et affectations conservent leurs parcours distincts ; les étapes sans coordonnées restent listées et interrompent les liaisons, sans position inventée.
+
+Le fond local Natural Earth et les repères fonctionnent hors ligne. En usage normal, ouvrir la carte charge les rues OpenStreetMap dans le même écran. **En simulation, le fond local est utilisé par défaut** ; **Afficher les rues** permet d’ajouter le fond détaillé avec Internet, puis **Fond hors ligne** le retire. Les pointillés représentent l’ordre des visites à vol d’oiseau ; ils ne constituent pas un calcul routier. Le réglage d’une clé Google et les liens vers une carte externe ont été retirés.
+
+**La section du menu s’appelle Mon espace.** Les épingles, l’ordre des rubriques et les choix de visibilité restent conservés. Le thème Domenia renforce les apparitions progressives des cartes, les transitions et les retours d’activité, sans déplacer les tableaux ni modifier les chiffres. Les effets se réduisent avec les préférences de l’application ou du système et en contraste renforcé.
+
+**La météo de stock possède des seuils de départ.** Sans règles personnalisées, le stock global utilise **100 / 200**, les incidents et demandes **50 / 100**, les catégories et équipes **10 / 20**. Le passage au nuage puis à la pluie utilise un dépassement strict, comme dans le classeur. Ces repères sont modifiables dans **Paramètres du pilotage** ; les seuils importés ou déjà enregistrés restent conservés. **Remplir les seuils vides** complète explicitement les seules cases non renseignées.
+
+Voir les [notes 3.3.4](docs/RELEASE-3.3.4.md) et le [rapport de vérification](docs/Rapport-verification.txt) pour les contrôles du commit livré.
+
 ## Nouveautés de la version 3.3.3
 
 **Le mode simulation permet de travailler dans tous les écrans à partir d’un CSV.** Les effectifs des sites peuvent être saisis et datés dans cet espace ; les ratios sont recalculés sans modifier le profil habituel. Le référentiel du profil est repris au début de la simulation, avec ses communes, sites et adresses. Les valeurs absentes du CSV restent indiquées comme indisponibles.
@@ -43,7 +55,7 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Les sites peuvent maintenant recevoir leur commune, adresse et coordonnées depuis `wad/sites.csv`.** Pour un profil déjà initialisé, une nouvelle version géographique du fichier complète les champs vides sans écraser les valeurs locales ni recréer les sites supprimés. Le [complément de sites](distribution/sites/README.md) contient les données à ajouter à `wad` ; aucun organisme ni référentiel particulier n’est intégré au moteur.
 
-**Google Maps est accessible depuis les sites et les tournées.** Les liens fonctionnent sans clé, après un clic explicite. Une carte intégrée est également proposée avec une clé Maps Embed API facultative. Les parcours conservent l’ordre des arrêts et sont découpés si nécessaire, sans perdre d’étape. Internet est nécessaire pour afficher Google Maps ; les calculs et la préparation depuis le CSV restent locaux.
+La première intégration cartographique de 3.3.3 est remplacée en 3.3.4 par les cartes directement intégrées décrites ci-dessus.
 
 **Les aperçus de lignes sont plus lisibles.** Les tableaux ouverts depuis les dashboards, requêtes et analyses utilisent une fenêtre large, des largeurs de colonne adaptées et des cellules alignées en haut. Les textes longs occupent au maximum trois lignes dans l’aperçu ; cliquer une valeur ouvre son contenu complet et son interprétation. Les exports conservent les données complètes.
 
@@ -95,7 +107,7 @@ Quand une feuille **Paramétrage** compatible est présente, l’aperçu indique
 
 La connexion et les collectes utilisent une source locale simulée ; l’inspection, le choix d’un tableau, la campagne et leur bilan sont testables. La synchronisation échange avec un central simulé. Les services externes et l’assistant produisent des résultats locaux explicitement signalés. Le parcours de mise à jour utilise des packs fictifs, une version virtuelle et un bilan consultable, avec possibilité de retour arrière. **Simulation avec données fictives** ouvre le même environnement complet, sans fichier à préparer.
 
-Le bandeau **Simulation · toutes les rubriques** reste visible. La couverture réelle de GLPI n’est pas certifiée par un fichier local ; les lectures limitées, formules sans résultat enregistré, identifiants douteux et statuts inconnus restent pris en compte dans la qualité et la météo. Les actions de simulation n’atteignent ni le portail GLPI ni le central réel. Les adaptateurs de services restent simulés ; **Ouvrir Google Maps** est un accès Internet réel demandé explicitement, limité aux lieux affichés dans son aperçu.
+Le bandeau **Simulation · toutes les rubriques** reste visible. La couverture réelle de GLPI n’est pas certifiée par un fichier local ; les lectures limitées, formules sans résultat enregistré, identifiants douteux et statuts inconnus restent pris en compte dans la qualité et la météo. Les actions de simulation n’atteignent ni le portail GLPI ni le central réel. Les adaptateurs de services restent simulés ; les cartes intégrées utilisent un fond local. **Afficher les rues** active uniquement les images OpenStreetMap dans la carte : cet accès facultatif demande Internet.
 
 **Quitter la simulation** restitue le relevé et les réglages d’origine, ainsi que la bibliothèque, les archives et le travail habituel. Les modifications d’essai, y compris celles des requêtes et tableaux, restent dans la session isolée. Un nouvel import crée une nouvelle simulation ; une sélection annulée ou un import invalide conserve l’état courant. Les exports choisis explicitement peuvent être conservés avant de quitter.
 
@@ -223,7 +235,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - File des lieux à vérifier, corrections locales par installation et identifiant unique ; import CSV du référentiel avec comparatif avant application.
 - Colonnes enrichies, indicateurs de couverture et répartitions par ville/site/territoire.
 - Initialisation facultative par `wad/sites.csv`, avec termes de détection, communes, adresses et coordonnées. Enrichissement des champs manquants sans écraser les corrections locales.
-- Liens Google Maps sans clé et carte intégrée facultative avec une clé Maps Embed API locale, pour un lieu ou un parcours. Aucun contact Google avant l’ouverture demandée.
+- Cartes intégrées Leaflet sans clé pour les sites et les tournées : repères locaux, étapes numérotées et fond détaillé OpenStreetMap facultatif. En simulation, le fond local est actif par défaut ; aucun navigateur externe n’est ouvert.
 - Tableau des sites avec stock actif, zéros, inconnus, préconisations configurables et copie de tous les identifiants du périmètre.
 - Tournées datées à partir d’un panier explicite, états et historique motivé, départ/retour, durées, calendriers de sites et étapes verrouillées. Répartition sur plusieurs jours et techniciens selon compétences, absences, plages de présence et budgets du matin et de l’après-midi ; les capacités inconnues restent exclues de la proposition.
 - Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs par défaut. Un service OSRM compatible peut fournir distances et durées routières après configuration et consentement ; sa provenance et sa date restent visibles.
@@ -270,6 +282,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.3.4](docs/RELEASE-3.3.4.md)
 - [Notes de version 3.3.3](docs/RELEASE-3.3.3.md)
 - [Notes de version 3.3.2](docs/RELEASE-3.3.2.md)
 - [Notes de version 3.3.1](docs/RELEASE-3.3.1.md)

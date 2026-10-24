@@ -198,9 +198,10 @@ internal static partial class Program
         Require(defaultIds.Length == 32 && defaultIds.Distinct().Count() == 32 && !defaultIds.Intersect(OptionalNavigationRoutes).Any()
             && await page.Locator(".nav-section[data-nav-group=collect] .nav-item[data-page=library]").CountAsync() == 1
             && await page.Locator(".nav-section[data-nav-group=workspace] .nav-item[data-page=alerts]").CountAsync() == 1
+            && await page.Locator(".nav-group-toggle[data-nav-group-toggle=workspace]").GetAttributeAsync("aria-label") == "Mon espace"
             && await Button("Personnaliser la navigation").IsVisibleAsync()
             && await page.Locator(".hero").IsVisibleAsync(),
-            "The default task-oriented menu keeps 32 unique shortcuts, hides the optional assistant, targeted reads and populations, and always exposes customization.");
+            "The default task-oriented menu names the main group Mon espace, keeps 32 unique shortcuts, hides the optional routes and always exposes customization.");
         Require(await page.EvaluateAsync<bool>("""
             () => [...document.querySelectorAll('.nav-section')].every(section => {
               const toggle = section.querySelector('.nav-group-toggle');
@@ -234,8 +235,9 @@ internal static partial class Program
 
         await OpenEditor();
         Require(await Editor().Locator("[data-nav-page]").CountAsync() == 35
+            && await Editor().Locator("[data-nav-group=workspace] h3").InnerTextAsync() == "Mon espace"
             && await Editor().Locator("[data-nav-page=assistant] input[type=checkbox], [data-nav-page=enrichment] input[type=checkbox], [data-nav-page=populations] input[type=checkbox]").EvaluateAllAsync<bool>("nodes => nodes.length===3 && nodes.every(node=>!node.checked)"),
-            "The navigation editor retains all 35 routes and presents the three optional defaults as reversible visibility choices.");
+            "The navigation editor uses Mon espace, retains all 35 routes and presents the three optional defaults as reversible visibility choices.");
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Tout afficher", Exact = true }).ClickAsync();
         await SaveEditor(); await page.ReloadAsync(); await page.Locator("body[data-ready=true]").WaitForAsync();
         Require(await page.Locator(".nav-item").CountAsync() == 35 && AppSettings.Load().Interface.HiddenNavigation.Count == 0
@@ -264,8 +266,9 @@ internal static partial class Program
         await SelectHiddenRoute("Guide", "Guide et raccourcis"); await Ready("help");
         Require(await page.Locator(".nav-item[data-page=help]").CountAsync() == 0
             && await page.Locator(".nav-section[data-nav-group=pinned] .nav-item[data-page=library]").CountAsync() == 1
+            && await page.Locator(".nav-group-toggle[data-nav-group-toggle=workspace]").GetAttributeAsync("aria-label") == "Mon espace"
             && (await page.Locator(".nav-section[data-nav-group=workspace] .nav-item").First.GetAttributeAsync("data-page")) == "day",
-            "Saved navigation survives a fresh frontend load, and a hidden screen still opens through the command palette.");
+            "Saved navigation survives a fresh frontend load under Mon espace, and a hidden screen still opens through the command palette.");
 
         var beforeCancel = JsonSerializer.Serialize(AppSettings.Load().Interface, PilotApplication.Json);
         await OpenEditor();
@@ -291,7 +294,7 @@ internal static partial class Program
             Require(await Editor().Locator(".navigation-group-card[data-nav-group=pinned] [data-nav-page=library]").CountAsync() == 0
                 && await Editor().Locator(".navigation-group-card[data-nav-group=workspace] [data-nav-page=library]").CountAsync() == 1
                 && await page.EvaluateAsync<bool>("window.__navigationDragTrace.some(event=>event.type==='dragstart' && event.trusted && event.target?.page==='library') && window.__navigationDragTrace.some(event=>event.type==='drop' && event.trusted && event.target?.page==='day' && event.prevented)"),
-                "The real page drag removes Bibliothèque from pinned shortcuts and places it once in Mon quotidien before another gesture starts.");
+                "The real page drag removes Bibliothèque from pinned shortcuts and places it once in Mon espace before another gesture starts.");
             var pageOrder = await Editor().Locator(".navigation-group-card[data-nav-group=workspace] [data-nav-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.navPage)");
             Require(Array.IndexOf(pageOrder, "library") < Array.IndexOf(pageOrder, "day"),
                 "The real page drop inserts Bibliothèque before Mon espace at the requested target.");
@@ -303,7 +306,7 @@ internal static partial class Program
             Require(await Editor().Locator("[data-nav-page]").CountAsync() == 35
                 && await Editor().Locator("[data-nav-page]").EvaluateAllAsync<bool>("nodes=>new Set(nodes.map(node=>node.dataset.navPage)).size===35")
                 && await page.EvaluateAsync<bool>("window.__navigationDragTrace.some(event=>event.type==='dragstart' && event.trusted && event.target?.focus==='group:workspace') && window.__navigationDragTrace.some(event=>event.type==='drop' && event.trusted && event.target?.group==='pinned' && event.prevented)"),
-                "The real group drag moves Mon quotidien before Épinglés without losing or duplicating a route.");
+                "The real group drag moves Mon espace before Épinglés without losing or duplicating a route.");
             await SaveEditor(); persisted = AppSettings.Load().Interface;
             Require(!persisted.PinnedNavigation.Contains("library") && persisted.NavigationGroups.GetValueOrDefault("library") == "workspace"
                 && persisted.NavigationOrder.IndexOf("library") < persisted.NavigationOrder.IndexOf("day")
@@ -363,8 +366,43 @@ internal static partial class Program
         await Call(app, "app.demo");
         await ClickNavigationAsync(page, "dashboard"); await Ready("dashboard");
         await Capture("navigation-dashboard-dark");
+        // Hold a real card entrance open long enough to change the app preference
+        // mid-animation, even on slower Windows runners. No business value is replaced.
+        await page.EvaluateAsync("document.documentElement.style.setProperty('--d-enter','30s')");
         await ClickNavigationAsync(page, "home"); await Ready("home");
-        var normalMotion = await page.EvaluateAsync<bool>("document.documentElement.dataset.domeniaMotion==='on' && getComputedStyle(document.body,'::before').animationName!=='none'");
+        await WaitForPageAsync(page, "document.querySelector('.domenia-surface-enter')?.getAnimations().some(animation=>animation.playState==='running')");
+        var normalMotion = await page.EvaluateAsync<bool>("""
+            () => {
+              window.__domeniaReadGeometry = () => JSON.stringify([...document.querySelectorAll('.page-content :is(.hero,.metric,.card,.quick-link)')].map(node => {
+                const rect=node.getBoundingClientRect(); return [rect.x,rect.y,rect.width,rect.height].map(value=>Math.round(value*100)/100);
+              }));
+              window.__domeniaReadValues = () => JSON.stringify([...document.querySelectorAll('.page-content .metric-value')].map(node=>node.textContent));
+              window.__domeniaGeometry = window.__domeniaReadGeometry();
+              window.__domeniaValues = window.__domeniaReadValues();
+              return document.documentElement.dataset.domeniaMotion==='on'
+                && getComputedStyle(document.body,'::before').animationName!=='none'
+                && [...document.querySelectorAll('.domenia-surface-enter')].every(node=>getComputedStyle(node).transform==='none');
+            }
+            """);
+        var motionPreference = persisted.Copy(); motionPreference.ReduceMotion = true;
+        await ApplyPreferences(motionPreference);
+        await WaitForPageAsync(page, "document.documentElement.dataset.domeniaMotion==='off' && !document.querySelector('.domenia-surface-enter')");
+        var interruptedMotion = await page.EvaluateAsync<bool>("""
+            () => {
+              const geometry=window.__domeniaReadGeometry(), values=window.__domeniaReadValues();
+              const before=JSON.parse(window.__domeniaGeometry), after=JSON.parse(geometry);
+              window.__domeniaInterruption = {
+                stableGeometry:window.__domeniaGeometry===geometry,
+                stableValues:window.__domeniaValues===values,
+                changedBounds:after.map((bounds,index)=>({index,before:before[index],after:bounds})).filter(value=>JSON.stringify(value.before)!==JSON.stringify(value.after)),
+                running:document.getAnimations().filter(animation=>animation.playState==='running').map(animation=>animation.animationName||animation.transitionProperty||'script')
+              };
+              return window.__domeniaInterruption.stableGeometry && window.__domeniaInterruption.stableValues
+                && window.__domeniaInterruption.running.length===0;
+            }
+            """);
+        await page.EvaluateAsync("document.documentElement.style.removeProperty('--d-enter')");
+        await ApplyPreferences(persisted);
         await page.EmulateMediaAsync(new() { ReducedMotion = ReducedMotion.Reduce });
         await WaitForPageAsync(page, "document.documentElement.dataset.domeniaMotion==='off'");
         var reducedMotion = await page.EvaluateAsync<bool>("getComputedStyle(document.body,'::before').animationName==='none'");
@@ -373,9 +411,11 @@ internal static partial class Program
         var contrast = persisted.Copy(); contrast.HighContrast = true;
         await ApplyPreferences(contrast);
         await WaitForPageAsync(page, "document.documentElement.dataset.domeniaMotion==='off'");
-        Require(normalMotion && reducedMotion && await page.Locator(".hero").IsVisibleAsync()
+        Console.WriteLine($"Domenia motion verification: normal={normalMotion}, interrupted={interruptedMotion}, reduced={reducedMotion}; "
+            + await page.EvaluateAsync<string>("JSON.stringify(window.__domeniaInterruption)"));
+        Require(normalMotion && interruptedMotion && reducedMotion && await page.Locator(".hero").IsVisibleAsync()
             && await page.EvaluateAsync<bool>("getComputedStyle(document.body,'::before').animationName==='none'"),
-            "Domenia decorations animate in the normal theme, stop for reduced motion and high contrast, and never hide the actual home content.");
+            "Domenia card entrances keep their geometry and real values, cancel immediately when the app preference changes, and remain stopped under reduced motion or high contrast.");
         await Capture("navigation-home-contrast");
         await ApplyPreferences(persisted);
 

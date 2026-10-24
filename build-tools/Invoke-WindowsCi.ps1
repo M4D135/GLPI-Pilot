@@ -106,7 +106,7 @@ function Assert-PackContents {
         $required = @(
             'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
-            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md', 'wad/docs/RELEASE-3.2.2.md', 'wad/docs/RELEASE-3.3.0.md', 'wad/docs/RELEASE-3.3.1.md', 'wad/docs/RELEASE-3.3.2.md', 'wad/docs/RELEASE-3.3.3.md',
+            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md', 'wad/docs/RELEASE-3.2.2.md', 'wad/docs/RELEASE-3.3.0.md', 'wad/docs/RELEASE-3.3.1.md', 'wad/docs/RELEASE-3.3.2.md', 'wad/docs/RELEASE-3.3.3.md', 'wad/docs/RELEASE-3.3.4.md',
             'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
             'wad/version.json', 'wad/SHA256SUMS.txt',
             'wad/web/index.html', 'wad/web/js/app.js', 'wad/web/js/bridge.js', 'wad/web/css/app.css',
@@ -122,11 +122,16 @@ function Assert-PackContents {
             'wad/web/js/command-palette.js', 'wad/web/js/library-ticket.js', 'wad/web/css/command-palette.css',
             'wad/web/js/library-resolution.js', 'wad/web/css/library-resolution.css',
             'wad/web/js/local-file-test.js', 'wad/web/js/pages/analytics-business.js',
-            'wad/web/maps.html', 'wad/web/js/maps-frame.js', 'wad/web/js/pages/google-maps.js', 'wad/web/css/google-maps.css'
+            'wad/web/js/pages/maps.js', 'wad/web/css/maps.css',
+            'wad/web/vendor/leaflet/leaflet.js', 'wad/web/vendor/leaflet/leaflet.css',
+            'wad/web/vendor/leaflet/images/layers.png', 'wad/web/vendor/leaflet/images/layers-2x.png',
+            'wad/web/vendor/leaflet/images/marker-icon.png', 'wad/web/vendor/leaflet/images/marker-icon-2x.png',
+            'wad/web/vendor/leaflet/images/marker-shadow.png', 'wad/web/vendor/natural-earth/land.js',
+            'wad/licenses/Leaflet-LICENSE.txt', 'wad/licenses/Embedded-Maps-Notices.txt', 'wad/licenses/NaturalEarth-PUBLIC-DOMAIN.txt'
         )
         if ($Edition -eq 'DEV') {
             $required += @(
-                'wad/sources/build.ps1', 'wad/sources/README.md',
+                'wad/sources/build.ps1', 'wad/sources/README.md', 'wad/sources/.gitattributes',
                 'wad/sources/src/GlpiPilot/GlpiPilot.csproj',
                 'wad/sources/tests/WindowsStartupChecks/Program.cs',
                 'wad/sources/build-tools/Invoke-WindowsCi.ps1', 'wad/sources/web/index.html',
@@ -152,8 +157,10 @@ function Assert-PackContents {
                 'wad/sources/tests/WebViewChecks/Program.LibraryWorkflows.cs',
                 'wad/sources/tests/WebViewChecks/Program.Resolution.cs',
                 'wad/sources/tests/WebViewChecks/Program.LocalFileTest.cs',
-                'wad/sources/tests/WebViewChecks/Program.GoogleMaps.cs',
-                'wad/sources/tests/RuntimeSessionChecks/GoogleMapsChecks.cs',
+                'wad/sources/tests/WebViewChecks/Program.Maps.cs',
+                'wad/sources/tests/RuntimeSessionChecks/EmbeddedMapsChecks.cs',
+                'wad/sources/src/GlpiPilot/Core/EmbeddedMapsService.cs',
+                'wad/sources/src/GlpiPilot/Runtime/PilotApplication.Maps.cs',
                 'wad/sources/tests/WebViewChecks/Program.BusinessPreview.cs',
                 'wad/sources/tests/RuntimeSessionChecks/OfflineImportChecks.cs',
                 'wad/sources/tests/RuntimeSessionChecks/SimulationChecks.cs',
@@ -174,6 +181,14 @@ function Assert-PackContents {
             )
         }
         foreach ($name in $required) { if ($entries -notcontains $name) { throw "Incomplete $Edition pack: $name is missing." } }
+        # Independent upstream identities published by Leaflet, in addition to the pack manifest.
+        $leafletHashes = @{
+            'wad/web/vendor/leaflet/leaflet.js' = 'db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a'
+            'wad/web/vendor/leaflet/leaflet.css' = 'a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6'
+        }
+        foreach ($name in $leafletHashes.Keys) {
+            if ((Get-EntryHash $archive.GetEntry($name)) -ne $leafletHashes[$name]) { throw "Unexpected Leaflet 1.9.4 resource in $Edition pack: $name" }
+        }
         if ($Edition -eq 'PROD' -and ($entries | Where-Object { $_ -like 'wad/sources/*' })) { throw 'PROD unexpectedly contains development sources.' }
         if ($entries | Where-Object { $_ -match '(^|/)(settings\.json|Browser|Profiles|Exports)(/|$)|(^|/)\.node\.exe\.' }) {
             throw 'Application state or a partial transfer is present in the pack.'
@@ -238,7 +253,7 @@ try {
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '\d+/\d+ Foundation checks passed\.' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '66/66 vérifications de configuration réussies.' },
-                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '140/140' },
+                @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '142/142' },
                 @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '45/45 checks passed.' },
                 @{ Project = 'WorkbookProfileChecks'; Log = 'workbook-profile-checks.log'; Summary = '21/21 workbook profile checks passed.' },
                 @{ Project = 'PreviewQueryChecks'; Log = 'preview-query-checks.log'; Summary = '44/44' },

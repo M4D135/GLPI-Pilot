@@ -22,7 +22,7 @@ public sealed partial class PilotApplication
 
     private void RegisterTerrainTourOperations()
     {
-        RegisterGoogleMapsOperations();
+        RegisterMapsOperations();
         TerrainRegister("terrain.tours.state", (a, ct) => TerrainTourState());
         TerrainRegister("terrain.tours.list", TerrainTourList);
         TerrainRegister("terrain.tours.projection", TerrainProjection);

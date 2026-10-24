@@ -6,7 +6,7 @@ import { renderOldestGroups } from './analytics-oldest.js';
 import { participationTable, participationRosterEditor } from './analytics-participation.js';
 import { sitesTable } from './analytics-sites.js';
 import { navigationVisible } from '../navigation.js';
-import { openSiteMaps, openGoogleMapsSettings } from './google-maps.js';
+import { openSiteMap } from './maps.js';
 
 const kindNames = { metric: 'Indicateur', distribution: 'Répartition', weather: 'Météo', timeline: 'Chronologie', attention: 'Points d’attention', quality: 'Qualité',
   note: 'Note', matrix: 'Matrice', histogram: 'Histogramme', boxplot: 'Boîtes à moustaches', scatter: 'Nuage de points', history: 'Historique', map: 'Carte locale',
@@ -41,6 +41,9 @@ export async function renderDashboard(ctx) {
     historyController?.abort(); let committed = false;
     try {
       await call(ctx, 'dashboard.layout.save', { personal, layout }); committed = true;
+      // A saved native layout can carry its own edited threshold values.
+      // Its starter provenance must not linger until the next navigation.
+      weatherDefaultsNotice?.remove();
       const fresh = await call(ctx, 'dashboard.get', { ...params, boardId: board.id });
       if (ctx.signal.aborted) return;
       Object.assign(model, fresh); Object.assign(layout, fresh.layout); board = layout.boards.find(item => item.id === fresh.boardId); ensureSections(board);
@@ -119,15 +122,17 @@ export async function renderDashboard(ctx) {
     command(ctx, 'Effacer les filtres', async () => { if (board.filters.length) { board.filters = []; await call(ctx, 'dashboard.layout.save', { personal, layout }); } go({ crossFilters: [] }); }, { disabled: model.commonFilters.length === 0 }),
     command(ctx, business?.key === 'sites' ? 'Effectifs des sites (facultatif)' : 'Effectifs datés',
       () => ctx.navigate('populations', business?.key === 'sites' ? { returnPage: 'pilot-sites' } : {})),
-    ...(business?.key === 'sites' ? [command(ctx, 'Cartes des sites', () => openSiteMaps(ctx), { icon: 'map' }),
-      command(ctx, 'Réglages Google Maps', () => openGoogleMapsSettings(ctx), { icon: 'settings' })] : []),
     navigationVisible('assistant', ctx.state.settings?.interface) ? command(ctx, 'Assistant sur ce périmètre', () => ctx.navigate('assistant', runArgs)) : null);
   if (advancedTools) advancedTools.append(el('div', { class: 'business-dashboard-tools-content' }, expertControls, scopeTools, visibilityHost, controlsAccess));
   ctx.root.append(controls, provenanceRow, receptionIssue, freshnessIssue);
   if (business?.focusWarning) ctx.root.append(caption(business.focusWarning, 'warning'));
+  const weatherDefaultsNotice = business?.key === 'weather' && business.usingWeatherDefaults
+    ? caption('Seuils de départ à adapter dans Paramètres du pilotage.') : null;
+  if (weatherDefaultsNotice) ctx.root.append(weatherDefaultsNotice);
   if (!business) ctx.root.append(scopeTools, visibilityHost);
-  if (business?.key === 'sites') ctx.root.append(toolbar(command(ctx, 'Tickets actifs · demandeur puis site', () => rowDialog(ctx, 'dashboard.rows',
-    { ...runArgs, kind: 'metric', key: 'active', sortKey: 'requester-site' }, 'Tickets actifs · demandeur puis site'))));
+  if (business?.key === 'sites') ctx.root.append(toolbar(command(ctx, 'Carte des sites du référentiel', () => openSiteMap(ctx), { icon: 'map' }),
+    command(ctx, 'Tickets actifs · demandeur puis site', () => rowDialog(ctx, 'dashboard.rows',
+      { ...runArgs, kind: 'metric', key: 'active', sortKey: 'requester-site' }, 'Tickets actifs · demandeur puis site'))));
   ctx.root.append(editorHost, selectionHost);
   if (model.comparison) ctx.root.append(comparisonCard(model.snapshot, model.comparison));
   ctx.root.append(status, boardHost);

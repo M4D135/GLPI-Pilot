@@ -48,6 +48,7 @@ public sealed partial class PilotApplication
         return new { revision = Revision, hasSource = Result is not null, business, groups = observed.Groups, categories = observed.Categories,
             focus, sites = Settings.Cities.Sites.Select(site => site.Copy()).ToArray(), cities = Settings.Cities.Cities.Select(city => new { city.Id, city.Name }).ToArray(),
             fingerprint = AnalyticsBusinessSettingsFingerprint(), configured = Settings.Dashboard.Business.WeatherRules.Count > 0,
+            usingWeatherDefaults = BusinessDashboardTemplates.UsesDefaultWeatherThresholds(settings), weatherThresholdPresets = BusinessDashboardTemplates.WeatherThresholdPresets,
             views = BusinessDashboardTemplates.Views, emptyWeather = Result is null ? BusinessDashboardTemplates.Create("weather", settings, observed) : null };
     }
     private string AnalyticsBusinessSettingsFingerprint() => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(

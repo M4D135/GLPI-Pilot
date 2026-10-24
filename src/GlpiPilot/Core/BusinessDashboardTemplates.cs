@@ -5,10 +5,27 @@ namespace GlpiPilot.Core;
 
 public sealed record BusinessDashboardView(string Key, string Title, string Description);
 public sealed record BusinessDashboardValues(IReadOnlyList<string> Groups, IReadOnlyList<string> Categories);
+public sealed record BusinessWeatherThresholdPreset(string Kind, string SourceKey, double OrangeAbove, double RedAbove);
 
-/// <summary>Generic native views. Organization names and thresholds come only from local settings or the current source.</summary>
+/// <summary>Generic native views. Local profiles take precedence over editable starter thresholds.</summary>
 public static class BusinessDashboardTemplates
 {
+    // These are starting points for stock counts, not capacity or SLA targets.
+    // Apply them only while constructing an unconfigured native profile. A saved
+    // rule with null or zero thresholds is an explicit choice and stays intact.
+    public static IReadOnlyList<BusinessWeatherThresholdPreset> WeatherThresholdPresets { get; } = new[]
+    {
+        new BusinessWeatherThresholdPreset("metric", "active", 100, 200),
+        new("metric", "active-incidents", 50, 100), new("metric", "active-requests", 50, 100),
+        new("type", "active", 50, 100), new("category", "active", 10, 20), new("team", "active", 10, 20),
+        new("metric", "pending", 10, 20), new("metric", "without-group", 10, 20), new("metric", "without-technician", 10, 20),
+        new("metric", "active-multiple-groups", 10, 20), new("metric", "active-no-author", 10, 20),
+        new("metric", "high", 10, 20), new("metric", "old", 10, 20), new("metric", "stale", 10, 20)
+    };
+
+    public static bool UsesDefaultWeatherThresholds(DashboardSettings settings) => settings.Business.WeatherRules.Count == 0
+        && !settings.Business.BoardOverrides.Any(board => board.Id == "business-weather") && ExistingWeather(settings.Layout) is null;
+
     public static readonly BusinessDashboardView[] Views =
     {
         new("weather", "Météo", "Stock, types, catégories et équipes : les volumes du relevé, leurs seuils et les actions du service."),
@@ -69,6 +86,11 @@ public static class BusinessDashboardTemplates
             rules.Add(new() { Id = StableId("category", category), Label = category, Kind = "category", Values = new() { category }, IncludeDescendants = true });
         foreach (var group in observed.Groups.Take(18))
             rules.Add(new() { Id = StableId("team", group), Label = group, Kind = "team", Values = new() { group } });
+        foreach (var rule in rules)
+        {
+            var preset = WeatherThresholdPresets.Single(preset => preset.Kind == rule.Kind && preset.SourceKey == rule.SourceKey);
+            rule.OrangeAbove = preset.OrangeAbove; rule.RedAbove = preset.RedAbove;
+        }
         return rules;
     }
 

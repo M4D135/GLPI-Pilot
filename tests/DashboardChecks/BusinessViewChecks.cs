@@ -28,15 +28,58 @@ internal static class BusinessViewChecks
             }
             check(BusinessDashboardTemplates.Views.Length == 8 && JsonSerializer.Serialize(settings) == before, "All native views leave custom settings intact.");
         });
-        test("Native weather adapts groups and category branches without inventing thresholds", () =>
+        test("Unconfigured native weather uses editable starter thresholds for all stock cards", () =>
         {
             var settings = Settings(); var observed = BusinessDashboardTemplates.Observe(source, settings);
             check(observed.Groups.Count == 3 && observed.Groups.Contains("Groupe Bêta"), "Groups are split using the source interpretation.");
+            var before = JsonSerializer.Serialize(settings);
             var board = BusinessDashboardTemplates.Create("weather", settings, observed);
             var cards = board.Widgets.Where(widget => widget.Presentation == "weather-volume").ToArray();
-            check(cards.Length >= 8 && cards.All(widget => widget.WarningValue is null && widget.CriticalValue is null), "Source values never invent service thresholds.");
+            check(cards.Length >= 8 && cards.All(widget => widget.WarningValue.HasValue && widget.CriticalValue.HasValue), "Every native stock, type, category and team card has a usable starter pair.");
+            check(cards.Single(widget => widget.Filters.Count == 0 && widget.SourceKey == "active") is { WarningValue: 100, CriticalValue: 200 }
+                && cards.Where(widget => widget.SourceKey is "active-incidents" or "active-requests").All(widget => widget.WarningValue == 50 && widget.CriticalValue == 100)
+                && cards.Where(widget => widget.Filters.Count > 0).All(widget => widget.WarningValue == 10 && widget.CriticalValue == 20), "Starter pairs distinguish the global stock, types, and categories or teams.");
             check(cards.Any(widget => widget.SourceKey == "active" && widget.Filters.Count == 0 && widget.Span == 12), "The active stock is a full-width hero card.");
             check(board.FreshnessWarningHours == 48 && board.Sections.Select(section => section.Key).SequenceEqual(new[] { "stock", "categories", "teams", "context", "actions" }), "The report hierarchy and freshness reminder are native.");
+            var legacyEmpty = JsonSerializer.Deserialize<DashboardSettings>("{\"Business\":{\"WeatherRules\":[]}}")!; legacyEmpty.Normalize();
+            check(BusinessDashboardTemplates.UsesDefaultWeatherThresholds(settings) && BusinessDashboardTemplates.UsesDefaultWeatherThresholds(legacyEmpty)
+                && BusinessDashboardTemplates.WeatherRules(legacyEmpty, observed).All(rule => rule.OrangeAbove.HasValue && rule.RedAbove.HasValue)
+                && JsonSerializer.Serialize(settings) == before, "New and old unconfigured profiles receive the same virtual defaults without modifying their saved settings.");
+        });
+        test("Native starter thresholds use strict Excel boundaries without certifying missing or incomplete counts", () =>
+        {
+            var settings = Settings(); var board = BusinessDashboardTemplates.Create("weather", settings, BusinessDashboardTemplates.Observe(source, settings));
+            foreach (var widget in board.Widgets.Where(widget => widget.Presentation == "weather-volume"))
+            {
+                var orange = widget.WarningValue!.Value; var red = widget.CriticalValue!.Value;
+                check(widget.EvaluateVolumeWeather(orange, true).State == "sun" && widget.EvaluateVolumeWeather(orange + 1, true).State == "watch"
+                    && widget.EvaluateVolumeWeather(red, true).State == "watch" && widget.EvaluateVolumeWeather(red + 1, true).State == "rain", "Only strictly exceeding each starter value changes its weather state.");
+                check(widget.EvaluateVolumeWeather(0, true).State == "sun" && widget.EvaluateVolumeWeather(null, true).State == "unknown"
+                    && widget.EvaluateVolumeWeather(0, false).State == "partial", "A known empty stock, a missing measure and an incomplete reading remain distinct.");
+            }
+        });
+        test("Explicit blank zero and custom weather thresholds are never replaced by starter defaults", () =>
+        {
+            var settings = Settings(); settings.Business.WeatherRules = new()
+            {
+                new() { Id = "native-stock", Label = "Stock conservé" },
+                new() { Id = "native-incidents", Label = "Seuil zéro", SourceKey = "active-incidents", OrangeAbove = 0, RedAbove = 0 },
+                new() { Id = "partial", Label = "Seuil partiel", OrangeAbove = null, RedAbove = 5 },
+                new() { Id = "disabled", Label = "Météo désactivée", OrangeAbove = 12, RedAbove = 24, WeatherEnabled = false }
+            };
+            settings = JsonSerializer.Deserialize<DashboardSettings>(JsonSerializer.Serialize(settings))!; settings.Normalize(); settings.Business.Validate();
+            var before = JsonSerializer.Serialize(settings); var observed = BusinessDashboardTemplates.Observe(source, settings);
+            var rules = BusinessDashboardTemplates.Profile(settings, observed).WeatherRules;
+            check(rules[0].OrangeAbove is null && rules[0].RedAbove is null && rules[1].OrangeAbove == 0 && rules[1].RedAbove == 0
+                && rules[2].OrangeAbove is null && rules[2].RedAbove == 5 && !rules[3].WeatherEnabled && rules[3].OrangeAbove == 12,
+                "Saved values retain intentional blanks, valid zeroes, partial pairs and disabled weather, including former native IDs.");
+            check(!BusinessDashboardTemplates.UsesDefaultWeatherThresholds(settings) && JsonSerializer.Serialize(settings) == before, "Configured profiles are never reported or mutated as starter profiles.");
+            var custom = Settings(); var board = BusinessDashboardTemplates.Create("weather", custom, observed);
+            foreach (var widget in board.Widgets.Where(widget => widget.Presentation == "weather-volume")) widget.WarningValue = widget.CriticalValue = null;
+            custom.Business.BoardOverrides.Add(board);
+            check(!BusinessDashboardTemplates.UsesDefaultWeatherThresholds(custom)
+                && BusinessDashboardTemplates.Create("weather", custom, observed).Widgets.Where(widget => widget.Presentation == "weather-volume").All(widget => widget.WarningValue is null && widget.CriticalValue is null),
+                "An explicitly customized native board is preserved even when its thresholds are empty.");
         });
         test("Native team priority includes hidden teams and keeps exact membership for the next rule", () =>
         {
@@ -73,6 +116,7 @@ internal static class BusinessViewChecks
             board.FreshnessWarningHours = 72;
             board.Widgets.Add(new() { Kind = "note", Note = "Action fictive conservée", Title = "Analyse" });
             settings.Layout.Boards.Add(board); var before = JsonSerializer.Serialize(board);
+            check(!BusinessDashboardTemplates.UsesDefaultWeatherThresholds(settings), "Legacy imported weather is not labelled with generic starter thresholds.");
             var copy = BusinessDashboardTemplates.Create("weather", settings, BusinessDashboardTemplates.Observe(source, settings));
             check(copy.Widgets.Count > board.Widgets.Count && copy.Widgets[0].WarningValue == 8 && copy.Widgets[1].Hidden && copy.Name == "Météo", "Existing rules and visibility migrate into the complete native hierarchy without requiring another JSON import.");
             check(copy.FreshnessWarningHours == 72 && copy.Widgets.Any(widget => widget.Kind == "note" && widget.Note == "Action fictive conservée"), "Legacy notes and freshness remain available in the native summary and settings.");

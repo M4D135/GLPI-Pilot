@@ -110,7 +110,19 @@ La fermeture native émet `app.beforeClose` avec un nonce ; la page annule les t
 
 ## Environnement Windows et profil de test
 
-Le pack impose `wad/runtime/webview2/msedgewebview2.exe`. La vue locale est associée à `https://glpi-pilot.local` ; aucune ressource externe n’est admise. La CSP refuse le code inline et eval. Les styles dynamiques passent par les propriétés CSSOM des éléments.
+Le pack impose `wad/runtime/webview2/msedgewebview2.exe`. La vue locale est associée à `https://glpi-pilot.local`. La CSP refuse le code inline, eval, les cadres et les connexions de scripts. Les styles dynamiques passent par les propriétés CSSOM des éléments. Depuis 3.3.4, une seule exception réseau est admise : les images PNG du fond OpenStreetMap pendant l’affichage demandé d’une carte, selon le contrat ci-dessous.
+
+## Cartes intégrées — 3.3.4
+
+Leaflet 1.9.4 et le fond terrestre Natural Earth sont livrés dans `web/vendor`. `maps.preview` retourne uniquement des lieux du référentiel et leurs coordonnées, groupés par parcours. Les identifiants des agents, tickets et notes ne sont pas inclus. Le type `sites` accepte une sélection exacte facultative ; une sélection vide reste vide. Les parcours conservent chaque étape et sa séquence, même sans coordonnées. Aucune adresse seule n’est transformée silencieusement en position de commune.
+
+L’interface affiche la carte dans un dialogue DOM de la vue principale, avec liste synchronisée et pointillés d’ordre des visites. Elle ne crée ni iframe, ni vue native secondaire, ni fenêtre de navigateur. Les anciennes opérations de clé et d’ouverture Google ne sont plus enregistrées.
+
+`maps.tiles` active ou retire une autorisation d’images liée au jeton d’aperçu, à la révision, au référentiel et aux versions des brouillons. Un aperçu non activé expire après 30 minutes ; une carte active reste utilisable jusqu’à sa fermeture ou un changement de contexte. Le nettoyage détache la couche, puis retire l’autorisation même après l’annulation de la page. L’instance de simulation dispose de ses propres jetons, ne reprend aucune autorisation ordinaire et ne la restaure pas en sortie.
+
+Le garde natif accepte uniquement des requêtes GET de type Image vers `https://tile.openstreetmap.org/z/x/y.png`, avec bornes de zoom et de coordonnées valides, sans paramètre, fragment, identifiant ni port alternatif. Les ressources externes de type script, document ou cadre restent interdites. Les métadonnées HTTP normales sont conservées, le User-Agent identifie GLPI-Pilot et le cache WebView reste actif. Aucun préchargement géographique n’est proposé. Le serveur reçoit les indices des tuiles visibles ; les marqueurs et leur texte restent locaux.
+
+Le clic carte en usage normal peut activer directement les rues. En simulation, la vue initiale reste entièrement locale et **Afficher les rues** demande cette option explicitement. Une erreur de tuile retire le fond distant et conserve le plan local. L’attribution OpenStreetMap reste visible avec la couche active ; les notices de licence sont incluses dans le pack.
 
 Le port CDP de vérification est disponible uniquement avec `GLPI_PILOT_TEST_MODE=1`, une racine temporaire `GLPI-Pilot-Checks-*` sans lien et `--test-port`. Les harnais créent et nettoient leurs propres profils ; ils ne déplacent pas le profil réel. Les variables externes de démarrage WebView sont retirées avant de créer le moteur.
 

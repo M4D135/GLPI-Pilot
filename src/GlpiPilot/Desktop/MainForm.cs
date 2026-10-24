@@ -92,7 +92,20 @@ internal sealed class MainForm : Form, IPilotHost
             core.Settings.IsReputationCheckingRequired = false;
             core.SetVirtualHostNameToFolderMapping(WebHost, root, CoreWebView2HostResourceAccessKind.Deny);
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
-            core.WebResourceRequested += (_, e) => { if (!IsLocal(e.Request.Uri)) e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", ""); };
+            core.WebResourceRequested += (_, e) =>
+            {
+                if (IsLocal(e.Request.Uri)) return;
+                if (e.ResourceContext == CoreWebView2WebResourceContext.Image && e.Request.Method == "GET"
+                    && _application.AllowsMapTileRequest(e.Request.Uri))
+                {
+                    // Only visible OSM raster tiles use the network. Keep WebView's HTTP cache,
+                    // origin referrer and normal conditional requests; never prefetch a region.
+                    e.Request.Headers.SetHeader("User-Agent", core.Settings.UserAgent
+                        + " GLPI-Pilot/" + AppPaths.ApplicationVersion + " (+https://github.com/M4D135/GLPI-Pilot)");
+                    return;
+                }
+                e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
+            };
             core.NavigationStarting += (_, e) => { if (!IsLocal(e.Uri)) e.Cancel = true; };
             core.FrameNavigationStarting += (_, e) => e.Cancel = true;
             core.NewWindowRequested += (_, e) => e.Handled = true;
@@ -222,8 +235,6 @@ internal sealed class MainForm : Form, IPilotHost
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http") || uri.UserInfo.Length > 0) throw new InvalidDataException("Lien externe invalide.");
         return UiAsync(() => { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); return true; });
     }
-    public Task ShowGoogleMapAsync(GoogleMapFrame frame)
-        => UiAsync(() => { var map = new GoogleMapsForm(frame); map.Show(this); return true; });
     public async Task CloseAsync() => await UiAsync(() => { BeginInvoke(Close); return true; });
     public Task<byte[]> CapturePngAsync() => UiTaskAsync(async () => { using var image = new MemoryStream(); await _web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image); return image.ToArray(); });
     public async Task PrintPdfAsync(string path) => await UiTaskAsync(async () => { var settings = _web.CoreWebView2.Environment.CreatePrintSettings(); settings.ShouldPrintBackgrounds = true; if (!await _web.CoreWebView2.PrintToPdfAsync(path, settings)) throw new IOException("Le document PDF n’a pas été créé."); return true; });

@@ -234,7 +234,7 @@ Add("Busy events finish one operation before announcing the next", async f =>
 
 tests.AddRange(OfflineImportChecks.Create());
 tests.AddRange(SimulationChecks.Create());
-tests.AddRange(GoogleMapsChecks.Create());
+tests.AddRange(EmbeddedMapsChecks.Create());
 tests.AddRange(LibraryRuntimeChecks.Create());
 tests.AddRange(LibraryCaptureRuntimeChecks.Create());
 tests.AddRange(SharedOperationsRuntimeChecks.Create());
@@ -244,7 +244,7 @@ if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await SessionBrowserChe
 if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await LibraryCaptureRuntimeChecks.CreateBrowser(chromium));
 else Console.WriteLine("SKIP Chromium checks: set GLPI_TEST_CHROMIUM to a local test browser.");
 if (args.Contains("--simulation-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Simulation:", StringComparison.Ordinal)).ToList();
-if (args.Contains("--maps-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Google Maps:", StringComparison.Ordinal)).ToList();
+if (args.Contains("--maps-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Embedded maps:", StringComparison.Ordinal)).ToList();
 int failures = 0;
 foreach (var test in tests)
 {

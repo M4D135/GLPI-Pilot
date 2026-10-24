@@ -1,7 +1,7 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, form, confirm, formatNumber, formatDate } from '../ui.js';
 import { page, pager, lookup, referenceField, details, facts, listText, readList, numberOrNull, minuteText, timeText, dayText, stateLabels, text } from './terrain-common.js';
 import { publishSharedOperation } from './shared-operations.js';
-import { openGoogleMaps, openGoogleMapsSettings } from './google-maps.js';
+import { openMap } from './maps.js';
 
 export async function renderTours(ctx) {
   const p = page(ctx, 'Tournées et interventions', 'Préparez un panier, ordonnez les étapes et vérifiez les horaires, les compétences et les capacités déclarées avant le départ.');
@@ -55,7 +55,7 @@ export async function renderTours(ctx) {
     card('Regroupement par ville', toolbar(field('Ordonner', order), button('Calculer cet ordre', p.act(async () => { manualOrder = false; await loadProjection(); }))), firstCity.element, projection,
       toolbar(button('Mémoriser cet ordre', p.act(async () => { const result = await p.call('terrain.tours.projectionSave', { revision: state.revision }); p.message(`Ordre conservé pour ${result.cities} villes et ce périmètre.`); })),
         button('Exporter les villes et tickets…', p.act(async () => { const result = await p.call('terrain.tours.projectionExport', { revision: state.revision }); if (!result.cancelled) p.message(`Regroupement enregistré : ${result.path}`); })),
-        button('Google Maps · ordre des communes', p.act(() => openGoogleMaps(ctx, { kind: 'projection', revision: state.revision }))))),
+        button('Carte · ordre des communes', p.act(() => openMap(ctx, { kind: 'projection', revision: state.revision })), { icon: 'map' }))),
     card('Panier de tickets', toolbar(field('Rechercher', search), field('Afficher uniquement le panier', selectedOnly),
       button('Filtrer', p.act(async () => { basketOffset = 0; await loadBasket(); })), button('Toutes les villes', p.act(async () => { selectedCity = ''; basketOffset = 0; await loadBasket(); }))),
       toolbar(button('Ajouter la page au panier', p.act(async () => { const result = await p.call('terrain.tours.select', { revision: state.revision, rows: visibleBasket.map(row => row.row), selected: true }); state.selected = result.selected; paintSummary(); await loadBasket(); })),
@@ -133,7 +133,7 @@ export async function renderTours(ctx) {
       }), { icon: 'users' }),
       button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' })),
       button('Dupliquer', p.act(duplicate)), button('Changer d’état', p.act(lifecycle), { disabled: !state.loaded }),
-      button('Google Maps · tournée', p.act(async () => { await applyHeader(); await openGoogleMaps(ctx, args({ kind: 'tour' })); })),
+      button('Carte de la tournée', p.act(async () => { await applyHeader(); await openMap(ctx, args({ kind: 'tour' })); }), { icon: 'map' }),
       button('Exporter le briefing HTML…', p.act(() => exportTour('html')), { disabled: !state.loaded }), button('Exporter le calendrier ICS…', p.act(() => exportTour('ics')), { disabled: !state.loaded })
     );
     editor.append(card(tour.name, facts([['État', tour.stateLabel], ['Tickets', tour.tickets], ['Étapes', tour.stops], ['Relevé de préparation', formatDate(tour.sourceExtractedAt)]]), actionBar,
@@ -295,9 +295,7 @@ export async function renderTours(ctx) {
     ], settings);
     const consent = input('', { type: 'checkbox' }); editor.element.addEventListener('input', () => { consent.checked = false; });
     const serviceStatus = el('div', { role: 'status' });
-    provider.replaceChildren(card('Google Maps', el('p', { text: 'Ouvrez les lieux et les tournées dans Google Maps sans clé. La carte intégrée est facultative et nécessite votre clé Maps Embed API. Aucune connexion n’est lancée avant votre clic.' }),
-      button('Réglages Google Maps', p.act(() => openGoogleMapsSettings(ctx)))),
-      card('Services facultatifs', el('p', { text: 'Le calcul routier envoie uniquement les coordonnées et le profil routier. La météo envoie les coordonnées et dates des visites. Les fournisseurs restent vides par défaut ; chaque demande est déclenchée ici.' }), editor.element,
+    provider.replaceChildren(card('Services facultatifs', el('p', { text: 'Le calcul routier envoie uniquement les coordonnées et le profil routier. La météo envoie les coordonnées et dates des visites. Les fournisseurs restent vides par défaut ; chaque demande est déclenchée ici.' }), editor.element,
       field('J’autorise l’envoi des coordonnées et dates aux adresses saisies pour cette demande.', consent),
       toolbar(button('Enregistrer les adresses', p.act(async () => { await p.call('terrain.services.save', { settings: editor.read() }); consent.checked = false; p.message('Adresses enregistrées. L’autorisation de transmission n’est pas conservée.'); })),
         button('Calculer les routes de la tournée', p.act(() => request('route')), { disabled: !state.draft || !state.loaded }),
