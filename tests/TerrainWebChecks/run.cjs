@@ -134,10 +134,14 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     await lastDialog().getByText('Commune non renseignée', { exact: true }).waitFor();
     await lastDialog().getByLabel('Nom', { exact: true }).fill('Atelier indépendant');
     await lastDialog().getByLabel('Alias et variantes', { exact: true }).fill('AI');
+    const siteNameHelp = await lastDialog().getByText('Le nom du site est reconnu automatiquement. Ajoutez ici ses autres termes de détection : une variante par ligne ou séparée par un point-virgule ; 12 au maximum.', { exact: true }).isVisible();
     await lastDialog().getByRole('button', { name: 'Ajouter au brouillon', exact: true }).click();
     await page.getByText('Atelier indépendant', { exact: true }).waitFor();
     const independent = (await call('terrain.reference.list', { kind: 'site', search: 'Atelier indépendant' })).items[0];
-    ok(independent.parent === 'Commune non renseignée', 'site form accepts an explicit missing commune without manufacturing a city');
+    ok(independent.parent === 'Commune non renseignée' && siteNameHelp
+      && await page.getByRole('columnheader', { name: 'Termes de détection', exact: true }).count() === 1
+      && await page.getByRole('cell', { name: 'Atelier indépendant ; AI', exact: true }).count() === 1,
+      'site form keeps an optional commune and displays its canonical name plus aliases as detection terms');
     await page.getByRole('textbox', { name: 'Titre à tester', exact: true }).fill('AI imprimante');
     await page.getByRole('button', { name: 'Tester le brouillon', exact: true }).click();
     await page.locator('mark').filter({ hasText: 'AI' }).waitFor();

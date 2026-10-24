@@ -27,6 +27,8 @@ internal static class Program
             var prepared = false;
             try { var backup = StartupBackupService.Prepare(AppPaths.DataRoot, AppPaths.ApplicationVersion); prepared = true; StartupDiagnostics.Step(backup.Message); }
             catch (Exception error) { StartupDiagnostics.Step("Sauvegarde préalable : " + AppPaths.SafeError(error)); }
+            var sites = SiteReferenceInitializer.TryInitialize(AppContext.BaseDirectory, AppPaths.SettingsFile);
+            if (sites.Message.Length > 0) StartupDiagnostics.Step(sites.Message);
             using var window = new MainForm(args, prepared);
             instance.Listen(window.ActivateExisting, error => AppPaths.AppendLog("Activation : " + AppPaths.SafeError(error)));
             Application.ThreadException += (_, eventArgs) =>

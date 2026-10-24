@@ -63,11 +63,16 @@ public sealed partial class PilotApplication
 
     private CitySettings TerrainDraft()
     {
-        if (_terrainCityDraft is null)
+        var saved = TerrainDigest(Settings.Cities);
+        // An import from another page can update the saved reference while this
+        // page retains a draft. Refresh an untouched copy; keep local edits and
+        // let the existing conflict check protect them from an implicit merge.
+        if (_terrainCityDraft is null || _terrainCityBaseline != saved && TerrainDigest(_terrainCityDraft) == _terrainCityBaseline)
         {
             _terrainCityDraft = Settings.Cities.Copy();
-            _terrainCityBaseline = TerrainDigest(Settings.Cities);
+            _terrainCityBaseline = saved;
             _terrainCityDraftVersion++;
+            _terrainCityPreview = null; _terrainImportPreview = null;
         }
         return _terrainCityDraft;
     }

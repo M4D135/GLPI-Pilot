@@ -12,6 +12,8 @@
     <Compile Include="../../src/GlpiPilot/Core/AppPaths.cs" Link="Core/AppPaths.cs" />
     <Compile Include="../../src/GlpiPilot/Core/AppSettings.cs" Link="Core/AppSettings.cs" />
     <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="Core/CitySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/SiteReferenceInitializer.cs" Link="Core/SiteReferenceInitializer.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/NativeCsvImportService.cs" Link="Core/NativeCsvImportService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/Query*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/GlpiPilot/Core/BrowserModels.cs" Link="Core/BrowserModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />

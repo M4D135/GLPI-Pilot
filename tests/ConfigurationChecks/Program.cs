@@ -55,6 +55,9 @@ var checks = new List<(string Name, Action Run)>
     ("Modèles dangereux ou ambigus : refus avant navigation", CheckUnsafeTemplates),
     ("Adresses portables : paramètres d’action refusés et authentification retirée", CheckPortableUrls)
 };
+var referenceChecks = SiteReferenceInitializerChecks.Cases(temporary).ToList();
+if (args.Contains("--site-reference-only", StringComparer.Ordinal)) checks = referenceChecks;
+else checks.AddRange(referenceChecks);
 int failures = 0;
 try
 {

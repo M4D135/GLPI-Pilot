@@ -1,4 +1,4 @@
-# GLPI Pilot 3.3.1 — Windows x64
+# GLPI Pilot 3.3.2 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -34,6 +34,16 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 5. Aux sessions suivantes, réutiliser la source enregistrée. Les vues nommées, tableaux de bord et réglages de présentation restent mémorisés.
 
 **Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
+
+## Nouveautés de la version 3.3.2
+
+**Lieux et sites affiche tous les termes de détection d’un site : son nom et ses alias.** Le formulaire précise que le nom est reconnu automatiquement ; les variantes saisies le complètent. Après l’application d’un profil de classeur, un brouillon du référentiel qui n’a pas été modifié reprend automatiquement les nouveaux réglages. Un brouillon déjà modifié est conservé et son conflit reste signalé.
+
+Un distributeur peut ajouter le fichier facultatif **`wad/sites.csv`**, au format UTF-8 **`Site;Termes de détection`**. Au premier lancement où ce fichier est présent et valide, GLPI Pilot reprend discrètement les sites dans `%LOCALAPPDATA%\GLPI-Pilot\settings.json`. Ils sont ensuite visibles dans **Lieux et sites** et modifiables comme ceux saisis manuellement. L’initialisation est assurée directement par l’application.
+
+**L’import automatique ne se fait qu’une fois par profil utilisateur.** Les modifications et suppressions réalisées ensuite dans l’application sont conservées aux démarrages suivants. En l’absence de `wad/sites.csv`, le démarrage est normal et l’initialisation reste disponible si le fichier est fourni plus tard.
+
+Le logiciel et le pack public restent génériques. Le tableau propre à une organisation est un fichier de données séparé, ajouté à sa distribution privée hors GitHub. L’import CSV du référentiel dans l’interface reste disponible ; cette version n’ajoute pas de sélection Excel à cet écran. Le format du fichier facultatif et les conditions de validation sont décrits dans les [notes 3.3.2](docs/RELEASE-3.3.2.md).
 
 ## Nouveautés de la version 3.3.1
 
@@ -240,6 +250,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.3.2](docs/RELEASE-3.3.2.md)
 - [Notes de version 3.3.1](docs/RELEASE-3.3.1.md)
 - [Notes de version 3.3.0](docs/RELEASE-3.3.0.md)
 - [Notes de version 3.2.2](docs/RELEASE-3.2.2.md)
@@ -277,7 +288,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.3.1'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.3.2'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -293,7 +304,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.3.1'
+  -OutputDirectory '.\artifacts\release-3.3.2'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

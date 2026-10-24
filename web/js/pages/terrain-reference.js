@@ -39,7 +39,7 @@ export async function renderReference(ctx) {
     state.draftVersion = data.draftVersion; state.revision = data.revision;
     listing.replaceChildren(table(data.items, [
       { key: 'name', label: labels[kind] }, { key: 'parent', label: kind === 'city' ? 'Hiérarchie' : 'Rattachement' },
-      { key: 'aliases', label: 'Alias' }, { key: 'detail', label: kind === 'city' ? 'Code postal' : kind === 'site' ? 'Adresse' : 'Étage / zone' },
+      { key: 'aliases', label: kind === 'site' ? 'Termes de détection' : 'Alias', render: row => kind === 'site' ? [row.name, row.aliases].filter(Boolean).join(' ; ') : row.aliases }, { key: 'detail', label: kind === 'city' ? 'Code postal' : kind === 'site' ? 'Adresse' : 'Étage / zone' },
       { key: 'rules', label: kind === 'site' ? 'Plages d’ouverture' : 'Règles', render: row => kind === 'building' ? '—' : String(row.rules) },
       { key: 'actions', label: 'Actions', render: row => toolbar(button('Modifier', p.act(async () => { const result = await p.call('terrain.reference.detail', { kind, id: row.id }); state.draftVersion = result.draftVersion; await edit(kind, result.entry); })),
         button('Retirer', p.act(async () => { if (await confirm(`Retirer ${row.name}`, 'La suppression sera ajoutée au brouillon. Les rattachements existants doivent d’abord être déplacés ou retirés.', 'Retirer')) { state = await p.call('terrain.reference.delete', { ...draft(), kind, id: row.id }); await reload(); } }), { danger: true })) }
@@ -69,7 +69,7 @@ export async function renderReference(ctx) {
   async function edit(entryKind, entry) {
     const value = entry || { id: '', name: '', aliases: [], rules: [], openings: [], closedDates: [] };
     const errors = el('div', { role: 'alert' }); let parent;
-    const fields = [{ key: 'name', label: 'Nom', required: true }, { key: 'aliases', label: 'Alias et variantes', type: 'textarea', help: 'Une variante par ligne ou séparée par un point-virgule ; 12 au maximum.' }];
+    const fields = [{ key: 'name', label: 'Nom', required: true }, { key: 'aliases', label: 'Alias et variantes', type: 'textarea', help: entryKind === 'site' ? 'Le nom du site est reconnu automatiquement. Ajoutez ici ses autres termes de détection : une variante par ligne ou séparée par un point-virgule ; 12 au maximum.' : 'Une variante par ligne ou séparée par un point-virgule ; 12 au maximum.' }];
     if (entryKind === 'city') fields.push(
       { key: 'postalCode', label: 'Code postal' }, { key: 'region', label: 'Région' }, { key: 'department', label: 'Département' }, { key: 'sector', label: 'Secteur' },
       { key: 'territoryPath', label: 'Hiérarchie libre', help: 'Jusqu’à 12 niveaux séparés par /.' }, { key: 'excludedTerms', label: 'Termes exclus', type: 'textarea', help: 'Un terme par ligne ou séparé par un point-virgule.' });

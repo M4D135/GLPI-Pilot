@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Playwright;
 
 // Drives the real self-contained WinForms/WebView2 executable through its guarded,
@@ -37,8 +38,12 @@ internal sealed class WindowsWebViewFixture
             _state = Path.Combine(_sandbox, "GLPI-Pilot-Checks-State"); Directory.CreateDirectory(_state);
             var folder = Path.Combine(_sandbox, "pack"); ZipFile.ExtractToDirectory(_pack, folder); _executable = Path.Combine(folder, "GLPI-Pilot.exe");
             if (!File.Exists(Path.Combine(folder, "wad", "runtime", "webview2", "msedgewebview2.exe"))) throw new FileNotFoundException("The fixed WebView2 runtime is not in the pack.");
+            var siteCsvPath = Path.Combine(folder, "wad", "sites.csv");
+            if (File.Exists(siteCsvPath)) throw new InvalidOperationException("This fixture requires the generic pack without wad/sites.csv; it creates its own synthetic CSV only in the temporary installation.");
+            var retainedSiteId = Guid.NewGuid().ToString("N");
             var initial = JsonSerializer.Serialize(new { PortalUrl = "https://glpi.example.invalid/front/ticket.php", Theme = "dark", InterfaceZoomPercent = 100,
                 ExportFolder = Path.Combine(_sandbox, "exports"), Interface = new { OnboardingCompleted = true },
+                Cities = new { Enabled = true, Sites = new[] { new { Id = retainedSiteId, Name = "Site fictif Nord", Aliases = new[] { "Repère local Nord" }, Address = "Adresse fictive conservée" } } },
                 Automation = new { ScheduledExtraction = false, ResumeAfterReconnect = false }, History = new { RestoreLastOnStartup = false } });
             var settingsPath = Path.Combine(_state, "settings.json"); File.WriteAllText(settingsPath, initial, new UTF8Encoding(false));
             var initialHash = Digest(settingsPath); var archiveHash = Digest(_pack);
@@ -53,12 +58,34 @@ internal sealed class WindowsWebViewFixture
                 Check(File.ReadAllText(Path.Combine(_state, "Logs", "demarrage-dernier.log")).Contains("[PRÊT]", StringComparison.Ordinal), "Startup readiness is recorded after bootstrap and first web paint.");
                 await StopNormallyAsync(first);
             }
-            Check(Digest(settingsPath) == initialHash, "An untouched startup and shutdown preserve the exact synthetic settings bytes.");
-            // Second launch: use the real controls and persist an explicit zoom.
+            Check(Digest(settingsPath) == initialHash, "Without the optional sites CSV, an untouched startup and shutdown preserve the exact synthetic settings bytes.");
+            // Add only synthetic reference data to the extracted fixture copy.
+            // This is the first launch on which the optional file is present.
+            File.WriteAllText(siteCsvPath, """
+                "Site";"Termes de détection"
+                "SITE FICTIF NORD";"Annexe fictive Nord|Entrée fictive Nord"
+                "Site fictif Sud";"Annexe fictive Sud"
+                """, new UTF8Encoding(true));
+            var siteImportHash = Digest(siteCsvPath);
+            // Second launch: initialize the reference, use the real controls and persist an explicit zoom.
             var second = Start(Port()); var secondPort = int.Parse(second.StartInfo.ArgumentList[1]);
             await using (var connected = await ConnectAsync(playwright, second, secondPort))
             {
                 var page = await ReadyPageAsync(connected, second); var errors = new List<string>(); page.PageError += (_, message) => errors.Add(message);
+                await NavigateAsync(page, "terrain-reference");
+                await page.GetByLabel("Type", new() { Exact = true }).SelectOptionAsync("site");
+                await page.GetByRole(AriaRole.Cell, new() { Name = "Site fictif Sud", Exact = true }).WaitForAsync();
+                using (var seeded = JsonDocument.Parse(File.ReadAllText(settingsPath)))
+                {
+                    var sites = seeded.RootElement.GetProperty("Cities").GetProperty("Sites").EnumerateArray().ToArray();
+                    var retained = sites.Single(site => site.GetProperty("Id").GetString() == retainedSiteId);
+                    Check(seeded.RootElement.GetProperty("SiteReferenceImportHash").GetString() == siteImportHash && sites.Length == 2
+                        && retained.GetProperty("Name").GetString() == "Site fictif Nord" && retained.GetProperty("Address").GetString() == "Adresse fictive conservée"
+                        && retained.GetProperty("Aliases").EnumerateArray().Select(alias => alias.GetString()).SequenceEqual(new[] { "Repère local Nord", "Annexe fictive Nord", "Entrée fictive Nord" })
+                        && sites.Single(site => site.GetProperty("Name").GetString() == "Site fictif Sud").GetProperty("Aliases")[0].GetString() == "Annexe fictive Sud"
+                        && await page.GetByRole(AriaRole.Cell, new() { Name = "Site fictif Nord", Exact = true }).IsVisibleAsync(),
+                        "The real startup merges the optional synthetic CSV, persists its hash and aliases, preserves the existing site, and exposes both sites in the interface.");
+                }
                 var width = await page.EvaluateAsync<double>("innerWidth");
                 await NavigateAsync(page, "settings");
                 await page.GetByLabel("Zoom de l’interface (%)", new() { Exact = true }).FillAsync("125");
@@ -105,12 +132,29 @@ internal sealed class WindowsWebViewFixture
             }
             using (var saved = JsonDocument.Parse(File.ReadAllText(settingsPath)))
                 Check(saved.RootElement.GetProperty("InterfaceZoomPercent").GetInt32() == 110 && saved.RootElement.GetProperty("PortalUrl").GetString() == "https://glpi.example.invalid/front/ticket.php", "User zoom persists while the configured source is preserved.");
-            // Third launch proves persisted zoom is applied by the real host.
+            // Emulate an already-saved reference edit while the app is closed.
+            // Keep the same temporary profile and import receipt for the next process.
+            var edited = JsonNode.Parse(File.ReadAllText(settingsPath))!.AsObject();
+            var editedSites = edited["Cities"]!["Sites"]!.AsArray();
+            var editedNorth = editedSites.Single(site => site!["Id"]!.GetValue<string>() == retainedSiteId)!;
+            editedNorth["Name"] = "Site fictif Nord modifié"; editedNorth["Aliases"] = new JsonArray("Repère local modifié");
+            editedSites.Remove(editedSites.Single(site => site!["Name"]!.GetValue<string>() == "Site fictif Sud"));
+            File.WriteAllText(settingsPath, edited.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+            var editedHash = Digest(settingsPath);
+            // Third launch proves zoom restoration and that initialization does not undo local edits or deletions.
             var third = Start(Port()); var thirdPort = int.Parse(third.StartInfo.ArgumentList[1]);
             await using (var connected = await ConnectAsync(playwright, third, thirdPort))
             {
                 var page = await ReadyPageAsync(connected, third);
                 Check((await page.Locator("#zoom-label").InnerTextAsync()).Contains("110", StringComparison.Ordinal), "The stored 110 percent zoom is restored in a new Windows process.");
+                await NavigateAsync(page, "terrain-reference");
+                await page.GetByLabel("Type", new() { Exact = true }).SelectOptionAsync("site");
+                await page.GetByRole(AriaRole.Cell, new() { Name = "Site fictif Nord modifié", Exact = true }).WaitForAsync();
+                using (var restarted = JsonDocument.Parse(File.ReadAllText(settingsPath)))
+                    Check(Digest(settingsPath) == editedHash && restarted.RootElement.GetProperty("SiteReferenceImportHash").GetString() == siteImportHash
+                        && restarted.RootElement.GetProperty("Cities").GetProperty("Sites").GetArrayLength() == 1
+                        && await page.GetByRole(AriaRole.Cell, new() { Name = "Site fictif Sud", Exact = true }).CountAsync() == 0,
+                        "A new native process reuses the same profile and preserves the renamed site, changed aliases and deleted site without reimporting the still-present CSV.");
                 await StopNormallyAsync(third);
             }
             await CheckRuntimeCrashAsync(playwright, settingsPath, browser: false);

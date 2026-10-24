@@ -1,4 +1,58 @@
-GLPI Pilot 3.3.1 — Mon espace
+GLPI Pilot 3.3.2 — Lieux, sites et termes de détection
+État local établi le 24 octobre 2026 avant le pipeline final
+Cible : Windows x64, avec initialisation native facultative du référentiel
+
+PORTÉE
+La colonne des sites « Termes de détection » affiche le nom canonique
+et les alias. Le formulaire précise que le nom est reconnu automatiquement.
+Après import d’un profil, un brouillon non modifié reprend le référentiel
+enregistré ; un brouillon modifié est conservé avec son conflit signalé.
+
+Le fichier facultatif wad/sites.csv contient un tableau UTF-8
+Site / Termes de détection. Au premier démarrage concerné, l’application
+fusionne nativement Cities.Sites dans le profil AppData et enregistre
+le repère d’initialisation avec les sites. Aucun sous-processus PowerShell
+n’est lancé. Les identités, propriétés et sites existants sont conservés,
+les alias sont complétés et les termes équivalents sont dédoublonnés.
+Une sauvegarde complète précède le remplacement des réglages.
+
+L’import ne se rejoue pas sur un profil déjà initialisé ; les modifications
+et suppressions de l’utilisateur sont conservées, même si le CSV change.
+L’absence du fichier laisse le démarrage normal et ne consomme pas cette
+initialisation. Une lecture refusée garde le profil intact et produit
+un diagnostic discret sans noms de sites ; le démarrage se poursuit.
+
+Le pack public et le logiciel restent génériques. Le CSV d’une organisation
+est un fichier de données ajouté séparément à sa distribution privée,
+hors du dépôt public. Aucun import Excel supplémentaire n’est ajouté
+à l’écran du référentiel ; son import CSV et son aperçu sont conservés.
+
+VALIDATIONS LOCALES EXÉCUTÉES
+- TerrainWebChecks : 21/21 contrôles réussis avec Chromium et le vrai
+  backend C#. Le contrôle existant du site autonome vérifie aussi
+  le titre de colonne, le nom et l’alias affichés, et l’aide du formulaire.
+- Rafraîchissement du brouillon du référentiel : 10/10 contrôles ciblés
+  réussis, avec conservation des brouillons modifiés.
+- ConfigurationChecks : 62/62 contrôles locaux réussis, dont 14/14 pour
+  l’initialiseur natif du fichier de sites.
+- Compilation TerrainBridgeChecks utilisée par le parcours UI :
+  aucune erreur, aucun avertissement.
+- Compilation croisée du parcours WindowsStartup : aucune erreur,
+  aucun avertissement ; 27 contrôles préparés pour le véritable hôte Windows.
+- Syntaxe JavaScript et git diff --check : valides.
+
+VALIDATION DE LIVRAISON — ÉTAT AVANT LE PIPELINE
+Les contrôles locaux de l’initialiseur natif et de configuration sont
+établis. L’exécution native des 27 contrôles WindowsStartup et la CI
+Windows du commit final 3.3.2 restent à établir à la date de cet état local.
+La compilation croisée ne prouve pas leur exécution sous Windows.
+Les résultats ci-dessus ne constituent pas une preuve de publication.
+Les packs sont publiés après réussite des contrôles Windows et PostgreSQL
+du commit inscrit dans wad/version.json ; les journaux de ce même commit
+et les inventaires SHA-256 identifient la livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.1 — Mon espace
 Date : 24 octobre 2026
 
 La rubrique personnelle est renommée dans les libellés de navigation,

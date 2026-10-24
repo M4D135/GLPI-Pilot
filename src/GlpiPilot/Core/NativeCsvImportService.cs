@@ -354,7 +354,7 @@ public static class NativeCsvImportService
         ct.ThrowIfCancellationRequested();
     }
 
-    private static IEnumerable<CsvRecord> ReadRecords(TextReader reader, char delimiter, int firstLine, CancellationToken ct)
+    internal static IEnumerable<CsvRecord> ReadRecords(TextReader reader, char delimiter, int firstLine, CancellationToken ct)
     {
         var fields = new List<string>();
         var field = new StringBuilder();
@@ -467,6 +467,6 @@ public static class NativeCsvImportService
     private static InvalidDataException Invalid(string message) => new(message);
     private sealed record EncodingInfo(Encoding Encoding, int PreambleBytes, bool Fallback, string Name);
     private sealed record Preamble(int SkipLines, char? Delimiter);
-    private sealed record CsvRecord(string[] Fields, int Line, bool PhysicallyBlank);
+    internal sealed record CsvRecord(string[] Fields, int Line, bool PhysicallyBlank);
     private enum FieldState { Start, Unquoted, Quoted, AfterQuote }
 }

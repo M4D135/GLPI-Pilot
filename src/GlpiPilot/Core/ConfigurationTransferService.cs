@@ -130,7 +130,7 @@ public static class ConfigurationTransferService
             {
                 // Older local settings.json files can be migrated explicitly, but their
                 // local folder never replaces the destination machine's folder.
-                var legacyProperties = new HashSet<string>(Shareable, StringComparer.OrdinalIgnoreCase) { "ExportFolder", "InterfaceZoomPercent", "History", "Automation", "Interface", "ActiveSourceId" };
+                var legacyProperties = new HashSet<string>(Shareable, StringComparer.OrdinalIgnoreCase) { "ExportFolder", "InterfaceZoomPercent", "History", "Automation", "Interface", "ActiveSourceId", "SiteReferenceImportHash" };
                 RequireProperties(root, legacyProperties);
                 if (!root.EnumerateObject().Any(property => Shareable.Contains(property.Name)))
                     throw Invalid("Le fichier ne contient pas de configuration GLPI Pilot reconnue.");
@@ -152,6 +152,7 @@ public static class ConfigurationTransferService
             imported.History = current.History.Copy();
             imported.Automation = current.Automation.Copy();
             imported.ActiveSourceId = current.ActiveSourceId;
+            imported.SiteReferenceImportHash = current.SiteReferenceImportHash;
             if (!Find(settings, "Sources").HasValue) imported.Sources = current.Sources.Select(source => source.Copy()).ToList();
             imported.Dashboard ??= new();
             imported.Dashboard.PersonalTechnician = current.Dashboard?.PersonalTechnician ?? "";

@@ -44,6 +44,8 @@ public sealed class AppSettings
     public TicketDetailSettings TicketDetails { get; set; } = new();
     public DashboardSettings Dashboard { get; set; } = new();
     public CitySettings Cities { get; set; } = new();
+    // Local receipt for the optional pack CSV. It is not a portable preference.
+    public string SiteReferenceImportHash { get; set; } = "";
     public QueryLibrarySettings Queries { get; set; } = QueryLibrarySettings.CreateDefault();
     public List<SourceProfile> Sources { get; set; } = new();
     public string ActiveSourceId { get; set; } = "";
@@ -123,6 +125,7 @@ public sealed class AppSettings
         Dashboard.Normalize();
         Cities ??= new();
         Cities.Normalize();
+        SiteReferenceImportHash ??= "";
         Queries ??= QueryLibrarySettings.CreateDefault();
         Queries.Normalize();
         Sources = (Sources ?? new()).Where(source => source != null).Take(100).ToList();
@@ -349,9 +352,14 @@ public static class SettingsRecovery
             if (memory.Length + read > MaximumBytes) throw new InvalidDataException("Le fichier de réglages dépasse 4 Mio.");
             memory.Write(buffer, 0, read);
         }
-        using var document = JsonDocument.Parse(memory.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
+        return Read(memory.ToArray());
+    }
+    internal static AppSettings Read(ReadOnlyMemory<byte> content, bool validateReference = false)
+    {
+        using var document = JsonDocument.Parse(content, new JsonDocumentOptions { MaxDepth = 32 });
         var settings = document.RootElement.Deserialize<AppSettings>(new JsonSerializerOptions { MaxDepth = 32 })
             ?? throw new InvalidDataException("Les réglages sont absents.");
+        if (validateReference) settings.Cities?.Validate();
         settings.Normalize();
         RestoreLegacyActiveAcquisition(document.RootElement, settings);
         return settings;
@@ -383,7 +391,7 @@ public static class SettingsRecovery
         {
             LastRecoveryMessage = "";
             try { if (File.Exists(path)) return Read(path); }
-            catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
             { LastRecoveryMessage = "Le fichier de réglages est illisible. "; }
             IReadOnlyList<SettingsBackup> backups;
             try { backups = List(path); }
@@ -396,7 +404,7 @@ public static class SettingsRecovery
                     LastRecoveryMessage += "Une version locale du " + backup.SavedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") + " a été récupérée.";
                     return recovered;
                 }
-                catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException or ArgumentException) { }
+                catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException or InvalidOperationException or ArgumentException) { }
             }
             if (LastRecoveryMessage.Length > 0) LastRecoveryMessage += "Aucune sauvegarde valide : les valeurs par défaut sont chargées ; le fichier original reste présent jusqu’à un enregistrement.";
             return new();
@@ -430,7 +438,7 @@ public static class SettingsRecovery
                     // Keep an unreadable original as evidence, separately from valid restorations.
                     var prefix = "settings-";
                     try { _ = Read(path); }
-                    catch (Exception error) when (error is IOException or JsonException or InvalidOperationException or ArgumentException) { prefix = "unreadable-"; }
+                    catch (Exception error) when (error is IOException or InvalidDataException or JsonException or InvalidOperationException or ArgumentException) { prefix = "unreadable-"; }
                     if (info.Length <= MaximumBytes)
                         File.Copy(path, Path.Combine(folder, prefix + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + "-" + Guid.NewGuid().ToString("N")[..8] + ".json"));
                 }

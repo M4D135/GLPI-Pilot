@@ -40,11 +40,11 @@ Adapter le chemin du ZIP à la construction concernée. Les deux options `--pack
 
 ## Scénarios vérifiés
 
-1. **Premier lancement sans interaction** : attente du bootstrap C# et du premier affichage web, fenêtre Windows visible et non vide, chargement des modules, repère `[PRÊT]` dans le diagnostic, fermeture normale et préservation exacte des octets des réglages synthétiques.
-2. **Commandes réelles** : passage au thème clair et à 125 %, contrôle de la largeur effective du viewport WebView2, retour à 100 % par `Ctrl+0`, chargement de la démonstration et calcul du dashboard C#.
+1. **Premier lancement sans interaction et sans CSV de sites** : attente du bootstrap C# et du premier affichage web, fenêtre Windows visible et non vide, chargement des modules, repère `[PRÊT]` dans le diagnostic, fermeture normale et préservation exacte des octets des réglages synthétiques.
+2. **Référentiel facultatif et commandes réelles** : création d’un `wad/sites.csv` entièrement fictif dans la copie temporaire du pack, puis lancement avec le même profil. Le référentiel doit fusionner le site déjà configuré, conserver son identité et son adresse, ajouter ses termes de détection et le second site, enregistrer `SiteReferenceImportHash` et afficher les sites dans l’interface. Ensuite : passage au thème clair et à 125 %, contrôle de la largeur effective du viewport WebView2, retour à 100 % par `Ctrl+0`, chargement de la démonstration et calcul du dashboard C#.
 3. **Navigation et présentation** : ouverture de chaque page du menu, absence d’erreur de page, captures du dashboard clair et de l’accueil sombre, redimensionnement compact et absence de débordement horizontal.
 4. **Instance unique et mémorisation** : réduction de la fenêtre, second lancement qui rappelle l’instance existante, ajustement à 110 % par raccourci, fermeture normale et vérification des réglages sauvegardés.
-5. **Troisième lancement** : restauration du zoom à 110 % dans un nouveau processus, puis fermeture normale.
+5. **Troisième lancement** : après modification du nom et des alias d’un site et suppression de l’autre dans les réglages temporaires, restauration du zoom à 110 % dans un nouveau processus. Le marqueur et les octets des réglages modifiés doivent rester intacts ; l’interface doit afficher le site modifié sans recréer le site supprimé, bien que le CSV soit toujours présent. Fermeture normale.
 6. **Pannes réelles du moteur d’affichage** : deux nouveaux lancements isolés, arrêt volontaire du renderer par `Page.crash`, puis du navigateur WebView2 par `Browser.crash`. Chaque scénario exige l’événement natif correspondant dans le journal, une fenêtre de diagnostic WinForms encore visible, une fermeture standard bornée et la préservation exacte des réglages enregistrés. L’archive PROD d’origine reste inchangée après tous les scénarios.
 
 Les trois premières fermetures passent par le dialogue de fermeture entre la page et l’hôte. Le harnais attend aussi jusqu’à 15 secondes l’arrêt des enfants WebView avant de réutiliser le profil avec un nouveau port CDP.
@@ -54,6 +54,8 @@ Après une panne fatale du renderer ou du navigateur WebView2, la fenêtre affic
 ## Isolation et nettoyage
 
 Le harnais crée un dossier marqué `GLPI-Pilot-Checks-Native-*` sous le répertoire temporaire, y extrait le pack et y crée les réglages synthétiques. Il transmet explicitement `GLPI_PILOT_TEST_MODE=1` et `GLPI_PILOT_TEST_ROOT` ; l’application n’accepte cette redirection que pour un dossier temporaire autorisé. Le profil WebView2 et l’extraction des bibliothèques .NET restent dans ce périmètre.
+
+Le pack de départ doit être générique, sans `wad/sites.csv`. Le test crée ce fichier uniquement dans son installation temporaire et utilise exclusivement des noms fictifs ; il ne lit pas un référentiel privé. Le ZIP d’origine n’est jamais modifié.
 
 Le port de débogage est passé par `--test-port` ; l’hôte ne l’active que dans ce profil de test, avec l’adresse loopback `127.0.0.1`. Aucun réglage ou profil utilisateur existant n’est déplacé, remplacé ou relié par une jonction. Les automatismes de collecte sont désactivés et le portail synthétique utilise `example.invalid`.
 

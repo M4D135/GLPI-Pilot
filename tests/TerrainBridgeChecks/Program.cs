@@ -18,6 +18,11 @@ async Task Reject(Func<Task> operation, string label)
 try
 {
     if (args.Contains("--serve", StringComparer.Ordinal)) { await TerrainWebFixture.RunAsync(root); return; }
+    if (args.Contains("--reference-refresh-only", StringComparer.Ordinal))
+    {
+        await TerrainDraftRefreshChecks.RunAsync(root, Check, Reject);
+        Console.WriteLine($"{passed}/{passed} terrain reference refresh checks passed."); return;
+    }
     var alpha = new CityDefinition { Id = "11111111111111111111111111111111", Name = "Alpha", TerritoryPath = "France / Nord / Secteur A", Latitude = 50, Longitude = 2 };
     var beta = new CityDefinition { Id = "22222222222222222222222222222222", Name = "Beta", Latitude = 49, Longitude = 3 };
     var campus = new SiteDefinition { Id = "33333333333333333333333333333333", CityId = alpha.Id, Name = "Campus Nord", Latitude = 50.1, Longitude = 2.1,
@@ -175,6 +180,7 @@ try
     await Reject(() => Call("terrain.reference.upsert", new { }, cancelled.Token), "cancelled bridge request stops before mutation");
     Check(AppPaths.DataRoot == root && events.Contains("session.changed"), "all fixture persistence stays in explicitly isolated test profile");
     await StandaloneSiteBridgeChecks.RunAsync(root, Check, Reject);
+    await TerrainDraftRefreshChecks.RunAsync(root, Check, Reject);
     Console.WriteLine($"{passed}/{passed} terrain bridge checks passed.");
 }
 finally
