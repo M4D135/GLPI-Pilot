@@ -1,4 +1,4 @@
-﻿CONFIGURATION DES SITES — GLPI-Pilot 3.3.3 ou ultérieur
+﻿CONFIGURATION DES SITES — GLPI-Pilot 3.4.0
 
 INSTALLATION
 1. Fermer complètement GLPI-Pilot, y compris une ancienne version ouverte.
@@ -6,12 +6,21 @@ INSTALLATION
    Fusionner le dossier wad du ZIP avec le dossier wad existant.
 3. Vérifier la présence de wad\sites.csv à côté des autres fichiers.
 4. Ouvrir GLPI-Pilot.exe. L’import se fait automatiquement au démarrage.
-5. Ouvrir Lieux et sites, puis le type Site ou Ville pour vérifier la liste.
-6. Importer le CSV d’incidents en simulation pour essayer le référentiel.
+5. Ouvrir Terrain → Gérer le référentiel, puis choisir Type : Site.
+   Le type Ville permet de vérifier les communes.
+6. Dans Données → Importer CSV / Excel, importer votre extrait d’incidents,
+   puis ouvrir Terrain pour essayer le référentiel dans la simulation.
 
 Le lanceur facultatif wad\support\INSTALL-SITES.cmd ouvre le même EXE.
 Ce complément ne contient pas GLPI-Pilot.exe ; extraire le logiciel d’abord.
-Le format géographique exige la version 3.3.3 ou ultérieure.
+Le CSV est inchangé depuis l’édition géographique 3.3.3 et reste compatible
+avec GLPI-Pilot 3.3.3 ou ultérieur. Cette notice décrit les chemins 3.4.0.
+
+Téléchargements de la version 3.4.0 :
+https://github.com/M4D135/GLPI-Pilot/releases/tag/v3.4.0
+https://github.com/M4D135/GLPI-Pilot/releases/download/v3.4.0/GLPI-Pilot-Sites.zip
+https://github.com/M4D135/GLPI-Pilot/releases/download/v3.4.0/sites.csv
+https://github.com/M4D135/GLPI-Pilot/releases/download/v3.4.0/SITES-SHA256SUMS.txt
 
 CONTENU
 26 sites et les termes du tableau Paramétrage!B80:C106, conservés.
@@ -26,7 +35,8 @@ des sites ne prétendent pas identifier leurs portails d’entrée.
 PROFIL UTILISATEUR
 Les données sont enregistrées dans :
 %LOCALAPPDATA%\GLPI-Pilot\settings.json
-Rubriques Cities.Sites et Cities.Cities, modifiables dans Lieux et sites.
+Rubriques Cities.Sites et Cities.Cities, modifiables depuis
+Terrain → Gérer le référentiel.
 Une sauvegarde complète précède la modification des réglages.
 
 Un profil neuf reçoit les sites, les termes et leur géographie.
@@ -41,13 +51,31 @@ Fermer complètement le logiciel après placement du fichier, puis relancer.
 Un nouvel import CSV d’incidents reprend les réglages du profil dans une
 simulation isolée. Les modifications d’essai ne changent pas ce profil.
 La démonstration sans fichier utilise ses propres références fictives.
+Quitter la simulation restaure le profil et le relevé habituels.
 
-CARTES INTÉGRÉES — GLPI-Pilot 3.3.4
-Les cartes des sites et tournées s’affichent directement dans l’application,
-sans compte ni clé API. Elles utilisent les coordonnées du référentiel.
-En usage normal, ouvrir une carte charge les rues OpenStreetMap avec Internet.
-En simulation, le fond local sans rues est utilisé par défaut ;
-« Afficher les rues » active le fond détaillé si Internet est disponible.
-Les lieux et l’ordre des visites restent consultables hors ligne.
-Les pointillés montrent l’ordre des visites à vol d’oiseau, pas un trajet routier.
-Le fichier de sites reste compatible avec GLPI-Pilot 3.3.3 ou ultérieur.
+TERRAIN : SITES, TICKETS ET TOURNÉES
+Terrain est la carte centrale des tickets du périmètre actif. Les filtres
+Équipes et groupes, Techniciens, type et statuts choisissent ce périmètre.
+Explorer les sites conserve aussi les sites à zéro ticket, avec les stocks,
+préconisations et la copie des IDs. Pour voir toutes les références,
+ouvrir Gérer le référentiel → Carte des sites.
+Sélectionner des tickets ou un lieu permet de Préparer une tournée.
+Vérifier son aperçu avant Créer le brouillon ; enregistrer ensuite la tournée.
+Les affectations sont observées dans les tickets ; les visites PRÉVUES
+correspondent au planning enregistré, jamais à une position GPS actuelle.
+
+CARTES INTÉGRÉES
+Les cartes s’affichent dans la fenêtre principale, sans compte ni clé API.
+Elles utilisent les coordonnées enregistrées dans le référentiel.
+À leur ouverture explicite, les rues OpenStreetMap sont demandées par défaut,
+en usage normal comme en simulation. Leur affichage nécessite Internet.
+Si les tuiles sont indisponibles, le fond local conserve les repères.
+Fond hors ligne choisit volontairement ce fond ; Afficher les rues réessaie.
+Les demandes de tuiles n’envoient ni titres de tickets, ni noms de techniciens,
+ni texte d’adresse. Aucun géocodage automatique n’est effectué.
+
+Une commune seule est un repère approximatif ; un site sans coordonnées
+ne reçoit pas silencieusement le centre de sa commune. Les inconnus et les
+ambiguïtés restent consultables dans les listes et les compteurs.
+Les pointillés montrent l’ordre des visites à vol d’oiseau, pas un trajet
+routier. Une étape sans coordonnées reste listée et interrompt la liaison.
