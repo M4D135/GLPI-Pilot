@@ -95,7 +95,7 @@ public sealed partial class PilotApplication
         var pending = due.Where(p => !_workplaceNotified.TryGetValue(p.Key, out var at) || at < p.ReminderAt).ToArray();
         if (pending.Length == 0) return new { count = due.Length, notified = false, deferred = false };
         ct.ThrowIfCancellationRequested();
-        var shown = await Host.NotifyAsync("GLPI Pilot · rappels personnels", $"{pending.Length} rappel(s) à traiter dans Ma journée.");
+        var shown = await Host.NotifyAsync("GLPI Pilot · rappels personnels", $"{pending.Length} rappel(s) à traiter dans Mon espace.");
         if (shown) foreach (var p in pending) _workplaceNotified[p.Key] = now;
         return new { count = due.Length, notified = shown, deferred = !shown };
     }

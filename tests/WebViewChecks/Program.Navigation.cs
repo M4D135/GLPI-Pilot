@@ -182,7 +182,7 @@ internal static partial class Program
         await OpenEditor();
         await Editor().GetByRole(AriaRole.Checkbox, new() { Name = "Afficher Aide", Exact = true }).UncheckAsync();
         await Editor().GetByRole(AriaRole.Combobox, new() { Name = "Groupe de Bibliothèque", Exact = true }).SelectOptionAsync("pinned");
-        await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Ma journée", Exact = true }).PressAsync("ArrowUp");
+        await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Mon espace", Exact = true }).PressAsync("ArrowUp");
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer le groupe Tickets et équipe", Exact = true }).PressAsync("ArrowUp");
         var protectedControls = await Editor().GetByRole(AriaRole.Checkbox, new() { Name = "Afficher Accueil", Exact = true }).IsDisabledAsync()
             && await Editor().GetByRole(AriaRole.Checkbox, new() { Name = "Afficher Réglages", Exact = true }).IsDisabledAsync();
@@ -228,7 +228,7 @@ internal static partial class Program
                 "The real page drag removes Bibliothèque from pinned shortcuts and places it once in Mon quotidien before another gesture starts.");
             var pageOrder = await Editor().Locator(".navigation-group-card[data-nav-group=workspace] [data-nav-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.navPage)");
             Require(Array.IndexOf(pageOrder, "library") < Array.IndexOf(pageOrder, "day"),
-                "The real page drop inserts Bibliothèque before Ma journée at the requested target.");
+                "The real page drop inserts Bibliothèque before Mon espace at the requested target.");
             await Editor().Locator(".navigation-group-card[data-nav-group=workspace] > .navigation-group-heading .navigation-handle")
                 .DragToAsync(Editor().Locator(".navigation-group-card[data-nav-group=pinned] > .navigation-group-heading"));
             await DragDiagnostics("after group gesture");
@@ -316,7 +316,7 @@ internal static partial class Program
         await Button("Navigation").ClickAsync();
         await OpenEditor();
         await Capture("navigation-editor-compact");
-        await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Ma journée", Exact = true }).PressAsync("ArrowDown");
+        await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Mon espace", Exact = true }).PressAsync("ArrowDown");
         var focusRetained = await page.EvaluateAsync<bool>("document.activeElement?.dataset.navigationFocus==='page:day'");
         Require(focusRetained && await page.EvaluateAsync<bool>("document.documentElement.scrollWidth<=innerWidth+1 && document.querySelector('.navigation-modal').scrollWidth<=document.querySelector('.navigation-modal').clientWidth+1")
             && externalRequests == 0 && errors.IsEmpty,

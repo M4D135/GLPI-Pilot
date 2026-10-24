@@ -45,9 +45,9 @@ L’extraction utilise les champs et attributs visibles de la page, ainsi que de
 
 **Documents observés**, dans **Planification et relations**, présente les pièces dont un lien de téléchargement vérifiable a été recueilli. Cliquez sur **Télécharger…** sur la ligne voulue, puis choisissez son emplacement. Le transfert utilise la session authentifiée du navigateur piloté. Ouvrir la fiche ou son index ne télécharge rien. Les redirections sont contrôlées ; une page HTML de connexion n’est pas enregistrée comme document. Le téléchargement est borné à 50 Mio et les fichiers partiels sont retirés en cas d’échec ou d’annulation. Le contenu du document n’est pas indexé par cette fonction.
 
-## Ma journée
+## Mon espace
 
-Dans **Équipe**, choisissez votre identité parmi celles du relevé avec **C’est moi** pour ouvrir **Ma journée**. Depuis le relevé, une sélection de plusieurs tickets peut aussi être ajoutée à la file personnelle. Les actions personnelles restent rattachées à leurs dossiers, même si une collecte remplace ensuite le relevé affiché.
+Dans **Équipe**, choisissez votre identité parmi celles du relevé avec **C’est moi** pour ouvrir **Mon espace**. Depuis le relevé, une sélection de plusieurs tickets peut aussi être ajoutée à la file personnelle. Les actions personnelles restent rattachées à leurs dossiers, même si une collecte remplace ensuite le relevé affiché.
 
 La page propose les périmètres Aujourd’hui, Mes tickets du relevé, File personnelle, Épinglés, Rappels à traiter, Reportés et Tous les conservés. L’ordre de la file est modifiable. Un ticket absent du relevé courant conserve la mention d’un état non vérifié.
 
@@ -57,7 +57,7 @@ Le briefing compare uniquement des relevés de recherche et de contexte GLPI vé
 
 Les notes et listes disposent d’une action explicite **Enregistrer mon travail**. Les modèles de vérification peuvent être créés, modifiés et réutilisés. Un rafraîchissement des rappels conserve un brouillon de notes encore non enregistré lorsque le dossier sélectionné n’a pas changé.
 
-Un rappel personnel et une date de reprise n’affectent pas le statut ni l’échéance du ticket dans GLPI. Les rappels sont examinés périodiquement pendant que l’application est ouverte et disponible. Une notification Windows affiche seulement le nombre de rappels ; son clic ouvre Ma journée. Cette notification est désactivable dans **Mes rappels**. Les plages de silence et le verrouillage de la session Windows suspendent les notifications sans consommer les rappels en attente. L’application n’acquitte l’affichage qu’après la réponse positive de l’hôte Windows. Les réglages de Windows peuvent masquer la notification ; la liste de rappels reste consultable dans l’application.
+Un rappel personnel et une date de reprise n’affectent pas le statut ni l’échéance du ticket dans GLPI. Les rappels sont examinés périodiquement pendant que l’application est ouverte et disponible. Une notification Windows affiche seulement le nombre de rappels ; son clic ouvre Mon espace. Cette notification est désactivable dans **Mes rappels**. Les plages de silence et le verrouillage de la session Windows suspendent les notifications sans consommer les rappels en attente. L’application n’acquitte l’affichage qu’après la réponse positive de l’hôte Windows. Les réglages de Windows peuvent masquer la notification ; la liste de rappels reste consultable dans l’application.
 
 Les préférences de travail sont enregistrées dans `%LOCALAPPDATA%\GLPI-Pilot\workplace.json`. Le document est borné à 500 tickets conservés, 8 000 caractères de notes par ticket, 40 actions par liste, 30 modèles et 12 onglets ouverts. Il est validé avant remplacement atomique du fichier. Un document illisible est préservé avant tout nouvel enregistrement.
 
@@ -67,7 +67,7 @@ La conservation d’une fiche est volontaire, depuis **Mon travail**, après lec
 
 Les copies sont séparées par origine, installation et identifiant de ticket. Le cache est limité à 8 Mio par fiche et 64 Mio au total. Décochez la conservation hors connexion pour retirer une copie. Les tickets épinglés, notes et rappels restent indépendants de cette copie.
 
-Les onglets ouverts, la file, les favoris, les modèles et le dernier espace technicien sont mémorisés. Chaque fiche conserve aussi la rubrique, la page interne et le mode de lecture, les filtres de type, auteur et dates, les recherches locales, la ligne sélectionnée et le défilement du lecteur. Ma journée conserve sa recherche, son périmètre et sa sélection. Une ligne disparue ou un contenu réorganisé peut déplacer le point visible ; la restauration ne crée pas de données absentes.
+Les onglets ouverts, la file, les favoris, les modèles et le dernier espace technicien sont mémorisés. Chaque fiche conserve aussi la rubrique, la page interne et le mode de lecture, les filtres de type, auteur et dates, les recherches locales, la ligne sélectionnée et le défilement du lecteur. Mon espace conserve sa recherche, son périmètre et sa sélection. Une ligne disparue ou un contenu réorganisé peut déplacer le point visible ; la restauration ne crée pas de données absentes.
 
 ## Enrichir une sélection ou vérifier des absences
 

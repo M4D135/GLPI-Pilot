@@ -17,7 +17,7 @@ export async function renderTickets(ctx) {
   const browser = el('div', { class: 'work-ticket-browser' }); const reader = el('section', { class: 'work-ticket-reader', 'aria-label': 'Lecture du ticket' });
   const sourceSearch = input('', { placeholder: 'ID, titre ou texte du relevé', maxLength: 300 }); const savedChoice = select([{ value: 'source', label: 'Relevé courant' }, { value: 'saved', label: 'Dossiers conservés' }], sourceSaved ? 'saved' : 'source');
   ctx.root.replaceChildren(heading('Tickets', 'Une fiche dédiée par ticket, des observations datées et votre travail conservé sur ce poste.'), top, openTabs, el('div', { class: 'work-ticket-layout' }, browser, reader));
-  top.replaceChildren(toolbar(sourceSearch, savedChoice, button('Rechercher', run(ctx, async () => { searchText = sourceSearch.value; sourceSaved = savedChoice.value === 'saved'; sourcePage = 0; await loadSource(); })), button('Ma journée', () => ctx.navigate('day')), button('Lectures ciblées', () => ctx.navigate('enrichment'))));
+  top.replaceChildren(toolbar(sourceSearch, savedChoice, button('Rechercher', run(ctx, async () => { searchText = sourceSearch.value; sourceSaved = savedChoice.value === 'saved'; sourcePage = 0; await loadSource(); })), button('Mon espace', () => ctx.navigate('day')), button('Lectures ciblées', () => ctx.navigate('enrichment'))));
   sourceSearch.addEventListener('keydown', e => { if (e.key === 'Enter') run(ctx, async () => { searchText = sourceSearch.value; sourcePage = 0; await loadSource(); })(); });
   savedChoice.addEventListener('change', run(ctx, async () => { sourceSaved = savedChoice.value === 'saved'; sourcePage = 0; await loadSource(); }));
   function drawTabs() {

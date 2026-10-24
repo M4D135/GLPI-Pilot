@@ -1,4 +1,4 @@
-# GLPI Pilot 3.3.0 — Windows x64
+# GLPI Pilot 3.3.1 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -34,6 +34,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 5. Aux sessions suivantes, réutiliser la source enregistrée. Les vues nommées, tableaux de bord et réglages de présentation restent mémorisés.
 
 **Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
+
+## Nouveautés de la version 3.3.1
+
+La rubrique de travail personnel s’intitule désormais **Mon espace**. Ce libellé est repris dans la navigation, les actions, les notifications et les guides. Les fonctions et les données existantes sont conservées. Voir les [notes 3.3.1](docs/RELEASE-3.3.1.md).
 
 ## Nouveautés de la version 3.3.0
 
@@ -180,7 +184,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 
 - Identité personnelle mémorisée, tableaux de bord par technicien, gestion de l’équipe, favoris et objectifs locaux.
 - Compétences, territoires, relais, absences, capacité déclarée et estimations de durée. Scénarios de répartition avec explications et comparaison avant/après.
-- **Ma journée** : file ordonnée, sélection depuis le relevé, notes, checklists, modèles, rappels locaux, report et passation.
+- **Mon espace** : file ordonnée, sélection depuis le relevé, notes, checklists, modèles, rappels locaux, report et passation.
 - Jusqu’à 12 onglets de tickets, épingles et sections préférées ; chronologie du traitement, filtres et recherche, changements observés entre deux lectures.
 - Cache de lecture facultatif, explicitement daté ; rapprochements locaux entre tickets et solutions réellement lues, avec leurs références.
 
@@ -236,6 +240,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.3.1](docs/RELEASE-3.3.1.md)
 - [Notes de version 3.3.0](docs/RELEASE-3.3.0.md)
 - [Notes de version 3.2.2](docs/RELEASE-3.2.2.md)
 - [Notes de version 3.2.1](docs/RELEASE-3.2.1.md)
@@ -272,7 +277,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.3.0'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.3.1'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -288,7 +293,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.3.0'
+  -OutputDirectory '.\artifacts\release-3.3.1'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

@@ -1,4 +1,18 @@
-GLPI Pilot 3.3.0 — pilotage natif et simulation globale
+GLPI Pilot 3.3.1 — Mon espace
+Date : 24 octobre 2026
+
+La rubrique personnelle est renommée dans les libellés de navigation,
+les titres, raccourcis, rappels et guides. Son identifiant interne reste
+inchangé pour conserver les préférences et les données personnelles.
+Les attentes des contrôles de navigation existants suivent le nouveau nom.
+
+VALIDATION DE LIVRAISON
+Les packs 3.3.1 sont publiés uniquement après réussite du workflow Windows
+et PostgreSQL du commit indiqué dans wad/version.json. Le workflow associé
+à ce commit est la preuve d’exécution des contrôles de cette livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.0 — pilotage natif et simulation globale
 État local établi le 24 octobre 2026 avant exécution du pipeline final
 Cible de livraison : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10
 
@@ -41,13 +55,11 @@ nom de personne ou correspondance interne privé n’est inclus au dépôt.
 La collecte normale conserve son comportement discret et le passage
 visible pour une validation SSO nécessitant l’intervention de l’utilisateur.
 
-VALIDATION DE LIVRAISON — ÉTAT AVANT LE PIPELINE
-La CI Windows doit encore être exécutée sur le commit final de 3.3.0.
-Elle doit confirmer les suites cœur/navigateur, le vrai hôte WebView2,
-les packs extraits et leur provenance. Les résultats locaux ci-dessus
-ne constituent pas une attestation de publication. Le workflow du commit
-inscrit dans wad/version.json et les inventaires SHA-256 font foi :
-https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+VALIDATION DE LIVRAISON 3.3.0 — TERMINÉE
+Le workflow du commit 1c258028b1181b62b95d87c71fb6fb4cf616e4cf a réussi :
+contrôles Windows, PostgreSQL 17, packs extraits, démarrage, mise à jour
+et retour arrière, puis publication des deux éditions.
+https://github.com/M4D135/GLPI-Pilot/actions/runs/40075617962
 
 HISTORIQUE — PROTOCOLES ET RÉSULTATS DES VERSIONS PRÉCÉDENTES
 Les restrictions de l’ancien mode test décrites dans la section 3.2.2

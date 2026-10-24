@@ -67,7 +67,7 @@ export function localFileTestCard(ctx) {
       button('Météo du pilotage',()=>ctx.navigate('pilot-weather'),{primary:true,icon:'sun'}),
       button('Dashboard',()=>ctx.navigate('dashboard'),{icon:'chart'}),
       button('Tickets et actions',()=>ctx.navigate('tickets'),{icon:'ticket'}),
-      button('Ma journée',()=>ctx.navigate('day'),{icon:'sun'}),
+      button('Mon espace',()=>ctx.navigate('day'),{icon:'sun'}),
       button('Tournées',()=>ctx.navigate('tours'),{icon:'route'}),
       button('Correspondances',()=>ctx.navigate('mapping')),
       button('Sites',()=>ctx.navigate('terrain-reference'),{icon:'map'}),

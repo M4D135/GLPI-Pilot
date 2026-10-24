@@ -131,7 +131,7 @@ Les échéances connues donnent l’ordre de priorité des étapes. L’algorith
 
 Le registre local accepte cent tournées, deux mille tickets et cinq cents étapes par tournée. **Retirer du registre** retire la copie mémorisée en laissant le brouillon affiché pour pouvoir l’enregistrer de nouveau. L’enregistrement est atomique. Le fichier `scheduled-tours.json` contient les ID sélectionnés, références de lieux, empreintes de contrôle, horaires, états, contacts, matériel et consignes, ainsi que les résultats routiers ou météo enregistrés. Il n’enregistre pas automatiquement les titres de tickets et ne fait pas partie de la configuration d’équipe. Les contacts et consignes peuvent contenir des informations de terrain : partagez le briefing uniquement avec les personnes prévues.
 
-Les tournées enregistrées du jour sont aussi accessibles à **Ma journée**, avec leurs ID de tickets, leur état et leur technicien. Ce raccord utilise les dates propres aux étapes, et non seulement la date de début de la tournée.
+Les tournées enregistrées du jour sont aussi accessibles dans **Mon espace**, avec leurs ID de tickets, leur état et leur technicien. Ce raccord utilise les dates propres aux étapes, et non seulement la date de début de la tournée.
 
 ### Routes et météo facultatives
 

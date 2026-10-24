@@ -222,16 +222,16 @@ Les fonctionnalités facultatives raccordées (routage, météo, assistant et fo
 
 ## 13. Tableau de bord personnel et organisation quotidienne
 
-**Repères dans le dépôt :** [Ma journée WebView](../web/js/pages/workplace-day.js) · [Éditeur personnel WebView](../web/js/pages/workplace-common.js) · [Travail et cache](../src/GlpiPilot/Core/WorkplaceStore.cs) · [Hôte Windows et rappels](../src/GlpiPilot/Desktop/MainForm.cs) · [Opérations personnelles C#](../src/GlpiPilot/Runtime/PilotApplication.WorkplaceDay.cs) · [Briefing](../src/GlpiPilot/Core/TicketDailyBriefing.cs).
+**Repères dans le dépôt :** [Mon espace WebView](../web/js/pages/workplace-day.js) · [Éditeur personnel WebView](../web/js/pages/workplace-common.js) · [Travail et cache](../src/GlpiPilot/Core/WorkplaceStore.cs) · [Hôte Windows et rappels](../src/GlpiPilot/Desktop/MainForm.cs) · [Opérations personnelles C#](../src/GlpiPilot/Runtime/PilotApplication.WorkplaceDay.cs) · [Briefing](../src/GlpiPilot/Core/TicketDailyBriefing.cs).
 
 | N° | Proposition initiale | État | Preuve disponible ou limite à traiter |
 | ---: | --- | --- | --- |
-| 121 | Page « Ma journée » | **Implémenté** | Ma journée rassemble tickets, file, rappels et tournées prévues ; mise à jour de la page après sauvegarde des tournées. |
+| 121 | Page « Mon espace » | **Implémenté** | Mon espace rassemble tickets, file, rappels et tournées prévues ; mise à jour de la page après sauvegarde des tournées. |
 | 122 | Ordre de travail personnel | **Implémenté** | File locale ordonnable indépendamment des priorités GLPI. |
 | 123 | Report temporaire d’un ticket | **Implémenté** | Report personnel jusqu’à une date, motif et réapparition dans les périmètres de travail. |
 | 124 | Notes personnelles par ticket | **Implémenté** | Notes locales par ticket, recherche dans l’espace personnel et persistance des modifications. |
 | 125 | Listes de vérification réutilisables | **Implémenté** | Checklists personnelles avec modèles créables, modifiables et réutilisables. |
-| 126 | Rappels Windows | **Implémenté** | Rappels pendant l’ouverture de l’application, notification Windows discrète et accès à Ma journée ; affichage soumis aux réglages Windows. |
+| 126 | Rappels Windows | **Implémenté** | Rappels pendant l’ouverture de l’application, notification Windows discrète et accès à Mon espace ; affichage soumis aux réglages Windows. |
 | 127 | Briefing de début de journée | **Implémenté** | Briefing des changements depuis la session précédente, isolé par source, contexte et règles ; consulter une archive ne remplace pas sa référence courante. |
 | 128 | Fiche de passation | **Implémenté** | Passation préparée avec contexte lu, notes, actions cochées/restantes, rappels et prochaine responsabilité à préciser. |
 | 129 | Consultation hors connexion choisie | **Implémenté** | Cache volontaire des fiches et sections déjà lues, daté et borné, distinct des données actuelles du portail. |
@@ -277,7 +277,7 @@ Les fonctionnalités facultatives raccordées (routage, météo, assistant et fo
 
 | N° | Proposition initiale | État | Preuve disponible ou limite à traiter |
 | ---: | --- | --- | --- |
-| 151 | Tournées nommées et datées | **Implémenté** | Formulaires, registre et calendrier journalier WebView ; persistance C#, états brouillon/prête/effectuée avec motif. Une modification ou un changement de disponibilité à l’enregistrement repasse une tournée prête en brouillon. Événement `tours.changed` utilisé par Ma journée. |
+| 151 | Tournées nommées et datées | **Implémenté** | Formulaires, registre et calendrier journalier WebView ; persistance C#, états brouillon/prête/effectuée avec motif. Une modification ou un changement de disponibilité à l’enregistrement repasse une tournée prête en brouillon. Événement `tours.changed` utilisé par Mon espace. |
 | 152 | Étapes constituées de tickets choisis | **Implémenté** | Panier paginé et sélection conservés côté C#, création datée depuis les identifiants uniques et regroupement site/ville ; changement de relevé invalide les anciens indices de sélection. |
 | 153 | Départ et arrivée configurables | **Implémenté** | Formulaires Départ/Retour, choix dans le référentiel ou saisie de coordonnées ; `terrain.tours.edit/point` conserve les points validés sans géocodage d’adresse. |
 | 154 | Créneaux de visite | **Implémenté** | Éditeur des ouvertures hebdomadaires multiples et fermetures datées du site ; planning C# tenant compte des fenêtres, pauses, visites indivisibles et horaires non déclarés. |

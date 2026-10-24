@@ -121,7 +121,7 @@ api.on('operation.phase',data=>{if(statusLabel)statusLabel.textContent=`Collecte
 api.on('operation.log',data=>{logs.push(data.message);if(logs.length>500)logs.shift();const lines=logPanel?.querySelector('.log-lines');if(lines){lines.textContent=logs.join('\n');lines.scrollTop=lines.scrollHeight;}});
 api.on('app.beforeClose',async data=>{try{await api.call('operations.cancel');if(typeof cleanup==='function')await cleanup();cleanup=null;api.cancelAll();await api.call('app.closeReady',{token:data.token,allow:true});}catch(error){notify('La fenêtre reste ouverte : '+error.message,'danger');await api.call('app.closeReady',{token:data.token,allow:false}).catch(()=>{});}});
 api.on('app.error',data=>notify(data.message,'danger'));api.on('app.navigate',data=>navigate(data.page));
-api.on('workplace.reminders.due',data=>{const day=navigation?.querySelector('[data-page=day]');if(day)day.title=data.count>0?`Ma journée · ${data.count} rappel(s) à consulter`:'Ma journée';});
+api.on('workplace.reminders.due',data=>{const day=navigation?.querySelector('[data-page=day]');if(day)day.title=data.count>0?`Mon espace · ${data.count} rappel(s) à consulter`:'Mon espace';});
 window.addEventListener('pilot:editor',event=>{modalEditor=!!event.detail;reportEditor();});
 window.addEventListener('focusin',reportEditor);window.addEventListener('focusout',()=>queueMicrotask(reportEditor));
 window.addEventListener('input',event=>{if(event.target.closest('.form-grid')){dirtyEditor=true;reportEditor();}});

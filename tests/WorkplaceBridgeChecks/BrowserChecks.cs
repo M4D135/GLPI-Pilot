@@ -28,7 +28,7 @@ public static class WorkBrowserChecks
             ("WebView calendar typed controls save real technician capacity", CalendarPage),
             ("WebView local dispatch persists an explicit proposal", PlanningPage),
             ("WebView enrichment restoration does not start network reads", EnrichmentPage),
-            ("WebView Ma journée uses personal identity and live stored templates", DayPage),
+            ("WebView Mon espace uses personal identity and live stored templates", DayPage),
             ("WebView relations expose unknown facts and block unsafe links", InsightsPage)
         };
     }

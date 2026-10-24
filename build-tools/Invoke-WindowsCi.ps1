@@ -106,7 +106,7 @@ function Assert-PackContents {
         $required = @(
             'GLPI-Pilot.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
-            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md', 'wad/docs/RELEASE-3.2.2.md', 'wad/docs/RELEASE-3.3.0.md',
+            'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md', 'wad/docs/RELEASE-3.2.2.md', 'wad/docs/RELEASE-3.3.0.md', 'wad/docs/RELEASE-3.3.1.md',
             'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
             'wad/version.json', 'wad/SHA256SUMS.txt',
             'wad/web/index.html', 'wad/web/js/app.js', 'wad/web/js/bridge.js', 'wad/web/css/app.css',
