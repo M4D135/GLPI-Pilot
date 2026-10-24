@@ -1,27 +1,27 @@
-﻿Site;Termes de détection
-Valmante;"CAV; Valmante; Siege; Siège"
-Patio;Patio
-Salengro;"Salengro; Ilot; Îlot"
-Chartreux;Chartreux
-Salon;Salon
-Marignane;"Marignane; Marignanne"
-Martigues;"Martigues; Martrigues; Martigue"
-Chateauneuf;"Chato; Chateauneuf; Châteauneuf"
-Aix Mansard;"Aix; Mansard"
-Cabot;Cabot
-Burel;Burel
-Aubagne Tourtelle;"Aubagne T; Aubagne tourtelle; Tourtelle"
-Grand littoral;"Grand littoral; Grand litto; Grand Lito; Grand litorral; Grand litoral"
-Désiré Clary;"Désiré Clary; Desire Clary; Desiré Clary; Désire Clary; Désiré; desire; désire; desiré; clary; Désirée; Désirée Clary; Desiree Clary; Desirée Clary; Désiree Clary"
-Istres;"Istres; Istre"
-Plan de Cuques;"Plan de Cuques; Pdc; Plan"
-Gardanne;"Gardanne; Gardane"
-Arles;"Arles; Arle"
-Aubagne Defensions;"Aubagne D; Aubagne Défensions; Aubagne Défension; Aubagne Defensions; Aubagne Defension; Aubagne Déf; Aubagne Def"
-Canebière;"Canebière; Cannebière; Canebiere"
-Caillols;"Caillols; Caillol"
-Saint Barnabé;"Saint Barnabé; Saint Bar; St Barnabé; Barnabé; Barnabe"
-CESAM / La Rose;"La Rose; Cesam La Rose"
-La Ciotat;"La Ciotat; Ciotat"
-CESAM/Aix;"Cesam Aix; Aix Cesam"
-Vitrolles;"Vitrolles; Vitroles"
+﻿Site;Termes de détection;Ville;Code postal;Adresse;Latitude ville;Longitude ville;Latitude site;Longitude site
+Valmante;"CAV; Valmante; Siege; Siège";Marseille;;56 chemin Joseph Aiguier, 13009 Marseille;43.2965;5.3698;43.250658487;5.4139791484
+Patio;Patio;Marseille;;29 rue Jean-Baptiste Reboul, 13010 Marseille;43.2965;5.3698;43.281096;5.398713
+Salengro;"Salengro; Ilot; Îlot";Marseille;;47 avenue Roger Salengro, 13003 Marseille;43.2965;5.3698;43.311384;5.372529
+Chartreux;Chartreux;Marseille;;6 rue Armand Carrel, 13004 Marseille;43.2965;5.3698;43.311047;5.401561
+Salon;Salon;Salon-de-Provence;13300;130 rue Aristide Briand, 13300 Salon-de-Provence;43.6407;5.099;43.638307;5.092387
+Marignane;"Marignane; Marignanne";Marignane;13700;51 avenue Marius Ruinat, 13700 Marignane;43.4172;5.2155;43.414178;5.20485
+Martigues;"Martigues; Martrigues; Martigue";Martigues;;Chemin de Paradis, 13500 Martigues;43.4055;5.0487;43.407;5.04677
+Chateauneuf;"Chato; Chateauneuf; Châteauneuf";Châteauneuf-les-Martigues;13220;2 rue Jules Ferry, 13220 Châteauneuf-les-Martigues;43.383;5.1647;43.387065;5.158594
+Aix Mansard;"Aix; Mansard";Aix-en-Provence;;Le Mansard, avenue du Huit Mai, 13090 Aix-en-Provence;43.5298;5.4474;43.523003;5.4336243
+Cabot;Cabot;Marseille;;12 allée des Pins, 13009 Marseille;43.2965;5.3698;43.253952;5.419357
+Burel;Burel;Marseille;;55 boulevard Burel, 13014 Marseille;43.2965;5.3698;43.317265;5.389693
+Aubagne Tourtelle;"Aubagne T; Aubagne tourtelle; Tourtelle";Aubagne;13400;1047 avenue du 21-Août-1944, 13400 Aubagne;43.2924;5.5695;43.285802;5.555576
+Grand littoral;"Grand littoral; Grand litto; Grand Lito; Grand litorral; Grand litoral";Marseille;;Centre commercial Grand Littoral, 11 avenue de Saint-Antoine, 13015 Marseille;43.2965;5.3698;43.3639021;5.3495081
+Désiré Clary;"Désiré Clary; Desire Clary; Desiré Clary; Désire Clary; Désiré; desire; désire; desiré; clary; Désirée; Désirée Clary; Desiree Clary; Desirée Clary; Désiree Clary";Marseille;;Immeuble Cap Azur, 67 rue du Chevalier Paul, 13002 Marseille;43.2965;5.3698;43.308737;5.369521
+Istres;"Istres; Istre";Istres;;1 rue de l’Équerre, Espace Pyramide, 13800 Istres;43.517;4.9898;43.506731;4.987433
+Plan de Cuques;"Plan de Cuques; Pdc; Plan";Plan-de-Cuques;13380;Mail Général de Gaulle, 13380 Plan-de-Cuques;43.3456;5.4619;43.34599;5.462092
+Gardanne;"Gardanne; Gardane";Gardanne;13120;175 boulevard Pont de Péton, 13120 Gardanne;43.4557;5.4706;43.451278;5.475974
+Arles;"Arles; Arle";Arles;;Cité administrative, avenue des Alyscamps, 13200 Arles;43.6768;4.6274;43.6741147;4.6319673
+Aubagne Defensions;"Aubagne D; Aubagne Défensions; Aubagne Défension; Aubagne Defensions; Aubagne Defension; Aubagne Déf; Aubagne Def";Aubagne;13400;Angle rue du Commandant Mauric et avenue Gabriel Péri, 13400 Aubagne;43.2924;5.5695;43.29535;5.572371
+Canebière;"Canebière; Cannebière; Canebiere";Marseille;;164 la Canebière, 13001 Marseille;43.2965;5.3698;43.298714;5.384734
+Caillols;"Caillols; Caillol";Marseille;;Boulevard Bouyala d’Arnaud, 13012 Marseille;43.2965;5.3698;43.29689;5.44387
+Saint Barnabé;"Saint Barnabé; Saint Bar; St Barnabé; Barnabé; Barnabe";Marseille;;44 avenue de Saint-Barnabé, 13012 Marseille;43.2965;5.3698;43.304098;5.411581
+CESAM / La Rose;"La Rose; Cesam La Rose";Marseille;;72 traverse des Bonnets, 13013 Marseille;43.2965;5.3698;43.330836;5.427141
+La Ciotat;"La Ciotat; Ciotat";La Ciotat;13600;10 passage Gamet, 13600 La Ciotat;43.1736;5.6052;43.17726;5.608847
+CESAM/Aix;"Cesam Aix; Aix Cesam";Aix-en-Provence;;135 chemin Roger Martin, 13090 Aix-en-Provence;43.5298;5.4474;43.515476;5.43096
+Vitrolles;"Vitrolles; Vitroles";Vitrolles;13127;Le Rimbaud, 26 avenue Denis Padovani, 13127 Vitrolles;43.448;5.2498;43.43764;5.256709

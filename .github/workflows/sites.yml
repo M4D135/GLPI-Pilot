@@ -38,8 +38,8 @@ jobs:
           python3 - <<'PY'
           import os, re, xml.etree.ElementTree as ET
           version = ET.parse('src/GlpiPilot/GlpiPilot.csproj').findtext('PropertyGroup/Version', '')
-          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version) or tuple(map(int, version.split('.'))) < (3, 3, 2):
-              raise SystemExit('Le complément exige une version stable de GLPI Pilot au moins égale à 3.3.2.')
+          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version) or tuple(map(int, version.split('.'))) < (3, 3, 3):
+              raise SystemExit('Le complément géographique exige une version stable de GLPI Pilot au moins égale à 3.3.3.')
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'tag=v{version}\n')
           PY

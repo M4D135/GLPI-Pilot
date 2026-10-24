@@ -1,28 +1,49 @@
-﻿CONFIGURATION DES SITES — GLPI-Pilot 3.3.2 ou ultérieur
+﻿CONFIGURATION DES SITES — GLPI-Pilot 3.3.3 ou ultérieur
 
-INSTALLATION DANS UN LOGICIEL DÉJÀ PRÉSENT
+INSTALLATION
 1. Fermer complètement GLPI-Pilot, y compris une ancienne version ouverte.
 2. Extraire ce ZIP dans le dossier qui contient GLPI-Pilot.exe.
-   Le dossier wad du ZIP doit fusionner avec le dossier wad existant.
-3. Vérifier la présence de wad\sites.csv à côté des autres fichiers du logiciel.
-4. Ouvrir GLPI-Pilot.exe. L'import se fait automatiquement au démarrage.
-5. Ouvrir Lieux et sites, puis sélectionner le type Site pour afficher la liste.
+   Fusionner le dossier wad du ZIP avec le dossier wad existant.
+3. Vérifier la présence de wad\sites.csv à côté des autres fichiers.
+4. Ouvrir GLPI-Pilot.exe. L’import se fait automatiquement au démarrage.
+5. Ouvrir Lieux et sites, puis le type Site ou Ville pour vérifier la liste.
+6. Importer le CSV d’incidents en simulation pour essayer le référentiel.
 
-Le lanceur facultatif wad\support\INSTALL-SITES.cmd ouvre le même exécutable.
-Ce complément contient les sites et les termes du tableau Paramétrage!B80:C106.
-Il n'inclut pas GLPI-Pilot.exe ; le logiciel doit déjà être extrait sur le poste.
-Le CSV est destiné à l'initialisation automatique dans wad.
+Le lanceur facultatif wad\support\INSTALL-SITES.cmd ouvre le même EXE.
+Ce complément ne contient pas GLPI-Pilot.exe ; extraire le logiciel d’abord.
+Le format géographique exige la version 3.3.3 ou ultérieure.
 
-26 SITES
-Les noms et toutes les écritures reconnues sont conservés dans sites.csv.
-Le moteur reconnaît automatiquement le nom du site, puis 36 variantes
-supplémentaires distinctes après normalisation des accents et de la casse.
+CONTENU
+26 sites et les termes du tableau Paramétrage!B80:C106, conservés.
+13 communes, 26 adresses, coordonnées des villes et des sites distinctes.
+Les noms canoniques et variantes sont reconnus après normalisation.
+Sources, corrections et précision des points : SOURCES-SITES.md, ci-joint.
+
+La Ciotat conserve une adresse historique : l’accueil a été annoncé fermé
+en mars 2024. Vérifier la destination avant une intervention. Les positions
+des sites ne prétendent pas identifier leurs portails d’entrée.
 
 PROFIL UTILISATEUR
 Les données sont enregistrées dans :
 %LOCALAPPDATA%\GLPI-Pilot\settings.json
-Elles restent modifiables dans Lieux et sites, type Site.
-L'import sauvegarde les réglages existants avant leur modification.
-Il n'est effectué qu'une fois par profil pour préserver les modifications
-et suppressions réalisées ensuite dans l'application.
-L'absence du fichier n'empêche pas le démarrage du logiciel.
+Rubriques Cities.Sites et Cities.Cities, modifiables dans Lieux et sites.
+Une sauvegarde complète précède la modification des réglages.
+
+Un profil neuf reçoit les sites, les termes et leur géographie.
+Un profil déjà initialisé reçoit seulement les informations géographiques
+manquantes des sites et communes toujours présents. Les valeurs locales,
+identifiants et rattachements personnalisés sont conservés. Les sites
+supprimés ou renommés ne sont pas recréés, les alias retirés restent retirés.
+Un fichier identique n’est pas réappliqué. Son absence ne bloque pas l’EXE.
+
+SIMULATION
+Fermer complètement le logiciel après placement du fichier, puis relancer.
+Un nouvel import CSV d’incidents reprend les réglages du profil dans une
+simulation isolée. Les modifications d’essai ne changent pas ce profil.
+La démonstration sans fichier utilise ses propres références fictives.
+
+GOOGLE MAPS
+Les outils des sites et tournées ouvrent Google Maps sans clé API.
+La carte intégrée est facultative et demande une clé Maps Embed API.
+L’affichage Google nécessite Internet ; préparer les données et tournées
+reste possible hors ligne. Aucun envoi avant le clic d’ouverture.
