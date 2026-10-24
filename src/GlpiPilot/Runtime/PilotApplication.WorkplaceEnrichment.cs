@@ -28,7 +28,7 @@ public sealed partial class PilotApplication
         if (a.TryGetProperty("references", out var input))
         {
             var sourceKey = Text(a, "sourceKey", 128);
-            if (sourceKey.Length == 0 || sourceKey != SnapshotStore.SourceKey(source)) throw new InvalidOperationException("Les références appartiennent à une autre recherche ou à un contexte non vérifié.");
+            if (sourceKey.Length == 0 || sourceKey != SnapshotStore.SourceKey(IsSimulationInstance ? SimulationObservation() : source)) throw new InvalidOperationException("Les références appartiennent à une autre recherche ou à un contexte non vérifié.");
             var refs = Read<List<TicketReference>>(input); if (refs.Count > 1000) throw new InvalidDataException("La file accepte au maximum 1 000 références.");
             foreach (var reference in refs) candidates.Add(WorkValidateReference(reference));
         }
@@ -36,7 +36,7 @@ public sealed partial class PilotApplication
         {
             var indices = WorkArgument<List<int>>(a, "rows"); if (indices.Count > 1000000 || indices.Any(i => i < 0 || i >= source.Rows.Count)) throw new InvalidDataException("La sélection de lignes est invalide.");
             foreach (var index in indices.Distinct().Take(1000))
-                try { candidates.Add(WorkValidateReference(TicketReferenceResolver.Resolve(source, source.Rows[index], settings))); }
+                try { candidates.Add(WorkValidateReference(IsSimulationInstance ? SimulationReference(index) : TicketReferenceResolver.Resolve(source, source.Rows[index], settings))); }
                 catch (InvalidOperationException error) { excluded++; if (warnings.Count < 5) warnings.Add(AppPaths.SafeError(error)); }
             if (indices.Count > 1000) warnings.Add("Préparation limitée aux 1 000 premières lignes sélectionnées.");
         }
@@ -58,7 +58,7 @@ public sealed partial class PilotApplication
         var readKeys = queue.Results.Where(r => r.State == "Lu").Select(r => WorkplaceStore.TicketKey(r.Ticket)).ToHashSet(StringComparer.Ordinal);
         var planned = TicketEnrichmentService.Plan(queue.Tickets.Where(t => !readKeys.Contains(WorkplaceStore.TicketKey(t))).Select(WorkValidateReference), queue.Limit);
         var outcome = await TicketEnrichmentService.ExecuteAsync(planned,
-            (reference, token) => Browser.ReadTicketDetailsAsync(reference, settings, null, token), detail => WorkAcceptDetail(detail),
+            (reference, token) => IsSimulationInstance ? Task.FromResult(SimulationDetail(reference)) : Browser.ReadTicketDetailsAsync(reference, settings, null, token), detail => WorkAcceptDetail(detail),
             new WorkProgress<TicketEnrichmentOutcome>(result =>
             {
                 var key = WorkplaceStore.TicketKey(result.Ticket); queue.Results.RemoveAll(r => WorkplaceStore.TicketKey(r.Ticket) == key); queue.Results.Add(result);

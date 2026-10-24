@@ -35,6 +35,8 @@ var checks = new List<(string Name, Action Run)>
     ("Dashboards global et personnel : partage, migration et copies indépendantes", CheckIndependentLayouts),
     ("Widgets : jauges, anneaux, objectifs et seuils partagés sans perte", CheckProbePresentationRoundTrip),
     ("Widgets : seuils non finis, incohérents ou hors limites refusés", CheckProbeThresholdValidation),
+    ("Pilotage natif : profils et dispositions partagés sans perte ni mutation", CheckBusinessConfiguration),
+    ("Pilotage natif : propriétés inconnues et règles invalides refusées", CheckBusinessValidation),
     ("Espace personnel : identité et ouverture automatique locales, exclues du partage", CheckPersonalTechnician),
     ("Dispositions importées : dimensions et nombres bornés avant normalisation", CheckLayoutBounds),
     ("Dispositions importées : identifiants uniques et tableau actif existant", CheckLayoutIdentity),
@@ -235,7 +237,7 @@ void CheckEnvelope()
     Equal(Sample().InterfaceZoomPercent, current.InterfaceZoomPercent);
     var version31 = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.1.0\",\"Settings\":{}}"), Sample());
     Equal(Sample().InterfaceZoomPercent, version31.InterfaceZoomPercent);
-    foreach (var version in new[] { "3.2.0", "3.2.1", "3.2.2" })
+    foreach (var version in new[] { "3.2.0", "3.2.1", "3.2.2", "3.3.0", "3.3.1" })
     {
         var version32 = ConfigurationTransferService.Import(Write(JsonSerializer.Serialize(new
             { Schema = "glpi-pilot.configuration", SchemaVersion = 1, AppVersion = version, Settings = new { } })), Sample());
@@ -246,7 +248,7 @@ void CheckEnvelope()
         "{\"Schema\":\"wrong\",\"SchemaVersion\":1,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":2,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"4.0.0\",\"Settings\":{}}",
-        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.3.0\",\"Settings\":{}}",
+        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.4.0\",\"Settings\":{}}",
         "{\"PortalUrl\":\"https://glpi.test/front/ticket.php\",\"portalurl\":\"https://other.test\"}",
         "{\"Dashboard\":{\"ColumnMappings\":{\"id\":\"ID\",\"ID\":\"Autre\"}}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));
@@ -883,4 +885,40 @@ void CheckLocalAnalyticsMigration()
     settings.Queries.Validate();
     var imported = ConfigurationTransferService.Import(Write("{\"Cities\":{\"Cities\":[]},\"Queries\":{\"Queries\":[]}}"), Sample());
     Equal(0, imported.Cities.Cities.Count); Equal(0, imported.Queries.Queries.Count);
+}
+
+void CheckBusinessConfiguration()
+{
+    var current = Sample(); current.Normalize();
+    current.Dashboard.Business.WeatherRules.Add(new() { Id = "team-a", Label = "Équipe fictive A", Kind = "team", Values = new() { "Groupe fictif A" }, OrangeAbove = 4, RedAbove = 8, Visible = false, WeatherEnabled = false });
+    current.Dashboard.Business.Notes = "Note fictive"; current.Dashboard.Business.SiteInterventionThreshold = 5;
+    var board = DashboardLayoutSettings.CreateBoard("Groupes", "empty"); board.Id = "business-groups"; current.Dashboard.Business.BoardOverrides.Add(board);
+    current.Normalize();
+    var path = Path.Combine(temporary, "business.json"); ConfigurationTransferService.Export(path, current);
+    var imported = ConfigurationTransferService.Import(path, Sample());
+    Equal(JsonSerializer.Serialize(current.Dashboard.Business), JsonSerializer.Serialize(imported.Dashboard.Business));
+    var before = JsonSerializer.Serialize(current.Dashboard.Business);
+    var partial = ConfigurationTransferService.Import(Write("{\"Dashboard\":{\"StaleDays\":12}}"), current, out var parts);
+    Equal(ConfigurationParts.Indicators, parts); Equal(before, JsonSerializer.Serialize(partial.Dashboard.Business));
+    var copy = imported.Copy(); copy.Dashboard.Business.WeatherRules[0].Values.Add("Autre groupe fictif"); Equal(1, imported.Dashboard.Business.WeatherRules[0].Values.Count);
+    var indicatorsOnly = ConfigurationReview.Apply(current, Sample(), ConfigurationParts.Indicators, false); Equal(before, JsonSerializer.Serialize(indicatorsOnly.Dashboard.Business));
+    imported.Dashboard.Business.Notes = "Note différente";
+    True(ConfigurationReview.Conflicts(current, imported).Any(conflict => conflict.Key == "pilot/profile"), "Le profil natif modifié demande un arbitrage explicite.");
+    var chosen = ConfigurationReview.Apply(current, imported, ConfigurationParts.Dashboards, true, new Dictionary<string, string> { ["pilot/profile"] = "incoming" });
+    Equal("Note différente", chosen.Dashboard.Business.Notes);
+    Equal(before, JsonSerializer.Serialize(current.Dashboard.Business));
+}
+
+void CheckBusinessValidation()
+{
+    var current = Sample(); current.Normalize();
+    foreach (var json in new[]
+    {
+        "{\"Dashboard\":{\"Business\":{\"RemoteScript\":\"run\"}}}",
+        "{\"Dashboard\":{\"Business\":{\"FreshnessWarningHours\":0}}}",
+        "{\"Dashboard\":{\"Business\":{\"SiteInterventionThreshold\":0}}}",
+        "{\"Dashboard\":{\"Business\":{\"WeatherRules\":[{\"Id\":\"r\",\"Label\":\"Volume\",\"Unexpected\":true}]}}}",
+        "{\"Dashboard\":{\"Business\":{\"WeatherRules\":[{\"Id\":\"r\",\"Label\":\"Volume\",\"OrangeAbove\":9,\"RedAbove\":2}]}}}",
+        "{\"Dashboard\":{\"Business\":{\"WeatherRules\":[{\"Id\":\"r\",\"Label\":\"Équipe\",\"Kind\":\"team\",\"Values\":[]}]}}}"
+    }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), current, out _));
 }

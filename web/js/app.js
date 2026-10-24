@@ -5,6 +5,7 @@ import {pages as records} from './pages/records.js';
 import {pages as configuration} from './pages/settings.js';
 import {pages as automation} from './pages/automation.js';
 import {pages as analytics} from './pages/analytics.js';
+import {pages as business} from './pages/analytics-business.js';
 import {pages as workplace} from './pages/workplace.js';
 import {pages as terrain} from './pages/terrain.js';
 import {pages as library} from './pages/library.js';
@@ -13,9 +14,8 @@ import {initializeDomeniaMotion} from './domenia-motion.js';
 import {createCommandPalette} from './command-palette.js';
 import {importLocalTestFile,localFileTestSummary} from './local-file-test.js';
 
-const pages=[...foundation,...library,...records,...analytics,...workplace,...terrain,...automation,...configuration];
+const pages=[...foundation,...library,...records,...business,...analytics,...workplace,...terrain,...automation,...configuration];
 const registry=new Map(pages.map(page=>[page.id,page]));
-const localTestPages=new Set(['home','collect','records','quality','mapping','dashboard','queries','terrain-reference','terrain-review']);
 const state={settings:null,session:{loaded:false},version:'',capabilities:[]};
 let current='home',params={},controller=null,cleanup=null,revision=0,logOpen=false,navRequest=0;
 let navCollapsed=false,navToggle;
@@ -65,31 +65,27 @@ function customizeNavigation(){
 }
 function sessionChanged(){
  const session=state.session,status=extractionStatus(session);
- const label=session.testMode?'Mode test · fichier local':session.demo?'Démonstration':session.historical?'Archive':status.label;
+ const label=session.testMode?'Simulation':session.demo?'Démonstration':session.historical?'Archive':status.label;
  sourceLabel.textContent=session.loaded?`${label} · ${new Intl.NumberFormat('fr-FR').format(session.rows)} lignes`:'Aucun relevé';
  sourceLabel.title=sourceLabel.textContent;sourceLabel.className=`badge source-status ${session.demo?'warning':session.loaded?status.tone:''}`;
  statusLabel.textContent=session.status||'Prêt';
- if(testBanner){testBanner.hidden=!session.testMode;testFileName.textContent=session.testFileName||'Fichier local';testFileName.title=session.testFileName||'';testFileDetails.textContent=localFileTestSummary(session);testExit.title=session.testCanRestore?'Retrouver le relevé ouvert avant le test':'Fermer le fichier de test et revenir au relevé vide';}
+ if(testBanner){testBanner.hidden=!session.testMode;testFileName.textContent=session.testFileName||'Données de démonstration';testFileName.title=session.testFileName||'';testFileDetails.textContent=localFileTestSummary(session);testExit.title='Fermer cet espace de simulation et retrouver vos données et réglages habituels';}
 }
-async function exitLocalTest(){const session=await api.call('records.test.exit');state.session=session;sessionChanged();notify(session.loaded?'Mode test terminé. Le relevé précédent est restauré.':'Mode test terminé.');await navigate('records');}
+async function exitLocalTest(){const session=await api.call('records.test.exit');state.session=session;sessionChanged();notify('Simulation terminée. Vos données et réglages habituels sont restaurés.');await navigate(session.loaded?'pilot-weather':'home');}
 function openLog(){logOpen=!logOpen;if(!logOpen){logPanel?.remove();return;}logPanel=el('section',{class:'log-panel','aria-label':'Journal de la session'},el('div',{class:'card-heading'},el('h2',{text:'Journal de la session'}),button('Fermer',openLog,{icon:'close'})),el('div',{class:'log-lines',text:logs.length?logs.join('\n'):'Aucun message pour cette session.'}));document.body.append(logPanel);}
 async function navigate(id,nextParams={},options={}){
  if(!registry.has(id)){notify('Cet espace n’est pas disponible.','danger');return;}
  const request=++navRequest;if(typeof cleanup==='function'){try{await cleanup();}catch(error){notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation();pageTitle.textContent=page.title;const crumb=document.querySelector('#breadcrumb-page');if(crumb)crumb.textContent=page.title;groupTitle.textContent=navigationModel(pages,state.settings.interface||{},true).find(group=>group.pages.some(entry=>entry.id===id))?.label||page.group||'Mon espace';document.title=`${page.title} · GLPI Pilot`;const desc=document.querySelector('#page-description');desc.textContent=descriptions[id]||'';desc.hidden=!descriptions[id];content.setAttribute('aria-busy','true');
  const pageRoot=el('div',{class:`page-content${options.preserveScroll?'':' page-enter'}`,dataset:{page:id}});content.replaceChildren(pageRoot);
  try{
-  if(state.session.testMode&&!localTestPages.has(id)){
-   pageRoot.append(empty('Disponible après le mode test','Cet espace utilise les données de travail habituelles. Vous pouvez continuer à explorer le fichier dans le relevé, les dashboards et les requêtes.'),button('Revenir au dashboard du fichier',()=>navigate('dashboard'),{primary:true}),button('Quitter le mode test',exitLocalTest,{icon:'close'}));
-  }else{
-   const done=await page.render({root:pageRoot,api,state,signal,navigate,notify,refresh:()=>navigate(current,params,{preserveScroll:true}),params:nextParams,pages});if(signal.aborted){if(typeof done==='function')done();return;}cleanup=done;
-  }
+  const done=await page.render({root:pageRoot,api,state,signal,navigate,notify,refresh:()=>navigate(current,params,{preserveScroll:true}),params:nextParams,pages});if(signal.aborted){if(typeof done==='function')done();return;}cleanup=done;
   if(!options.preserveScroll)document.querySelector('.workspace').scrollTop=0;
  }
  catch(error){if(!signal.aborted&&error.name!=='AbortError')showError(pageRoot,error);}
  finally{if(local===revision)content.removeAttribute('aria-busy');}
 }
-const palette=createCommandPalette({api,navigate,getPageSignal:()=>controller?.signal,notify,getCommands:()=>({
- ticketLookup:!state.session.testMode,
+const palette=createCommandPalette({api,navigate,getPageSignal:()=>controller?.signal,getState:()=>state,notify,getCommands:()=>({
+ ticketLookup:true,
  pages:pages.map(page=>({id:`page:${page.id}`,label:page.title,keywords:navigationLabel(page),icon:page.icon,
   active:page.id===current,run:()=>navigate(page.id)})),
  actions:[
@@ -97,12 +93,10 @@ const palette=createCommandPalette({api,navigate,getPageSignal:()=>controller?.s
   {id:'action:resolution',label:'Trouver une solution',icon:'spark',keywords:'bibliothèque tickets résolus similaires',run:()=>navigate('library',{view:'resolution'})},
   {id:'action:team',label:'Espace d’équipe',icon:'users',keywords:'partage notes contributions',run:()=>navigate('library',{view:'team'})},
   {id:'action:connection',label:'Stockage et synchronisation',icon:'folder',keywords:'bibliothèque base locale centrale connexion',run:()=>navigate('library',{view:'connection'})},
-  {id:'action:test-file',label:'Importer un fichier de test',icon:'folder',keywords:'Excel CSV XLSX XLSM TSV local hors ligne simulation',run:()=>importLocalTestFile({api,state,navigate,notify})},
-  ...(state.session.testMode?[{id:'action:test-exit',label:'Quitter le mode test',icon:'close',run:exitLocalTest}]:[
-  {id:'action:demo',label:'Charger la démonstration',icon:'spark',run:async()=>{await api.call('app.demo');await navigate('dashboard');}},
-  {id:'action:import',label:'Importer un relevé CSV ou Excel',icon:'download',run:async()=>{await api.call('records.import');await navigate('records');}},
-  {id:'action:collect',label:'Collecter la source actuelle',icon:'refresh',run:async()=>{await api.call('collect.run');await navigate('dashboard');}}
-  ])
+  {id:'action:test-file',label:'Simuler avec un fichier Excel ou CSV',icon:'folder',keywords:'Excel CSV XLSX XLSM TSV local hors ligne simulation test',run:()=>importLocalTestFile({api,state,navigate,notify})},
+  ...(state.session.testMode?[{id:'action:test-exit',label:'Quitter la simulation',icon:'close',run:exitLocalTest}]:[]),
+  {id:'action:demo',label:'Explorer la simulation de démonstration',icon:'spark',run:async()=>{await api.call('app.demo');await navigate('pilot-weather');}},
+  {id:'action:collect',label:state.session.testMode?'Simuler une collecte':'Collecter la source actuelle',icon:'refresh',run:async()=>{await api.call('collect.run');await navigate('pilot-weather');}}
  ]
 })});
 function commandPalette(){closeNavigation(true);palette.toggle();}
@@ -113,8 +107,8 @@ async function start(){
  sourceLabel=badge('');pageTitle=el('h1',{text:'Accueil'});groupTitle=el('small',{text:'Espace de travail'});content=el('div',{id:'content',tabIndex:-1});statusLabel=el('span',{class:'status-text'});progress=el('progress',{hidden:true,'aria-label':'Traitement en cours'});cancel=button('Annuler',async()=>{api.cancelAll();await api.call('operations.cancel');},{icon:'close'});cancel.hidden=true;overlay=el('div',{class:'nav-overlay','aria-hidden':'true',onClick:()=>closeNavigation(true)});
  navToggle=button('Navigation',toggleNavigation,{icon:'menu',title:'Replier la navigation',attributes:{class:'button nav-toggle','aria-label':'Navigation','aria-controls':'app-sidebar','aria-expanded':'true'}});
  const topbar=el('header',{class:'topbar'},el('div',{class:'breadcrumb'},navToggle,el('span',{class:'breadcrumb-home',text:'Mon espace'}),el('span',{class:'breadcrumb-separator',text:'/','aria-hidden':'true'}),el('strong',{id:'breadcrumb-page',text:'GLPI Pilot'})),el('div',{class:'top-actions'},sourceLabel,el('button',{type:'button',class:'search-command',onClick:commandPalette,title:'Rechercher un écran, une action ou un ticket (Ctrl K)','aria-label':'Rechercher un écran, une action ou un ticket'},icon('search'),el('span',{text:'Rechercher'}),el('kbd',{text:'Ctrl K'})),button('Thème',()=>appearance({theme:document.documentElement.dataset.theme==='dark'?'light':'dark',preferences:{...state.settings.interface,followWindowsTheme:false}}),{icon:'sun',title:'Changer de thème',attributes:{'aria-label':'Changer de thème'}})));
- testFileName=el('span',{class:'local-test-file-name'});testFileDetails=el('span',{class:'local-test-details'});testExit=button('Quitter le mode test',exitLocalTest,{icon:'close'});
- testBanner=el('aside',{class:'local-test-banner',hidden:true,'aria-label':'Mode test · fichier local'},icon('folder'),el('div',{class:'local-test-copy'},el('strong',{text:'Mode test · fichier local'}),testFileName,testFileDetails),testExit);
+ testFileName=el('span',{class:'local-test-file-name'});testFileDetails=el('span',{class:'local-test-details'});testExit=button('Quitter la simulation',exitLocalTest,{icon:'close'});
+ testBanner=el('aside',{class:'local-test-banner',hidden:true,'aria-label':'Mode simulation'},icon('folder'),el('div',{class:'local-test-copy'},el('strong',{text:'Simulation · toutes les rubriques'}),testFileName,testFileDetails),testExit);
  root.replaceChildren(el('div',{class:'shell'},sidebar,topbar,el('main',{class:'workspace'},testBanner,el('div',{class:'page-heading'},el('div',{},groupTitle,pageTitle,el('p',{id:'page-description'})),button('Actualiser',()=>navigate(current,params),{icon:'refresh',title:'Actualiser cet espace',attributes:{'aria-label':'Actualiser'}})),content),el('footer',{class:'statusbar'},el('span',{class:'local-dot'}),statusLabel,progress,cancel,button('Journal',openLog,{icon:'log'}),button('−',()=>changeZoom(-5),{title:'Réduire le zoom',attributes:{'aria-label':'Réduire le zoom'}}),button(`${state.settings.interfaceZoomPercent} %`,()=>changeZoom(0),{title:'Revenir à 100 %',attributes:{id:'zoom-label','aria-label':'Réinitialiser le zoom'}}),button('+',()=>changeZoom(5),{title:'Augmenter le zoom',attributes:{'aria-label':'Augmenter le zoom'}}))),overlay);
  buildNavigation();sessionChanged();await navigate('home');await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));await api.call('app.ready');document.body.dataset.ready='true';
  }catch(error){root.className='';root.replaceChildren(el('main',{class:'workspace'},empty('L’interface n’a pas pu démarrer','Le diagnostic de démarrage est disponible dans le dossier de données de GLPI Pilot.'),el('p',{class:'notice danger',text:error.message})));}

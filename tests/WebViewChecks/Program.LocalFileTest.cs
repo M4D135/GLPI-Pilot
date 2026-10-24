@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Globalization;
+using System.Security;
 using System.Text;
 using GlpiPilot.Core;
 using GlpiPilot.Runtime;
@@ -38,7 +40,8 @@ internal static partial class Program
             { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), new AppSettings { Theme = "dark", ExportFolder = Path.Combine(_root, "Exports") });
-        await Call(app, "app.demo"); var original = app.Result;
+        app.LoadQualityFixture(QualityFixture()); var original = app.Result;
+        var originalLibrary = (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32();
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
         {
             if (app.IsTestMode && op.StartsWith("library.", StringComparison.Ordinal)) offlineLibraryRequests.Enqueue(op);
@@ -62,56 +65,182 @@ internal static partial class Program
             Directory.CreateDirectory(args[argument + 1]); await page.ScreenshotAsync(new() { Path = Path.Combine(args[argument + 1], name + ".png"), FullPage = true });
         }
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await page.Locator("body[data-ready=true]").WaitForAsync(); await Ready("home");
-        await Button("Importer un fichier de test").ClickAsync();
+        async Task Navigate(string id)
+        {
+            await page.Locator($".nav-item[data-page='{id}']").ClickAsync(); await Ready(id);
+        }
+        await Button("Importer en simulation").ClickAsync();
         var chooser = page.GetByRole(AriaRole.Dialog, new() { Name = "Choisir le tableau Excel", Exact = true }); await chooser.WaitForAsync();
-        Require(!app.IsTestMode && ReferenceEquals(app.Result, original) && await chooser.Locator("select option").CountAsync() == 2,
+        Require(!app.IsTestMode && ReferenceEquals(app.Result, original) && await chooser.Locator("select option").CountAsync() == 3,
             "The real Excel chooser lists visible sheets before changing the current observation.");
+        Require(await chooser.GetByLabel("Feuille contenant les incidents", new() { Exact = true }).InputValueAsync() == "Tickets"
+            && await chooser.GetByLabel("Numéro de la ligne d’en-têtes", new() { Exact = true }).InputValueAsync() == "4"
+            && await chooser.GetByRole(AriaRole.Checkbox).IsCheckedAsync(),
+            "The workbook inspection suggests Tickets/header 4 and offers its weather/team/site profile enabled by default.");
+        await chooser.GetByLabel("Feuille contenant les incidents", new() { Exact = true }).SelectOptionAsync("Dashboard");
+        Require(await chooser.GetByLabel("Numéro de la ligne d’en-têtes", new() { Exact = true }).InputValueAsync() == "",
+            "Changing worksheets clears the header suggestion rather than imposing the Tickets row on another sheet.");
         await chooser.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "!document.querySelector('dialog') && !document.querySelector('.hero button[aria-busy=true]')");
         Require(!app.IsTestMode && ReferenceEquals(app.Result, original), "Cancelling the Excel chooser keeps the previous observation and mode.");
-        await Button("Importer un fichier de test").ClickAsync(); await chooser.WaitForAsync();
-        await chooser.GetByLabel("Feuille contenant les incidents", new() { Exact = true }).SelectOptionAsync("Incidents");
-        await chooser.GetByLabel("Numéro de la ligne d’en-têtes", new() { Exact = true }).FillAsync("4");
-        await Capture("offline-import-worksheet-choice");
-        await chooser.GetByRole(AriaRole.Button, new() { Name = "Importer en mode test", Exact = true }).ClickAsync(); await Ready("records");
-        Require(app.IsTestMode && app.Result!.Rows.Count == 2 && app.Result.Rows[0][1] == "Incident <b>littéral</b>" && app.Result.Provenance.Method == "xlsm",
-            "The real chooser reads the selected XLSM sheet and header row without evaluating markup or macros.");
-        Require(await page.Locator(".local-test-banner").IsVisibleAsync() && await page.Locator(".local-test-banner").InnerTextAsync() is { } summary && summary.Contains("Fichier entièrement lu", StringComparison.Ordinal),
-            "The persistent banner identifies the local simulation and its actual file receipt.");
-        Require(await page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).CountAsync() == 0,
-            "The offline table omits ticket actions that cannot operate on a local test file.");
-        await Capture("offline-import-records");
-        await page.Locator(".nav-item[data-page=dashboard]").ClickAsync(); await Ready("dashboard");
-        Require(app.IsTestMode && await page.Locator(".local-test-banner").IsVisibleAsync() && await page.Locator(".page-content .notice.danger").CountAsync() == 0,
-            "The imported incident rows feed the real C# dashboard while the simulation remains visible.");
-        await page.Locator(".nav-item[data-page=library]").ClickAsync(); await Ready("library");
-        Require(await page.GetByRole(AriaRole.Heading, new() { Name = "Disponible après le mode test", Exact = true }).IsVisibleAsync()
-            && await Button("Revenir au dashboard du fichier").IsVisibleAsync() && await page.Locator(".page-content .notice.danger").CountAsync() == 0
-            && offlineLibraryRequests.IsEmpty,
-            "Opening an unavailable workspace explains the test mode and offers a usable route without reading the operational library.");
+        await Button("Importer en simulation").ClickAsync(); await chooser.WaitForAsync();
+        await Capture("simulation-workbook-profile");
+        await chooser.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la simulation", Exact = true }).ClickAsync(); await Ready("pilot-weather");
+        Require(app.IsTestMode && app.Result!.Rows.Count == 2 && app.Result.Rows[0][1] == "Incident <b>littéral</b> · Atelier Nord"
+            && app.Result.Provenance.Method == "xlsm" && !app.Result.Complete && !app.Result.Provenance.SearchVerified
+            && app.Result.Headers.Take(19).SequenceEqual(LocalTestHeaders),
+            "The real chooser reads all nineteen XLSM source fields as literal values while keeping source verification unconfirmed.");
+        Require(app.Settings.Cities.Sites.Any(site => site.Name == "Site fictif Nord" && site.Aliases.Contains("Atelier Nord"))
+            && app.Settings.Dashboard.Business.WeatherRules.Single().Label == "Stock fictif",
+            "The explicit workbook profile configures the isolated simulation directly, including site aliases and the weather rule.");
+        Require(await page.Locator(".local-test-banner").IsVisibleAsync() && await page.Locator(".local-test-banner").InnerTextAsync() is { } summary
+            && summary.Contains("Fichier entièrement lu", StringComparison.Ordinal) && summary.Contains("Simulation", StringComparison.Ordinal),
+            "The persistent banner identifies the global simulation and its actual file receipt.");
+        await page.Locator(".business-weather-hero .analytics-metric-value").WaitForAsync();
+        Require((await page.Locator(".business-weather-hero .analytics-metric-value").InnerTextAsync()).Trim() == "2",
+            "The imported rows appear immediately in the native weather overview.");
+        await Capture("simulation-native-weather");
+
+        var allPages = await page.Locator(".nav-item[data-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.page)");
+        var businessPages = new[] { "pilot-weather", "pilot-summary", "pilot-groups", "pilot-categories", "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings" };
+        Require(businessPages.All(allPages.Contains), "Every workbook business section and its settings is a native navigation entry.");
+        foreach (var id in allPages)
+        {
+            await Navigate(id);
+            var content = await page.Locator(".page-content").InnerTextAsync();
+            Require(await page.Locator(".page-content .notice.danger").CountAsync() == 0
+                && !content.Contains("Disponible après le mode test", StringComparison.Ordinal)
+                && !content.Contains("Collecte en pause", StringComparison.Ordinal),
+                $"The {id} page is usable in the real isolated simulation, without the former restricted-mode screen.");
+        }
+
+        await Navigate("records");
+        var openRow = page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true });
+        Require(await openRow.CountAsync() == 2, "Each imported row provides an actual ticket reader in simulation.");
+        await openRow.First.ClickAsync(); await Ready("tickets");
+        Require((await page.Locator(".work-ticket-heading h2").InnerTextAsync()).Contains("#42", StringComparison.Ordinal)
+            && await Button("Afficher la fiche simulée").IsEnabledAsync(),
+            "Opening the first imported row reaches its usable simulated ticket reader.");
+        await Button("Afficher la fiche simulée").ClickAsync();
+        await Button("Actions assistées").ClickAsync();
+        await Button("Inspecter les formulaires simulés").ClickAsync();
+        var adapters = page.GetByLabel("Adaptateur de formulaire", new() { Exact = true });
+        var statusKey = await adapters.Locator("option").Filter(new() { HasTextRegex = new System.Text.RegularExpressions.Regex("statut", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).GetAttributeAsync("value");
+        Require(!string.IsNullOrEmpty(statusKey), "A status change is exposed as a selectable simulation action.");
+        await adapters.SelectOptionAsync(statusKey!);
+        await page.GetByLabel("Statut simulé", new() { Exact = true }).SelectOptionAsync("5");
+        await Button("Prévisualiser l’action…").ClickAsync();
+        var preview = page.GetByRole(AriaRole.Dialog, new() { Name = "Relire la modification simulée", Exact = true }); await preview.WaitForAsync();
+        Require(app.Result!.Rows[0][2] == "En attente", "Previewing a simulated status change leaves the row unchanged before confirmation.");
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Appliquer dans la simulation…", Exact = true }).ClickAsync();
+        var confirmation = page.GetByRole(AriaRole.Dialog, new() { Name = "Modifier le ticket simulé ?", Exact = true }); await confirmation.WaitForAsync();
+        await confirmation.GetByRole(AriaRole.Button, new() { Name = "Appliquer la simulation", Exact = true }).ClickAsync();
+        await Until(() => app.Result!.Rows[0][2] == "Résolu");
+        await page.GetByText("Modification simulée appliquée", new() { Exact = true }).WaitForAsync();
+        await WaitForPageAsync(page, "document.querySelector('.work-ticket-browser')?.textContent.includes('Résolu')");
+        Require((await page.Locator(".work-ticket-browser").InnerTextAsync()).Contains("Résolu", StringComparison.Ordinal),
+            "Confirming the simulation really updates the row and the visible ticket list, and retains an explicit simulated receipt.");
+        await Capture("simulation-applied-action");
+        await Navigate("pilot-weather");
+        Require((await page.Locator(".business-weather-hero .analytics-metric-value").InnerTextAsync()).Trim() == "1",
+            "Returning to native weather recomputes the active total after the simulated ticket status changes.");
+        await page.Locator(".business-weather-hero .analytics-metric-value").ClickAsync();
+        var weatherRows = page.Locator("dialog").Filter(new() { Has = page.Locator(".analytics-row-dialog") }); await weatherRows.WaitForAsync();
+        await weatherRows.GetByRole(AriaRole.Button, new() { Name = "Ticket", Exact = true }).ClickAsync(); await Ready("tickets");
+        Require((await page.Locator(".work-ticket-heading h2").InnerTextAsync()).Contains("#43", StringComparison.Ordinal),
+            "The weather total drills down to the remaining active row and opens its actual simulated ticket.");
+
+        await Navigate("terrain-reference");
+        await page.GetByLabel("Type", new() { Exact = true }).SelectOptionAsync("site");
+        var siteRow = page.Locator(".terrain-body tbody tr").Filter(new() { HasText = "Site fictif Nord" });
+        await siteRow.GetByRole(AriaRole.Button, new() { Name = "Modifier", Exact = true }).ClickAsync();
+        var siteEditor = page.GetByRole(AriaRole.Dialog, new() { Name = "Modifier · Site", Exact = true }); await siteEditor.WaitForAsync();
+        await siteEditor.GetByLabel("Nom", new() { Exact = true }).FillAsync("Site fictif Nord modifié");
+        await siteEditor.GetByRole(AriaRole.Button, new() { Name = "Ajouter au brouillon", Exact = true }).ClickAsync();
+        await siteEditor.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await Button("Simuler et enregistrer le référentiel").ClickAsync();
+        var impact = page.GetByRole(AriaRole.Dialog, new() { Name = "Impact sur le relevé complet", Exact = true }); await impact.WaitForAsync();
+        await impact.GetByRole(AriaRole.Button, new() { Name = "Enregistrer et appliquer", Exact = true }).ClickAsync();
+        await impact.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        Require(app.Settings.Cities.Sites.Any(site => site.Name == "Site fictif Nord modifié"),
+            "Sites imported from Paramétrage remain editable and their changes apply to the simulation.");
+
+        await Navigate("library");
+        Require(await page.Locator(".library-result").CountAsync() == 2 && !offlineLibraryRequests.IsEmpty,
+            "The real library is populated from the imported rows inside the isolated simulation.");
+        await Button("Synchroniser le central simulé").ClickAsync();
+        await page.Locator(".library-outcome[aria-label='Bilan de la bibliothèque']").WaitForAsync();
+        Require(await page.Locator(".page-content .notice.danger").CountAsync() == 0,
+            "The shared-library synchronization produces a visible local result through the simulation adapter.");
         await page.Keyboard.PressAsync("Control+k");
         var palette = page.GetByRole(AriaRole.Dialog, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }); await palette.WaitForAsync();
         await palette.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync("42");
-        // Permit a mistakenly re-enabled debounce to run before asserting that
-        // neither the source list nor ticket search accessed the real library.
-        await page.WaitForTimeoutAsync(350);
-        Require((await palette.Locator(".command-palette-status").InnerTextAsync()).Contains("Pour rechercher les lignes du fichier, ouvrez le relevé.", StringComparison.Ordinal)
-            && !await palette.Locator(".command-palette-scope").IsVisibleAsync()
-            && !await palette.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la bibliothèque filtrée", Exact = true }).IsVisibleAsync()
-            && await palette.Locator("[data-ticket-key]").CountAsync() == 0 && offlineLibraryRequests.IsEmpty,
-            "Ctrl+K in a file test keeps local commands, explains row search and never requests the operational ticket library.");
-        await page.Keyboard.PressAsync("Escape"); await palette.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
-        await Button("Revenir au dashboard du fichier").ClickAsync(); await Ready("dashboard");
-        await page.Locator(".nav-item[data-page=collect]").ClickAsync(); await Ready("collect");
-        Require(await page.GetByRole(AriaRole.Heading, new() { Name = "Collecte en pause", Exact = true }).IsVisibleAsync()
-            && await Button("Lancer la collecte").CountAsync() == 0,
-            "The collection page offers file exploration and shows that collection is paused during a test.");
-        await Button("Quitter le mode test").ClickAsync(); await Ready("records");
-        Require(!app.IsTestMode && ReferenceEquals(app.Result, original) && !await page.Locator(".local-test-banner").IsVisibleAsync(),
-            "Leaving through the persistent banner restores the exact previous observation and normal mode.");
-        Require(externalRequests == 0 && errors.IsEmpty, "The real offline import route, analysis and restoration complete without an external request or JavaScript error.");
+        await palette.Locator("[data-ticket-key]").First.WaitForAsync();
+        Require(await palette.Locator(".command-palette-scope").IsVisibleAsync()
+            && await palette.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la bibliothèque filtrée", Exact = true }).IsVisibleAsync(),
+            "Ctrl+K searches actual simulation tickets and offers the same scoped library route as normal mode.");
+        await palette.Locator("[data-ticket-key]").First.ClickAsync();
+        var libraryTicket = page.Locator("dialog.library-ticket-modal"); await libraryTicket.WaitForAsync();
+        await libraryTicket.Locator(".library-ticket-content").WaitForAsync();
+        Require((await libraryTicket.InnerTextAsync()).Contains("Simulation", StringComparison.Ordinal),
+            "A palette ticket opens the library reader with the simulation context retained.");
+        await page.Keyboard.PressAsync("Escape"); await libraryTicket.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+
+        await Navigate("collect");
+        await Button("Connecter la source simulée").ClickAsync();
+        await page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Inspecter", Exact = true }).ClickAsync();
+        await page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Choisir", Exact = true }).ClickAsync();
+        await Button("Extraire cette page seulement").ClickAsync(); await Ready("records");
+        Require(app.Result!.Rows.Count == 2 && app.Result.Rows[0][2] == "Résolu",
+            "The full connect-inspect-select-collect workflow preserves the current simulation rows and their applied changes.");
+
+        await Navigate("updates");
+        var installed = (await Call(app, "update.state")).GetProperty("version").GetString();
+        await Button("Utiliser le pack de démonstration").ClickAsync();
+        await Button("Vérifier le ZIP local").ClickAsync();
+        await Button("Simuler l’installation de cette version").ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Appliquer la simulation", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.terrain-status')?.textContent.includes('Installation simulée terminée')");
+        var update = await Call(app, "update.state");
+        Require(update.GetProperty("version").GetString() != installed && update.GetProperty("outcome").ValueKind == System.Text.Json.JsonValueKind.Object
+            && await page.GetByRole(AriaRole.Heading, new() { Name = "Dernière opération", Exact = true }).IsVisibleAsync(),
+            "The simulated installer changes its virtual version and redraws the outcome without closing the application.");
+        await Capture("simulation-update-result");
+
+        await Button("Quitter la simulation").ClickAsync(); await Ready("pilot-weather");
+        Require(!app.IsTestMode && ReferenceEquals(app.Result, original) && !await page.Locator(".local-test-banner").IsVisibleAsync()
+            && app.Result!.Rows[0][2] == "Nouveau" && !app.Settings.Cities.Sites.Any(site => site.Name.StartsWith("Site fictif Nord", StringComparison.Ordinal))
+            && (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32() == originalLibrary,
+            "Leaving the simulation restores the exact prior observation, sites and operational library after all those local mutations.");
+        await Navigate("pilot-settings");
+        var settingsBeforeProfile = System.Text.Json.JsonSerializer.Serialize(app.Settings, PilotApplication.Json);
+        await Button("Reprendre les paramètres d’un classeur Excel").ClickAsync();
+        var profilePreview = page.GetByRole(AriaRole.Dialog, new() { Name = "Vérifier les paramètres du classeur", Exact = true }); await profilePreview.WaitForAsync();
+        Require(!app.IsTestMode && ReferenceEquals(app.Result, original)
+            && System.Text.Json.JsonSerializer.Serialize(app.Settings, PilotApplication.Json) == settingsBeforeProfile
+            && (await profilePreview.InnerTextAsync()).Contains("1 règles météo", StringComparison.Ordinal),
+            "Previewing a workbook profile from native settings leaves the normal observation and its saved interpretation unchanged.");
+        await profilePreview.GetByRole(AriaRole.Button, new() { Name = "Appliquer les paramètres", Exact = true }).ClickAsync();
+        await profilePreview.WaitForAsync(new() { State = WaitForSelectorState.Hidden }); await Ready("pilot-settings");
+        await Navigate("pilot-weather");
+        var persisted = AppSettings.Load();
+        Require(!app.IsTestMode && persisted.Dashboard.Business.WeatherRules.Single().Label == "Stock fictif"
+            && persisted.Cities.Sites.Any(site => site.Name == "Site fictif Nord" && site.Aliases.Contains("Atelier Nord"))
+            && app.Settings.Dashboard.Business.WeatherRules.Single().Label == "Stock fictif"
+            && (await page.Locator(".business-weather-hero .analytics-metric-value").InnerTextAsync()).Trim() == "4",
+            "Explicitly applying the workbook profile persists its weather/site settings in the normal workspace and recalculates weather from the original four rows.");
+        await Capture("workbook-profile-applied-normal");
+        Require(externalRequests == 0 && errors.IsEmpty, "The complete real simulation journey completes without an external WebView request or JavaScript error."
+            + (errors.IsEmpty ? "" : "\n" + string.Join("\n", errors)));
         await delivery;
     }
+
+    private static readonly string[] LocalTestHeaders =
+    [
+        "ID", "Titre", "Statut", "Dernière modification", "Date d'ouverture", "Priorité", "Demandeur - Demandeur", "Attribué à - Technicien",
+        "Catégorie", "Suivis - Rédacteur", "Tâches - Rédacteur", "TTR + Progression", "Statistiques - Délai de prise en compte", "Type",
+        "Attribué à - Groupe de techniciens", "Âge (jours)", "Nombre de groupes", "Nombre de rédacteurs", "Description"
+    ];
 
     private static string CreateLocalFileTestWorkbook()
     {
@@ -119,10 +248,20 @@ internal static partial class Program
         using var output = File.Create(path); using var archive = new ZipArchive(output, ZipArchiveMode.Create);
         void Add(string name, string text) { using var writer = new StreamWriter(archive.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(text); }
         const string ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-        Add("xl/workbook.xml", "<workbook xmlns='" + ns + "' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'><sheets><sheet name='Dashboard' sheetId='1' r:id='r1'/><sheet name='Incidents' sheetId='2' r:id='r2'/></sheets></workbook>");
-        Add("xl/_rels/workbook.xml.rels", "<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='r1' Target='worksheets/sheet1.xml'/><Relationship Id='r2' Target='worksheets/sheet2.xml'/></Relationships>");
-        Add("xl/worksheets/sheet1.xml", "<worksheet xmlns='" + ns + "'><sheetData><row r='1'><c r='A1' t='inlineStr'><is><t>Indicateur</t></is></c></row></sheetData></worksheet>");
-        Add("xl/worksheets/sheet2.xml", "<worksheet xmlns='" + ns + "'><sheetData><row r='1'><c r='A1' t='inlineStr'><is><t>Liste source</t></is></c></row><row r='4'><c r='A4' t='inlineStr'><is><t>ID</t></is></c><c r='B4' t='inlineStr'><is><t>Titre</t></is></c><c r='C4' t='inlineStr'><is><t>Statut</t></is></c><c r='D4' t='inlineStr'><is><t>Type</t></is></c></row><row r='5'><c r='A5'><v>42</v></c><c r='B5' t='inlineStr'><is><t>Incident &lt;b&gt;littéral&lt;/b&gt;</t></is></c><c r='C5' t='inlineStr'><is><t>En attente</t></is></c><c r='D5' t='inlineStr'><is><t>Incident</t></is></c></row><row r='6'><c r='A6'><v>43</v></c><c r='B6' t='inlineStr'><is><t>Demande synthétique</t></is></c><c r='C6' t='inlineStr'><is><t>Nouveau</t></is></c><c r='D6' t='inlineStr'><is><t>Demande</t></is></c></row></sheetData></worksheet>");
+        static string Row(int number, params string[] values) => $"<row r='{number}'>" + string.Concat(values.Select((value, index) =>
+            $"<c r='{(char)('A' + index)}{number}' t='inlineStr'><is><t>{SecurityElement.Escape(value)}</t></is></c>")) + "</row>";
+        string Sheet(params string[] rows) => "<worksheet xmlns='" + ns + "'><sheetData>" + string.Concat(rows) + "</sheetData></worksheet>";
+        var modified = DateTime.Today.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+        var opened = DateTime.Today.AddDays(-4).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+        Add("xl/workbook.xml", "<workbook xmlns='" + ns + "' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'><sheets><sheet name='Dashboard' sheetId='1' r:id='r1'/><sheet name='Tickets' sheetId='2' r:id='r2'/><sheet name='Paramétrage' sheetId='3' r:id='r3'/></sheets></workbook>");
+        Add("xl/_rels/workbook.xml.rels", "<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='r1' Target='worksheets/sheet1.xml'/><Relationship Id='r2' Target='worksheets/sheet2.xml'/><Relationship Id='r3' Target='worksheets/sheet3.xml'/></Relationships>");
+        Add("xl/worksheets/sheet1.xml", Sheet(Row(1, "Indicateur")));
+        Add("xl/worksheets/sheet2.xml", Sheet(Row(1, "Liste source"), Row(4, LocalTestHeaders),
+            Row(5, "42", "Incident <b>littéral</b> · Atelier Nord", "En attente", modified, opened, "Haute", "Demandeur fictif", "Agent fictif (7)", "Assistance > Poste", "Agent fictif (7)", "Agent fictif (7)", "25 %", "15 min", "Incident", "Groupe fictif terrain", "4", "1", "1", "Description <script>strictement littérale</script>"),
+            Row(6, "43", "Demande synthétique", "Nouveau", modified, opened, "Moyenne", "Demandeur fictif", "", "Assistance", "", "", "0 %", "", "Demande", "Groupe fictif terrain", "4", "1", "0", "Description du second ticket")));
+        Add("xl/worksheets/sheet3.xml", Sheet(Row(1, "Paramètres météo"), Row(6, "Fraîcheur", "48"),
+            Row(16, "Périmètre", "Étiquette", "Valeurs", "Activée", "Orange", "Rouge", "Note"), Row(17, "Global", "Stock fictif", "", "Oui", "0", "3", "Règle synthétique de test"),
+            Row(24, "Site affiché", "Variantes reconnues"), Row(25, "Site fictif Nord", "Atelier Nord;Antenne Nord")));
         Add("xl/vbaProject.bin", "MACRO SYNTHETIQUE NON EXECUTABLE : CETTE ENTREE NE DOIT PAS ETRE LUE");
         return path;
     }

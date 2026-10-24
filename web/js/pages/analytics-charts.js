@@ -32,8 +32,9 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
       body.append(el('div', { class: 'analytics-volume-weather-summary' },
         el('div', { class: 'analytics-volume-weather-numbers' }, metric, caption(unavailable ? 'Donnée indisponible' : data.unit),
           el('strong', { class: 'analytics-volume-weather-status', text: weather.title })), volumeWeatherIcon(weather.state)));
-      if (setting.note) body.append(el('p', { class: 'analytics-volume-weather-note', text: setting.note }));
-      if (setting.showDescription) body.append(details('Seuils, périmètre et définition', caption(weather.explanation), caption(data.explanation),
+      if (setting.note && !options.compactWeather) body.append(el('p', { class: 'analytics-volume-weather-note', text: setting.note }));
+      if (setting.showDescription || options.compactWeather && setting.note) body.append(details(options.compactWeather ? 'Seuils et définition' : 'Seuils, périmètre et définition',
+        options.compactWeather && setting.note ? caption(setting.note) : null, caption(weather.explanation), caption(data.explanation),
         caption(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`)));
     } else body.append(metric, caption(unavailable ? 'Donnée indisponible' : data.unit), badge(data.sample == null ? `${formatNumber(data.count)} lignes contributrices` : `Échantillon : ${formatNumber(data.sample)}`));
     if (setting.presentation === 'gauge' && data.value != null) {
@@ -115,8 +116,10 @@ function qualityOverview(ctx, data, { snapshot, historical = false, onControls }
   const recognized = columns.filter(column => Number.isInteger(column.index) && column.index >= 0);
   const optional = columns.filter(column => column.state === 'missing');
   const unresolved = columns.filter(column => !recognized.includes(column) && column.state !== 'missing');
+  const simulation = ctx.state.session?.testMode === true;
+  const localComplete = simulation && ctx.state.session?.testFileReadComplete === true;
   const received = snapshot?.receptionComplete === true;
-  const receipt = received ? 'Réception complète' : 'Réception à vérifier';
+  const receipt = simulation ? localComplete ? 'Simulation · fichier entièrement lu' : 'Simulation · lecture à vérifier' : received ? 'Réception complète' : 'Réception à vérifier';
   const count = snapshot?.sourceRowCount;
   const total = snapshot?.sourceExpectedTotal;
   const rows = count == null ? 'Nombre de lignes non documenté' : `${formatNumber(count)}${total == null ? '' : ` / ${formatNumber(total)}`} lignes reçues`;
@@ -124,8 +127,9 @@ function qualityOverview(ctx, data, { snapshot, historical = false, onControls }
     el('div', { class: 'analytics-quality-overview-facts' },
       el('div', { class: 'analytics-quality-coverage' }, el('strong', { text: formatNumber(recognized.length) }),
         el('span', { text: 'champs reconnus' }), el('small', { text: 'Pour les calculs de ce tableau de bord' })),
-      el('div', { class: 'analytics-quality-source' }, badge(receipt, received ? 'success' : 'warning'),
+      el('div', { class: 'analytics-quality-source' }, badge(receipt, localComplete ? '' : received ? 'success' : 'warning'),
         el('span', { text: rows }), el('small', { text: 'Relevé source, avant les filtres du dashboard' }))),
+    simulation ? caption('Couverture GLPI non vérifiée ; les contrôles ci-dessous décrivent les valeurs du fichier local.') : null,
     unresolved.length ? caption(`${formatNumber(unresolved.length)} correspondance(s) à préciser dans les réglages.`, 'warning') : null);
   const mappings = [...recognized, ...unresolved];
   if (mappings.length) root.append(details(`Voir les correspondances (${formatNumber(mappings.length)})`,
@@ -182,6 +186,8 @@ function distribution(ctx, data, setting, selectBucket) {
       el('span', { class: 'analytics-bar-track' }, el('span', { class: 'analytics-bar-fill', style: { width: `${value == null ? 0 : 100 * Math.abs(value) / max}%`, background: palette[index % palette.length] } })),
       el('strong', { text: number(value, bucket.unit) }));
     if (bucket.sample != null) item.append(el('small', { text: `n=${formatNumber(bucket.sample)}` }));
+    if (['category', 'active-category'].includes(data.key) && !bucket.isAggregate && data.denominator > 0)
+      item.append(el('small', { class: 'analytics-category-share', text: `${number(100 * bucket.count / data.denominator, '%')} du périmètre`, title: `Part sur les ${formatNumber(data.denominator)} lignes du périmètre complet` }));
     if (setting.presentation === 'gauge' && positiveTotal > 0 && value != null) item.append(gauge(Math.max(0, value), positiveTotal, 'Part des valeurs positives affichées'));
     if (setting.presentation === 'pareto' && data.positiveTotal > 0) item.append(el('small', { text: `Cumul global ${number(100 * cumulative / data.positiveTotal, '%')} · cible ${setting.paretoThresholdPercent} %`, class: cumulative / data.positiveTotal * 100 >= setting.paretoThresholdPercent ? 'target-met' : '' }));
     panel.append(item);

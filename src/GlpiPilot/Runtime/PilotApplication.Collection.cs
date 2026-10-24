@@ -61,6 +61,7 @@ public sealed partial class PilotApplication
     }
     private async Task<object?> RunCollectionAsync(AppSettings settings, bool archive, CancellationToken ct)
     {
+        if (IsSimulationInstance) return await SimulationCollectAsync(archive, ct).ConfigureAwait(false);
         var entry = _journal.Start("Collecte GLPI", settings.PortalUrl); var service = new AutomaticExtractionService(Browser); service.Log += Log; service.PhaseChanged += phase => Publish("operation.phase", new { phase = phase.ToString() });
         try
         {
@@ -83,6 +84,7 @@ public sealed partial class PilotApplication
     }
     private Task ArchiveActiveAsync(CancellationToken ct)
     {
+        if (IsSimulationInstance) return SimulationArchiveAsync(ct);
         if (Result is null || !Settings.History.Enabled || Result.Provenance.SourceKind == "demo" || IsHistorical || IsTestMode) return Task.CompletedTask;
         try
         {

@@ -55,7 +55,7 @@ internal static partial class Program
         var settings = new AppSettings { Theme = "dark", ExportFolder = Path.Combine(_root, "Exports") };
         settings.Interface.FollowWindowsTheme = false;
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);
-        await Call(app, "app.demo"); var revision = app.Revision; var report = app.Result;
+        app.LoadQualityFixture(QualityFixture()); var revision = app.Revision; var report = app.Result;
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
         {
             calls.Enqueue(op);
@@ -101,9 +101,10 @@ internal static partial class Program
             await page.Locator("body[data-ready=true]").WaitForAsync();
             await page.GetByRole(AriaRole.Button, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }).FocusAsync();
             await Open();
-            Require(await Palette().Locator("[data-command-id^='page:']").CountAsync() == 26
-                && await Palette().Locator("[data-command-id^='action:']").CountAsync() == 8
+            Require(await Palette().Locator("[data-command-id^='page:']").CountAsync() == 35
+                && await Palette().Locator("[data-command-id^='action:']").CountAsync() == 7
                 && await Palette().Locator("[data-command-id='action:test-file']").CountAsync() == 1
+                && await Palette().Locator("[data-command-id='action:test-exit']").CountAsync() == 0
                 && !calls.Contains("library.search")
                 && await Search().EvaluateAsync<bool>("node => document.activeElement===node && node.getAttribute('aria-controls')===document.querySelector('.command-palette-results').id"),
                 "The singleton combobox exposes all screens, explicit actions and local test import without silently searching the cache on opening.");

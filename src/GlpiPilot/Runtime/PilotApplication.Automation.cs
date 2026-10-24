@@ -25,19 +25,20 @@ public sealed partial class PilotApplication
     }
     private void EvaluateAlerts(CancellationToken ct)
     {
-        if (Result is null || IsHistorical || IsLocalResult(Result)) return;
-        var settings = EffectiveSettings; var snapshot = DashboardService.Calculate(Result, settings.Dashboard, ct: ct); QueryService.AppendDashboardQueries(snapshot, Result, settings.Dashboard, settings.Queries, ct);
-        _alerts.Evaluate(Result, snapshot, ct, settings); Publish("alerts.changed", new { active = _alerts.Document.Incidents.Count(i => i.Active) });
+        if (Result is null || IsHistorical || IsLocalResult(Result) && !IsSimulationInstance) return;
+        var data = IsSimulationInstance ? SimulationObservation() : Result;
+        var settings = EffectiveSettings; var snapshot = DashboardService.Calculate(data, settings.Dashboard, ct: ct); QueryService.AppendDashboardQueries(snapshot, data, settings.Dashboard, settings.Queries, ct);
+        _alerts.Evaluate(data, snapshot, ct, settings); Publish("alerts.changed", new { active = _alerts.Document.Incidents.Count(i => i.Active), simulated = IsSimulationInstance });
     }
     public async Task TickAsync(CancellationToken ct = default)
     {
-        if (_disposed || IsBusy || SessionLocked || EditorOpen || IsTestMode) return;
+        if (_disposed || IsBusy || SessionLocked || EditorOpen) return;
         try { using var empty = JsonDocument.Parse("{}"); await ExecuteWhenIdleAsync("automation.tick", empty.RootElement, ct).ConfigureAwait(false); }
         catch (Exception error) when (error is not OperationCanceledException && !_disposed) { Log("Programmation : " + AppPaths.SafeError(error)); }
     }
     private async Task<object?> RunAutomaticTickAsync(JsonElement args, CancellationToken ct)
     {
-        if (SessionLocked || EditorOpen || IsTestMode) return new { skipped = true };
+        if (SessionLocked || EditorOpen) return new { skipped = true };
         if (_handlers.ContainsKey("workplace.reminders.check"))
         {
             try { await _handlers["workplace.reminders.check"](args, ct).ConfigureAwait(false); }
@@ -59,6 +60,7 @@ public sealed partial class PilotApplication
     }
     public void ResumeAutomaticSchedule()
     {
+        if (_simulation is { } simulation) { simulation.ResumeAutomaticSchedule(); return; }
         lock (_executionAdmission)
         {
             if (_disposed || _pendingExecutions.Count > 0) return;
@@ -77,7 +79,11 @@ public sealed partial class PilotApplication
             {
                 case "extract": var raw = saved.Copy(); raw.Cities.Enabled = false; raw.AutoSaveXlsx = false; await RunCollectionAsync(raw, false, ct).ConfigureAwait(false); break;
                 case "quality": outputs.Add(DataQualityService.Analyze(RequireResult(), EffectiveSettings.Dashboard, ct)); break;
-                case "enrich": var cities = CityDetectionService.Enrich(RequireResult(), saved.Cities, saved.Dashboard, ct); SetResult(cities.Data, cities, context: saved); break;
+                case "enrich":
+                    var interpretation = IsSimulationInstance ? _simulationLiveSettings ?? saved : saved;
+                    var cities = IsSimulationInstance ? SimulationEnrich(_simulationLiveData!, interpretation, ct)
+                        : CityDetectionService.Enrich(RequireResult(), saved.Cities, saved.Dashboard, ct);
+                    SetResult(cities.Data, cities, context: interpretation); break;
                 case "archive": await ArchiveActiveAsync(ct).ConfigureAwait(false); break;
                 case "csv": case "xlsx": var path = Path.Combine(saved.ExportFolder, "GLPI-Recette-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6] + "." + step.Kind); outputs.Add(step.Kind == "csv" ? ExportService.WriteCsv(RequireResult(), path, ct) : ExportService.WriteXlsx(RequireResult(), path, ct)); break;
                 case "alerts": EvaluateAlerts(ct); break;

@@ -1,4 +1,4 @@
-import { el, replaceChildren, button, card, toolbar, input, select, field, table, dialog, confirm, badge, empty } from '../ui.js';
+import { el, replaceChildren, button, card, toolbar, input, select, field, table, dialog, confirm, badge, empty, isSimulation } from '../ui.js';
 import { call, run, message, revision, note, pre, date, label, heading, dataTable, pager, tabs, personalEditor, ticketButton } from './workplace-common.js';
 import { renderDraft, renderActions, renderInsights } from './workplace-actions.js';
 import { openLibraryPrecedents } from '../library-ticket.js';
@@ -10,6 +10,7 @@ const readerPages = [
 ];
 
 export async function renderTickets(ctx) {
+  const simulation=isSimulation(ctx.state.session);
   let state = await call(ctx, 'workplace.get'); let current = null; let sectionCleanup = null; let readerPage = ctx.params?.section || 'reader'; let sourcePage = 0;
   let searchText = ''; let sourceSaved = !ctx.state.session?.loaded; let disposed = false; let sectionVersion = 0;
   const top = el('div'); const openTabs = el('div', { class: 'work-open-tabs', 'aria-label': 'Tickets ouverts' });
@@ -34,7 +35,7 @@ export async function renderTickets(ctx) {
     current = await call(ctx, 'workplace.ticket.open', args); state = await call(ctx, 'workplace.get');
     if (!ctx.params?.section) readerPage = readerPages[current.personal.readingPosition?.pageIndex || 0]?.key || 'reader';
     if (allowAutoRead && state.autoRead && !current.loaded && current.canRead) {
-      reader.replaceChildren(note('Lecture de la fiche dans la session GLPI…'));
+      reader.replaceChildren(note(simulation?'Préparation de la fiche à partir des données de simulation…':'Lecture de la fiche dans la session GLPI…'));
       try { current = await call(ctx, 'workplace.ticket.read', { ticketKey: current.personal.key }); }
       catch (error) { message(ctx, error); }
     }
@@ -52,11 +53,11 @@ export async function renderTickets(ctx) {
     replaceChildren(reader, el('div', { class: 'work-ticket-heading' }, el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
       toolbar(badge(ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue'), ticket.personal.offline ? badge('Copie conservée') : null,
         button('Actualiser la fiche', run(ctx, async () => { current = await call(ctx, 'workplace.ticket.read', { ticketKey: key }); await showReader(); }), { disabled: !ticket.canRead }),
-        button('Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); }), { disabled: !ticket.canRead }),
-        button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({api: ctx.api, signal: ctx.signal}, {id: ticket.personal.id, url: ticket.personal.url}, {returnFocus: event.currentTarget})), { icon: 'search' }))),
+        button(simulation?'Afficher la fiche simulée':'Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: key }); if(simulation){current=await call(ctx,'workplace.ticket.read',{ticketKey:key});readerPage='reader';await showReader();} }), { disabled: !ticket.canRead }),
+        button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({api: ctx.api, signal: ctx.signal, state:ctx.state, navigate:ctx.navigate}, {id: ticket.personal.id, url: ticket.personal.url}, {returnFocus: event.currentTarget})), { icon: 'search' }))),
       !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(w => note(w)),
       ticket.changes ? note(ticket.changes.summary + (ticket.changes.rowComparisonComplete ? '' : ' Comparaison de lignes incomplète.')) : null,
-      tabs(readerPages, readerPage, run(ctx, async page => { readerPage = page; await savePosition(); await showReader(); })), body);
+      tabs(readerPages.map(page=>simulation&&page.key==='reader'?{...page,label:'Fiche simulée'}:page), readerPage, run(ctx, async page => { readerPage = page; await savePosition(); await showReader(); })), body);
     if (!ticket.loaded && !['personal', 'draft', 'actions', 'handover'].includes(readerPage)) { body.replaceChildren(empty('Lire la fiche', 'Lisez ce ticket pour afficher les rubriques. Aucune donnée n’est déduite d’une fiche non collectée.')); return; }
     try {
       let cleanup;
@@ -75,7 +76,7 @@ export async function renderTickets(ctx) {
       else if (readerPage === 'intelligence') await renderIntelligence(ctx, body, ticket, savePosition);
       else if (readerPage === 'insights') await renderInsights(ctx, body, ticket);
       else if (readerPage === 'draft') cleanup = await renderDraft(ctx, body, ticket);
-      else if (readerPage === 'actions') cleanup = await renderActions(ctx, body, ticket);
+      else if (readerPage === 'actions') cleanup = await renderActions(ctx, body, ticket, async updated => {current=updated;await loadSource();});
       if (generation !== sectionVersion || disposed) await cleanup?.(); else sectionCleanup = cleanup;
     } catch (error) { message(ctx, error); if (!ctx.signal?.aborted) body.replaceChildren(empty('Cet espace n’est pas disponible', error.message)); }
   }

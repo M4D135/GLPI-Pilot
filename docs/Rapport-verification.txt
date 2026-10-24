@@ -1,3 +1,59 @@
+GLPI Pilot 3.3.0 — pilotage natif et simulation globale
+État local établi le 24 octobre 2026 avant exécution du pipeline final
+Cible de livraison : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10
+
+VALIDATIONS LOCALES EXÉCUTÉES
+- Parcours WebView de simulation et de profil : 62/62 contrôles réussis dans Chromium,
+  avec les pages de production et le véritable dispatcher C#.
+- Reprise du profil de classeur : 21/21 contrôles réussis.
+- Compilation du projet WebViewChecks : aucune erreur, aucun avertissement.
+
+Le parcours d’interface ouvre les 35 routes, dont les neuf rubriques natives :
+Météo, Pilotage, Groupes, Catégories, Plus anciens, Suivi agents,
+Agents actifs, Sites et Paramètres du pilotage.
+Il vérifie les suggestions feuille/en-têtes, l’aperçu Paramétrage,
+les dix-neuf champs, l’annulation avant import et la qualité non certifiée
+comme extraction GLPI réelle. Une modification de statut est prévisualisée
+sans effet puis confirmée ; la ligne, la fiche et le stock météo changent.
+Le détail météo ouvre le ticket actif restant. Un site est édité, soumis
+à l’aperçu d’impact puis appliqué dans la simulation.
+La bibliothèque, la synchronisation locale, la palette Ctrl+K, la collecte
+connecter/inspecter/choisir/extraire et l’installation virtuelle produisent
+des résultats consultables. La sortie restaure le même relevé d’origine,
+ses sites et sa bibliothèque. Dans cet espace habituel restauré, l’aperçu
+du profil laisse les réglages intacts. Son application explicite persiste
+la météo et les sites, puis recalcule le stock sur les quatre lignes
+d’origine. Aucun appel externe de la WebView ni aucune
+erreur JavaScript n’est observé dans ce parcours. L’hôte de test refuse
+les demandes de navigation externe ; les adaptateurs du runtime assurent
+séparément le confinement des services et des processus réels.
+
+PORTÉE DE LA CORRECTION
+La simulation dispose de ses propres réglages, SQLite, archives, travail
+personnel, géographie, requêtes et tableaux. Les actions modifient les
+copies locales. Collecte, central partagé, routage, météo, assistant et
+mise à jour sont représentés par des opérations locales signalées comme
+simulées. La démonstration utilise le même mécanisme. Le profil de classeur
+est proposé avec son aperçu et une option active par défaut ; ses anciens
+chiffres ne remplacent jamais les calculs sur le relevé courant.
+Les modèles et fixtures publiés sont fictifs. Aucun classeur, capture,
+nom de personne ou correspondance interne privé n’est inclus au dépôt.
+La collecte normale conserve son comportement discret et le passage
+visible pour une validation SSO nécessitant l’intervention de l’utilisateur.
+
+VALIDATION DE LIVRAISON — ÉTAT AVANT LE PIPELINE
+La CI Windows doit encore être exécutée sur le commit final de 3.3.0.
+Elle doit confirmer les suites cœur/navigateur, le vrai hôte WebView2,
+les packs extraits et leur provenance. Les résultats locaux ci-dessus
+ne constituent pas une attestation de publication. Le workflow du commit
+inscrit dans wad/version.json et les inventaires SHA-256 font foi :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — PROTOCOLES ET RÉSULTATS DES VERSIONS PRÉCÉDENTES
+Les restrictions de l’ancien mode test décrites dans la section 3.2.2
+ci-dessous correspondent à cette version historique. La 3.3.0 utilise
+la simulation globale isolée décrite en tête de ce rapport.
+
 GLPI Pilot 3.2.2 — protocole et preuves de vérification
 Date : 23 octobre 2026
 Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes

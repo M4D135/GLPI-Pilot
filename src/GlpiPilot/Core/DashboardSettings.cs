@@ -15,6 +15,7 @@ public sealed class DashboardSettings
     public double SatisfactionScale { get; set; } = 5;
     public int HistoryCadenceHours { get; set; } = 24;
     public DashboardLayoutSettings Layout { get; set; } = new();
+    public BusinessDashboardSettings Business { get; set; } = new();
     private DashboardLayoutSettings? _personalLayout;
     // An older configuration starts with a copy of its existing board. From then
     // on, edits in either workspace cannot replace the other workspace's layout.
@@ -35,6 +36,7 @@ public sealed class DashboardSettings
         var copy = (DashboardSettings)MemberwiseClone();
         copy.ColumnMappings = new(StringComparer.OrdinalIgnoreCase);
         copy.Layout = Layout?.Copy() ?? new();
+        copy.Business = Business?.Copy() ?? new();
         copy._personalLayout = _personalLayout?.Copy() ?? copy.Layout.Copy();
         copy.Weather = Weather?.Copy() ?? new();
         copy.DueHorizonHours = new(DueHorizonHours ?? new());
@@ -67,6 +69,8 @@ public sealed class DashboardSettings
         PriorityRules ??= new(StringComparer.Ordinal);
         Layout ??= new();
         Layout.Normalize();
+        Business ??= new();
+        Business.Normalize();
         _personalLayout ??= Layout.Copy();
         if (ReferenceEquals(_personalLayout, Layout)) _personalLayout = Layout.Copy();
         _personalLayout.Normalize();
@@ -74,6 +78,84 @@ public sealed class DashboardSettings
         if (ColumnMappings is not null)
             foreach (var pair in ColumnMappings) mappings[pair.Key] = pair.Value ?? "";
         ColumnMappings = mappings;
+    }
+}
+
+/// <summary>Native pilot views, independent of the twelve user-created dashboards.</summary>
+public sealed class BusinessDashboardSettings
+{
+    public static readonly string[] ViewKeys = { "weather", "pilotage", "groups", "categories", "oldest", "followup", "participants", "sites" };
+    public List<BusinessWeatherRule> WeatherRules { get; set; } = new();
+    public List<DashboardBoardSettings> BoardOverrides { get; set; } = new();
+    public string Notes { get; set; } = "";
+    public int? FreshnessWarningHours { get; set; } = 48;
+    public int SiteInterventionThreshold { get; set; } = 4;
+    public BusinessDashboardSettings Copy() => new()
+    {
+        WeatherRules = (WeatherRules ?? new()).Where(rule => rule is not null).Select(rule => rule.Copy()).ToList(),
+        BoardOverrides = (BoardOverrides ?? new()).Where(board => board is not null).Select(board => board.Copy()).ToList(),
+        Notes = Notes ?? "", FreshnessWarningHours = FreshnessWarningHours, SiteInterventionThreshold = SiteInterventionThreshold
+    };
+    public void Normalize()
+    {
+        Notes ??= "";
+        WeatherRules ??= new(); BoardOverrides ??= new();
+        foreach (var rule in WeatherRules.Where(rule => rule is not null)) rule.Normalize();
+        foreach (var board in BoardOverrides.Where(board => board is not null)) board.Normalize();
+    }
+    public void Validate()
+    {
+        if (WeatherRules is null || WeatherRules.Count > 48 || WeatherRules.Any(rule => rule is null)
+            || BoardOverrides is null || BoardOverrides.Count > ViewKeys.Length || BoardOverrides.Any(board => board is null)
+            || Notes is null || Notes.Length > 4000 || FreshnessWarningHours is < 1 or > 8760 || SiteInterventionThreshold is < 1 or > 1000000)
+            throw new System.IO.InvalidDataException("Les paramètres de pilotage dépassent les limites autorisées.");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rule in WeatherRules) { rule.Validate(); if (!ids.Add(rule.Id)) throw new System.IO.InvalidDataException("Deux règles météo portent le même identifiant."); }
+        if (WeatherRules.Where(rule => rule.Kind == "team").SelectMany(rule => rule.Values).Distinct(StringComparer.Ordinal).Count() > 352)
+            throw new System.IO.InvalidDataException("La priorité météo accepte au maximum 352 groupes répartis dans les équipes.");
+        ids.Clear();
+        foreach (var board in BoardOverrides)
+        {
+            if (!ViewKeys.Any(key => board.Id == "business-" + key) || !ids.Add(board.Id))
+                throw new System.IO.InvalidDataException("Une personnalisation de rubrique est absente, inconnue ou dupliquée.");
+            new DashboardLayoutSettings { ActiveBoardId = board.Id, Boards = new() { board } }.Validate();
+        }
+    }
+}
+
+public sealed class BusinessWeatherRule
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Label { get; set; } = "";
+    public string Kind { get; set; } = "metric";
+    public string SourceKey { get; set; } = "active";
+    public List<string> Values { get; set; } = new();
+    public double? OrangeAbove { get; set; }
+    public double? RedAbove { get; set; }
+    public bool Visible { get; set; } = true;
+    public bool WeatherEnabled { get; set; } = true;
+    public bool IncludeDescendants { get; set; }
+    public string Note { get; set; } = "";
+    public BusinessWeatherRule Copy() => new()
+    {
+        Id = Id, Label = Label, Kind = Kind, SourceKey = SourceKey, Values = new(Values ?? new()), OrangeAbove = OrangeAbove,
+        RedAbove = RedAbove, Visible = Visible, WeatherEnabled = WeatherEnabled, IncludeDescendants = IncludeDescendants, Note = Note
+    };
+    public void Normalize()
+    {
+        Id ??= ""; Label ??= ""; Kind ??= "metric"; SourceKey ??= "active"; Note ??= "";
+        Values = (Values ?? new()).Where(value => value is not null).Select(value => value.Trim()).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+    }
+    public void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(Id) || Id.Length > 96 || string.IsNullOrWhiteSpace(Label) || Label.Length > 180
+            || Kind is not ("metric" or "type" or "category" or "team") || string.IsNullOrWhiteSpace(SourceKey) || SourceKey.Length > 120
+            || Values is null || Values.Count > 32 || Values.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 1000)
+            || Kind != "metric" && Values.Count == 0 || Note is null || Note.Length > 4000
+            || OrangeAbove.HasValue && (!double.IsFinite(OrangeAbove.Value) || OrangeAbove < 0)
+            || RedAbove.HasValue && (!double.IsFinite(RedAbove.Value) || RedAbove < 0)
+            || OrangeAbove.HasValue && RedAbove.HasValue && OrangeAbove > RedAbove)
+            throw new System.IO.InvalidDataException("Une règle météo demande un nom, un périmètre et des seuils positifs ordonnés.");
     }
 }
 

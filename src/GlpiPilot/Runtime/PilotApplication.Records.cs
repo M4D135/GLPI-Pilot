@@ -8,7 +8,7 @@ namespace GlpiPilot.Runtime;
 
 public sealed partial class PilotApplication
 {
-    private sealed record LocalTestImportDraft(string Path, string Token, string Fingerprint, long Revision, DateTimeOffset ExpiresAt);
+    private sealed record LocalTestImportDraft(string Path, string Token, string Fingerprint, long Revision, DateTimeOffset ExpiresAt, WorkbookPilotInspection Inspection);
     private LocalTestImportDraft? _testImportDraft;
     private readonly HashSet<int> _testRecordBasket = new();
     private int[] RecordBasketRows(ExtractionResult data, DashboardSettings settings) => IsTestMode ? _testRecordBasket.Order().ToArray() : _basket.Find(data, settings);
@@ -19,7 +19,7 @@ public sealed partial class PilotApplication
         {
             CheckRevision(args); var rows = Read<int[]>(chosen);
             if (rows.Length > 10000 || rows.Any(row => row < 0 || row >= data.Rows.Count) || _testRecordBasket.Union(rows).Count() > 10000)
-                throw new InvalidDataException("Le panier de test accepte 10 000 lignes présentes dans le fichier.");
+                throw new InvalidDataException("Le panier de simulation accepte 10 000 lignes présentes dans le fichier.");
             _testRecordBasket.UnionWith(rows);
         }
         if (Flag(args, "clear")) _testRecordBasket.Clear();
@@ -34,18 +34,18 @@ public sealed partial class PilotApplication
             var token = Text(args, "token", 96);
             draft = _testImportDraft;
             if (draft is null || draft.Token != token || draft.Revision != Revision || draft.ExpiresAt < DateTimeOffset.UtcNow)
-                throw new InvalidOperationException("La sélection de feuille a expiré. Ouvrez à nouveau le fichier de test.");
+                throw new InvalidOperationException("La sélection de feuille a expiré. Ouvrez à nouveau le fichier de simulation.");
             if (Flag(args, "cancelled")) { _testImportDraft = null; return new { cancelled = true }; }
             path = draft.Path; sheetName = Text(args, "sheetName", 128);
             if (sheetName.Length == 0) throw new InvalidDataException("Choisissez la feuille contenant la liste des incidents.");
             headerRow = Number(args, "headerRow", 0, 0, 1048576);
             if (await TestImportFingerprintAsync(path, ct).ConfigureAwait(false) != draft.Fingerprint)
-                throw new InvalidOperationException("Le fichier a changé depuis sa sélection. Ouvrez à nouveau le fichier de test.");
+                throw new InvalidOperationException("Le fichier a changé depuis sa sélection. Ouvrez à nouveau le fichier de simulation.");
         }
         else
         {
             _testImportDraft = null;
-            path = await Host.OpenFileAsync("Importer un fichier de test", "Fichier de test CSV ou Excel|*.csv;*.xlsx;*.xlsm;*.tsv;*.txt").ConfigureAwait(false);
+            path = await Host.OpenFileAsync("Importer un fichier de simulation", "Fichier de simulation CSV ou Excel|*.csv;*.xlsx;*.xlsm;*.tsv;*.txt").ConfigureAwait(false);
             if (path is null) return new { cancelled = true };
         }
         ct.ThrowIfCancellationRequested();
@@ -55,14 +55,18 @@ public sealed partial class PilotApplication
             throw new InvalidDataException("Choisissez un fichier CSV, XLSX ou XLSM (TSV/TXT également acceptés). Pour un ancien classeur XLS, enregistrez une copie XLSX ou CSV dans Excel.");
         if (isWorkbook && draft is null)
         {
-            var sheets = XlsxImportService.VisibleSheets(path, ct);
             var fingerprint = await TestImportFingerprintAsync(path, ct).ConfigureAwait(false);
-            var selection = new LocalTestImportDraft(path, Guid.NewGuid().ToString("N"), fingerprint, Revision, DateTimeOffset.UtcNow.AddMinutes(20));
+            var inspection = WorkbookPilotImportService.Inspect(path, ct);
+            if (await TestImportFingerprintAsync(path, ct).ConfigureAwait(false) != fingerprint)
+                throw new InvalidOperationException("Le classeur a changé pendant son inspection. Ouvrez à nouveau le fichier de simulation.");
+            var selection = new LocalTestImportDraft(path, Guid.NewGuid().ToString("N"), fingerprint, Revision, DateTimeOffset.UtcNow.AddMinutes(20), inspection);
             _testImportDraft = selection;
-            return new { selectionRequired = true, token = selection.Token, fileName = Path.GetFileName(path), sheets };
+            return new { selectionRequired = true, token = selection.Token, fileName = Path.GetFileName(path), sheets = inspection.Sheets,
+                suggestedSheet = inspection.SuggestedSheet, suggestedHeaderRow = inspection.SuggestedHeaderRow,
+                workbookProfile = WorkbookProfileSummary(inspection.Profile), warnings = inspection.Warnings };
         }
         var data = isWorkbook ? XlsxImportService.Read(path, Settings.MaxRows, ct, sheetName, headerRow)
-            : NativeCsvImportService.Read(path, "", null, Settings.MaxRows, false, ct, diagnostics: Log);
+            : NativeCsvImportService.Read(path, "", null, Settings.MaxRows, false, ct);
         if (draft is not null && await TestImportFingerprintAsync(path, ct).ConfigureAwait(false) != draft.Fingerprint)
             throw new InvalidOperationException("Le fichier a changé pendant sa lecture. Aucun relevé n’a été remplacé.");
         var fileName = Path.GetFileName(path); var sourceRows = data.Quality?.SourceRows;
@@ -74,18 +78,12 @@ public sealed partial class PilotApplication
         data.Provenance.OriginalFileName = fileName; data.Provenance.SearchVerified = false; data.Provenance.ScopeVerified = false;
         data.Provenance.FinishedAt = DateTimeOffset.Now;
         var receipt = fileReadComplete ? "fichier entièrement lu" : missingFormulaValues > 0 ? $"{missingFormulaValues:N0} valeurs calculées indisponibles" : "lecture limitée";
-        data.Status = $"Mode test · fichier local · {data.Rows.Count:N0} lignes · {data.Headers.Count:N0} colonnes · {receipt}";
-        // Read and validate before changing anything, including the prior restoration point.
-        var interpretation = Settings.Copy();
-        var locations = CityDetectionService.Enrich(data, interpretation.Cities, interpretation.Dashboard, ct);
-        ct.ThrowIfCancellationRequested();
-        _localFileTest = _localFileTest is { } previous
-            ? previous with { FileName = fileName, SourceRows = sourceRows, FileReadComplete = fileReadComplete, MissingFormulaValues = missingFormulaValues }
-            : new(Result, Locations, HistoricalDocument, _resultContext?.Copy(), JsonSerializer.Serialize(Settings.Queries, Json), fileName, sourceRows, fileReadComplete, missingFormulaValues);
-        _testRecordBasket.Clear();
-        _testImportDraft = null;
-        SetResult(locations.Data, locations, context: interpretation);
-        return SessionState();
+        data.Status = $"Simulation · fichier local · {data.Rows.Count:N0} lignes · {data.Headers.Count:N0} colonnes · {receipt}";
+        // Validate and initialize a complete isolated session before replacing any
+        // visible state. The real application and its stores remain untouched.
+        var interpretation = draft?.Inspection.Profile is { } profile && Flag(args, "useWorkbookProfile", true) ? profile.ApplyTo(Settings) : Settings.Copy();
+        var result = await EnterSimulationAsync(data, interpretation, fileName, sourceRows, fileReadComplete, missingFormulaValues, ct, path).ConfigureAwait(false);
+        _testImportDraft = null; return result;
     }
     private static async Task<string> TestImportFingerprintAsync(string path, CancellationToken ct)
     {
@@ -93,40 +91,16 @@ public sealed partial class PilotApplication
         if (stream.Length > 512L * 1024 * 1024) throw new InvalidDataException("Le fichier dépasse la limite de taille autorisée.");
         return Convert.ToHexString(await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false));
     }
-    private Task<object?> ExitTestRecordsAsync(JsonElement args, CancellationToken ct)
+    private async Task<object?> ExitTestRecordsAsync(JsonElement args, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (_localFileTest is not { } previous) return Task.FromResult<object?>(SessionState());
-        _localFileTest = null;
-        _testRecordBasket.Clear();
-        _testImportDraft = null;
-        if (previous.Previous is { } data)
-        {
-            var interpretation = previous.Interpretation?.Copy();
-            // Query and layout customizations are intentionally saved during a test.
-            // Only an explicitly changed query library follows the restored live
-            // observation; its source mappings and geography, and every archive's
-            // frozen interpretation, retain their original context.
-            if (previous.Historical is null && interpretation is not null && previous.InitialQueries != JsonSerializer.Serialize(Settings.Queries, Json))
-                interpretation.Queries = Settings.Queries.Copy();
-            SetResult(data, previous.Locations, previous.Historical, interpretation);
-        }
-        else
-        {
-            Result = null; Locations = null; HistoricalDocument = null; _resultContext = null;
-            Revision++; InvalidatePreparedActions(); Publish("session.changed", SessionState());
-        }
-        return Task.FromResult<object?>(SessionState());
-    }
-    private async Task<object?> ImportRecordsAsync(JsonElement args, CancellationToken ct)
-    {
-        var path = await Host.OpenFileAsync("Importer un relevé local", "Relevé Excel ou CSV|*.xlsx;*.csv;*.tsv;*.txt").ConfigureAwait(false);
-        if (path is null) return new { cancelled = true };
-        var data = Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
-            ? XlsxImportService.Read(path, Settings.MaxRows, ct)
-            : NativeCsvImportService.Read(path, "", null, Settings.MaxRows, false, ct, diagnostics: Log);
-        data.Provenance.SourceKind = "file"; data.Provenance.SearchVerified = false; data.Provenance.ScopeVerified = false;
-        SetResult(data); return SessionState();
+        if (_simulation is not { } simulation) return SessionState();
+        var nextRevision = simulation.Revision + 1;
+        try { await simulation.DisposeAsync().ConfigureAwait(false); }
+        finally { _simulation = null; _revision = nextRevision; _testImportDraft = null; InvalidatePreparedActions(); }
+        Publish("settings.changed", new { settings = Settings, revision = Revision });
+        Publish("session.changed", SessionState());
+        return SessionState();
     }
     private Task<object?> RecordListAsync(JsonElement args, CancellationToken ct)
     {

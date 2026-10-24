@@ -45,7 +45,7 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">Guide de prise en main · Version 3.2.2</div>
+    <div class="eyebrow">Guide de prise en main · Version 3.3.0</div>
     <h1>GLPI Pilot</h1>
     <p>Extraire les recherches GLPI, comparer les relevés et organiser le travail des techniciens dans une interface Windows claire ou sombre.</p>
     <div class="chips"><span class="chip">Windows 11 x64</span><span class="chip">Interface graphique</span><span class="chip">Excel et CSV</span><span class="chip">Pilotage depuis le logiciel</span></div>
@@ -56,6 +56,40 @@
       <p>Choisir <strong>PROD</strong> pour utiliser le logiciel ou <strong>DEV</strong> pour disposer aussi de ses sources et tests. Extraire tout le ZIP : sa racine doit contenir <code>GLPI-Pilot.exe</code> et <code>wad</code>. Lancer l’EXE en conservant ces deux éléments ensemble. .NET, le runtime fixe WebView2 et le pilote Playwright sont inclus. L’interface fonctionne localement ; Edge ou Chrome doit être installé et autorisé pour la collecte GLPI et son SSO.</p>
       <p>Pour une mise à jour, fermer l’ancienne application et extraire le nouveau pack dans un nouveau dossier. Les préférences restent dans les données locales du compte Windows. Une sauvegarde précède la première ouverture d’une nouvelle version. Un deuxième lancement rappelle la fenêtre déjà ouverte.</p>
       <p>Si les fichiers téléchargés sont bloqués, <code>wad\support\DEBLOQUER_TOUT.cmd</code> débloque le dossier complet de cette application et ses sous-dossiers.</p>
+    </section>
+    <section id="pilotage-natif">
+      <h2>Explorer les neuf rubriques du pilotage</h2>
+      <p>Le groupe <strong>Pilotage GLPI</strong> reprend directement la lecture d’un rapport de service. Les rubriques sont disponibles dès l’ouverture ; elles utilisent le relevé courant et les paramètres de votre espace. <strong>Mes tableaux</strong> conserve vos dashboards personnalisés.</p>
+      <table>
+        <thead><tr><th>Rubrique</th><th>Ce que vous y retrouvez</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Météo</strong></td><td>Total général, cartes par catégorie et par équipe, état météo, seuils, fraîcheur et analyse en cours. Cliquer un volume retrouve les tickets.</td></tr>
+          <tr><td><strong>Pilotage</strong></td><td>Stock actif, attente, demandes/incidents, affectations, groupes, catégories et matrices de statuts.</td></tr>
+          <tr><td><strong>Groupes</strong></td><td>Volumes par groupe et statut, totaux et périmètres d’équipe. Les tickets multigroupes restent visibles dans chaque groupe concerné.</td></tr>
+          <tr><td><strong>Catégories</strong></td><td>Volumes, parts du stock et lignes contributrices. Les catégories complètes restent distinctes de leurs regroupements par branche.</td></tr>
+          <tr><td><strong>Plus anciens</strong></td><td>Dix plus anciens du périmètre, cinq par groupe, âges calendaires, dates indisponibles et accès aux fiches.</td></tr>
+          <tr><td><strong>Suivi agents</strong></td><td>Comparaison des tickets avec rédaction et des tickets attribués. Ces mesures peuvent se chevaucher.</td></tr>
+          <tr><td><strong>Agents actifs</strong></td><td>Tickets avec suivi, avec tâche, avec les deux et leur union distincte par personne. Ces nombres ne mesurent pas la productivité.</td></tr>
+          <tr><td><strong>Sites</strong></td><td>Stock localisé, sites inconnus, identifiants et besoins d’intervention, avec le détail des tickets.</td></tr>
+          <tr><td><strong>Paramètres du pilotage</strong></td><td>Correspondances, ordre des équipes, seuils, activation, visibilité, fraîcheur, analyse libre et reprise du paramétrage d’un classeur.</td></tr>
+        </tbody>
+      </table>
+      <p>La météo du stock change de couleur seulement au <strong>dépassement strict</strong> d’un seuil. Les catégories peuvent inclure leurs descendants séparés par <code>&gt;</code>. Pour les cartes d’équipe, un ticket est attribué à la première équipe correspondante dans l’ordre configuré ; une carte masquée continue de participer à cet ordre. Le rappel de fraîcheur indique qu’une actualisation est nécessaire sans modifier les couleurs de volume.</p>
+      <p>Les modèles intégrés sont génériques. Pour retrouver vos intitulés, seuils, groupes et sites, reprendre votre propre classeur depuis l’import de simulation ou depuis <strong>Paramètres du pilotage</strong>. Le logiciel recalcule les chiffres depuis les incidents chargés ; les anciens totaux des graphiques Excel restent des valeurs historiques.</p>
+    </section>
+    <section id="simulation">
+      <h2>Tout essayer dans une simulation complète</h2>
+      <ol>
+        <li>Cliquer <strong>Importer en simulation</strong> depuis l’accueil, la collecte, le relevé ou <kbd>Ctrl K</kbd>. Choisir un fichier CSV, TSV, TXT, XLSX ou XLSM. <strong>Simulation avec données fictives</strong> ouvre le même environnement sans fichier.</li>
+        <li>Pour Excel, vérifier la feuille et la ligne d’en-têtes proposées. Un rapport compatible suggère <strong>Tickets / ligne 4</strong>. Ces choix restent modifiables ; changer de feuille retire la suggestion de ligne précédente.</li>
+        <li>Si une feuille <strong>Paramétrage</strong> compatible est reconnue, examiner le nombre de règles météo, cartes visibles, sites, alias et le rappel de fraîcheur. L’option <strong>Reprendre la météo, les équipes et les sites du classeur dans la simulation</strong> est cochée par défaut et peut être décochée. Ouvrir la simulation affiche ensuite la Météo.</li>
+        <li>Ouvrir une fiche depuis le relevé ou un volume météo. Dans <strong>Actions assistées</strong>, essayer un suivi, une tâche, une affectation ou un statut, prévisualiser puis confirmer. Le ticket simulé et ses statistiques sont réellement actualisés. Les sites, requêtes, notes, tournées, archives et alertes sont également modifiables.</li>
+        <li>Enregistrer les exports à conserver, puis cliquer <strong>Quitter la simulation</strong>. Le relevé et les réglages habituels sont restaurés avec leur bibliothèque et leur travail personnel. Les essais restent séparés de cet espace.</li>
+      </ol>
+      <div class="callout"><p><strong>Le bandeau Simulation reste visible dans toutes les rubriques.</strong> La bibliothèque et la palette recherchent les tickets de cet espace. Les connexions, collectes, échanges avec le central et services externes ont des adaptateurs locaux ; leurs résultats sont signalés comme simulés. La démonstration utilise le même mécanisme d’isolation.</p></div>
+      <p>Vous pouvez connecter la source simulée, inspecter son tableau puis l’extraire, consulter le bilan d’une campagne, synchroniser le central simulé et essayer les contributions d’équipe. Dans <strong>Mises à jour</strong>, un pack fictif fait évoluer une version virtuelle et produit un bilan ; le retour arrière est testable sans fermer l’application. L’assistant prépare et génère ses propositions localement dans cet espace.</p>
+      <p>Une simulation utilise exactement les lignes du fichier, sans ajout de tickets d’exemple. Les contenus absents du fichier restent indiqués comme absents. Les valeurs Excel enregistrées sont lues sans exécuter de formule, macro ni liaison externe. Un ancien XLS doit être enregistré en XLSX ou CSV. Les formules sans résultat enregistré, les limites de lecture et les identifiants ou statuts douteux restent signalés ; un fichier local ne certifie pas l’exhaustivité du portail GLPI.</p>
+      <p>Un nouvel import ouvre une nouvelle simulation. Une annulation ou une erreur d’import conserve l’état courant. Les réglages d’essai, y compris requêtes, tableaux et sites, sont isolés ; les fichiers que vous exportez explicitement restent à l’emplacement choisi. Les classeurs et correspondances internes ne sont pas intégrés aux modèles publics.</p>
     </section>
     <section id="extraction">
       <h2>2. Préparer sa recherche, puis extraire en un clic</h2>
@@ -101,9 +135,8 @@
       <p>La recherche et les filtres portent sur toutes les lignes chargées, avant l’affichage paginé de 50 à 500 lignes. La recherche inclut les colonnes masquées. Un clic sur un en-tête trie le résultat ; <kbd>Maj + clic</kbd> ajoute un niveau de tri.</p>
       <p><strong>Colonnes</strong> règle visibilité, ordre et largeur. <strong>Vues mémorisées</strong> mémorise recherche, filtres par colonne, jusqu’à quatre niveaux de tri et présentation. Une vue reste liée à la structure exacte des en-têtes pour ne pas appliquer un filtre à une autre colonne.</p>
       <p>L’export complet conserve toutes les lignes et colonnes du relevé. <strong>Exporter la vue</strong> utilise les critères courants et les colonnes visibles, y compris les lignes correspondantes au-delà de l’aperçu.</p>
-      <p><strong>Importer un fichier de test</strong> ouvre un extrait <strong>CSV, XLSX ou XLSM</strong> sans connexion au portail. TSV et TXT sont aussi acceptés. Dans un fichier Excel, choisir la feuille visible contenant la liste des incidents et, si nécessaire, le numéro de la ligne d’en-têtes. Laisser ce numéro vide utilise la première ligne non vide. Les valeurs enregistrées sont lues ; aucune formule, macro ni liaison externe n’est exécutée. Pour un ancien fichier XLS, enregistrer une copie XLSX ou CSV.</p>
-      <p>Le bandeau <strong>Mode test</strong> reste visible. Les listes, recherches et dashboards utilisent cet extrait. La météo du stock porte la mention <strong>Simulation</strong> lorsqu’elle peut appliquer les seuils sur un fichier entièrement lu et des identifiants/statuts exploitables. La couverture GLPI reste non confirmée. Un fichier limité ou incohérent conserve une météo neutre.</p>
-      <p>La collecte, les actions sur les tickets, le partage, l’archivage et les notifications sont suspendus. Le panier de test est indépendant. <strong>Quitter le mode test</strong> restitue le relevé précédent, même après plusieurs imports. Les personnalisations des dashboards et des requêtes restent enregistrées dans les réglages. Une annulation ou une erreur d’import conserve le relevé courant.</p>
+      <p><strong>Importer en simulation</strong> ouvre un espace complet à partir d’un fichier CSV, TSV, TXT, XLSX ou XLSM. L’aperçu Excel permet de choisir feuille et en-têtes et, lorsqu’il existe, de reprendre le profil <strong>Paramétrage</strong>. Voir <a href="#simulation">Tout essayer dans une simulation complète</a> pour le parcours et le retour aux données habituelles.</p>
+      <p>Dans une simulation, les mêmes recherches, filtres, exports et fiches restent disponibles. Une valeur manquante ou non interprétable reste explicitement indisponible. Le tableau conserve les dix-neuf champs d’un extrait métier, leurs valeurs brutes et leurs correspondances.</p>
     </section>
     <section id="dashboard">
       <h2>5. Construire et explorer les dashboards</h2>
@@ -199,13 +232,13 @@
     <section class="rule" id="validation">
       <h2>Validation et périmètre</h2>
       <p>La publication exige les contrôles des moteurs, les parcours navigateur sur données synthétiques, le rendu dans le vrai hôte WebView2 sous Windows, le lancement du pack extrait, le second lancement et la persistance du zoom. Les journaux et captures du workflow correspondent au commit inscrit dans <code>wad\version.json</code>. Les empreintes des fichiers sont incluses.</p>
-      <p>Les résultats locaux confirmés à cette étape sont <strong>DashboardChecks : 131/131</strong>, <strong>DashboardLayoutChecks : 43/43</strong> et <strong>ConfigurationChecks : 46/46</strong>. Le <a href="Rapport-verification.txt">rapport de vérification</a> distingue ces exécutions des validations de livraison : elles ne constituent ni un nouveau résultat CI ni une validation native Windows du pack.</p>
-      <p>Le portail privé, son SSO et ses personnalisations ne sont pas accessibles à ces tests. Les notes personnelles, tournées et scénarios restent locaux jusqu’à leur action de partage ; les contributions créées dans l’espace d’équipe se synchronisent lorsque PostgreSQL est activé. Les écritures GLPI assistées exigent préparation, confirmation explicite et contrôle du résultat. Routage, météo et génération externe restent facultatifs et demandent configuration et consentement. La mise à jour vérifiée conserve une sauvegarde et contrôle le démarrage. La signature d’éditeur nécessite un certificat de confiance non fourni pour cette livraison.</p>
+      <p>Pour la reprise 3.3.0, les validations locales établies sont <strong>62/62 contrôles du parcours de simulation et de profil dans Chromium avec le vrai backend C#</strong> et <strong>21/21 contrôles de reprise du profil de classeur</strong>. Le parcours ouvre les 35 écrans, modifie un ticket puis vérifie la météo, édite un site, utilise la bibliothèque et la collecte, installe une version virtuelle et restaure le contexte d’origine. Il vérifie ensuite l’aperçu du profil dans l’espace habituel, son application explicite, sa persistance et le recalcul météo sur le relevé d’origine. La publication des packs exige la réussite de la CI Windows sur leur commit final ; le workflow de ce même commit fait foi. Les résultats de livraison sont consignés dans le <a href="Rapport-verification.txt">rapport de vérification</a>.</p>
+      <p>Le portail privé, son SSO et ses personnalisations ne sont pas accessibles à ces tests. Dans l’espace habituel, les notes personnelles, tournées et scénarios restent locaux jusqu’à leur action de partage ; les contributions créées dans l’espace d’équipe se synchronisent lorsque PostgreSQL est activé. Les écritures GLPI assistées exigent préparation, confirmation explicite et contrôle du résultat. Routage, météo et génération externe restent facultatifs et demandent configuration et consentement. La mise à jour vérifiée conserve une sauvegarde et contrôle le démarrage. La signature d’éditeur nécessite un certificat de confiance non fourni pour cette livraison.</p>
       <p>Les guides spécialisés précisent les méthodes et limites : <code>Dashboards-et-extraction.md</code>, <code>Travail-personnel-et-techniciens.md</code>, <code>Requetes-villes-tournees.md</code> et <code>Historique-qualite-automatisation.md</code>. Le suivi des 200 propositions reste dans <code>Suivi-200-ameliorations.md</code>.</p>
       <p class="small muted">Outil indépendant du projet GLPI. Références officielles : <a href="https://playwright.dev/dotnet/docs/browsers">navigateurs Playwright</a> et <a href="https://help.glpi-project.org/documentation/readme-1-1/search">recherches et exports GLPI</a>.</p>
     </section>
   </article>
-  <footer>GLPI Pilot 3.2.2 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
+  <footer>GLPI Pilot 3.3.0 · Outil indépendant du projet GLPI · Guide inclus dans le pack Windows x64. Ce document fonctionne hors ligne ; les liens de référence nécessitent une connexion Internet.</footer>
 </main>
 </body>
 </html>

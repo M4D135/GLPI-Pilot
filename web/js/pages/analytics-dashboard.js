@@ -16,9 +16,11 @@ const presentationNames = { bars: 'Barres', list: 'Liste', compact: 'Compacte', 
 const namedChoices = (values, names) => values.map(value => ({ value, label: names[value] || value }));
 
 export async function renderDashboard(ctx) {
-  const cleanup = heading(ctx, 'Tableaux de bord', 'Indicateurs calculés sur le relevé actif, périmètres reproductibles et observations historiques traçables.');
+  const business = ctx.business;
+  const cleanup = heading(ctx, business?.title || 'Tableaux de bord', business?.description || 'Indicateurs calculés sur le relevé actif, périmètres reproductibles et observations historiques traçables.');
+  if (business) { ctx.root.classList.add('analytics-business'); ctx.root.dataset.businessView = business.key; }
   let editing = ctx.params?.editing === true;
-  const params = { boardId: ctx.params?.boardId, technicianKey: ctx.params?.technicianKey ?? '', crossFilters: ctx.params?.crossFilters ?? [] };
+  const params = { boardId: ctx.params?.boardId, technicianKey: ctx.params?.technicianKey ?? '', crossFilters: ctx.params?.crossFilters ?? [], ...(business ? { focusKey: ctx.params?.focusKey ?? '' } : {}) };
   const loading = empty('Calcul du tableau de bord…', 'Les widgets sont publiés ensemble lorsque leurs périmètres sont prêts.'); ctx.root.append(loading);
   const model = await call(ctx, 'dashboard.get', Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined)));
   if (ctx.signal.aborted) return cleanup;
@@ -26,7 +28,7 @@ export async function renderDashboard(ctx) {
   const layout = model.layout; let board = layout.boards.find(b => b.id === model.boardId); const personal = model.technicianKey.length > 0;
   ensureSections(board); let savedLayout = clone(layout); let saving = false;
   const runArgs = { runId: model.runId, revision: model.revision }; const selected = new Set();
-  const go = extra => ctx.navigate('dashboard', { ...params, boardId: board.id, editing, ...extra });
+  const go = extra => ctx.navigate(business?.route || 'dashboard', { ...params, boardId: board.id, editing, ...extra });
   const persist = async (focus = null) => {
     if (saving) throw new Error('L’enregistrement précédent est encore en cours.');
     saving = true; ctx.root.dataset.ready = 'false'; ctx.root.setAttribute('aria-busy', 'true');
@@ -70,13 +72,23 @@ export async function renderDashboard(ctx) {
   const editControl = button(editing ? 'Quitter l’édition' : 'Modifier le dashboard', () => { editing = !editing; draw(); });
   const undoControl = command(ctx, 'Annuler la modification', async () => { const result = await call(ctx, 'dashboard.layout.undo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.undo });
   const redoControl = command(ctx, 'Rétablir la modification', async () => { const result = await call(ctx, 'dashboard.layout.redo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.redo });
-  const organization = details('Autres actions', toolbar(command(ctx, 'Actualiser', () => go({})), command(ctx, '+ Tableau de bord', () => newBoardDialog(ctx, personal, go)), undoControl, redoControl));
-  const controls = toolbar(field('Disposition', list), field('Périmètre personnel', people), editControl,
-    command(ctx, 'Filtres et comparaison', () => filtersDialog()), command(ctx, 'Exporter', () => exportDialog()), organization);
+  const organization = details('Autres actions', toolbar(command(ctx, 'Actualiser', () => go({})), business
+    ? command(ctx, 'Rétablir la présentation de cette rubrique', () => dialog('Rétablir la présentation', caption('La disposition de cette rubrique sera reconstruite avec vos paramètres actuels. Les autres tableaux et les seuils restent conservés.'),
+      [{ label: 'Rétablir cette rubrique', action: async close => { await call(ctx, 'dashboard.business.reset'); close(); go({ boardId: undefined }); } }]))
+    : command(ctx, '+ Tableau de bord', () => newBoardDialog(ctx, personal, go)), undoControl, redoControl));
+  const focus = business?.focusEnabled ? select([{ value: '', label: 'Toutes les équipes et tous les groupes' },
+    ...business.focus.map(item => ({ value: item.key, label: `Équipe · ${item.label}` })), ...business.groups.map(label => ({ value: `group:${label}`, label: `Groupe · ${label}` }))], params.focusKey) : null;
+  focus?.addEventListener('change', () => go({ focusKey: focus.value, crossFilters: [] }));
+  const advancedTools = business ? el('details', { class: 'business-dashboard-tools' }, el('summary', { text: 'Outils du tableau' })) : null;
+  const expertControls = toolbar(field('Périmètre personnel', people), editControl,
+    command(ctx, 'Filtres et comparaison', () => filtersDialog()), organization);
+  const controls = business ? toolbar(command(ctx, 'Paramètres du pilotage', () => ctx.navigate('pilot-settings'), { icon: 'settings' }),
+    focus ? field('Équipe ou groupe', focus) : null, command(ctx, 'Exporter', () => exportDialog()), advancedTools)
+    : toolbar(field('Disposition', list), ...expertControls.children, command(ctx, 'Exporter', () => exportDialog()));
   controls.classList.add('analytics-primary-toolbar', 'no-print');
   const provenance = el('details', { class: 'analytics-provenance print-provenance', 'aria-label': 'Provenance du tableau de bord' });
-  const provenanceRow = el('div', { class: 'analytics-provenance-row' }, provenance,
-    command(ctx, 'Détails des contrôles', () => controlsDialog(), { attributes: { class: 'button analytics-controls-access no-print' } }));
+  const controlsAccess = command(ctx, 'Détails des contrôles', () => controlsDialog(), { attributes: { class: 'button analytics-controls-access no-print' } });
+  const provenanceRow = el('div', { class: 'analytics-provenance-row' }, provenance, business ? null : controlsAccess);
   const receptionIssue = el('div', { class: 'analytics-reception-issue', role: 'status', hidden: true });
   const freshnessIssue = el('div', { class: 'analytics-reception-issue analytics-freshness-issue', role: 'status', hidden: true });
   const boardHost = el('div', { class: 'analytics-board-host' }); const editorHost = el('div', { class: 'analytics-editor-toolbar no-print' });
@@ -91,38 +103,52 @@ export async function renderDashboard(ctx) {
     if (saving) { showUnavailable.control.checked = board.hideUnavailableWidgets === false; return; }
     board.hideUnavailableWidgets = !showUnavailable.control.checked; persist().catch(reason => error(ctx, reason));
   });
-  ctx.root.append(controls, provenanceRow, receptionIssue, freshnessIssue, toolbar(cross.element,
+  const scopeTools = toolbar(cross.element,
     command(ctx, 'Voir les lignes du périmètre', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, kind: 'scope' })),
     command(ctx, 'Effacer les filtres', async () => { if (board.filters.length) { board.filters = []; await call(ctx, 'dashboard.layout.save', { personal, layout }); } go({ crossFilters: [] }); }, { disabled: model.commonFilters.length === 0 }),
-    command(ctx, 'Effectifs datés', () => ctx.navigate('populations')), command(ctx, 'Assistant sur ce périmètre', () => ctx.navigate('assistant', runArgs))),
-    visibilityHost, editorHost, selectionHost);
+    command(ctx, 'Effectifs datés', () => ctx.navigate('populations')), command(ctx, 'Assistant sur ce périmètre', () => ctx.navigate('assistant', runArgs)));
+  if (advancedTools) advancedTools.append(el('div', { class: 'business-dashboard-tools-content' }, expertControls, scopeTools, visibilityHost, controlsAccess));
+  ctx.root.append(controls, provenanceRow, receptionIssue, freshnessIssue);
+  if (!business) ctx.root.append(scopeTools, visibilityHost);
+  if (business?.key === 'sites') ctx.root.append(toolbar(command(ctx, 'Tickets actifs · demandeur puis site', () => rowDialog(ctx, 'dashboard.rows',
+    { ...runArgs, kind: 'metric', key: 'active', sortKey: 'requester-site' }, 'Tickets actifs · demandeur puis site'))));
+  ctx.root.append(editorHost, selectionHost);
   if (model.comparison) ctx.root.append(comparisonCard(model.snapshot, model.comparison));
   ctx.root.append(status, boardHost);
   let historyController = null; let historyData = null;
 
   function drawOverview() {
     const snapshot = model.snapshot; const quality = snapshot.quality;
+    const simulation = model.simulation === true || ctx.state.session?.testMode === true;
+    const fileRead = simulation && (model.simulationFileReadComplete === true || ctx.state.session?.testFileReadComplete === true);
     const received = snapshot.receptionComplete === true;
-    const receiptLabel = received ? 'Réception complète' : 'Réception partielle ou non confirmée';
+    const receiptLabel = simulation ? fileRead ? 'Simulation · fichier entièrement lu' : 'Simulation · fichier incomplet' : received ? 'Réception complète' : 'Réception partielle ou non confirmée';
     provenance.replaceChildren(
       el('summary', {}, el('strong', { text: `${board.name}${personal ? ` · ${model.technicianKey}` : ''}` }),
         el('span', { text: `${formatNumber(snapshot.rowCount)} / ${formatNumber(snapshot.sourceRowCount)} lignes · ${formatDate(snapshot.extractedAt)}` }),
-        badge(receiptLabel, received ? 'success' : 'warning'),
+        badge(receiptLabel, fileRead ? '' : received ? 'success' : 'warning'),
         model.historical ? badge('Archive') : ctx.state.session?.demo ? badge('Démonstration', 'warning') : null,
         model.commonFilters.length ? badge(`${model.commonFilters.length} filtre(s)`) : null),
       el('strong', { text: 'GLPI Pilot · provenance de ce calcul' }),
+      simulation ? caption('Simulation locale : couverture GLPI non vérifiée. Les seuils sont appliqués aux lignes du fichier importé.') : null,
       caption(`Relevé : ${formatDate(snapshot.extractedAt)} · calcul : ${formatDate(snapshot.calculatedAt)} · ${formatNumber(snapshot.rowCount)} / ${formatNumber(snapshot.sourceRowCount)} lignes dans ce périmètre · ${receiptLabel.toLocaleLowerCase()}`),
       caption(`${snapshot.scopeLabel} · ${snapshot.sourceUrl || 'source locale'}`),
       caption(`Total annoncé dans la source : ${snapshot.sourceExpectedTotal == null ? 'inconnu' : formatNumber(snapshot.sourceExpectedTotal)} lignes.`),
       caption(`Filtres communs : ${describeFilters(model.commonFilters) || 'aucun'}`),
       ...board.widgets.filter(widget => !widget.hidden && widget.filters?.length).map(widget => caption(`Widget ${widget.title || widget.sourceKey} : ${describeFilters(widget.filters)}`)),
       model.historical ? badge('Archive · règles et dénominateurs conservés') : null);
-    const issues = [snapshot.receptionComplete === false ? 'Réception partielle ou non confirmée.' : '',
-      quality?.scopeStable === false ? 'Le périmètre de la collecte doit être vérifié.' : '',
-      quality?.sampleIdentityVerified === false ? 'Des identifiants de l’échantillon manquent dans le relevé.' : '',
-      quality?.finalTotalVerified === false ? 'Le total GLPI a changé pendant la collecte.' : ''].filter(Boolean);
+    const metricValue = key => snapshot.metrics.find(metric => metric.key === key)?.value;
+    const issues = (simulation ? [!fileRead ? 'Le fichier n’a pas été lu entièrement.' : '',
+      metricValue('missing-id') > 0 ? 'Certains identifiants sont absents ou non exploitables.' : '',
+      metricValue('duplicate') > 0 ? 'Des identifiants apparaissent plusieurs fois ; les occurrences restent visibles.' : '',
+      model.sourceIdentityReliable === false && !(metricValue('missing-id') > 0 || metricValue('duplicate') > 0) ? 'Les identifiants du fichier source ne permettent pas un décompte distinct fiable.' : '',
+      metricValue('unknown-status') > 0 || model.sourceStatusesKnown === false ? 'Certains statuts du fichier source sont absents ou non reconnus.' : '']
+      : [snapshot.receptionComplete === false ? 'Réception partielle ou non confirmée.' : '',
+        quality?.scopeStable === false ? 'Le périmètre de la collecte doit être vérifié.' : '',
+        quality?.sampleIdentityVerified === false ? 'Des identifiants de l’échantillon manquent dans le relevé.' : '',
+        quality?.finalTotalVerified === false ? 'Le total GLPI a changé pendant la collecte.' : '']).filter(Boolean);
     receptionIssue.hidden = issues.length === 0;
-    receptionIssue.replaceChildren(...(issues.length ? [el('strong', { text: 'Collecte à vérifier' }), el('span', { text: issues.join(' ') })] : []));
+    receptionIssue.replaceChildren(...(issues.length ? [el('strong', { text: simulation ? 'Fichier à vérifier' : 'Collecte à vérifier' }), el('span', { text: issues.join(' ') })] : []));
     const elapsedHours = (Date.parse(snapshot.calculatedAt) - Date.parse(snapshot.extractedAt)) / 3600000;
     const stale = !model.historical && board.freshnessWarningHours > 0 && Number.isFinite(elapsedHours) && elapsedHours > board.freshnessWarningHours;
     freshnessIssue.hidden = !stale;
@@ -179,6 +205,8 @@ export async function renderDashboard(ctx) {
     await load(0);
   }
   function draw() {
+    ctx.root.dataset.businessEditing = String(editing);
+    if (advancedTools) advancedTools.open = editing;
     editControl.textContent = editing ? 'Quitter l’édition' : 'Modifier le dashboard';
     editControl.setAttribute('aria-pressed', String(editing));
     drawOverview(); showUnavailable.control.checked = board.hideUnavailableWidgets === false;
@@ -187,7 +215,7 @@ export async function renderDashboard(ctx) {
     boardHost.classList.toggle('is-editing', editing); boardHost.dataset.density = board.density || 'comfortable';
     if (editing) {
       const transfer = details('Disposition', toolbar(command(ctx, 'Nom et organisation', () => boardDialog()),
-        command(ctx, 'Importer une disposition', async () => {
+        business ? command(ctx, 'Copier dans Mes tableaux', async () => { const result = await call(ctx, 'dashboard.business.copy'); ctx.navigate('dashboard', { boardId: result.boardId }); }) : command(ctx, 'Importer une disposition', async () => {
           const preview = await call(ctx, 'dashboard.layout.import', { personal }); if (preview.cancelled) return;
           dialog('Vérifier la disposition importée', el('div', {}, caption(`${preview.layout.boards.length} tableau(x) à importer · ${preview.existingBoards} déjà présent(s) dans la disposition ${personal ? 'personnelle' : 'globale'}.`),
             caption('Ajout recommandé : vos tableaux actuels sont conservés. Les noms déjà utilisés reçoivent un suffixe « importé ». Vous pourrez annuler cet ajout.'),
@@ -204,7 +232,12 @@ export async function renderDashboard(ctx) {
         el('p', { class: 'analytics-edit-help', id: 'dashboard-edit-help', text: 'Glissez les poignées pour déplacer. Étirez le coin pour redimensionner. Au clavier : ↑ ↓ pour l’ordre, ← → pour changer de section ; les flèches du coin règlent la taille.' }));
       drawBulk();
     }
-    if (board.description) boardHost.append(caption(board.description, 'analytics-board-description'));
+    if (board.description && (!business || editing)) boardHost.append(caption(board.description, 'analytics-board-description'));
+    if (business?.key === 'pilotage') {
+      const resolved = model.snapshot.metrics.find(metric => metric.key === 'resolved')?.value;
+      const closed = model.snapshot.metrics.find(metric => metric.key === 'closed')?.value;
+      if (resolved != null && closed != null) boardHost.append(caption(`${formatNumber(resolved + closed)} tickets résolus ou clos exclus du stock actif · situation au ${formatDate(model.snapshot.extractedAt)}.`, 'business-stock-caption'));
+    }
     const groups = ensureSections(board).filter(section => editing || !section.hidden);
     const widgetById = new Map(model.widgets.map(widget => [widget.id, widget]));
     const visibleSections = new Set(groups.map(section => section.key));
@@ -224,7 +257,11 @@ export async function renderDashboard(ctx) {
       const expanded = !board.collapsedSections.includes(section.key);
       const gridId = `dashboard-section-${uuid()}`;
       const grid = el('div', { class: 'analytics-board', id: gridId, 'aria-label': section.title, hidden: !expanded });
-      const sectionRoot = el('section', { class: `analytics-board-section accent-${section.accent || 'blue'}${section.hidden ? ' is-hidden-section' : ''}`, 'data-section-key': section.key });
+      if (business?.key === 'weather' && !editing && widgets.length > 1 && widgets.every(widget => widget.kind === 'metric' && widget.presentation === 'weather-volume' && widget.span === 3)) {
+        grid.classList.add('business-weather-grid'); grid.style.setProperty('--weather-columns', String(widgets.length <= 5 ? widgets.length : 4));
+      }
+      const heroSection = business?.key === 'weather' && !editing && widgets.length === 1 && widgets[0].kind === 'metric' && widgets[0].sourceKey === 'active' && !widgets[0].filters?.length;
+      const sectionRoot = el('section', { class: `analytics-board-section accent-${section.accent || 'blue'}${section.hidden ? ' is-hidden-section' : ''}${heroSection ? ' business-weather-hero-section' : ''}`, 'data-section-key': section.key });
       const sectionHeader = el('header', { class: 'analytics-section-heading' });
       if (editing) sectionHeader.append(button('⠿', null, { title: 'Glisser la section ou utiliser les flèches du clavier', attributes: {
         class: 'button analytics-drag-handle', draggable: true, 'data-drag-kind': 'section', 'aria-label': `Déplacer la section ${section.title}`, 'aria-describedby': 'dashboard-edit-help' } }));
@@ -260,7 +297,19 @@ export async function renderDashboard(ctx) {
           'data-available': widget.available ?? 'unknown', 'data-auto-height': setting.autoHeight }, header,
           caption(`${formatNumber(widget.rowCount)} lignes · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
-            { snapshot: model.snapshot, historical: model.historical, onControls: () => controlsDialog(widget.content?.warnings), copyIds: selection => copyIds(widget, selection) }));
+            { snapshot: model.snapshot, historical: model.historical, compactWeather: business?.key === 'weather' && !editing,
+              onControls: () => controlsDialog(widget.content?.warnings), copyIds: selection => copyIds(widget, selection) }));
+        if (business?.key === 'weather' && setting.kind === 'metric') {
+          const disabledWeather = business.rules?.some(rule => rule.label === setting.title && rule.sourceKey === setting.sourceKey && rule.weatherEnabled === false);
+          if (setting.presentation === 'weather-volume' || disabledWeather) {
+            article.classList.add('business-weather-card'); article.dataset.weatherState = disabledWeather ? 'disabled' : widget.content?.volumeWeather?.state || 'unknown';
+          }
+          if (disabledWeather) article.append(caption('Météo désactivée dans les paramètres · volume conservé', 'business-weather-disabled'));
+          if (setting.sourceKey === 'active' && !setting.filters?.length) {
+            article.classList.add('business-weather-hero');
+            header.insertBefore(caption(`Relevé du ${formatDate(model.snapshot.extractedAt)}`, 'business-weather-date'), controls);
+          }
+        }
         if (editing) article.append(el('div', { class: 'analytics-widget-edit-footer no-print' },
           el('span', { text: setting.locked ? 'Position verrouillée' : `${setting.span} / 12 · ${setting.autoHeight ? 'hauteur auto' : `${setting.height} px`}` }),
           setting.locked ? null : button('↘', () => widgetDialog(setting), { title: 'Étirer pour redimensionner, utiliser les flèches ou ouvrir les dimensions', attributes: {
@@ -273,6 +322,8 @@ export async function renderDashboard(ctx) {
       else if (!widgets.length) grid.append(caption('Cette section ne contient pas de widget visible.', 'analytics-section-empty'));
       sectionRoot.append(grid); boardHost.append(sectionRoot);
     }
+    if (business?.key === 'weather' && !editing) boardHost.append(el('div', { class: 'business-weather-legend', 'aria-label': 'Légende de la météo' },
+      ...[['sun', 'Maîtrisé'], ['watch', 'À surveiller'], ['rain', 'Sous tension'], ['unknown', 'Non calculable ou seuils à définir']].map(([state, label]) => el('span', { 'data-state': state }, el('i', { 'aria-hidden': 'true' }), label))));
     if (!groups.length) boardHost.append(empty('Toutes les sections sont masquées', 'Passez en édition pour choisir celles à afficher.'));
     else if (!renderedSections) boardHost.append(empty('Aucun widget calculable dans ce périmètre', 'Tous les widgets sont conservés. Affichez les indisponibles ou passez en édition pour les régler.'));
     if (historyData) displayHistory(historyData);
@@ -350,11 +401,13 @@ export async function renderDashboard(ctx) {
       field('Rappel après un relevé ancien · heures', freshness, 'Vide : aucun rappel. Un rappel ne modifie pas les couleurs météo.'), message), [
       { label: 'Enregistrer', primary: true, action: async close => { board.name = name.value; board.description = description.value; board.density = density.value;
         board.freshnessWarningHours = freshness.value.trim() === '' ? null : Number(freshness.value); await persist(); close(); } },
-      { label: 'Dupliquer', action: async close => { const copy = clone(board); copy.id = uuid(); copy.name = `${name.value} · copie`.slice(0, 120); copy.widgets.forEach(w => w.id = uuid()); layout.boards.push(copy); layout.activeBoardId = copy.id; await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ boardId: copy.id }); } },
-      { label: 'Supprimer ce tableau', danger: true, action: async close => {
+      { label: business ? 'Copier dans Mes tableaux' : 'Dupliquer', action: async close => {
+        if (business) { const copy = await call(ctx, 'dashboard.business.copy'); close(); ctx.navigate('dashboard', { boardId: copy.boardId }); return; }
+        const copy = clone(board); copy.id = uuid(); copy.name = `${name.value} · copie`.slice(0, 120); copy.widgets.forEach(w => w.id = uuid()); layout.boards.push(copy); layout.activeBoardId = copy.id; await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ boardId: copy.id }); } },
+      ...(!business ? [{ label: 'Supprimer ce tableau', danger: true, action: async close => {
         if (layout.boards.length === 1) { message.textContent = 'Conservez au moins un tableau de bord.'; return; }
         layout.boards.splice(layout.boards.indexOf(board), 1); layout.activeBoardId = layout.boards[0].id; await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ boardId: layout.activeBoardId });
-      } }
+      } }] : [])
     ]);
   }
   function hiddenDialog() {

@@ -2,13 +2,10 @@ using GlpiPilot.Core;
 using Microsoft.Playwright;
 namespace GlpiPilot.Runtime;
 
-// This fixture isolates the real analytics handlers and the real closed runtime dispatcher.
-// Other domains are deliberately absent; none of the analytics engines or responses are mocked.
+// A fixture entry point loads a known observation into the complete runtime.
+// Analytics, simulation, stores and their responses are production implementations.
 public sealed partial class PilotApplication
 {
-    private void RegisterFoundationOperations() { }
-    private void RegisterWorkplaceOperations() { }
-    private void RegisterTerrainOperations() { }
     public void LoadFixture(ExtractionResult source, CityEnrichmentResult? locations = null) => SetResult(source, locations);
 }
 

@@ -3,20 +3,28 @@ import {el,button,icon,dialog,select} from './ui.js';
 export const navigationGroups = [
   {key:'pinned',label:'Épinglés',icon:'spark',pages:[]},
   {key:'workspace',label:'Mon quotidien',icon:'home',pages:['home','day','alerts']},
+  {key:'pilot',label:'Pilotage GLPI',icon:'chart',pages:['pilot-weather','pilot-summary','pilot-groups','pilot-categories','pilot-oldest','pilot-followup','pilot-participants','pilot-sites','pilot-settings']},
   {key:'collect',label:'Collecter et vérifier',icon:'download',pages:['collect','sources','records','quality','mapping','library']},
   {key:'analyze',label:'Analyser',icon:'chart',pages:['dashboard','queries','history','populations','assistant']},
   {key:'work',label:'Tickets et équipe',icon:'ticket',pages:['tickets','enrichment','technicians','planning']},
   {key:'terrain',label:'Terrain',icon:'map',pages:['tours','terrain-reference','terrain-review']},
   {key:'admin',label:'Réglages et suivi',icon:'settings',pages:['automation','operations','settings','updates','help']}
 ];
-const labels={home:'Accueil',day:'Ma journée',alerts:'Alertes',collect:'Collecte GLPI',sources:'Sources',records:'Relevé',quality:'Qualité',mapping:'Correspondances',library:'Bibliothèque',dashboard:'Tableau de bord',queries:'Requêtes',history:'Historique',populations:'Effectifs',assistant:'Assistant',tickets:'Tickets',enrichment:'Lectures ciblées',technicians:'Techniciens',planning:'Répartition',tours:'Tournées','terrain-reference':'Lieux et sites','terrain-review':'Localisations',automation:'Automatisations',operations:'Journal',settings:'Réglages',updates:'Mises à jour',help:'Aide'};
+const labels={home:'Accueil',day:'Ma journée',alerts:'Alertes',collect:'Collecte GLPI',sources:'Sources',records:'Relevé',quality:'Qualité',mapping:'Correspondances',library:'Bibliothèque',dashboard:'Mes tableaux',queries:'Requêtes',history:'Historique',populations:'Effectifs',assistant:'Assistant',tickets:'Tickets',enrichment:'Lectures ciblées',technicians:'Techniciens',planning:'Répartition',tours:'Tournées','terrain-reference':'Lieux et sites','terrain-review':'Localisations',automation:'Automatisations',operations:'Journal',settings:'Réglages',updates:'Mises à jour',help:'Aide','pilot-weather':'Météo','pilot-summary':'Pilotage','pilot-groups':'Groupes','pilot-categories':'Catégories','pilot-oldest':'Plus anciens','pilot-followup':'Suivi agents','pilot-participants':'Agents actifs','pilot-sites':'Sites','pilot-settings':'Paramètres'};
 const protectedPages=new Set(['home','settings']);
 const defaultGroup=id=>navigationGroups.find(group=>group.pages.includes(id))?.key||'admin';
 const unique=values=>[...new Set(values)];
 export const navigationLabel=page=>labels[page.id]||page.title;
 export function navigationModel(pages,preferences={},includeHidden=false) {
   const groupKeys=navigationGroups.map(group=>group.key);
-  const orderedGroups=unique([...(preferences.navigationGroupOrder||[]).filter(key=>groupKeys.includes(key)),...groupKeys]);
+  const orderedGroups=unique((preferences.navigationGroupOrder||[]).filter(key=>groupKeys.includes(key)));
+  // A group introduced by an upgrade joins its usual neighbours. Existing
+  // groups keep their relative order, including an explicitly moved pilot group.
+  for(const key of groupKeys) {
+    if(orderedGroups.includes(key))continue;
+    const previous=groupKeys.slice(0,groupKeys.indexOf(key)).reverse().find(value=>orderedGroups.includes(value));
+    orderedGroups.splice(previous?orderedGroups.indexOf(previous)+1:0,0,key);
+  }
   const pageIds=new Set(pages.map(page=>page.id));
   const order=unique([...(preferences.navigationOrder||[]).filter(id=>pageIds.has(id)),...navigationGroups.flatMap(group=>group.pages),...pageIds]);
   const hidden=new Set(preferences.hiddenNavigation||[]),pinned=new Set(preferences.pinnedNavigation||[]);

@@ -1,12 +1,9 @@
 using GlpiPilot.Core;
 namespace GlpiPilot.Runtime;
 
-// Only unrelated domains are omitted. The dispatcher, handlers, persistence and engines are production code.
+// Fixture data enters the complete production runtime, including simulation isolation.
 public sealed partial class PilotApplication
 {
-    private void RegisterFoundationOperations() { }
-    private void RegisterAnalyticsOperations() { }
-    private void RegisterTerrainOperations() { }
     public void LoadFixture(ExtractionResult data, SnapshotDocument? historical = null) => SetResult(data, historical: historical);
     public void ReadFixture(TicketDetailResult detail) => WorkAcceptDetail(detail);
 }

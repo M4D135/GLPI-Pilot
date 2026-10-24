@@ -5,8 +5,28 @@ namespace GlpiPilot.Core;
 
 public static class AppPaths
 {
+    private static readonly AsyncLocal<string?> SimulationDataRoot = new();
+    internal static string? SimulationRoot => SimulationDataRoot.Value;
+    internal static IDisposable EnterSimulation(string root)
+    {
+        var path = Path.GetFullPath(root);
+        var temporary = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!path.StartsWith(temporary, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+            || !Path.GetFileName(path).StartsWith("GLPI-Pilot-Simulation-", StringComparison.Ordinal))
+            throw new InvalidOperationException("Le contexte de simulation doit utiliser son dossier temporaire dédié.");
+        for (var parent = new DirectoryInfo(path); parent is not null && parent.FullName.Length >= temporary.Length; parent = parent.Parent)
+            if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("Un dossier lié ne peut pas héberger la simulation.");
+        var previous = SimulationDataRoot.Value; SimulationDataRoot.Value = path;
+        return new SimulationScope(previous);
+    }
+    private sealed class SimulationScope(string? previous) : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose() { if (!_disposed) { _disposed = true; SimulationDataRoot.Value = previous; } }
+    }
     public static string ApplicationVersion => typeof(AppPaths).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-    public static string DataRoot => TestDataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GLPI-Pilot");
+    public static string DataRoot => SimulationRoot ?? TestDataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GLPI-Pilot");
     /// <summary>Explicit test opt-in, restricted to a disposable folder. Production startup never redirects user data.</summary>
     public static string? TestDataRoot
     {
@@ -25,7 +45,7 @@ public static class AppPaths
         }
     }
     public static string SettingsFile => Path.Combine(DataRoot, "settings.json");
-    public static string DefaultExports => TestDataRoot is { } test ? Path.Combine(test, "Exports") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GLPI-Pilot", "Exports");
+    public static string DefaultExports => (SimulationRoot ?? TestDataRoot) is { } isolated ? Path.Combine(isolated, "Exports") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GLPI-Pilot", "Exports");
     public static string Profile(string channel) => Path.Combine(DataRoot, "Browser", channel == "chrome" ? "Chrome" : "Edge");
     public static string Profile(string channel, string portalUrl) => Path.Combine(Profile(channel), ObjectIdentity.InstallationKey(portalUrl));
     public static string LogFile => Path.Combine(DataRoot, "Logs", DateTime.Today.ToString("yyyy-MM-dd") + ".log");

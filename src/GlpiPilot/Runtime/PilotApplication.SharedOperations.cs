@@ -36,7 +36,7 @@ public sealed partial class PilotApplication
         Register("workspace.operation.preview", PreviewSharedOperationAsync);
         Register("workspace.operation.apply", ApplySharedOperationAsync);
     }
-    private string SharedInstallation() => TeamWorkspaceBusinessDocuments.Installation(Settings.PortalUrl);
+    private string SharedInstallation() => TeamWorkspaceBusinessDocuments.Installation(IsSimulationInstance ? SimulationPortal : Settings.PortalUrl);
     private string SharedObservedInstallation()
     {
         var installation = SharedInstallation();
@@ -75,10 +75,10 @@ public sealed partial class PilotApplication
     {
         CheckRevision(args); var installation = SharedObservedInstallation(); var scenario = WorkScenario(); var source = RequireResult();
         var references = new Dictionary<string, List<TicketReference>>(StringComparer.Ordinal);
-        foreach (var row in source.Rows)
+        for (var rowIndex = 0; rowIndex < source.Rows.Count; rowIndex++)
         {
             ct.ThrowIfCancellationRequested(); TicketReference reference;
-            try { reference = TeamWorkspaceBusinessDocuments.PublicReference(TicketReferenceResolver.Resolve(source, row, EffectiveSettings)); }
+            try { reference = TeamWorkspaceBusinessDocuments.PublicReference(IsSimulationInstance ? SimulationReference(rowIndex) : TicketReferenceResolver.Resolve(source, source.Rows[rowIndex], EffectiveSettings)); }
             catch (Exception error) when (error is InvalidOperationException or InvalidDataException) { continue; }
             var key = WorkplaceStore.TicketKey(reference);
             if (!references.TryGetValue(key, out var found)) references[key] = found = new();

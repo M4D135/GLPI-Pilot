@@ -1,4 +1,4 @@
-import { el, badge, toolbar, table, dialog } from '../ui.js';
+import { el, badge, toolbar, table, dialog, isSimulation } from '../ui.js';
 
 export const sharedOperationKinds = {
   'personal-note': 'Note de ticket partagée',
@@ -12,7 +12,7 @@ const call = (ctx, operation, args = {}) => ctx.api.call(operation, args, { sign
 /** Publish only the already saved business document selected by the user. */
 export async function publishSharedOperation(ctx, operation, args = {}) {
   const contribution = await call(ctx, operation, args);
-  ctx.notify('Contribution enregistrée dans l’espace d’équipe. Elle sera transmise au central à la prochaine synchronisation.', 'success');
+  ctx.notify(isSimulation(ctx.state.session)?'Contribution enregistrée dans l’espace d’équipe de la simulation. Retrouvez-la dans Travail partagé.':'Contribution enregistrée dans l’espace d’équipe. Elle sera transmise au central à la prochaine synchronisation.', 'success');
   return contribution;
 }
 

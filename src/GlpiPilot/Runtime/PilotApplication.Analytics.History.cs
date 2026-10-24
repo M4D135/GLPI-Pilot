@@ -39,7 +39,7 @@ public sealed partial class PilotApplication
         var selected = all.Where(m => key.Length == 0 || m.SourceKey == key).ToArray();
         return new { total = selected.Length, offset, limit, rows = selected.Skip(offset).Take(limit).Select(AnalyticsMetadata).ToArray(),
             sources = all.GroupBy(m => m.SourceKey).Select(g => new { key = g.Key, label = g.First().SourceLabel + " · " + g.Count() + " relevés" }).Take(500).ToArray(),
-            currentSourceKey = Result is null ? "" : SnapshotStore.SourceKey(Result), retention = Settings.History };
+            currentSourceKey = Result is null ? "" : SnapshotStore.SourceKey(IsSimulationInstance ? SimulationObservation() : Result), retention = Settings.History };
     }
     private async Task<object?> AnalyticsOpenHistoryAsync(JsonElement args, CancellationToken ct)
     {
@@ -111,11 +111,11 @@ public sealed partial class PilotApplication
     private object AnalyticsAbsentReferences(JsonElement args, CancellationToken ct)
     {
         AnalyticsCheckRevision(args); RequireCurrentResult(); var comparison = RequireAnalyticsComparison(args);
-        var sourceKey = SnapshotStore.SourceKey(RequireResult());
+        var sourceKey = SnapshotStore.SourceKey(IsSimulationInstance ? SimulationObservation() : RequireResult());
         if (!comparison.Comparison.Compatible || sourceKey.Length == 0 || comparison.Before.Metadata.SourceKey != sourceKey)
             throw new InvalidOperationException("Chargez une recherche actuelle du même contexte confirmé pour préparer la vérification des absents.");
         var rows = comparison.Comparison.Changes.Where(c => c.Kind == "Absent du relevé").Where(c => c.PreviousRow.HasValue).Select(c => c.PreviousRow!.Value).Distinct().ToArray();
-        var references = rows.Take(1000).Select(row => { ct.ThrowIfCancellationRequested(); return TicketReferenceResolver.Resolve(comparison.Before.Data, comparison.Before.Data.Rows[row], Settings); }).ToArray();
+        var references = rows.Take(1000).Select(row => { ct.ThrowIfCancellationRequested(); return IsSimulationInstance ? SimulationReference(row) : TicketReferenceResolver.Resolve(comparison.Before.Data, comparison.Before.Data.Rows[row], Settings); }).ToArray();
         return new { revision = Revision, sourceKey, references, total = rows.Length, truncated = rows.Length > 1000,
             label = "Absents du relevé · " + references.Length + " références à vérifier séparément des archives" };
     }
@@ -163,7 +163,7 @@ public sealed partial class PilotApplication
         AnalyticsCheckRevision(args); var report = _analyticsHistoricalReport;
         if (report is null || report.Value.Id != Text(args, "reportId", 96)) throw new InvalidOperationException("Analyse expirée.");
         var source = RequireResult();
-        if (report.Value.Report.SourceKey != SnapshotStore.SourceKey(source)) throw new InvalidOperationException("Chargez un relevé du même contexte pour retrouver les contributeurs présents.");
+        if (report.Value.Report.SourceKey != SnapshotStore.SourceKey(IsSimulationInstance ? SimulationObservation() : source)) throw new InvalidOperationException("Chargez un relevé du même contexte pour retrouver les contributeurs présents.");
         var index = Number(args, "transferIndex", -1, -1);
         if (index < 0 || index >= report.Value.Report.Transfers.Count) throw new InvalidDataException("Flux absent.");
         var wanted = report.Value.Report.Transfers[index].Tickets.ToHashSet(StringComparer.Ordinal);

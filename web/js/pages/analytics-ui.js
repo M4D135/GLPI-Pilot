@@ -63,7 +63,7 @@ export async function rowDialog(ctx, op, args, title = 'Lignes du relevé', expl
           el('h3', { text: 'Valeur brute' }), el('pre', { class: 'analytics-preview', text: cell.raw }),
           el('h3', { text: 'Interprétation' }), el('pre', { class: 'analytics-preview', text: cell.interpreted ?? 'Non interprétable' })));
       }, { class: 'analytics-cell-value', title: 'Voir la valeur brute complète et son interprétation' }) }))];
-    if (!ctx.state.session?.testMode) columns.push({ key: 'open', label: 'Consulter', render: row => command(ctx, 'Ticket',
+    columns.push({ key: 'open', label: 'Consulter', render: row => command(ctx, 'Ticket',
       () => { modal.close(); ctx.navigate('tickets', { rowIndex: row.index, revision: page.revision }); }) });
     if (explain) columns.push({ key: 'explain', label: 'Décision', render: row => command(ctx, 'Pourquoi ?', async () => {
       const result = await call(ctx, 'queries.explain', { ...explain, rowIndex: row.index });

@@ -18,7 +18,7 @@ public sealed partial class PilotApplication
     private void RegisterFoundationOperations()
     {
         Register("app.bootstrap", async (_, ct) => { await RestoreLastHistoryOnStartupAsync(ct).ConfigureAwait(false); return new { version = AppPaths.ApplicationVersion, settings = Settings, session = SessionState(), capabilities = Operations.Order().ToArray(), runtime = "C# · WebView2", operations = _journal.Entries.Take(30) }; });
-        Register("app.demo", (_, _) => { SetResult(CreateDemo()); return Task.FromResult<object?>(SessionState()); });
+        Register("app.demo", (_, ct) => EnterDemoSimulationAsync(ct));
         Register("app.diagnostic", (_, _) => Task.FromResult<object?>(new { text = DiagnosticReport.Create(Settings, Result, string.Join(Environment.NewLine, _logs)), operations = _journal.Entries }));
         Register("app.copy", async (a, ct) => { await Host.SetClipboardAsync(Text(a, "text", 2_000_000)); return new { copied = true }; });
         Register("app.close", async (_, _) => { await Host.CloseAsync(); return new { closing = true }; });
@@ -32,7 +32,7 @@ public sealed partial class PilotApplication
         Register("sources.select", (a, ct) => { CheckRevision(a); var next = Settings.Copy(); var source = next.Sources.SingleOrDefault(s => s.Id == Text(a, "id", 80)) ?? throw new InvalidDataException("Source introuvable."); source.ApplyTo(next); next.ActiveSourceId = source.Id; CommitSettings(next); return Task.FromResult<object?>(Settings); });
         Register("sources.remove", (a, ct) => { CheckRevision(a); var id = Text(a, "id", 80); var next = Settings.Copy(); next.Sources.RemoveAll(s => s.Id == id); if (next.ActiveSourceId == id) next.ActiveSourceId = ""; CommitSettings(next); return Task.FromResult<object?>(Settings.Sources); });
         Register("records.schema", (a, ct) => { var data = RequireResult(); if (IsHistorical || IsLocalResult(data)) return Task.FromResult<object?>(new { available = false }); var key = SnapshotStore.SourceKey(data); if (key.Length == 0) return Task.FromResult<object?>(new { available = false }); if (Flag(a, "accept")) { CheckRevision(a); _schemas.Accept(key, data.Headers); } return Task.FromResult<object?>(new { available = true, change = _schemas.Inspect(key, data.Headers), revision = Revision }); });
-        Register("records.import", ImportRecordsAsync);
+        Register("records.import", ImportTestRecordsAsync);
         Register("records.test.import", ImportTestRecordsAsync);
         Register("records.test.exit", ExitTestRecordsAsync);
         Register("records.list", RecordListAsync);
@@ -109,13 +109,33 @@ public sealed partial class PilotApplication
     private void CaptureCurrentSource() => Settings.Sources.SingleOrDefault(s => s.Id == Settings.ActiveSourceId)?.Capture(Settings);
     private static ExtractionResult CreateDemo()
     {
-        var data = new ExtractionResult { Headers = new() { "ID", "Titre", "Statut", "Priorité", "Date d’ouverture", "Dernière modification", "Attribué à - Technicien", "Catégorie", "Lieu", "Date de résolution", "Échéance" }, Title = "Démonstration fictive", Scope = "Données fictives de démonstration", Complete = false, Provenance = new() { SourceKind = "demo", Method = "synthetic" } };
-        var cities = new[] { "Marseille", "Aix-en-Provence", "Aubagne", "Arles" }; var technicians = new[] { "Alex Martin", "Camille Durand", "Sam Bernard", "" };
+        var data = new ExtractionResult
+        {
+            Headers = new() { "ID", "Titre", "Statut", "Dernière modification", "Date d'ouverture", "Priorité", "Demandeur - Demandeur", "Attribué à - Technicien", "Catégorie",
+                "Suivis - Rédacteur", "Tâches - Rédacteur", "TTR + Progression", "Statistiques - Délai de prise en compte", "Type", "Attribué à - Groupe de techniciens", "Âge (jours)",
+                "Nombre de groupes", "Nombre de rédacteurs", "Description", "Lieu", "Date de résolution", "Échéance", "Solution" },
+            Title = "Démonstration fictive", Scope = "Données fictives de démonstration", Complete = false, Provenance = new() { SourceKind = "demo", Method = "synthetic" }
+        };
+        var technicians = new[] { "Alex Exemple", "Camille Exemple", "Robin Exemple", "" };
         for (var i = 1; i <= 180; i++)
         {
             var status = new[] { "Nouveau", "En cours (attribué)", "En attente", "Résolu", "Clos" }[i % 5];
-            data.Rows.Add(new[] { i.ToString(CultureInfo.InvariantCulture), $"{cities[i % 4]} · Incident fictif {i}", status, new[] { "Basse", "Moyenne", "Haute", "Très haute" }[i % 4], DateTime.Today.AddDays(-i % 60).ToString("dd/MM/yyyy HH:mm"), DateTime.Today.AddDays(-i % 20).ToString("dd/MM/yyyy HH:mm"), technicians[i % 4], new[] { "Poste de travail", "Impression", "Réseau" }[i % 3], cities[i % 4], status is "Résolu" or "Clos" ? DateTime.Today.AddDays(-i % 7).ToString("dd/MM/yyyy HH:mm") : "", DateTime.Today.AddDays(i % 9 - 4).ToString("dd/MM/yyyy HH:mm") });
+            var age = i % 90 + 2; var place = "Site exemple " + (char)('A' + i % 4); var updated = DateTime.Today.AddDays(-(i % 2));
+            var group = i % 7 == 0 ? "Groupe Support exemple\nGroupe Expertise exemple" : i % 4 == 0 ? "" : i % 2 == 0 ? "Groupe Support exemple" : "Groupe Expertise exemple";
+            data.Rows.Add(new[]
+            {
+                i.ToString(CultureInfo.InvariantCulture), $"{place} · Incident fictif {i}", status, updated.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+                DateTime.Today.AddDays(-age).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture), new[] { "Basse", "Moyenne", "Haute", "Très haute" }[i % 4],
+                "Demandeur exemple " + (i % 6 + 1).ToString(CultureInfo.InvariantCulture), technicians[i % 4], new[] { "Poste de travail > Logiciel", "Impression", "Réseau > Connexion" }[i % 3],
+                i % 3 == 0 ? "Alex Exemple\nCamille Exemple" : technicians[i % 4], i % 4 == 0 ? "Robin Exemple" : "", (i % 101).ToString(CultureInfo.InvariantCulture) + " %",
+                (i % 120).ToString(CultureInfo.InvariantCulture) + " min", i % 3 == 0 ? "Demande" : "Incident", group, age.ToString(CultureInfo.InvariantCulture),
+                (group.Length == 0 ? 0 : group.Contains('\n') ? 2 : 1).ToString(CultureInfo.InvariantCulture), (i % 3 == 0 ? 2 : 1).ToString(CultureInfo.InvariantCulture),
+                "Exemple entièrement fictif pour tester le diagnostic, les suivis et les affectations.", place,
+                status is "Résolu" or "Clos" ? updated.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) : "",
+                DateTime.Today.AddDays(i % 9 - 4).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+                status is "Résolu" or "Clos" ? "Solution fictive : vérifier la connexion, relancer le service de démonstration et confirmer le résultat avec le demandeur exemple." : ""
+            });
         }
-        data.Status = "180 tickets fictifs · démonstration"; data.Warnings.Add("Démonstration : aucun relevé métier ni action GLPI."); return data;
+        data.Status = "Simulation · 180 tickets fictifs · démonstration"; data.Warnings.Add("Démonstration : aucun relevé métier ni action GLPI."); return data;
     }
 }

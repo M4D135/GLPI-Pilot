@@ -1,15 +1,15 @@
-import {el, button, empty, dialog, formatNumber, formatDate, showError} from './ui.js';
+import {el, button, empty, dialog, formatNumber, formatDate, showError, isSimulation, simulationNotice} from './ui.js';
 import {createTicketResolution} from './library-resolution.js';
 
 /** Work tickets use their own storage key. Resolve the validated ID and URL as a
  * pair, so the same number on another GLPI installation can never stand in. */
-export async function openLibraryPrecedents({api, signal}, reference, options = {}) {
+export async function openLibraryPrecedents({api, signal, state, navigate}, reference, options = {}) {
   if (signal?.aborted) return;
   // The initiating control may blur while this lookup disables it. Its caller
   // retains the exact control instead of consulting activeElement after await.
   const result = await api.call('library.reference', {id: reference.id, url: reference.url}, {signal});
   if (signal?.aborted) return;
-  if (result.found) return openLibraryTicket({api, signal}, result.key, {resolution: true, returnFocus: options.returnFocus});
+  if (result.found) return openLibraryTicket({api, signal, state, navigate}, result.key, {resolution: true, returnFocus: options.returnFocus});
   const modal = dialog('Ticket absent de la bibliothèque', el('div', {class: 'library-reference-missing'},
     el('p', {}, el('strong', {class: 'library-ticket-id', text: `Ticket ${result.ticket.id}`}), ' · ', result.installation),
     el('p', {text: 'Aucune fiche de ce ticket n’est conservée dans le cache de cette installation GLPI. Recueillez-la dans la Bibliothèque pour rechercher ses précédents.'}),
@@ -23,7 +23,8 @@ export async function openLibraryPrecedents({api, signal}, reference, options = 
 
 /** One read-only dialog keeps the original page and the ticket/precedent views.
  * At most the source view, result cards and one candidate body are retained. */
-export async function openLibraryTicket({api, signal}, key, options = {}) {
+export async function openLibraryTicket({api, signal, state}, key, options = {}) {
+  const simulation=isSimulation(state?.session);
   const request = new AbortController();
   const call = (operation, args = {}) => api.call(operation, args, {signal: request.signal});
   const body = el('div', {class: 'library-detail', 'aria-busy': 'true'},
@@ -33,7 +34,16 @@ export async function openLibraryTicket({api, signal}, key, options = {}) {
   const modal = dialog('Ticket conservé', body, [
     {label: 'Retrouver des précédents résolus', action: () => showResolution()},
     {label: 'Copier la référence', action: () => sourceUrl ? call('app.copy', {text: sourceUrl}) : undefined},
-    {label: 'Ouvrir dans GLPI', action: () => sourceUrl ? call('library.open', {key: activeKey}) : undefined}
+    {label: simulation?'Actualiser la fiche simulée':'Ouvrir dans GLPI', action: async () => {
+      if(!sourceUrl&&!simulation)return;
+      await call('library.open', {key: activeKey});
+      if(simulation){
+        const selectedKey=activeKey, document=await call('library.ticket',{key:selectedKey});
+        if(request.signal.aborted)return;
+        if(selectedKey===key){original=ticketView(document,'original');showOriginal();}
+        else present(ticketView(document,'preview'),showResolution,'Retour aux précédents');
+      }
+    }}
   ], {returnFocus: options.returnFocus});
   modal.element.classList.add('library-ticket-modal');
   const actions = [...modal.element.querySelectorAll('.modal-actions button')];
@@ -50,12 +60,12 @@ export async function openLibraryTicket({api, signal}, key, options = {}) {
   function present(view, back = null, label = '') {
     if (currentView) currentView.scroll = scroller.scrollTop;
     currentView = view; sourceUrl = view.sourceUrl || ''; activeKey = view.key || key;
-    body.replaceChildren(view.element); body.dataset.readerView = view.kind;
+    body.replaceChildren(...[simulationNotice(state?.session,'Cette fiche, ses précédents et leur actualisation utilisent la bibliothèque de simulation.'),view.element].filter(Boolean)); body.dataset.readerView = view.kind;
     modal.element.setAttribute('aria-label', view.title); heading.replaceChildren(...view.heading());
     backAction = back; backButton.hidden = !back;
     if (label) backButton.querySelector('span').textContent = label;
     actions[0].hidden = view.kind !== 'original'; actions[0].disabled = !original;
-    actions[1].disabled = actions[2].disabled = !sourceUrl;
+    actions[1].disabled = !sourceUrl; actions[2].disabled = !simulation&&!sourceUrl;
     scroller.scrollTop = view.scroll || 0;
   }
   function showOriginal() {
@@ -66,7 +76,7 @@ export async function openLibraryTicket({api, signal}, key, options = {}) {
     if (!original || request.signal.aborted) return;
     previewGeneration++; preview?.abort();
     if (!resolution) {
-      resolution = createTicketResolution({api, signal: request.signal, key, onRead: readPrecedent});
+      resolution = createTicketResolution({api, signal: request.signal, state, key, onRead: readPrecedent});
       resolutionView = {kind: 'resolution', key, sourceUrl: original.sourceUrl, element: resolution.element, scroll: 0,
         title: `Précédents résolus · ticket ${original.id}`,
         heading: () => ['Précédents résolus · ', el('span', {class: 'library-ticket-id', text: `ticket ${original.id}`})]};

@@ -37,6 +37,7 @@ public sealed class TourExternalServices : IDisposable
     private readonly HttpClient _client;
     public TourExternalServices(HttpMessageHandler? handler = null)
     {
+        if (AppPaths.SimulationRoot is not null) throw new InvalidOperationException("La simulation utilise ses trajets et sa météo fictifs, sans fournisseur réseau.");
         _client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseDefaultCredentials = false }, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(30) };
         _client.DefaultRequestHeaders.UserAgent.ParseAdd("GLPI-Pilot-Terrain/1.0");
     }

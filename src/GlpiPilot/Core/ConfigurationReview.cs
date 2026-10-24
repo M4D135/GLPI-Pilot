@@ -23,7 +23,11 @@ public static partial class ConfigurationReview
     private static string Address(AppSettings value) => AppPaths.SafeUrl(value.PortalUrl);
     private static string Extraction(AppSettings value) => $"{value.AutoMode} · {value.MaxPages} pages · {value.MaxRows:N0} lignes max · {value.TimeoutSeconds} s SSO";
     private static string Rules(AppSettings value) => $"{value.Dashboard.ColumnMappings.Count} colonnes · {value.Dashboard.DateCulture} · seuils {value.Dashboard.StaleDays}/{value.Dashboard.OldDays} j";
-    private static string Boards(AppSettings value) => $"{value.Dashboard.Layout.Boards.Count} globaux / {value.Dashboard.PersonalLayout.Boards.Count} personnels";
+    private static string Boards(AppSettings value) => $"{value.Dashboard.Layout.Boards.Count} globaux / {value.Dashboard.PersonalLayout.Boards.Count} personnels · {value.Dashboard.Business.WeatherRules.Count} règles de pilotage";
+    private static bool BusinessConfigured(BusinessDashboardSettings value) => value.WeatherRules.Count > 0 || value.BoardOverrides.Count > 0
+        || value.Notes.Length > 0 || value.FreshnessWarningHours != 48 || value.SiteInterventionThreshold != 4;
+    private static BusinessDashboardSettings MergeBusiness(BusinessDashboardSettings current, BusinessDashboardSettings incoming) =>
+        BusinessConfigured(current) ? current.Copy() : incoming.Copy();
 
     public static AppSettings Apply(AppSettings current, AppSettings incoming, ConfigurationParts parts, bool mergeCollections)
     {
@@ -52,13 +56,14 @@ public static partial class ConfigurationReview
         if (parts.HasFlag(ConfigurationParts.Indicators))
         {
             var old = result.Dashboard; result.Dashboard = incoming.Dashboard.Copy();
-            result.Dashboard.Layout = old.Layout; result.Dashboard.PersonalLayout = old.PersonalLayout;
+            result.Dashboard.Layout = old.Layout; result.Dashboard.PersonalLayout = old.PersonalLayout; result.Dashboard.Business = old.Business;
             result.Dashboard.PersonalTechnician = old.PersonalTechnician; result.Dashboard.OpenPersonalAfterExtraction = old.OpenPersonalAfterExtraction;
         }
         if (parts.HasFlag(ConfigurationParts.Dashboards))
         {
             result.Dashboard.Layout = mergeCollections ? MergeLayout(result.Dashboard.Layout, incoming.Dashboard.Layout) : incoming.Dashboard.Layout.Copy();
             result.Dashboard.PersonalLayout = mergeCollections ? MergeLayout(result.Dashboard.PersonalLayout, incoming.Dashboard.PersonalLayout) : incoming.Dashboard.PersonalLayout.Copy();
+            result.Dashboard.Business = mergeCollections ? MergeBusiness(result.Dashboard.Business, incoming.Dashboard.Business) : incoming.Dashboard.Business.Copy();
         }
         if (parts.HasFlag(ConfigurationParts.Queries))
             result.Queries = new() { Queries = mergeCollections ? Merge(result.Queries.Queries, incoming.Queries.Queries, x => x.Id, x => x.Copy(), 128, "requêtes") : incoming.Queries.Copy().Queries };
@@ -73,7 +78,7 @@ public static partial class ConfigurationReview
             }
         }
         if (parts.HasFlag(ConfigurationParts.Theme)) result.Theme = incoming.Theme;
-        result.Cities.Validate(); result.Queries.Validate(); result.Dashboard.Layout.Validate(); result.Dashboard.PersonalLayout.Validate();
+        result.Cities.Validate(); result.Queries.Validate(); result.Dashboard.Layout.Validate(); result.Dashboard.PersonalLayout.Validate(); result.Dashboard.Business.Validate();
         result.Normalize(); return result;
     }
     private static DashboardLayoutSettings MergeLayout(DashboardLayoutSettings current, DashboardLayoutSettings incoming)

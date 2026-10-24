@@ -188,7 +188,7 @@ public sealed class SourceProfile
         if (Interpretation != null)
         {
             var global = settings.Dashboard; settings.Dashboard = Interpretation.Copy();
-            if (!RestoreWorkspace) { settings.Dashboard.Layout = global.Layout.Copy(); settings.Dashboard.PersonalLayout = global.PersonalLayout.Copy(); }
+            if (!RestoreWorkspace) { settings.Dashboard.Layout = global.Layout.Copy(); settings.Dashboard.PersonalLayout = global.PersonalLayout.Copy(); settings.Dashboard.Business = global.Business.Copy(); }
             settings.Dashboard.PersonalTechnician = global.PersonalTechnician;
             settings.Dashboard.OpenPersonalAfterExtraction = global.OpenPersonalAfterExtraction;
         }
@@ -273,10 +273,11 @@ public sealed class InterfacePreferences
         "home", "collect", "sources", "operations", "library", "records", "quality", "mapping",
         "dashboard", "queries", "history", "populations", "assistant", "day", "tickets", "enrichment",
         "technicians", "planning", "terrain-reference", "terrain-review", "tours", "updates",
-        "automation", "alerts", "settings", "help"
+        "automation", "alerts", "settings", "help", "pilot-weather", "pilot-summary", "pilot-groups", "pilot-categories",
+        "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings"
     };
     private static readonly HashSet<string> NavigationGroupIds = new(StringComparer.Ordinal)
-        { "pinned", "workspace", "collect", "analyze", "work", "terrain", "admin" };
+        { "pinned", "workspace", "collect", "pilot", "analyze", "work", "terrain", "admin" };
     public string Density { get; set; } = "balanced";
     public bool FollowWindowsTheme { get; set; }
     public string Accent { get; set; } = "blue";

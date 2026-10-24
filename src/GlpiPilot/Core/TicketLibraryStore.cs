@@ -81,6 +81,23 @@ public sealed partial class TicketLibraryStore
         return Run(c => Save(c, candidate, null, ct), ct);
     }
 
+    internal Task<int> SeedSimulationAsync(IEnumerable<TicketLibrarySeed> seeds, CancellationToken ct = default)
+    {
+        if (AppPaths.SimulationRoot is not { } root || !DatabasePath.StartsWith(root + Path.DirectorySeparatorChar,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new InvalidOperationException("Le chargement de simulation doit rester dans sa bibliothèque temporaire.");
+        return Run(c =>
+        {
+            using var tx = c.BeginTransaction(); var count = 0;
+            foreach (var seed in seeds)
+            {
+                ct.ThrowIfCancellationRequested();
+                SaveCore(c, tx, TicketLibraryRules.FromSeed(seed), null, ct); count++;
+            }
+            ct.ThrowIfCancellationRequested(); tx.Commit(); return count;
+        }, ct);
+    }
+
     public Task<TicketLibraryWriteResult> SaveDetailAsync(TicketLibrarySeed seed, TicketDetailResult detail, TicketLibraryCoverage coverage,
         string readerSignature, long? expectedLocalRevision = null, CancellationToken ct = default)
     {

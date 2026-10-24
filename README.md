@@ -1,4 +1,4 @@
-# GLPI Pilot 3.2.2 — Windows x64
+# GLPI Pilot 3.3.0 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -35,7 +35,41 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
-## Nouveautés de la version 3.2.2
+## Nouveautés de la version 3.3.0
+
+**Le pilotage inspiré des rapports Excel est intégré directement au menu.** Neuf rubriques sont disponibles dès l’ouverture, avec des modèles génériques et des calculs alimentés par le relevé courant. Les tableaux personnels existants restent accessibles dans **Mes tableaux**.
+
+| Rubrique native | Informations et actions |
+| --- | --- |
+| **Météo** | Grand total, cartes par catégorie et par équipe, états soleil/nuage/pluie, seuils, fraîcheur et analyse en cours |
+| **Pilotage** | Stock actif, attente, demandes/incidents, attribution, répartitions et matrices de statuts |
+| **Groupes** | Volumes par groupe et statut, totaux, accès aux tickets et périmètres d’équipe |
+| **Catégories** | Volumes, parts du stock et détail des catégories, avec filtres de branche explicites |
+| **Plus anciens** | Dix plus anciens du périmètre et cinq par groupe, âges calendaires, dates indisponibles et fiches |
+| **Suivi agents** | Comparaison des tickets rédigés et attribués, listes dynamiques ou participants configurés |
+| **Agents actifs** | Suivis, tâches, intersection et union distincte par personne |
+| **Sites** | Stock par site, identifiants, sites à vérifier et préparation des interventions |
+| **Paramètres du pilotage** | Correspondances météo, ordre des équipes, seuils, visibilité, fraîcheur, notes et reprise d’un profil de classeur |
+
+La météo de stock conserve les règles du rapport : dépassement **strict** des seuils, catégories et descendants délimités par `>`, première équipe correspondante dans l’ordre configuré, y compris lorsqu’une carte est masquée. Dans la vue Groupes, un ticket participe à chacun de ses groupes ; la météo d’équipe applique sa répartition exclusive. Le rappel de fraîcheur et le texte d’analyse restent distincts des couleurs de volume. Les valeurs inconnues ou une source insuffisamment fiable restent signalées.
+
+### Ouvrir une simulation complète depuis Excel ou CSV
+
+**Importer en simulation** est accessible depuis l’accueil, la collecte, le relevé et la palette **Ctrl+K**. Les formats acceptés sont CSV, TSV, TXT, XLSX et XLSM. Pour Excel, l’aperçu propose la feuille source et sa ligne d’en-têtes lorsqu’elles sont reconnues, notamment **Tickets / ligne 4** pour un rapport compatible. La feuille et la ligne restent modifiables. Le lecteur utilise les valeurs enregistrées, sans exécuter de formule, macro ni liaison externe. L’ancien format XLS demande une copie XLSX ou CSV.
+
+Quand une feuille **Paramétrage** compatible est présente, l’aperçu indique les règles météo, les cartes visibles, les sites, les alias et la fraîcheur. L’option **Reprendre la météo, les équipes et les sites du classeur dans la simulation**, cochée par défaut, applique ces réglages dans la simulation. Elle peut être décochée. La page Météo s’ouvre ensuite avec les chiffres recalculés sur les lignes importées ; les anciens totaux des graphiques du classeur ne deviennent pas des résultats actuels.
+
+**Toutes les rubriques sont utilisables dans la simulation.** Ouvrir une fiche depuis le relevé ou la météo, préparer un suivi, une tâche, une affectation ou un statut, relire l’aperçu puis confirmer modifie effectivement le ticket simulé. La fiche, la bibliothèque et les statistiques sont actualisées. Les sites, notes, rappels, requêtes, tableaux, tournées, répartitions, archives et alertes ont leur propre contexte de travail. La bibliothèque est alimentée par les données importées ; **Ctrl+K** retrouve ses tickets. Une colonne ou un contenu absent reste signalé comme indisponible.
+
+La connexion et les collectes utilisent une source locale simulée ; l’inspection, le choix d’un tableau, la campagne et leur bilan sont testables. La synchronisation échange avec un central simulé. Les services externes et l’assistant produisent des résultats locaux explicitement signalés. Le parcours de mise à jour utilise des packs fictifs, une version virtuelle et un bilan consultable, avec possibilité de retour arrière. **Simulation avec données fictives** ouvre le même environnement complet, sans fichier à préparer.
+
+Le bandeau **Simulation · toutes les rubriques** reste visible. La couverture réelle de GLPI n’est pas certifiée par un fichier local ; les lectures limitées, formules sans résultat enregistré, identifiants douteux et statuts inconnus restent pris en compte dans la qualité et la météo. Les actions de simulation n’atteignent ni le portail GLPI, ni le central réel, ni les fournisseurs externes.
+
+**Quitter la simulation** restitue le relevé et les réglages d’origine, ainsi que la bibliothèque, les archives et le travail habituel. Les modifications d’essai, y compris celles des requêtes et tableaux, restent dans la session isolée. Un nouvel import crée une nouvelle simulation ; une sélection annulée ou un import invalide conserve l’état courant. Les exports choisis explicitement peuvent être conservés avant de quitter.
+
+Les [notes 3.3.0](docs/RELEASE-3.3.0.md) décrivent les parcours et les validations locales. Les modèles publics et les tests utilisent uniquement des données fictives ; les classeurs, captures, noms et configurations privés sont repris depuis les fichiers de leur propriétaire.
+
+## Apports de la version 3.2.2
 
 **La météo peut suivre le volume réel de tickets d’un service, d’une équipe ou d’une catégorie.** La présentation « Météo du stock » conserve le nombre cliquable et applique deux seuils configurables avec un dépassement strict : la valeur égale au seuil orange reste maîtrisée, celle égale au seuil rouge reste à surveiller. Les états soleil, nuage et pluie suivent les thèmes clair/sombre et la préférence de réduction des animations. Une réception partielle, un périmètre non confirmé ou un problème d’identité ne produit pas un faux état vert ; une simple différence de représentation HTML/CSV ne neutralise pas le comptage. Les indices de risque existants restent disponibles.
 
@@ -54,14 +88,6 @@ Les filtres de catégorie peuvent inclure les **sous-catégories délimitées pa
 **Importer une disposition propose « Ajouter à mes tableaux ».** L’aperçu présente le nombre de tableaux et les éventuels renommages, préserve les tableaux existants et permet l’annulation. Un fichier de configuration partiel propose seulement les sections qu’il contient et conserve les réglages absents. Les sites peuvent être reconnus par leurs noms et variantes **sans commune renseignée**, puis rattachés ultérieurement sans changer d’identité ; aucun emplacement cartographique n’est inventé.
 
 Les [notes 3.2.2](docs/RELEASE-3.2.2.md) précisent les règles de calcul et de reprise. Les configurations internes et les captures métier restent dans les fichiers d’import de leur propriétaire ; le dépôt contient uniquement le moteur, des modèles génériques et des jeux de vérification fictifs.
-
-### Essayer un extrait Excel ou CSV hors ligne
-
-**Importer un fichier de test** est accessible depuis la collecte et le relevé. Le mode test accepte CSV, TSV, TXT, XLSX et XLSM. Pour Excel, choisir la feuille visible contenant les incidents et, si des titres précèdent le tableau, le numéro de sa ligne d’en-têtes. Les valeurs enregistrées sont lues sans exécuter de formule, macro ni liaison externe. L’ancien format XLS demande une copie XLSX ou CSV.
-
-Un bandeau permanent indique **Mode test** et le nom du fichier. Les listes, recherches, graphiques, météo et correspondances utilisent uniquement cet extrait. Une météo de volume calculable porte la mention **Simulation** ; une lecture limitée ou des identifiants/statuts douteux ne donnent pas un état maîtrisé artificiel. La couverture GLPI reste non confirmée.
-
-La collecte, les actions métier sur les tickets, les synchronisations, l’archivage et les notifications sont suspendus pendant ce mode. Le panier de test est séparé. **Quitter le mode test** restitue le relevé précédent, même après plusieurs imports. Les personnalisations des dashboards et des requêtes restent enregistrées dans les réglages. Un fichier invalide ou une sélection annulée conserve le relevé en cours.
 
 ## Apports de la version 3.2.1
 
@@ -137,7 +163,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - Zoom **75–150 %**, boutons − / 100 % / + et raccourcis ; densité compacte, équilibrée ou confortable, colonnes figées et mémorisation de la fenêtre.
 - Navigation dépliable ou réduite en rail, tiroir sur fenêtre étroite, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre. Les commandes restent accessibles au clavier et respectent la réduction des animations de l’application ou du système.
 - Recherche, filtres par colonne et tri multiple calculés en C# sur **toutes les lignes chargées**, avec pages d’affichage bornées. Vues nommées mémorisant filtres, recherche, tri et présentation pour la structure du relevé.
-- Export complet ou export explicite de la vue filtrée ; import local CSV, TSV, TXT, XLSX et XLSM en mode test. Le fichier natif reçu reste intact.
+- Export complet ou export explicite de la vue filtrée ; import local CSV, TSV, TXT, XLSX et XLSM en simulation complète. Le fichier natif reçu reste intact.
 
 ### Dashboard global et espace personnel
 
@@ -210,6 +236,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.3.0](docs/RELEASE-3.3.0.md)
 - [Notes de version 3.2.2](docs/RELEASE-3.2.2.md)
 - [Notes de version 3.2.1](docs/RELEASE-3.2.1.md)
 - [Notes de version 3.2.0](docs/RELEASE-3.2.0.md)
@@ -245,7 +272,7 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
   -DotNetPath 'C:\DomeniaDev\dotnet\dotnet.exe' `
   -NuGetOfflineSource 'C:\DomeniaDev\cache\nuget' `
   -RuntimePath 'C:\DomeniaDev\cache\webview2\runtime' `
-  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.2.2'
+  -OutputDirectory 'C:\DomeniaDev\builds\glpi-pilot-3.3.0'
 ```
 
 Le runtime doit être déjà extrait, soit directement dans `RuntimePath`, soit dans son unique sous-dossier. Tous les paquets nécessaires doivent être présents dans le cache NuGet. Une dépendance absente arrête la compilation ; aucun téléchargement de secours n’est tenté. Le script refuse d’écraser une distribution existante : choisir un nouveau dossier de sortie pour une nouvelle construction.
@@ -261,7 +288,7 @@ $runtime = .\build-tools\Get-WebView2Runtime.ps1 `
   -CacheDirectory 'C:\GLPI-BuildCache\webview2'
 
 .\build.ps1 -RuntimePath $runtime -AllowOnlineRestore `
-  -OutputDirectory '.\artifacts\release-3.2.2'
+  -OutputDirectory '.\artifacts\release-3.3.0'
 ```
 
 `Get-WebView2Runtime.ps1` utilise uniquement l’URL Microsoft épinglée, vérifie le CAB et chaque fichier extrait, puis réutilise le cache contrôlé. `-CabPath` permet de fournir le CAB par transfert local ; `-Offline` interdit son téléchargement. `build.ps1` ne télécharge jamais le runtime. L’accès NuGet en ligne nécessite `-AllowOnlineRestore` ; il est incompatible avec `-NuGetOfflineSource`.

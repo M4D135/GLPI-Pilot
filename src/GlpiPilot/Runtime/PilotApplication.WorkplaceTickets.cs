@@ -44,7 +44,7 @@ public sealed partial class PilotApplication
         {
             CheckRevision(a); var data = RequireResult(); var index = Number(a, "rowIndex", -1, 0, Math.Max(0, data.Rows.Count - 1));
             if (data.Rows.Count == 0) throw new InvalidOperationException("Le relevé ne contient aucune ligne.");
-            var settings = EffectiveSettings; var reference = TicketReferenceResolver.Resolve(data, data.Rows[index], settings);
+            var settings = EffectiveSettings; var reference = IsSimulationInstance ? SimulationReference(index) : TicketReferenceResolver.Resolve(data, data.Rows[index], settings);
             var titleCol = DashboardService.ResolveColumns(data.Headers, settings.Dashboard).FirstOrDefault(c => c.Role == "title")?.Index;
             p = WorkplaceStore.Remember(doc, reference, titleCol is int col ? data.Rows[index][col] : "Ticket " + reference.Id);
         }
@@ -67,6 +67,7 @@ public sealed partial class PilotApplication
     private TicketDetailResult? WorkOptionalDetail(PersonalTicket p)
     {
         if (_workplaceDetails.TryGetValue(p.Key, out var detail)) return detail;
+        if (IsSimulationInstance) { detail = SimulationDetail(new(p.Id, p.Url)); WorkCache(detail); return detail; }
         if (!p.Offline) return null;
         detail = WorkplaceStore.LoadOffline(DataPath("TicketCache"), new(p.Id, p.Url));
         if (detail is not null) WorkCache(detail); return detail;
@@ -200,7 +201,8 @@ public sealed partial class PilotApplication
     {
         var p = WorkPersonal(a); var source = RequireResult(); var settings = EffectiveSettings;
         var sources = new List<TicketRecurrenceSource> { new(source, settings.Dashboard, "Relevé courant") }; var warnings = new List<string>();
-        var sourceKey = source.Provenance is { SearchVerified: true, ScopeVerified: true } ? SnapshotStore.SourceKey(source) : "";
+        var sourceKey = IsSimulationInstance ? SnapshotStore.SourceKey(SimulationObservation())
+            : source.Provenance is { SearchVerified: true, ScopeVerified: true } ? SnapshotStore.SourceKey(source) : "";
         if (sourceKey.Length == 0) warnings.Add("Source ou contexte non confirmé : aucune archive rapprochée.");
         else foreach (var entry in Snapshots.List().Where(s => s.SourceKey == sourceKey && s.CapturedAt <= source.ExtractedAt).Take(19))
         {

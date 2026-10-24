@@ -13,7 +13,7 @@ let instanceSequence = 0;
 
 /** One local palette for pages, explicit actions and source-qualified cache hits.
  * It never searches GLPI or starts a collection while the user types. */
-export function createCommandPalette({api, getCommands, navigate, getPageSignal, notify}) {
+export function createCommandPalette({api, getCommands, navigate, getPageSignal, getState, notify}) {
   let active = null;
   function open() {
     if (active) { active.search.focus(); active.search.select(); return true; }
@@ -71,7 +71,7 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
           label: `#${row.ticket.id} · ${row.title || 'Ticket sans titre recueilli'}`,
           hint: `${row.installation} · ${row.status || 'État non recueilli'}`,
           detail: `${row.detailsCurrent && row.detailComplete ? 'Contenu complet observé' : row.readAt ? 'Contenu à recontrôler' : 'Contenu non lu'} · Lecture : ${formatDate(row.readAt)}${row.conflicts ? ' · Versions concurrentes' : ''}`,
-          run: () => openLibraryTicket({api, signal: getPageSignal?.()}, row.key)
+          run: () => openLibraryTicket({api, signal: getPageSignal?.(), state: getState?.(), navigate}, row.key)
         }))}
       ].filter(group => group.values.length);
       items = groups.flatMap(group => group.values);
@@ -94,7 +94,7 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
             command.active ? el('span', {class: 'command-palette-current', text: 'Écran actuel'}) : null);
         }))));
       if (!items.length && ticketState !== 'loading') results.append(el('p', {class: 'command-palette-empty', text: 'Aucun écran, action ou ticket ne correspond.'}));
-      const note = !ticketLookup ? 'Mode test : recherche des écrans et des actions. Pour rechercher les lignes du fichier, ouvrez le relevé.'
+      const note = !ticketLookup ? 'Recherche des écrans et des actions.'
         : ticketState === 'loading' ? 'Recherche dans les tickets conservés…'
         : ticketState === 'error' ? `Recherche locale indisponible : ${ticketError}`
         : ticketState === 'ready' ? `${total} ticket(s) conservé(s) trouvé(s)${total > rows.length ? ` · ${rows.length} affichés, ouvrez la bibliothèque pour la suite` : ''}.`

@@ -43,20 +43,29 @@ public sealed partial class PilotApplication : IAsyncDisposable
     private sealed record LocalFileTestContext(ExtractionResult? Previous, CityEnrichmentResult? Locations, SnapshotDocument? Historical,
         AppSettings? Interpretation, string InitialQueries, string FileName, long? SourceRows, bool FileReadComplete, int MissingFormulaValues);
     private LocalFileTestContext? _localFileTest = null;
+    private readonly string? _simulationRoot;
+    private PilotApplication? _simulation;
+    private bool IsSimulationInstance => _simulationRoot is not null;
+    private AppSettings _settings = null!;
+    private ExtractionResult? _result;
+    private SnapshotDocument? _historicalDocument;
+    private CityEnrichmentResult? _locations;
+    private long _revision;
     private Task? _disposeTask;
     private volatile bool _disposed;
     private volatile bool _isBusy;
-    public AppSettings Settings { get; private set; }
-    public ExtractionResult? Result { get; private set; }
-    public SnapshotDocument? HistoricalDocument { get; private set; }
-    public CityEnrichmentResult? Locations { get; private set; }
+    public AppSettings Settings { get => _simulation?.Settings ?? _settings; private set => _settings = value; }
+    public ExtractionResult? Result { get => _simulation is { } simulation ? simulation.Result : _result; private set => _result = value; }
+    public SnapshotDocument? HistoricalDocument { get => _simulation is { } simulation ? simulation.HistoricalDocument : _historicalDocument; private set => _historicalDocument = value; }
+    public CityEnrichmentResult? Locations { get => _simulation is { } simulation ? simulation.Locations : _locations; private set => _locations = value; }
     public BrowserService Browser { get; }
-    public SnapshotStore Snapshots { get; }
+    private readonly SnapshotStore _snapshots;
+    public SnapshotStore Snapshots => _simulation?.Snapshots ?? _snapshots;
     public BackgroundWorkScheduler Jobs { get; } = new();
     public IPilotHost Host { get; }
-    public long Revision { get; private set; }
+    public long Revision { get => _simulation?.Revision ?? _revision; private set => _revision = value; }
     public bool IsHistorical => HistoricalDocument is not null;
-    public bool IsTestMode => _localFileTest is not null;
+    public bool IsTestMode => IsSimulationInstance || _simulation is not null;
     public bool IsBusy => _isBusy;
     public string CurrentOperation { get; private set; } = "";
     public bool SessionLocked { get; set; }
@@ -66,6 +75,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
     {
         get
         {
+            if (_simulation is { } simulation) return simulation.EffectiveSettings;
             var copy = Settings.Copy();
             if (HistoricalDocument is { } history)
             { copy.Dashboard = history.Dashboard.Copy(); copy.Cities = history.Cities.Copy(); copy.Queries = history.Queries.Copy(); }
@@ -91,13 +101,17 @@ public sealed partial class PilotApplication : IAsyncDisposable
     }
 
     public PilotApplication(IPilotHost host, Action<string, object?> publish, AppSettings? settings = null, BrowserService? browser = null, SnapshotStore? snapshots = null)
+        : this(host, publish, settings, browser, snapshots, null) { }
+    private PilotApplication(IPilotHost host, Action<string, object?> publish, AppSettings? settings, BrowserService? browser, SnapshotStore? snapshots, string? simulationRoot)
     {
+        _simulationRoot = simulationRoot;
         Host = host; _publish = publish; Settings = settings?.Copy() ?? AppSettings.Load();
         _savedSettings = Settings.Copy();
-        Browser = browser ?? new(); Snapshots = snapshots ?? new(); _journal = new();
+        Browser = browser ?? new(); _snapshots = snapshots ?? new(); _journal = new();
         Browser.Log += Log; Browser.ConnectionProgress += message => Publish("operation.progress", new { message });
         RegisterFoundationOperations(); RegisterAnalyticsOperations(); RegisterWorkplaceOperations(); RegisterTerrainOperations();
-        NotificationPolicy.CanNotify = () => !IsTestMode && !SessionLocked && !AutomationPolicy.IsQuiet(Settings.Automation, DateTimeOffset.Now);
+        if (IsSimulationInstance) { RegisterSimulationOperations(); RegisterSimulationIntegrations(); }
+        else NotificationPolicy.CanNotify = () => !IsTestMode && !SessionLocked && !AutomationPolicy.IsQuiet(Settings.Automation, DateTimeOffset.Now);
     }
 
     public Task<object?> ExecuteAsync(string operation, JsonElement arguments, CancellationToken ct = default)
@@ -124,6 +138,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
         var entered = false;
         try
         {
+            using var storageScope = _simulationRoot is null ? null : AppPaths.EnterSimulation(_simulationRoot);
             await _execution.WaitAsync(cancellation.Token).ConfigureAwait(false); entered = true;
             // Cancellation may release the preceding operation's semaphore while it
             // is still cancelling the rest of the queue. Do not start a queued
@@ -131,10 +146,10 @@ public sealed partial class PilotApplication : IAsyncDisposable
             lock (_executionAdmission)
             { cancellation.Token.ThrowIfCancellationRequested(); _isBusy = true; CurrentOperation = operation; }
             Publish("operation.state", new { busy = true, operation });
-            if (IsTestMode)
+            if (_simulation is { } simulation && operation is not ("records.test.exit" or "records.test.import" or "records.import" or "app.demo"))
             {
-                if (operation is "automation.tick" or "library.tick" or "workplace.reminders.check") return new { skipped = true, testMode = true };
-                RequireOfflineTestOperation(operation);
+                simulation.SessionLocked = SessionLocked; simulation.EditorOpen = EditorOpen;
+                return await simulation.ExecuteAsync(operation, arguments, cancellation.Token).ConfigureAwait(false);
             }
             return await handler(arguments, cancellation.Token).ConfigureAwait(false);
         }
@@ -180,26 +195,17 @@ public sealed partial class PilotApplication : IAsyncDisposable
         if (!System.Text.RegularExpressions.Regex.IsMatch(operation, "^[a-z][A-Za-z0-9]*(\\.[A-Za-z][A-Za-z0-9]*)+$") || !_handlers.TryAdd(operation, handler))
             throw new InvalidOperationException("Opération dupliquée ou invalide : " + operation);
     }
-    private static void RequireOfflineTestOperation(string operation)
+    partial void RegisterSimulationIntegrations();
+    private void ReplaceSimulationOperation(string operation, Func<JsonElement, CancellationToken, Task<object?>> handler)
     {
-        // The allow-list keeps newly introduced integrations offline by default. Test
-        // file changes are local; collection profiles and operational stores stay separate.
-        if (operation is "app.bootstrap" or "app.diagnostic" or "app.copy" or "app.close" or "app.appearance"
-            or "settings.get" or "operations.list" or "operations.cancel" or "configuration.export"
-            or "records.test.import" or "records.test.exit" or "records.list" or "records.export" or "records.cell"
-            or "records.columns" or "records.views" or "records.saveView" or "records.removeView" or "records.basket"
-            or "records.quality" or "records.schema" or "mapping.get" or "mapping.preview" or "mapping.save"
-            or "populations.list" or "reports.export" or "terrain.reference.state" or "terrain.reference.list" or "terrain.reference.detail"
-            or "terrain.reference.lookup" or "terrain.reference.simulate" or "terrain.reference.preview" or "terrain.reference.previewPage"
-            or "terrain.review.list" or "terrain.review.detail"
-            || operation.StartsWith("dashboard.", StringComparison.Ordinal)
-            || operation.StartsWith("queries.", StringComparison.Ordinal)) return;
-        throw new InvalidOperationException("Mode test hors ligne : quittez le mode test pour cette action. Le relevé et le contexte précédents seront restaurés.");
+        if (!IsSimulationInstance || !_handlers.ContainsKey(operation)) throw new InvalidOperationException("Adaptateur de simulation invalide : " + operation);
+        _handlers[operation] = handler;
     }
     private ExtractionResult RequireResult() => Result ?? throw new InvalidOperationException("Chargez un relevé ou la démonstration pour ouvrir cet espace.");
     private void RequireCurrentResult()
     {
         var data = RequireResult();
+        if (IsSimulationInstance && !IsHistorical) return;
         if (IsHistorical || IsLocalResult(data) || !data.Provenance.SearchVerified || !data.Provenance.ScopeVerified
             || SourceMappingPolicy.Resolve(data, Settings, false) != SourceMappingTarget.CurrentConfiguration)
             throw new InvalidOperationException("Cette action exige un relevé GLPI actuel dont la recherche et le contexte sont confirmés.");
@@ -228,6 +234,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
         {
             DashboardService.ValidateSettings(Settings.Dashboard); Settings.Queries.Validate(); Settings.Cities.Validate(); Settings.Normalize();
             next = Settings.Copy();
+            if (IsSimulationInstance) RebaseSimulationSettings(next);
             var profile = next.Sources.SingleOrDefault(s => s.Id == next.ActiveSourceId);
             if (profile is null || SnapshotStore.SourceKey(profile.Url) != SnapshotStore.SourceKey(next.PortalUrl)) next.ActiveSourceId = "";
             next.Save();
@@ -262,7 +269,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
         }
         Publish("settings.changed", new { settings = Settings, revision = Revision });
     }
-    private static bool IsLocalResult(ExtractionResult data) => data.Provenance.SourceKind is "demo" or "local" or "file";
+    private static bool IsLocalResult(ExtractionResult data) => data.Provenance.SourceKind is "demo" or "local" or "file" or "simulation";
     private static string SourceContextSignature(AppSettings settings) => JsonSerializer.Serialize(new
     { url = SnapshotStore.SourceKey(settings.PortalUrl), settings.ActiveSourceId, settings.BrowserChannel, settings.AutoMode }, Json);
     private static string GeographySignature(AppSettings settings) => JsonSerializer.Serialize(new { settings.Cities, settings.Dashboard.ColumnMappings, settings.Dashboard.ValueDictionaries }, Json);
@@ -288,12 +295,13 @@ public sealed partial class PilotApplication : IAsyncDisposable
         var safe = AppPaths.SafeLog(message); _logs.Enqueue(safe); while (_logs.Count > 500) _logs.TryDequeue(out _);
         AppPaths.AppendLog(safe); Publish("operation.log", new { at = DateTimeOffset.Now, message = safe });
     }
-    private object SessionState() => new
+    private object SessionState() => _simulation is { } simulation ? simulation.SessionState() : new
     {
         revision = Revision, loaded = Result is not null, title = Result?.Title ?? "Aucun relevé chargé",
         rows = Result?.Rows.Count ?? 0, columns = Result?.Headers.Count ?? 0, complete = Result?.Complete ?? false,
         date = Result?.ExtractedAt, historical = IsHistorical, demo = Result?.Provenance.SourceKind == "demo",
         testMode = IsTestMode, testFileName = _localFileTest?.FileName ?? "", testCanRestore = _localFileTest?.Previous is not null,
+        simulation = IsTestMode,
         testSourceRows = _localFileTest?.SourceRows, testFileReadComplete = _localFileTest?.FileReadComplete ?? false,
         testMissingFormulaValues = _localFileTest?.MissingFormulaValues ?? 0,
         status = Result?.Status ?? "Configurez une source ou explorez la démonstration.", warnings = Result?.Warnings,
@@ -339,7 +347,18 @@ public sealed partial class PilotApplication : IAsyncDisposable
         // Receipts, partial reads and local saves finish their cancellation paths before
         // the authenticated browser and session resources are disposed.
         await Task.WhenAll(pending).ConfigureAwait(false);
-        try { await Browser.DisposeAsync().ConfigureAwait(false); }
-        finally { NotificationPolicy.CanNotify = () => true; _lifetime.Dispose(); _execution.Dispose(); }
+        try
+        {
+            if (_simulation is { } simulation)
+            { try { await simulation.DisposeAsync().ConfigureAwait(false); } finally { _simulation = null; } }
+            using var storageScope = _simulationRoot is null ? null : AppPaths.EnterSimulation(_simulationRoot);
+            await Browser.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!IsSimulationInstance) NotificationPolicy.CanNotify = () => true;
+            else DeleteSimulationFolder(_simulationRoot!);
+            _lifetime.Dispose(); _execution.Dispose();
+        }
     }
 }

@@ -44,7 +44,7 @@ public sealed partial class PilotApplication
         for (var i = 0; i < source.Rows.Count; i++)
         {
             if ((i & 127) == 0) ct.ThrowIfCancellationRequested(); TicketReference reference;
-            try { reference = TicketReferenceResolver.Resolve(source, source.Rows[i], settings); } catch (InvalidOperationException) { continue; }
+            try { reference = IsSimulationInstance ? SimulationReference(i) : TicketReferenceResolver.Resolve(source, source.Rows[i], settings); } catch (InvalidOperationException) { continue; }
             var key = WorkplaceStore.TicketKey(reference);
             if (!seen.Add(key)) { ambiguous.Add(key); day.Remove(key); dispatch.Remove(key); continue; }
             var status = Cell(i, "status"); var code = DashboardService.Status(status); var title = WorkplaceStore.DisplayTitle(Cell(i, "title"));

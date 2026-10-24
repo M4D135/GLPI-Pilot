@@ -66,7 +66,7 @@ internal static partial class Program
         var settings = new AppSettings { Theme = "dark", PortalUrl = "https://library-fixture.invalid/front/ticket.php", ExportFolder = Path.Combine(_root, "Exports") }; settings.Interface.FollowWindowsTheme = false;
         settings.TicketDetails.AutoLoadOnSelection = false;
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);
-        await Call(app, "app.demo"); var revision = app.Revision; var receipt = app.Result;
+        app.LoadQualityFixture(QualityFixture()); var revision = app.Revision; var receipt = app.Result;
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
         {
             calls.Enqueue(op);

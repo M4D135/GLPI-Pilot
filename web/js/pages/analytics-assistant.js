@@ -1,14 +1,17 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, dialog, call, command, heading, caption, details,
   number, formatNumber, formatDate, rowDialog, checkbox, textArea, getRevision, error } from './analytics-ui.js';
+import {isSimulation,simulationNotice} from '../ui.js';
 
 export async function renderAssistant(ctx) {
   const cleanup = heading(ctx, 'Assistant de langage', 'Une demande prépare un contenu visible. Le moteur propose un brouillon de requête ou une synthèse citée ; chaque envoi et chaque enregistrement restent explicites.');
   const profile = await call(ctx, 'assistant.config.get'); if (ctx.signal.aborted) return cleanup;
+  const simulation=profile.simulation===true||isSimulation(ctx.state.session);
+  if(simulation)ctx.root.append(simulationNotice(ctx.state.session,'Essayez la préparation, la génération et la reprise des propositions. Le moteur de simulation produit des résultats locaux à partir du relevé chargé.'));
   const operation = select([{ value: 'query', label: 'Proposer une requête' }, { value: 'summary', label: 'Synthétiser des tickets' }], ctx.params?.operation ?? 'query');
-  const provider = select([{ value: 'local', label: 'Moteur local déterministe' }, { value: 'compatible', label: 'Endpoint compatible chat/completions' }], profile.provider);
+  const provider = select([{ value: 'local', label: 'Moteur local déterministe' }, { value: 'compatible', label: simulation?'Endpoint compatible · scénario simulé':'Endpoint compatible chat/completions' }], profile.provider);
   const endpoint = input(profile.endpoint, { placeholder: 'https://fournisseur.example/v1/chat/completions', maxLength: 2000 }); const model = input(profile.model, { maxLength: 120 });
   const maximum = input(profile.maximumTickets, { type: 'number', min: 1, max: 200 }); const timeout = input(profile.timeoutSeconds, { type: 'number', min: 10, max: 180 });
-  const external = checkbox('Activer explicitement l’envoi externe pour cette préparation', false);
+  const external = checkbox(simulation?'Essayer le parcours d’un envoi externe simulé':'Activer explicitement l’envoi externe pour cette préparation', false);
   const prompt = textArea('', 5); prompt.maxLength = 2000; prompt.placeholder = 'Exemple local : compte les tickets actifs par technicien dont « Titre » contient « VPN »';
   const scope = select([{ value: 'all', label: 'Toutes les lignes du relevé' }, ...(ctx.params?.runId ? [{ value: 'dashboard', label: 'Périmètre du dashboard depuis lequel cet assistant a été ouvert' }] : [])], ctx.params?.runId ? 'dashboard' : 'all');
   const identifiers = textArea('', 2); identifiers.placeholder = 'Facultatif : identifiants précis séparés par espace, virgule ou retour à la ligne';
@@ -18,8 +21,8 @@ export async function renderAssistant(ctx) {
     roleControls.set(role.key, selected.control); roles.append(selected.element);
   }
   const key = input('', { type: 'password', autocomplete: 'off', maxLength: 8000 }); const remember = checkbox('Mémoriser cette clé avec la protection de mon compte Windows');
-  const preparationHost = el('div'); const proposalHost = el('div'); const state = caption('Aucune préparation active. Aucun envoi réseau effectué.');
-  const consent = checkbox('J’ai vérifié la destination et les seules données affichées ; j’autorise cet envoi', false);
+  const preparationHost = el('div'); const proposalHost = el('div'); const state = caption(simulation?'Aucune préparation active. Toutes les générations de cette session sont simulées localement.':'Aucune préparation active. Aucun envoi réseau effectué.');
+  const consent = checkbox(simulation?'J’ai vérifié le contenu et je confirme cette simulation':'J’ai vérifié la destination et les seules données affichées ; j’autorise cet envoi', false);
   let prepared = null; let generation = 0; let generateAbort = null;
   const options = () => ({ provider: provider.value, endpoint: endpoint.value.trim(), model: model.value.trim(), externalEnabled: external.control.checked,
     maximumTickets: Number(maximum.value), timeoutSeconds: Number(timeout.value) });
@@ -41,12 +44,12 @@ export async function renderAssistant(ctx) {
     if (!prepared) throw new Error('Préparez les données et vérifiez leur contenu avant de générer.');
     const captured = generation; const request = prepared;
     if (request.provider === 'compatible' && !consent.control.checked) throw new Error('Vérifiez le contenu préparé puis cochez l’autorisation de cet envoi précis.');
-    generateAbort?.abort(); generateAbort = new AbortController(); state.textContent = request.provider === 'local' ? 'Calcul local de la proposition…' : `Requête explicite en cours vers ${request.destination}…`;
+    generateAbort?.abort(); generateAbort = new AbortController(); state.textContent = simulation?'Calcul de la proposition simulée…':request.provider === 'local' ? 'Calcul local de la proposition…' : `Requête explicite en cours vers ${request.destination}…`;
     try {
       const result = await ctx.api.call('assistant.generate', { preparationId: request.preparationId, revision: request.revision, confirmed: consent.control.checked, apiKey: key.value },
         { signal: AbortSignal.any([ctx.signal, generateAbort.signal]) });
       if (captured !== generation || ctx.signal.aborted) return;
-      state.textContent = 'Proposition reçue et contrôlée contre le périmètre fourni. Aucun enregistrement automatique.';
+      state.textContent = result.simulation||simulation?'Proposition simulée calculée depuis le relevé. Vous pouvez la prévisualiser et l’enregistrer dans cet espace.':'Proposition reçue et contrôlée contre le périmètre fourni. Aucun enregistrement automatique.';
       showProposal(result);
     } catch (reason) {
       state.textContent = reason.name === 'AbortError' || reason.code === 'CANCELLED' ? 'Génération annulée ; aucune proposition appliquée.' : 'La génération n’a pas abouti.';
@@ -61,7 +64,7 @@ export async function renderAssistant(ctx) {
     const response = await call(ctx, 'assistant.prepare', request); if (captured !== generation || ctx.signal.aborted) return;
     prepared = response; consent.control.checked = false; generate.disabled = false; proposalHost.replaceChildren();
     const exact = el('pre', { class: 'analytics-prepared-content', text: response.preview });
-    preparationHost.replaceChildren(card('Contenu préparé · pas encore envoyé', badge(response.destination),
+    preparationHost.replaceChildren(card(simulation?'Contenu préparé pour la simulation':'Contenu préparé · pas encore envoyé', badge(response.destination),
       caption(`${formatDate(response.extractedAt)} · ${response.scopeRows} lignes dans le périmètre · ${response.tickets} tickets fournis · ${response.complete ? 'source complète' : 'source incomplète / non confirmée'}`),
       caption(response.scope), ...response.limitations.map(limit => caption(limit, 'warning')), exact));
     consent.element.hidden = response.provider !== 'compatible'; state.textContent = response.note;
@@ -70,7 +73,7 @@ export async function renderAssistant(ctx) {
     details('Clé d’accès et profil local', field('Clé pour cette session (facultative)', key), remember.element,
       profile.hasSavedKey ? caption(`Une clé protégée est conservée pour ${profile.keyEndpoint}. Elle n’est jamais affichée ni exportée.`) : caption('Aucune clé mémorisée.'),
       toolbar(command(ctx, 'Enregistrer le profil local', async () => {
-        await call(ctx, 'assistant.config.save', { ...options(), apiKey: key.value, rememberKey: remember.control.checked }); invalidate(); ctx.notify('Profil local enregistré ; l’envoi externe restera désactivé à la prochaine ouverture.');
+        const saved=await call(ctx, 'assistant.config.save', { ...options(), apiKey: key.value, rememberKey: remember.control.checked }); invalidate(); ctx.notify(saved.note||'Profil local enregistré ; l’envoi externe restera désactivé à la prochaine ouverture.');
       }), command(ctx, 'Oublier la clé mémorisée', async () => {
         await call(ctx, 'assistant.config.save', { ...options(), forgetKey: true }); key.value = ''; invalidate(); ctx.notify('Clé mémorisée retirée.');
       }))),

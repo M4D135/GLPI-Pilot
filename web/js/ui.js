@@ -34,8 +34,14 @@ export const card=(title,...children)=>el('section',{class:'card'},title?el('div
 export const toolbar=(...children)=>el('div',{class:'toolbar'},...children);
 export const empty=(title,detail='')=>el('div',{class:'empty'},icon('layers'),el('h3',{text:title}),detail?el('p',{text:detail}):null);
 export const badge=(text,tone='')=>el('span',{class:`badge ${tone}`,text});
+export const isSimulation=session=>session?.simulation===true||session?.testMode===true;
+export function simulationNotice(session,detail='Vos essais sont conservés dans cet espace de simulation. Quitter la simulation restaure votre espace de travail habituel.') {
+ return isSimulation(session)?el('section',{class:'notice info','aria-label':'Simulation',dataset:{simulation:'true'}},badge('Simulation','info'),el('p',{text:detail})):null;
+}
 export function extractionStatus(session={}) {
- if(session.testMode){
+ if(isSimulation(session)&&session.demo)return{label:'Données fictives · simulation',tone:'info',receipt:'Jeu de démonstration',receptionComplete:true,
+  concordance:'Scénario local de démonstration',identity:'Identifiants fictifs',details:`${formatNumber(session.rows)} lignes fictives. Les actions de simulation peuvent faire évoluer ces données et leurs indicateurs.`,attention:''};
+ if(isSimulation(session)){
   const receptionComplete=session.testFileReadComplete===true;
   const missing=Number(session.testMissingFormulaValues)||0;
   const receipt=receptionComplete?'Fichier entièrement lu':missing>0?'Valeurs calculées indisponibles':'Lecture limitée';
@@ -68,7 +74,7 @@ export function extractionStatus(session={}) {
 export function extractionNotice(session,onDetails,{detailed=false}={}) {
  if(!session?.loaded||session.demo)return null;
  const status=extractionStatus(session);
- if(session.testMode)return el('section',{class:status.attention?'notice warning':'receipt-summary','aria-label':'Lecture du fichier de test'},
+ if(isSimulation(session))return el('section',{class:status.attention?'notice warning':'receipt-summary','aria-label':'Lecture du fichier de simulation'},
   toolbar(badge(status.receipt,status.attention?'warning':'info'),el('span',{text:'Simulation locale · périmètre GLPI non vérifié'})),
   detailed?el('p',{class:'help',text:status.details}):null,status.attention?el('p',{class:'help',text:status.attention}):null);
  if(!detailed)return el('section',{class:status.attention?'notice warning':'receipt-summary','aria-label':'Bilan de la collecte'},

@@ -136,7 +136,7 @@ public static class SessionBrowserChecks
             async ticket => {
               const {renderDraft}=await import('/js/pages/workplace-actions.js');
               window.sessionApi={call:async(op,args={})=>{const reply=JSON.parse(await sessionRuntime(op,JSON.stringify(args)));if(!reply.ok){const error=new Error(reply.message);error.name=reply.name;throw error;}return reply.value;}};
-              window.sessionCleanup=await renderDraft({api:sessionApi,notify:()=>{},navigate:()=>{}},document.querySelector('#root'),JSON.parse(ticket));
+              window.sessionCleanup=await renderDraft({api:sessionApi,state:{session:{testMode:false}},notify:()=>{},navigate:()=>{}},document.querySelector('#root'),JSON.parse(ticket));
             }
             """, ticket.GetRawText());
         var draft = page.GetByLabel("Texte modifiable", new() { Exact = true });

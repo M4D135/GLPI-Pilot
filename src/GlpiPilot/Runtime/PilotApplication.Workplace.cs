@@ -10,7 +10,16 @@ public sealed partial class PilotApplication
 {
     partial void InvalidatePreparedActions()
     {
-        _workplacePreviews.Clear(); _workplaceCandidates.Clear(); _workplaceCandidateTicket = "";
+        _workplacePreviews.Clear(); _simulationActions.Clear(); _workplaceCandidates.Clear(); _workplaceCandidateTicket = "";
+        if (IsSimulationInstance)
+        {
+            if (!IsHistorical && Result is { } data)
+            {
+                _simulationLiveData = Locations is { } locations && ReferenceEquals(locations.Data, data) ? locations.Source : data;
+                _simulationLiveSettings = EffectiveSettings;
+            }
+            _simulationDetails.Clear(); _workplaceDetails.Clear();
+        }
     }
     private WorkplaceDocument? _workplaceDocument;
     private WorkplaceDocument _workplacePrevious = new();
@@ -126,7 +135,7 @@ public sealed partial class PilotApplication
         foreach (var index in indices.Distinct())
         {
             TicketReference reference;
-            try { reference = TicketReferenceResolver.Resolve(source, source.Rows[index], settings); }
+            try { reference = IsSimulationInstance ? SimulationReference(index) : TicketReferenceResolver.Resolve(source, source.Rows[index], settings); }
             catch (InvalidOperationException error) { failures.Add(AppPaths.SafeError(error)); continue; }
             var p = WorkplaceStore.Remember(doc, reference, titleColumn is int col ? source.Rows[index][col] : "Ticket " + reference.Id, false);
             if (!p.QueueOrder.HasValue) { p.QueueOrder = Math.Min(499, doc.Tickets.Count(t => t.QueueOrder.HasValue)); added++; }
@@ -145,6 +154,12 @@ public sealed partial class PilotApplication
     }
     private TicketReference WorkValidateReference(TicketReference ticket)
     {
+        if (IsSimulationInstance)
+        {
+            var key = WorkplaceStore.TicketKey(ticket);
+            if (_simulationRows.TryGetValue(key, out var index) && _simulationReferences[index] == ticket) return ticket;
+            throw new InvalidOperationException("Cette fiche n’appartient pas au relevé de simulation courant.");
+        }
         var id = TicketReferenceResolver.NormalizeId(ticket.Id);
         var uri = TicketReferenceResolver.ReadHttpUrl(ticket.Url, "L’adresse du ticket"); var query = TicketReferenceResolver.ParseQuery(uri);
         if (uri.Fragment.Length > 0 || query.Count(p => p.Key == "id") != 1 || TicketReferenceResolver.NormalizeId(query.Single(p => p.Key == "id").Value) != id)

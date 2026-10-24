@@ -1,4 +1,4 @@
-import { el, button, toolbar, empty, badge, input, select, field, table, dialog, confirm, formatNumber, formatDate, icon, showError } from '../ui.js';
+import { el, button, toolbar, empty, badge, input, select, field, table, dialog, confirm, formatNumber, formatDate, icon, showError, isSimulation, simulationNotice } from '../ui.js';
 
 import { sharedOperationKinds, reviewSharedOperation } from './shared-operations.js';
 import { openLibraryTicket } from '../library-ticket.js';
@@ -14,6 +14,7 @@ const check = (label, checked = false) => {
 
 async function library(ctx) {
   const { root, api, signal, navigate, notify } = ctx;
+  const simulation=isSimulation(ctx.state.session);
   const call = (op, args = {}, options = {}) => api.call(op, args, { signal, ...options });
   let model = await call('library.get'), latestCapture = null;
   let view = ctx.params?.resolvedOnly ? 'resolution' : ['library', 'resolution', 'team', 'connection'].includes(ctx.params?.view) ? ctx.params.view : 'library';
@@ -29,6 +30,7 @@ async function library(ctx) {
   const captureSummary = el('section', { class: 'card library-outcome library-capture-summary', hidden: true, 'aria-label': 'Dernière collecte conservée' });
   root.classList.add('ticket-library');
   root.replaceChildren(header, statistics, storage, progress, captureSummary, outcome, tabs, content);
+  if(simulation)root.prepend(simulationNotice(ctx.state.session,'La bibliothèque est alimentée par les tickets de simulation. Collectes, recherches, contributions et échanges avec le central se déroulent dans cet espace isolé.'));
   const stopProgress = api.on('operation.progress', data => { if (busy && !disposed) progressDetail.textContent = text(data.message); });
   const stopLibrary = api.on('library.changed', () => { if (!busy && !disposed) void Promise.all([refreshModel(), refreshCapture()]).catch(error => { if (!disposed) showError(storage, error); }); });
   const abort = () => operation?.abort(); signal?.addEventListener('abort', abort, { once: true });
@@ -148,9 +150,9 @@ async function library(ctx) {
     actionButtons.splice(0, actionButtons.length, ...actionButtons.filter(entry => entry.control.isConnected));
     const s = model.stats || {}, settings = model.settings || {}, hasTickets = s.ticketCount > 0;
     header.replaceChildren(el('section', { class: 'card library-overview' }, el('div', {},
-      el('div', { class: 'library-overline' }, icon('layers'), el('span', { text: 'Votre mémoire de travail GLPI' }), badge('Stockage local', 'info')),
+      el('div', { class: 'library-overline' }, icon('layers'), el('span', { text: 'Votre mémoire de travail GLPI' }), badge(simulation?'Stockage de simulation':'Stockage local', 'info')),
       el('h2', { text: hasTickets ? 'Votre bibliothèque GLPI' : 'Collecter les tickets accessibles' }),
-      el('p', { text: hasTickets ? 'Retrouvez les fiches et leurs solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de votre session.' : 'Tous les statuts, dans les entités actives de votre session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' })),
+      el('p', { text: simulation?'Retrouvez les fiches et contenus disponibles dans le relevé de simulation. Une mise à jour du cache reprend leurs modifications ; les rapprochements restent limités à ces données.':hasTickets ? 'Retrouvez les fiches et leurs solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de votre session.' : 'Tous les statuts, dans les entités actives de votre session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' })),
       toolbar(action(hasTickets ? 'Mettre à jour le cache' : 'Aspirer tous les tickets', () => perform(hasTickets ? 'Mise à jour du cache…' : 'Collecte des tickets et de leurs contenus…', 'library.capture', { mode: 'incremental' }), { primary: true, icon: hasTickets ? 'refresh' : 'download' }))));
     statistics.replaceChildren(...[
       [s.ticketCount, 'Tickets conservés', 'Index de la bibliothèque'],
@@ -163,7 +165,7 @@ async function library(ctx) {
         el('span', { class: 'help', text: model.sync?.label || (settings.postgresEnabled ? 'Synchronisation disponible à la demande.' : 'Activez une connexion pour partager avec l’équipe.') })),
       el('div', { class: 'library-storage-path', text: settings.localFolder || 'Dossier local géré par l’application' }),
       el('p', { class: 'help', text: `${count(s.pendingCount)} ticket(s) et ${count(model.team?.pending)} contribution(s) en attente · Dernière synchronisation : ${formatDate(s.lastSyncAt)}` })),
-      toolbar(action('Synchroniser', () => perform('Synchronisation avec PostgreSQL…', 'library.sync'), { icon: 'refresh', disabled: !settings.postgresEnabled }),
+      toolbar(action(simulation?'Synchroniser le central simulé':'Synchroniser', () => perform(simulation?'Échange avec le central de simulation…':'Synchronisation avec PostgreSQL…', 'library.sync'), { icon: 'refresh', disabled: !settings.postgresEnabled }),
         action('Exporter le corpus RAG', async () => { const result = await call('library.export'); if (!result.cancelled) notify('Corpus exporté : ' + result.path); }, { icon: 'download' }))));
     if (model.sync?.lastError) storage.append(el('p', { class: 'library-conflict', text: model.sync.lastError }));
     if (busy) lock(true);
@@ -221,7 +223,7 @@ async function library(ctx) {
         el('p', { class: 'library-evidence', text: `Modification GLPI : ${row.lastModifiedRaw || formatDate(row.lastModifiedAt)} · Lecture : ${formatDate(row.readAt)}` }),
         row.conflicts ? el('p', { class: 'library-conflict', text: `${count(row.conflicts)} version(s) concurrente(s) conservée(s). La synchronisation ne les fusionne pas silencieusement.` }) : null),
       el('div', { class: 'library-result-actions' }, button('Lire le contenu conservé', () => openTicket(row.key), { icon: 'ticket' }),
-        button('Ouvrir dans GLPI', () => call('library.open', { key: row.key }), { icon: 'arrow' }),
+        button(simulation?'Afficher la fiche simulée':'Ouvrir dans GLPI', async () => {await call('library.open', { key: row.key });if(simulation)await openTicket(row.key);}, { icon: 'arrow' }),
         button('Ajouter une note d’équipe', () => editWorkspace({ kind: 'note', ticketKey: row.key, title: 'Ticket ' + row.ticket.id, body: '', status: 'draft' }, 'Ticket ' + row.ticket.id)),
         row.conflicts ? button('Examiner les versions', () => showConflicts('library.conflicts', { key: row.key }, true)) : null));
     if (citations.length) node.append(el('div', { class: 'library-solution' },
@@ -231,7 +233,7 @@ async function library(ctx) {
         el('p', { class: 'library-evidence', text: `Ticket ${citation.ticket?.id || row.ticket.id} · ${citation.section || 'Fiche GLPI'} · Observé le ${formatDate(citation.observedAt)}${citation.current === false ? ' · Observation à recontrôler' : ''}` })))));
     return node;
   }
-  function openTicket(key) { return openLibraryTicket({ api, signal }, key); }
+  function openTicket(key) { return openLibraryTicket({ api, signal, state:ctx.state, navigate }, key); }
   function drawSettings() {
     const settings = model.settings || {};
     const controls = {
@@ -270,7 +272,7 @@ async function library(ctx) {
           el('p', { class: 'library-setting-note', text: 'Les pièces jointes sont conservées sous forme de références. La bibliothèque recueille les onglets de consultation accessibles ; elle conserve les limites et les lectures partielles.' }),
           action('Relire tous les contenus', () => perform('Relecture de tous les contenus accessibles…', 'library.capture', { mode: 'all' }), { icon: 'refresh' })),
         el('section', { class: 'library-settings-section' }, el('h2', { text: 'Central PostgreSQL · facultatif' }), enabled.element,
-          el('p', { class: 'library-setting-note', text: 'La synchronisation échange les tickets et les contributions avec le central configuré. Les versions concurrentes sont conservées et restent visibles comme conflits.' }), pg)),
+          el('p', { class: 'library-setting-note', text: simulation?'La connexion et le central sont simulés localement. Vous pouvez essayer les réglages, publier puis synchroniser les contributions de cet espace.':'La synchronisation échange les tickets et les contributions avec le central configuré. Les versions concurrentes sont conservées et restent visibles comme conflits.' }), pg)),
       el('div', { class: 'library-settings-actions' },
         button('Enregistrer la connexion', async () => {
           await call('library.settings.save', { settings: read(), password: password.value, rememberPassword: remember.control.checked, forgetPassword: false });
@@ -297,7 +299,7 @@ async function library(ctx) {
     const submit = async () => { teamOffset = 0; await load(); };
     const form = el('form', { class: 'card library-search', onSubmit: event => { event.preventDefault(); void submit().catch(error => showError(content, error)); } },
       el('h2', { text: 'Conserver et partager le travail de l’équipe' }),
-      el('p', { class: 'help', text: 'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées depuis vos outils. La synchronisation les échange avec l’équipe ; examinez une contribution avant de la reprendre sur ce poste.' }),
+      el('p', { class: 'help', text: simulation?'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées pendant la simulation. Vous pouvez les examiner, les reprendre et les synchroniser avec le central simulé.':'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées depuis vos outils. La synchronisation les échange avec l’équipe ; examinez une contribution avant de la reprendre sur ce poste.' }),
       toolbar(search, field('Type de contribution', filter), button('Rechercher', submit, { icon: 'search' }), button('Ajouter une contribution', () => editWorkspace(), { primary: true, icon: 'plus' })),
       toolbar(button('Partager la configuration actuelle', () => publishWorkspace('workspace.publishConfiguration', 'Partager la configuration', 'Configuration de l’équipe')),
         button('Partager les statistiques actuelles', () => publishWorkspace('workspace.publishStatistics', 'Partager les statistiques', 'Statistiques du relevé')),

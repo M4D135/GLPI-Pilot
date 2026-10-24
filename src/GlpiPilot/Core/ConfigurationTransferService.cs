@@ -25,7 +25,11 @@ public static class ConfigurationTransferService
     { "AutoLoadOnSelection", "AutoReadTreatment", "IdColumn", "UrlTemplate", "IncludeAutoDetected", "MaxRowsPerSection", "Sections" };
     private static readonly HashSet<string> SectionProperties = new(StringComparer.OrdinalIgnoreCase) { "Name", "Selector", "Kind", "TabSelector" };
     private static readonly HashSet<string> DashboardProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "ColumnMappings", "StaleDays", "OldDays", "DueSoonHours", "DateCulture", "NumberCulture", "SourceTimeZone", "MultiValueSeparators", "ValueDictionaries", "DueHorizonHours", "SatisfactionScale", "HistoryCadenceHours", "Layout", "PersonalLayout", "Weather", "AssignmentCountingMode", "PriorityRules" };
+    { "ColumnMappings", "StaleDays", "OldDays", "DueSoonHours", "DateCulture", "NumberCulture", "SourceTimeZone", "MultiValueSeparators", "ValueDictionaries", "DueHorizonHours", "SatisfactionScale", "HistoryCadenceHours", "Layout", "PersonalLayout", "Business", "Weather", "AssignmentCountingMode", "PriorityRules" };
+    private static readonly HashSet<string> BusinessProperties = new(StringComparer.OrdinalIgnoreCase)
+    { "WeatherRules", "BoardOverrides", "Notes", "FreshnessWarningHours", "SiteInterventionThreshold" };
+    private static readonly HashSet<string> BusinessRuleProperties = new(StringComparer.OrdinalIgnoreCase)
+    { "Id", "Label", "Kind", "SourceKey", "Values", "OrangeAbove", "RedAbove", "Visible", "WeatherEnabled", "IncludeDescendants", "Note" };
     private static readonly HashSet<string> LayoutProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "CatalogRecent", "FilterPresets" };
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
@@ -117,7 +121,7 @@ public static class ConfigurationTransferService
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor is >= 0 and <= 2)))
+                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor is >= 0 and <= 3)))
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);
@@ -158,7 +162,7 @@ public static class ConfigurationTransferService
                 // before local recovery can clamp, discard or repair an import.
                 try { DashboardService.ValidateSettings(imported.Dashboard); }
                 catch (InvalidOperationException error) { throw Invalid(error.Message); }
-                imported.Dashboard.Layout.Validate(); imported.Dashboard.PersonalLayout.Validate();
+                imported.Dashboard.Layout.Validate(); imported.Dashboard.PersonalLayout.Validate(); imported.Dashboard.Business.Validate();
             }
             imported.Normalize();
             ValidateAndSanitize(imported);
@@ -244,7 +248,7 @@ public static class ConfigurationTransferService
             {
                 if (property.Value.ValueKind != JsonValueKind.Object) continue;
                 foreach (var nested in property.Value.EnumerateObject())
-                    if (nested.Name.Equals("Layout", StringComparison.OrdinalIgnoreCase) || nested.Name.Equals("PersonalLayout", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Dashboards;
+                    if (nested.Name.Equals("Layout", StringComparison.OrdinalIgnoreCase) || nested.Name.Equals("PersonalLayout", StringComparison.OrdinalIgnoreCase) || nested.Name.Equals("Business", StringComparison.OrdinalIgnoreCase)) parts |= ConfigurationParts.Dashboards;
                     else if (DashboardProperties.Contains(nested.Name)) parts |= ConfigurationParts.Indicators;
             }
             else parts |= ConfigurationParts.Extraction;
@@ -330,6 +334,8 @@ public static class ConfigurationTransferService
         ValidateLayoutJson(JsonSerializer.SerializeToElement(dashboard.Layout, JsonOptions));
         dashboard.PersonalLayout.Validate();
         ValidateLayoutJson(JsonSerializer.SerializeToElement(dashboard.PersonalLayout, JsonOptions));
+        dashboard.Business.Validate();
+        ValidateBusinessJson(JsonSerializer.SerializeToElement(dashboard.Business, JsonOptions));
         settings.Cities.Validate();
         settings.Queries.Validate();
     }
@@ -495,7 +501,24 @@ public static class ConfigurationTransferService
             if (Find(dashboard, "ColumnMappings") is { ValueKind: not JsonValueKind.Null } mappings) RequireProperties(mappings, MappingKeys);
             if (Find(dashboard, "Layout") is { ValueKind: not JsonValueKind.Null } layout) ValidateLayoutJson(layout);
             if (Find(dashboard, "PersonalLayout") is { ValueKind: not JsonValueKind.Null } personalLayout) ValidateLayoutJson(personalLayout);
+            if (Find(dashboard, "Business") is { ValueKind: not JsonValueKind.Null } business) ValidateBusinessJson(business);
         }
+    }
+
+    private static void ValidateBusinessJson(JsonElement business)
+    {
+        RequireProperties(business, BusinessProperties);
+        ValidateObjectList(business, "WeatherRules", 48, BusinessRuleProperties, rule =>
+        {
+            JsonText(rule, "Id", 96, true); JsonText(rule, "Label", 180, true); JsonText(rule, "SourceKey", 120); JsonText(rule, "Note", 4000);
+            JsonEnum(rule, "Kind", "metric", "type", "category", "team"); ValidateStringList(rule, "Values", 32, 1000);
+            _ = JsonThreshold(rule, "OrangeAbove"); _ = JsonThreshold(rule, "RedAbove");
+            foreach (var property in new[] { "Visible", "WeatherEnabled", "IncludeDescendants" })
+                if (Find(rule, property) is { } value && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw Invalid("Une option météo doit valoir vrai ou faux.");
+        });
+        ValidateObjectList(business, "BoardOverrides", BusinessDashboardSettings.ViewKeys.Length, BoardProperties, board =>
+            ValidateLayoutJson(JsonSerializer.SerializeToElement(new { Version = 1, ActiveBoardId = Find(board, "Id")?.GetString() ?? "", Boards = new[] { board } }, JsonOptions)));
+        (JsonSerializer.Deserialize<BusinessDashboardSettings>(business.GetRawText(), JsonOptions) ?? throw Invalid("Paramètres du pilotage absents.")).Validate();
     }
 
     private static void ValidateLayoutJson(JsonElement layout)

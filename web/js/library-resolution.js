@@ -1,6 +1,7 @@
-import {el, button, icon, input, field, empty, badge, formatDate, formatNumber, showError, replaceChildren} from './ui.js';
+import {el, button, icon, input, field, empty, badge, formatDate, formatNumber, showError, replaceChildren, isSimulation} from './ui.js';
 
-export function createTicketResolution({api, signal, key, onRead}) {
+export function createTicketResolution({api, signal, state, key, onRead}) {
+  const simulation=isSimulation(state?.session);
   const search = input('', {type: 'search', maxLength: 300, placeholder: 'Symptôme, équipement, code d’erreur…'});
   const feedback = el('div', {class: 'library-resolution-feedback', role: 'status'});
   const results = el('div', {class: 'library-resolution-results', 'aria-label': 'Précédents résolus du ticket'});
@@ -12,7 +13,7 @@ export function createTicketResolution({api, signal, key, onRead}) {
   const element = el('section', {class: 'library-resolution'},
     el('div', {class: 'library-resolution-intro'}, icon('spark'), el('div', {},
       el('h3', {text: 'Des précédents, avec leurs sources'}),
-      el('p', {text: 'Tickets résolus ou clos, complets et confirmés dans votre cache. La recherche reste limitée à la même installation GLPI.'}))),
+      el('p', {text: simulation?'Tickets résolus ou clos de votre bibliothèque de simulation. Les rapprochements utilisent les titres et contenus disponibles dans cet espace.':'Tickets résolus ou clos, complets et confirmés dans votre cache. La recherche reste limitée à la même installation GLPI.'}))),
     form, feedback, results);
   const abort = () => { disposed = true; generation++; request?.abort(); };
   signal?.addEventListener('abort', abort, {once: true});
@@ -35,7 +36,7 @@ export function createTicketResolution({api, signal, key, onRead}) {
         ? el('p', {class: 'help', text: 'Aucun extrait identifié comme solution dans cette sélection. Consultez la fiche pour son contexte.'}) : null,
       el('div', {class: 'library-resolution-card-actions'},
         button('Lire ce précédent', () => onRead(item.key), {icon: 'ticket'}),
-        button('Ouvrir ce précédent dans GLPI', () => api.call('library.open', {key: item.key}, {signal}), {icon: 'arrow'})));
+        button(simulation?'Afficher la fiche simulée':'Ouvrir ce précédent dans GLPI', async () => {await api.call('library.open', {key: item.key}, {signal});if(simulation)await onRead(item.key);}, {icon: 'arrow'})));
   }
   async function load(text) {
     if (disposed || signal?.aborted) return;

@@ -26,11 +26,11 @@ public static class OfflineImportChecks
         var tests = new List<(string, Func<Task>)>();
         void Add(string name, Func<SessionFixture, Task> run) => tests.Add((name, async () => { await using var fixture = new SessionFixture(); await run(fixture); }));
         Add("Offline CSV: all 19 fields retain exact values, local provenance and distinct mappings", CsvFields);
-        Add("Offline mode blocks collection, synchronization, operational mutations and unclassified integrations", OfflineBarrier);
+        Add("Simulation routes collection and synchronization locally while suspending real integrations", OfflineBarrier);
         Add("Offline imports and basket edits restore the original observation and operational basket", Restoration);
         Add("Cancelled or invalid test imports never replace the active observation or its restoration point", AtomicFailure);
         Add("An imported test restores an archive with its exact captured interpretation", ArchiveRestoration);
-        Add("Saved test queries and their widgets remain calculable after restoring the live observation", QueryCustomizationRestoration);
+        Add("Simulation queries and widgets work locally then disappear when the original observation is restored", QueryCustomizationRestoration);
         Add("Leaving a test started without an observation restores the empty session", EmptyRestoration);
         Add("Capped file reads disclose their source row count and remain incomplete", LimitedReceipt);
         Add("Simulated weather never certifies GLPI scope or hides truncated files, duplicate IDs or unknown statuses", WeatherEvidence);
@@ -62,26 +62,26 @@ public static class OfflineImportChecks
         await WriteCsv(f); var session = await f.Call("records.test.import"); var data = f.App.Result!;
         Check(session.GetProperty("testMode").GetBoolean() && session.GetProperty("testFileReadComplete").GetBoolean());
         Check(data.Headers.Take(19).SequenceEqual(IncidentHeaders) && data.Rows.Single().Take(19).SequenceEqual(IncidentValues));
-        Check(data.SourceUrl == "" && data.Provenance.SourceKind == "file" && data.Provenance.Method == "csv" && !data.Complete && !data.Provenance.ScopeVerified && !data.Provenance.SearchVerified);
+        Check(data.SourceUrl == "https://simulation.glpi-pilot.invalid/front/ticket.php" && data.Provenance.SourceKind == "file" && data.Provenance.Method == "csv" && !data.Complete && !data.Provenance.ScopeVerified && !data.Provenance.SearchVerified);
         var roles = DashboardService.ResolveColumns(data.Headers, f.App.EffectiveSettings.Dashboard).Where(role => role.Index.HasValue).ToArray();
         Check(roles.Length >= 19 && roles.Select(role => role.Index).Distinct().Count() >= 19, "All incident fields must resolve independently.");
         Check(DashboardService.ResolveColumns(data.Headers, f.App.EffectiveSettings.Dashboard).Single(role => role.Role == "due").Index is null); // Progression is not an SLA deadline.
-        Check(settings == JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json) && before!.Rows.Single()[1] == "Observation A");
+        Check(f.App.Settings.ExportFolder.StartsWith(Path.GetTempPath(), StringComparison.Ordinal) && before!.Rows.Single()[1] == "Observation A");
+        await f.Call("records.test.exit"); Check(settings == JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json));
     }
     private static async Task OfflineBarrier(SessionFixture f)
     {
         var invoked = false; f.App.RegisterSessionFixture("integration.unclassified", (_, _) => { invoked = true; return Task.FromResult<object?>(null); });
         f.App.ForceScheduledFixture((_, _) => { invoked = true; return Task.FromResult<object?>(null); });
         await WriteCsv(f); await f.Call("records.test.import");
-        var before = JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json); var data = f.App.Result;
-        foreach (var operation in new[] { "collect.connect", "collect.run", "collect.campaign", "library.capture", "library.sync", "settings.save", "sources.select", "terrain.tours.save", "terrain.review.correct", "alerts.evaluate", "workplace.personal.save", "integration.unclassified" })
-            await Refuse(() => f.Call(operation), "Mode test hors ligne");
-        foreach (var operation in new[] { "automation.tick", "library.tick", "workplace.reminders.check" })
-            Check((await f.Call(operation)).GetProperty("skipped").GetBoolean());
+        var data = f.App.Result; var rows = JsonSerializer.Serialize(data!.Rows, PilotApplication.Json);
+        foreach (var operation in new[] { "collect.connect", "collect.run", "collect.campaign", "library.capture", "library.sync" })
+            Check((await f.Call(operation)).GetProperty("simulated").GetBoolean());
+        await Refuse(() => f.Call("integration.unclassified"), "inconnue");
+        await f.Call("alerts.evaluate"); await f.Call("workplace.reminders.check");
         await f.App.TickAsync();
-        Check(!invoked && f.App.Snapshots.List().Count == 0 && ReferenceEquals(data, f.App.Result));
-        Check(before == JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json));
-        Check(!f.Events.Any(e => e.Name == "workplace.reminders.due"));
+        Check(!invoked && f.App.Snapshots.List().Count >= 2 && rows == JsonSerializer.Serialize(f.App.Result!.Rows, PilotApplication.Json));
+        Check(f.Events.Where(e => e.Name == "workplace.reminders.due").All(e => JsonSerializer.SerializeToElement(e.Data, PilotApplication.Json).GetProperty("count").GetInt32() == 0));
         var mapping = f.App.EffectiveSettings.Dashboard; mapping.ColumnMappings["title"] = "Description";
         await f.Call("mapping.save", new { revision = f.App.Revision, settings = mapping });
         Check(f.App.EffectiveSettings.Dashboard.ColumnMappings["title"] == "Description" && f.App.Settings.Dashboard.ColumnMappings["title"] == "Titre");
@@ -124,7 +124,7 @@ public static class OfflineImportChecks
         await f.Call("records.test.exit"); Check(f.App.IsHistorical && ReferenceEquals(f.App.HistoricalDocument, archive) && ReferenceEquals(f.App.Result, original));
         var restored = f.App.EffectiveSettings;
         Check(restored.Dashboard.NumberCulture == "en-US" && restored.Dashboard.ColumnMappings["id"] == "Autre ID");
-        Check(!restored.Queries.Queries.Any(q => q.Name == "Configuration future") && f.App.Settings.Queries.Queries.Any(q => q.Name == "Configuration future"));
+        Check(!restored.Queries.Queries.Any(q => q.Name == "Configuration future") && !f.App.Settings.Queries.Queries.Any(q => q.Name == "Configuration future"));
         using var before = JsonDocument.Parse(interpretation);
         Check(JsonSerializer.Serialize(restored.Queries, PilotApplication.Json) == before.RootElement.GetProperty("queries").GetRawText());
     }
@@ -135,16 +135,17 @@ public static class OfflineImportChecks
         var query = new SavedQuery { Name = "Créée pendant un test", BaseProbe = "active" };
         await f.Call("queries.save", new { query });
         await f.Call("queries.widget.add", new { queryId = query.Id });
+        var dashboard = await f.Call("dashboard.get");
+        var widget = f.App.Settings.Dashboard.Layout.Boards.SelectMany(b => b.Widgets).Single(w => w.SourceKey == QueryService.MetricKey(query.Id));
+        var rendered = dashboard.GetProperty("widgets").EnumerateArray().Single(w => w.GetProperty("id").GetString() == widget.Id);
+        Check(rendered.GetProperty("available").GetBoolean() && rendered.GetProperty("content").GetProperty("value").GetDouble() == 1);
         var mapping = f.App.EffectiveSettings.Dashboard; mapping.ColumnMappings["title"] = "Description";
         await f.Call("mapping.save", new { revision = f.App.Revision, settings = mapping });
         await f.Call("records.test.exit");
         Check(ReferenceEquals(f.App.Result, original) && f.App.EffectiveSettings.Dashboard.ColumnMappings["title"] == "Titre"
             && geography == JsonSerializer.Serialize(f.App.EffectiveSettings.Cities, PilotApplication.Json));
-        Check(f.App.EffectiveSettings.Queries.Queries.Any(q => q.Id == query.Id));
-        var dashboard = await f.Call("dashboard.get");
-        var widget = f.App.Settings.Dashboard.Layout.Boards.SelectMany(b => b.Widgets).Single(w => w.SourceKey == QueryService.MetricKey(query.Id));
-        var rendered = dashboard.GetProperty("widgets").EnumerateArray().Single(w => w.GetProperty("id").GetString() == widget.Id);
-        Check(rendered.GetProperty("available").GetBoolean() && rendered.GetProperty("content").GetProperty("value").GetDouble() == 1);
+        Check(!f.App.EffectiveSettings.Queries.Queries.Any(q => q.Id == query.Id));
+        Check(!f.App.Settings.Dashboard.Layout.Boards.SelectMany(b => b.Widgets).Any(w => w.Id == widget.Id));
     }
     private static async Task EmptyRestoration(SessionFixture f)
     {
@@ -175,7 +176,8 @@ public static class OfflineImportChecks
             var weather = model.GetProperty("widgets").EnumerateArray().Single(w => w.GetProperty("id").GetString() == "offline-weather").GetProperty("content").GetProperty("volumeWeather");
             Check(weather.GetProperty("simulation").GetBoolean() && weather.GetProperty("title").GetString()!.StartsWith("Simulation · ", StringComparison.Ordinal));
             var history = await f.Call("dashboard.history", new { revision = model.GetProperty("revision").GetInt64(), runId = model.GetProperty("runId").GetString() });
-            Check(history.GetProperty("widgets").EnumerateArray().All(w => w.GetProperty("history").ValueKind == JsonValueKind.Null));
+            Check(history.GetProperty("revision").GetInt64() == f.App.Revision);
+            Check(f.App.Snapshots.List().All(snapshot => snapshot.SourceLabel.Contains("simulation.glpi-pilot.invalid", StringComparison.Ordinal)));
             return weather;
         }
         Check((await ReadWeather("1;Visible;Nouveau\n2;Terminé;Résolu\n")).GetProperty("state").GetString() == "sun");
@@ -184,7 +186,8 @@ public static class OfflineImportChecks
         await f.Call("records.test.exit"); settings = f.App.Settings.Copy(); settings.MaxRows = 1;
         await f.Call("settings.save", new { revision = f.App.Revision, settings });
         Check((await ReadWeather("1;Visible;Nouveau\n2;Non chargé;Nouveau\n")).GetProperty("state").GetString() == "partial");
-        Check(f.App.Snapshots.List().Count == 0);
+        Check(f.App.Snapshots.List().Count == 1 && !f.App.Snapshots.List()[0].Complete);
+        await f.Call("records.test.exit"); Check(f.App.Snapshots.List().Count == 0);
     }
     private static async Task WorksheetChoice(SessionFixture f)
     {

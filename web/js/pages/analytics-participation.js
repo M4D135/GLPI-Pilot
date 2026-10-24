@@ -20,7 +20,9 @@ export function participationTable(ctx, participants, mode, activate, maximum = 
       return el('div', { class: `analytics-participation-measure measure-${part}` },
         el('span', { class: 'analytics-participation-track', 'aria-hidden': 'true' },
           el('span', { style: { width: `${maximumCount > 0 ? 100 * person[part] / maximumCount : 0}%` } })), control);
-    } }))
+    } })),
+    ...(mode === 'authors' ? [{ key: 'identity', label: 'Clé GLPI', render: person => person.isAggregate ? 'Regroupement'
+      : person.identity?.startsWith('ID:') ? person.identity.slice(3) : 'Non fournie' }] : [])
   ], { key: 'key', maxRows: 500 });
   if (mode === 'comparison') grid.classList.add('analytics-participation-comparison');
   return grid;

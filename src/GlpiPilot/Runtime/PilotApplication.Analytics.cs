@@ -42,7 +42,7 @@ public sealed partial class PilotApplication
         Register("dashboard.get", AnalyticsDashboardAsync);
         Register("dashboard.history", AnalyticsDashboardHistoryAsync);
         Register("dashboard.catalog", (a, ct) => Task.FromResult<object?>(AnalyticsCatalog(RequireAnalyticsRun(a).Baseline)));
-        Register("dashboard.layout.get", (a, ct) => Task.FromResult<object?>(AnalyticsLayout(Flag(a, "personal")).Copy()));
+        Register("dashboard.layout.get", (a, ct) => Task.FromResult<object?>(AnalyticsBusinessKey(a) is { Length: > 0 } key ? AnalyticsBusinessLayout(key, ct) : AnalyticsLayout(Flag(a, "personal")).Copy()));
         Register("dashboard.layout.save", AnalyticsSaveLayoutAsync);
         Register("dashboard.layout.undo", (a, ct) => AnalyticsMoveLayoutAsync(a, ct, false));
         Register("dashboard.layout.redo", (a, ct) => AnalyticsMoveLayoutAsync(a, ct, true));
@@ -57,6 +57,7 @@ public sealed partial class PilotApplication
         RegisterAnalyticsQueries();
         RegisterAnalyticsHistory();
         RegisterAnalyticsAssistant();
+        RegisterAnalyticsBusinessOperations();
     }
 
     private DashboardLayoutSettings AnalyticsLayout(bool personal) => personal ? Settings.Dashboard.PersonalLayout : Settings.Dashboard.Layout;
@@ -86,14 +87,22 @@ public sealed partial class PilotApplication
 
     private async Task<object?> AnalyticsDashboardAsync(JsonElement args, CancellationToken ct)
     {
+        var businessView = AnalyticsBusinessKey(args);
+        if (businessView == "sites" && !IsHistorical && Result is not null && Locations is null)
+        {
+            var context = EffectiveSettings; var report = TerrainLocations(ct); SetResult(report.Data, report, context: context);
+        }
         var source = RequireResult(); var revision = Revision; var settings = EffectiveSettings;
         var technician = Text(args, "technicianKey", 300); var personal = technician.Length > 0;
-        var layout = AnalyticsLayout(personal).Copy(); layout.Normalize(); layout.Validate();
+        var layout = businessView.Length > 0 ? AnalyticsBusinessLayout(businessView, ct) : AnalyticsLayout(personal).Copy(); layout.Normalize(); layout.Validate();
         var boardId = Text(args, "boardId", 96, layout.ActiveBoardId);
         var board = layout.Boards.FirstOrDefault(b => b.Id == boardId)?.Copy() ?? throw new InvalidDataException("Tableau de bord introuvable.");
         var cross = args.TryGetProperty("crossFilters", out var crossJson) ? Read<List<DashboardScopeFilter>>(crossJson) : new();
-        var common = DashboardScopeFilter.CopyList(board.Filters.Concat(cross)); DashboardScopeFilter.ValidateList(common);
+        var common = DashboardScopeFilter.CopyList(board.Filters.Concat(cross));
+        if (businessView.Length > 0) AnalyticsBusinessFocus(args, common, ct);
+        DashboardScopeFilter.ValidateList(common);
         var historical = HistoricalDocument; var locations = historical?.LocationEvidence?.ToReport(source) ?? Locations;
+        var historySource = IsSimulationInstance && historical is null ? SimulationObservation() : source;
         if (locations is not null && !ReferenceEquals(locations.Data, source)) locations = null;
         string? populationWarning = null;
         var populations = historical is not null ? historical.Populations ?? new() : new AnalyticsPopulationStore(DataPath("site-populations.json")).LoadOrEmpty(out populationWarning);
@@ -144,25 +153,27 @@ public sealed partial class PilotApplication
                 : Calculate(DashboardService.ResolveScope(baseline, board.ComparisonFilters, token), "Comparaison · " + AnalyticsDescribe(board.ComparisonFilters)) : null;
             return new AnalyticsRun { Revision = revision, Source = source, Settings = settings, Rules = SnapshotStore.RulesFingerprint(settings),
                 Baseline = baseline, Current = current, Comparison = comparison, Board = board, Common = common, Widgets = widgets,
-                TechnicianKey = technician, History = new(Snapshots, source, settings, baseline, technician, token),
+                TechnicianKey = technician, History = new(Snapshots, historySource, settings, baseline, technician, token),
                 SourceTicketIdentityReliable = weatherSource.Grain == "tickets", SourceStatusesKnown = weatherSource.Metric("unknown-status")?.Value == 0,
                 IsLocalFileTest = IsTestMode, TestFileReadComplete = _localFileTest?.FileReadComplete == true };
         }, ct);
         ct.ThrowIfCancellationRequested();
         if (Revision != revision || !ReferenceEquals(source, Result)) throw new OperationCanceledException("Le relevé a changé.", ct);
         _analyticsRun = result;
-        var journal = AnalyticsJournal(personal);
-        return new { runId = result.Id, revision, layout, layoutHistory = new { undo = journal.Undo.Count, redo = journal.Redo.Count }, boardId, technicianKey = technician, snapshot = AnalyticsSummary(result.Current),
+        var journal = businessView.Length > 0 ? AnalyticsBusinessJournal(businessView, layout) : AnalyticsJournal(personal);
+        return new { runId = result.Id, revision, layout, layoutHistory = new { undo = journal.Undo.Count, redo = journal.Redo.Count }, boardId, businessView, technicianKey = technician, snapshot = AnalyticsSummary(result.Current),
             comparison = result.Comparison is null ? null : AnalyticsSummary(result.Comparison),
             widgets = board.Widgets.Where(w => !w.Hidden).Select(w => AnalyticsWidget(result, w)).ToArray(),
             catalog = AnalyticsCatalog(result.Baseline), commonFilters = common, historical = historical is not null,
+            simulation = result.IsLocalFileTest, simulationFileReadComplete = result.TestFileReadComplete,
+            sourceIdentityReliable = result.SourceTicketIdentityReliable, sourceStatusesKnown = result.SourceStatusesKnown,
             sourceKey = SnapshotStore.SourceKey(source), roster = TechnicianDashboardService.Detect(source, settings.Dashboard, ct).Technicians.Select(t => new { t.Key, t.Name, count = t.Rows.Length, t.ActiveCount }).Take(2000).ToArray() };
     }
 
     private async Task<object?> AnalyticsDashboardHistoryAsync(JsonElement args, CancellationToken ct)
     {
         var run = RequireAnalyticsRun(args);
-        if (run.IsLocalFileTest)
+        if (run.IsLocalFileTest && !IsSimulationInstance)
             return new { runId = run.Id, revision = run.Revision, widgets = run.Board.Widgets.Where(w => !w.Hidden && (w.Kind == "history" || w.Kind == "metric" && w.ShowMiniHistory))
                 .Select(w => new { id = w.Id, history = (object?)null, comparison = (object?)null }).ToArray() };
         if (!run.HistoryLoaded)
@@ -325,6 +336,7 @@ public sealed partial class PilotApplication
     private Task<object?> AnalyticsSaveLayoutAsync(JsonElement args, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested(); var layout = AnalyticsArgument<DashboardLayoutSettings>(args, "layout"); layout.Validate();
+        if (AnalyticsBusinessKey(args) is { Length: > 0 } business) { AnalyticsBusinessPersistLayout(business, layout); return Task.FromResult<object?>(new { saved = true }); }
         if (args.TryGetProperty("baseFingerprint", out _)) AnalyticsCheckLayoutFingerprint(args, Flag(args, "personal"));
         AnalyticsPersistLayout(Flag(args, "personal"), layout); return Task.FromResult<object?>(new { saved = true });
     }
@@ -337,6 +349,7 @@ public sealed partial class PilotApplication
     }
     private Task<object?> AnalyticsAppendLayoutAsync(JsonElement args, CancellationToken ct)
     {
+        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Ajoutez les dispositions dans Mes tableaux ; les rubriques natives restent disponibles séparément.");
         ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); AnalyticsCheckLayoutFingerprint(args, personal);
         var imported = AnalyticsArgument<DashboardLayoutSettings>(args, "layout"); imported.Validate();
         var merged = DashboardLayoutSettings.AppendBoards(AnalyticsLayout(personal), imported);
@@ -363,6 +376,7 @@ public sealed partial class PilotApplication
     }
     private Task<object?> AnalyticsMoveLayoutAsync(JsonElement args, CancellationToken ct, bool redo)
     {
+        if (AnalyticsBusinessKey(args) is { Length: > 0 } business) return AnalyticsBusinessMoveLayoutAsync(business, redo, ct);
         ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); var journal = AnalyticsJournal(personal);
         var from = redo ? journal.Redo : journal.Undo; var to = redo ? journal.Undo : journal.Redo;
         if (from.Count == 0) throw new InvalidOperationException(redo ? "Aucune modification à rétablir." : "Aucune modification à annuler.");
@@ -372,6 +386,7 @@ public sealed partial class PilotApplication
     }
     private Task<object?> AnalyticsCreateBoardAsync(JsonElement args, CancellationToken ct)
     {
+        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Créez les tableaux supplémentaires dans Mes tableaux.");
         ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); var layout = AnalyticsLayout(personal).Copy(); layout.Normalize();
         var name = Text(args, "name", 120, "Mon tableau de bord"); var preset = Text(args, "preset", 40, "empty");
         if (!new[] { "empty", "overview", "personal", "team", "deadlines", "quality", "geography", "analysis", "operations", "service" }.Contains(preset)) throw new InvalidDataException("Modèle inconnu.");
@@ -380,13 +395,14 @@ public sealed partial class PilotApplication
     }
     private async Task<object?> AnalyticsExportLayoutAsync(JsonElement args, CancellationToken ct)
     {
-        var layout = AnalyticsLayout(Flag(args, "personal")).Copy(); layout.Normalize(); layout.Validate();
+        var layout = AnalyticsBusinessKey(args) is { Length: > 0 } business ? AnalyticsBusinessLayout(business, ct) : AnalyticsLayout(Flag(args, "personal")).Copy(); layout.Normalize(); layout.Validate();
         var path = await Host.SaveFileAsync("Exporter la disposition", "Disposition JSON (*.json)|*.json", "GLPI-disposition.json");
         if (path is null) return new { cancelled = true };
         ct.ThrowIfCancellationRequested(); await File.WriteAllTextAsync(path, JsonSerializer.Serialize(layout, Json), ct); return new { path };
     }
     private async Task<object?> AnalyticsImportLayoutAsync(JsonElement args, CancellationToken ct)
     {
+        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Importez une disposition dans Mes tableaux. Les paramètres du classeur se reprennent depuis Paramètres du pilotage.");
         var path = await Host.OpenFileAsync("Importer une disposition à vérifier", "Disposition JSON (*.json)|*.json");
         if (path is null) return new { cancelled = true };
         if (new FileInfo(path).Length > 2 * 1024 * 1024) throw new InvalidDataException("Disposition limitée à 2 Mio.");
@@ -420,6 +436,19 @@ public sealed partial class PilotApplication
             "oldest" or "participation" or "sites" => AnalyticsStockRows(run, s, args, kind, key),
             _ => throw new InvalidDataException("Type de détail inconnu.")
         };
+        var sortKey = Text(args, "sortKey", 40);
+        if (sortKey == "requester-site")
+        {
+            var requester = s.Columns.FirstOrDefault(column => column.Role == "requester")?.Index;
+            var identifier = s.Columns.FirstOrDefault(column => column.Role == "id")?.Index;
+            string Cell(int row, int? column) => column is int index && index < run.Source.Rows[row].Length ? run.Source.Rows[row][index] : "";
+            var siteByRow = s.SiteWorkload.Sites.SelectMany(site => site.Rows.Select(row => (Row: row, site.Label))).ToDictionary(item => item.Row, item => item.Label);
+            rows = rows.OrderBy(row => Cell(row, requester), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => siteByRow.GetValueOrDefault(row, ""), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => long.TryParse(Cell(row, identifier), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : long.MaxValue)
+                .ThenBy(row => row).ToArray();
+        }
+        else if (sortKey.Length > 0) throw new InvalidDataException("Tri du détail inconnu.");
         return AnalyticsRowPage(run.Source, rows, args, run.Revision, ct);
     }
     private static int[] AnalyticsHistogramRows(AnalyticsRun run, DashboardSnapshot s, JsonElement args, string label)

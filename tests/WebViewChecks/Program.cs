@@ -18,6 +18,12 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--business-preview-only"))
+            {
+                await CheckBusinessPreviewAsync(args);
+                Console.WriteLine($"{_passed}/{_passed} native pilot views WebView checks passed.");
+                return;
+            }
             if (args.Contains("--offline-import-only"))
             {
                 await CheckLocalFileTestInterfaceAsync(args);
@@ -108,10 +114,10 @@ internal static partial class Program
         await Call(app, "app.demo"); var first = await Call(app, "records.list", new { limit = 50 });
         Require(first.GetProperty("total").GetInt32() == 180 && first.GetProperty("rows").GetArrayLength() == 50, "The demo reaches the real C# record pagination without a fixture bridge.");
         var revision = app.Revision;
-        var query = await Call(app, "records.list", new { revision, search = "Marseille", limit = 50, transform = new { sorts = new[] { new { column = 0, descending = true, type = "number" } }, filters = Array.Empty<object>() } });
+        var query = await Call(app, "records.list", new { revision, search = "Site exemple A", limit = 50, transform = new { sorts = new[] { new { column = 0, descending = true, type = "number" } }, filters = Array.Empty<object>() } });
         Require(query.GetProperty("total").GetInt32() == 45 && query.GetProperty("rows")[0].GetProperty("cells")[0].GetString() == "180", "Filtering and typed sorting apply to the whole source before pagination.");
-        host.NextSave = Path.Combine(_root, "selected.csv");
-        await Call(app, "records.export", new { revision, view = true, format = "csv", indices = new[] { 3, 7 }, search = "Marseille" });
+        host.NextSave = Path.Combine(app.Settings.ExportFolder, "selected.csv");
+        await Call(app, "records.export", new { revision, view = true, format = "csv", indices = new[] { 3, 7 }, search = "Site exemple A" });
         var exported = NativeCsvImportService.Read(host.NextSave, "", null, 1000, false, default);
         Require(exported.Rows.Count == 2, "The view export preserves its contributor selection rather than exporting unrelated rows.");
         await Call(app, "app.demo");
@@ -119,6 +125,7 @@ internal static partial class Program
         catch (InvalidOperationException) { Require(true, "Stale record revisions cannot be exported after the source changes."); }
         var mapping = await Call(app, "mapping.get");
         Require(mapping.GetProperty("target").GetString() == "LocalResult", "A demonstration uses a local mapping and cannot overwrite source mappings.");
+        await Call(app, "records.test.exit");
         await Call(app, "app.appearance", new { theme = "light", zoom = 125 });
         Require(AppSettings.Load().InterfaceZoomPercent == 125 && AppSettings.Load().Theme == "light", "Appearance preferences persist through the C# settings store.");
         host.NextSave = Path.Combine(_root, "configuration.json"); await Call(app, "configuration.export"); host.NextOpen = host.NextSave;
@@ -231,10 +238,10 @@ internal static partial class Program
               return values.every((value, index) => ticketIdLabel(value) === expected[index]);
             }
             """), "Ticket labels remove only proven decimal grouping and preserve leading zeroes, nonnumeric IDs and digit precision.");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Explorer la démonstration", Exact = true }).ClickAsync();
-        await page.Locator(".page-content[data-page=dashboard]").WaitForAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Simulation avec données fictives", Exact = true }).ClickAsync();
+        await page.Locator(".page-content[data-page=pilot-weather]").WaitForAsync();
         await WaitForPageAsync(page, "document.querySelector('#content')?.getAttribute('aria-busy') === null");
-        Require(application.Result?.Rows.Count == 180 && await page.Locator(".page-content[data-page=dashboard] .notice.danger").CountAsync() == 0, "The dashboard opens after a demo and computes its indicators in C#.");
+        Require(application.Result?.Rows.Count == 180 && await page.Locator(".page-content[data-page=pilot-weather] .notice.danger").CountAsync() == 0, "The native weather view opens after a demo and computes its indicators in C#.");
         var routes = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)");
         foreach (var route in routes)
         {
@@ -244,7 +251,7 @@ internal static partial class Program
             Require(failures.Count == 0, "Screen renders with the real dispatcher: " + route + (failures.Count > 0 ? " · " + string.Join(" | ", failures) : ""));
         }
         await page.Locator(".nav-item[data-page='records']").ClickAsync();
-        await page.GetByRole(AriaRole.Textbox, new() { Name = "Recherche du relevé" }).FillAsync("Marseille");
+        await page.GetByRole(AriaRole.Textbox, new() { Name = "Recherche du relevé" }).FillAsync("Site exemple A");
         await WaitForPageAsync(page, "document.querySelector('.page-content').innerText.includes('45 / 180 lignes')");
         Require(await page.Locator(".data-table tbody tr").CountAsync() == 45, "Typing a record search returns the complete matching rows from the C# query engine.");
         await page.GetByRole(AriaRole.Textbox, new() { Name = "Filtrer ID", Exact = true }).FillAsync("180");
@@ -285,6 +292,7 @@ internal static partial class Program
             await page.Locator(".nav-item[data-page='dashboard']").ClickAsync(); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "dashboard-dark.png"), FullPage = true });
         }
+        await Call(application, "records.test.exit"); await delivery;
         async Task<string[]> QualityScreens(ExtractionResult data)
         {
             application.LoadQualityFixture(data); await delivery;

@@ -32,6 +32,7 @@ public sealed class PostgresTeamWorkspaceReplica(string connectionString) : ITea
         """;
     private async Task<NpgsqlConnection> Open(CancellationToken ct)
     {
+        if (AppPaths.SimulationRoot is not null) throw new InvalidOperationException("La simulation utilise sa réplique d’équipe locale.");
         var connection = new NpgsqlConnection(connectionString);
         try { await connection.OpenAsync(ct); return connection; } catch { await connection.DisposeAsync(); throw; }
     }

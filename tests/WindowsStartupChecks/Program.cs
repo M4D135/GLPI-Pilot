@@ -69,8 +69,8 @@ internal sealed class WindowsWebViewFixture
                 await page.Keyboard.PressAsync("Control+0"); await WaitForPageAsync(page, "document.querySelector('#zoom-label').innerText.includes('100')");
                 Check(Math.Abs(await page.EvaluateAsync<double>("innerWidth") - width) <= 2, "Ctrl 0 restores the actual web viewport to 100 percent.");
                 await NavigateAsync(page, "home");
-                await page.GetByRole(AriaRole.Button, new() { Name = "Explorer la démonstration", Exact = true }).ClickAsync();
-                await page.Locator(".page-content[data-page=dashboard]").WaitForAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Simulation avec données fictives", Exact = true }).ClickAsync();
+                await page.Locator(".page-content[data-page=pilot-weather]").WaitForAsync();
                 await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
                 Check(await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() == 0, "The native pack computes and renders the real C# dashboard from synthetic records.");
                 await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "dashboard-light.png"), FullPage = true });
@@ -85,6 +85,10 @@ internal sealed class WindowsWebViewFixture
                 await page.GetByRole(AriaRole.Button, new() { Name = "Changer de thème", Exact = true }).ClickAsync();
                 await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
                 await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "home-dark.png"), FullPage = true });
+                await page.GetByRole(AriaRole.Button, new() { Name = "Quitter la simulation", Exact = true }).ClickAsync();
+                await WaitForPageAsync(page, "document.querySelector('.local-test-banner').hidden && document.documentElement.dataset.theme === 'light'");
+                Check((await page.Locator("#zoom-label").InnerTextAsync()).Contains("100", StringComparison.Ordinal),
+                    "Leaving the native simulation restores the original appearance before further preferences are persisted.");
                 Native.ShowWindow(second.MainWindowHandle, 6);
                 var secondary = Start(secondPort);
                 await secondary.WaitForExitAsync(_deadline.Token).WaitAsync(TimeSpan.FromSeconds(12));

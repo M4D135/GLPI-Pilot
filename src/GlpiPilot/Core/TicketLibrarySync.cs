@@ -10,9 +10,15 @@ namespace GlpiPilot.Core;
 internal sealed record TicketLibraryMutation(string Id, TicketLibraryDocument Document, string? RequestJson = null);
 internal sealed record TicketLibraryPushReceipt(long Revision, string Outcome, bool Conflict, TicketLibraryDocument Document);
 internal sealed record TicketLibraryChange(long Revision, TicketLibraryDocument Document, TicketLibraryDocument? Incoming, string Reason);
+internal interface ITicketLibraryReplica
+{
+    Task<string> InitializeAsync(CancellationToken ct = default);
+    Task<TicketLibraryPushReceipt> PushAsync(TicketLibraryMutation mutation, CancellationToken ct);
+    Task<IReadOnlyList<TicketLibraryChange>> PullAsync(long afterRevision, int limit, CancellationToken ct);
+}
 
 /// <summary>Version 1 of the shared PostgreSQL protocol. Source timestamps, not workstation clocks, choose current content.</summary>
-public sealed class TicketLibraryPostgresStore
+public sealed class TicketLibraryPostgresStore : ITicketLibraryReplica
 {
     public const int SchemaVersion = 1;
     public const long PublishLock = 7273459411307858;
@@ -22,6 +28,7 @@ public sealed class TicketLibraryPostgresStore
 
     public TicketLibraryPostgresStore(string connectionString)
     {
+        if (AppPaths.SimulationRoot is not null) throw new InvalidOperationException("La simulation utilise sa réplique locale, sans connexion PostgreSQL.");
         var builder = new NpgsqlConnectionStringBuilder(connectionString)
         {
             IncludeErrorDetail = false, LogParameters = false, Timeout = 15, CommandTimeout = 30,
@@ -30,6 +37,9 @@ public sealed class TicketLibraryPostgresStore
         if (string.IsNullOrWhiteSpace(builder.Host) || string.IsNullOrWhiteSpace(builder.Database)) throw new InvalidDataException("Le serveur et la base PostgreSQL sont requis.");
         _connectionString = builder.ToString();
     }
+
+    Task<TicketLibraryPushReceipt> ITicketLibraryReplica.PushAsync(TicketLibraryMutation mutation, CancellationToken ct) => PushAsync(mutation, ct);
+    Task<IReadOnlyList<TicketLibraryChange>> ITicketLibraryReplica.PullAsync(long afterRevision, int limit, CancellationToken ct) => PullAsync(afterRevision, limit, ct);
 
     public const string SchemaSql = """
         CREATE TABLE IF NOT EXISTS glpi_pilot_library_schema (
@@ -188,7 +198,11 @@ public sealed class TicketLibraryPostgresStore
 /// <summary>Durable UUID outbox + transactional delta cursor. A failed operation leaves the next run resumable.</summary>
 public static class TicketLibrarySyncService
 {
-    public static async Task<TicketLibrarySyncResult> SynchronizeAsync(TicketLibraryStore local, TicketLibraryPostgresStore central,
+    public static Task<TicketLibrarySyncResult> SynchronizeAsync(TicketLibraryStore local, TicketLibraryPostgresStore central,
+        IProgress<TicketLibrarySyncProgress>? progress = null, CancellationToken ct = default)
+        => SynchronizeAsync(local, (ITicketLibraryReplica)central, progress, ct);
+
+    internal static async Task<TicketLibrarySyncResult> SynchronizeAsync(TicketLibraryStore local, ITicketLibraryReplica central,
         IProgress<TicketLibrarySyncProgress>? progress = null, CancellationToken ct = default)
     {
         var identity = await central.InitializeAsync(ct);

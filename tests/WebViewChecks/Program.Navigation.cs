@@ -171,7 +171,7 @@ internal static partial class Program
         await page.GotoAsync("https://glpi-pilot.local/index.html");
         await page.Locator("body[data-ready=true]").WaitForAsync();
         var defaultIds = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node=>node.dataset.page)");
-        Require(defaultIds.Length == 26 && defaultIds.Distinct().Count() == 26
+        Require(defaultIds.Length == 35 && defaultIds.Distinct().Count() == 35
             && await page.Locator(".nav-section[data-nav-group=collect] .nav-item[data-page=library]").CountAsync() == 1
             && await page.Locator(".nav-section[data-nav-group=workspace] .nav-item[data-page=alerts]").CountAsync() == 1
             && await Button("Personnaliser la navigation").IsVisibleAsync()
@@ -234,8 +234,8 @@ internal static partial class Program
             await DragDiagnostics("after group gesture");
             await WaitForPageAsync(page, "(() => {const groups=[...document.querySelectorAll('.navigation-group-card')].map(node=>node.dataset.navGroup);return groups.indexOf('workspace')>=0 && groups.indexOf('workspace')<groups.indexOf('pinned');})()");
             await SettleNavigationGeometry(".navigation-group-card[data-nav-group=workspace]", ".navigation-group-card[data-nav-group=pinned]");
-            Require(await Editor().Locator("[data-nav-page]").CountAsync() == 26
-                && await Editor().Locator("[data-nav-page]").EvaluateAllAsync<bool>("nodes=>new Set(nodes.map(node=>node.dataset.navPage)).size===26")
+            Require(await Editor().Locator("[data-nav-page]").CountAsync() == 35
+                && await Editor().Locator("[data-nav-page]").EvaluateAllAsync<bool>("nodes=>new Set(nodes.map(node=>node.dataset.navPage)).size===35")
                 && await page.EvaluateAsync<bool>("window.__navigationDragTrace.some(event=>event.type==='dragstart' && event.trusted && event.target?.focus==='group:workspace') && window.__navigationDragTrace.some(event=>event.type==='drop' && event.trusted && event.target?.group==='pinned' && event.prevented)"),
                 "The real group drag moves Mon quotidien before Épinglés without losing or duplicating a route.");
             await SaveEditor(); persisted = AppSettings.Load().Interface;
@@ -268,7 +268,7 @@ internal static partial class Program
         await page.Locator(".nav-item[data-page=settings]").ClickAsync(); await Ready("settings");
         await page.Locator(".page-content[data-page=settings]").GetByRole(AriaRole.Button, new() { Name = "Personnaliser la navigation", Exact = true }).ClickAsync();
         var sharedSettingsEditor = await page.Locator("dialog.navigation-modal").IsVisibleAsync()
-            && await Editor().Locator(".navigation-item-row").CountAsync() == 26;
+            && await Editor().Locator(".navigation-item-row").CountAsync() == 35;
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
         await page.Locator(".nav-item[data-page=home]").ClickAsync(); await Ready("home");
         Require(sharedSettingsEditor && (await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.page)")).SequenceEqual(defaultIds)
@@ -278,11 +278,20 @@ internal static partial class Program
             "Reset restores the default menu without changing other preferences, and Réglages opens the same complete navigation editor.");
 
         var legacy = persisted.Copy(); legacy.NavigationOrder = ["records", "collect"]; legacy.HiddenNavigation = ["operations"]; legacy.PinnedNavigation = ["tickets"];
+        legacy.NavigationGroupOrder = ["pinned", "workspace", "collect", "analyze", "work", "terrain", "admin"];
         await ApplyPreferences(legacy);
         Require(await page.Locator(".nav-section[data-nav-group=pinned] .nav-item[data-page=tickets]").CountAsync() == 1
             && await page.Locator(".nav-item[data-page=operations]").CountAsync() == 0
             && await page.Locator(".nav-section[data-nav-group=collect] .nav-item").First.GetAttributeAsync("data-page") == "records",
             "Existing flat order, hidden pages and pinned shortcuts are honored without requiring new grouping preferences.");
+        var upgradedGroups = await page.Locator(".nav-section").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.navGroup)");
+        var pilotPosition = Array.IndexOf(upgradedGroups, "pilot");
+        var upgradeVisible = pilotPosition == Array.IndexOf(upgradedGroups, "workspace") + 1
+            && pilotPosition < Array.IndexOf(upgradedGroups, "collect")
+            && await page.Locator(".nav-section[data-nav-group=pilot] .nav-item").CountAsync() == 9;
+        legacy.NavigationGroupOrder.Add("pilot"); await ApplyPreferences(legacy);
+        Require(upgradeVisible && (await page.Locator(".nav-section").Last.GetAttributeAsync("data-nav-group")) == "pilot",
+            "An old saved menu receives the nine pilot pages beside the daily workspace, while an explicit later group position is preserved.");
         await ApplyPreferences(persisted, "dark");
         await Call(app, "app.demo");
         await page.Locator(".nav-item[data-page=dashboard]").ClickAsync(); await Ready("dashboard");

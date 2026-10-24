@@ -22,6 +22,7 @@
     <Compile Include="../../src/GlpiPilot/Core/DashboardLayoutSettings.cs" Link="Core/DashboardLayoutSettings.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ConfigurationTransferService.cs" Link="Core/ConfigurationTransferService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ConfigurationReview.cs" Link="Core/ConfigurationReview.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ConfigurationReview.Details.cs" Link="Core/ConfigurationReview.Details.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DiagnosticReport.cs" Link="Core/DiagnosticReport.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="Core/DashboardService.cs" />
     <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="Core/DashboardModels.cs" />

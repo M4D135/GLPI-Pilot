@@ -298,6 +298,88 @@ button.analytics-heat-cell { border:0;background:transparent;color:var(--text);f
 html[data-motion=reduce] .analytics-volume-weather-icon *,html[data-motion=off] .analytics-volume-weather-icon * { animation:none!important; }
 @media(prefers-reduced-motion:reduce) { .analytics-volume-weather-icon * { animation:none!important; } }
 @media print { .analytics-volume-weather-icon * { animation:none!important; } }
+
+/* Native pilot views reuse the dashboard engine and expose the report's visual hierarchy. */
+.page-content.analytics-business { gap:8px; }
+.analytics-business .analytics-primary-toolbar { margin:0;padding:0;gap:8px; }
+.analytics-business .analytics-provenance-row { margin:0 0 4px; }
+.analytics-business .analytics-history-status:empty { display:none; }
+.analytics-business .analytics-provenance { padding:7px 11px; }
+.business-dashboard-tools { align-self:center;min-width:0; }
+.business-dashboard-tools>summary { cursor:pointer;list-style:none;border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--muted); }
+.business-dashboard-tools>summary::-webkit-details-marker { display:none; }
+.business-dashboard-tools>summary::before { content:'▸';margin-right:7px; }
+.business-dashboard-tools[open] { flex-basis:100%; }
+.business-dashboard-tools[open]>summary::before { content:'▾'; }
+.business-dashboard-tools-content { border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px;background:var(--surface-2); }
+.business-dashboard-tools-content>.toolbar { margin:0 0 10px; }
+.business-dashboard-tools-content .analytics-visibility { margin:0 0 10px; }
+.business-stock-caption { font-size:12px;margin:2px 0 14px; }
+.analytics-category-share { white-space:nowrap; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-grid { grid-template-columns:repeat(var(--weather-columns,4),minmax(0,1fr)); }
+.analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-grid .analytics-widget { grid-column:auto; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-grid .analytics-new-row { display:none; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .analytics-board { gap:10px; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .analytics-board-section { margin-bottom:16px; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .analytics-section-heading { margin-bottom:6px;min-height:30px; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .analytics-section-description { font-size:11px;margin:0 0 8px 20px; }
+.analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-hero-section>.analytics-section-heading,
+.analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-hero-section>.analytics-section-description { display:none; }
+.business-weather-card { border-color:color-mix(in srgb,var(--accent) 24%,var(--border)); }
+.business-weather-card[data-weather-state=sun] { background:linear-gradient(140deg,color-mix(in srgb,var(--success) 7%,var(--surface)),var(--surface));border-color:color-mix(in srgb,var(--success) 30%,var(--border)); }
+.business-weather-card[data-weather-state=watch] { background:linear-gradient(140deg,color-mix(in srgb,var(--warning) 8%,var(--surface)),var(--surface));border-color:color-mix(in srgb,var(--warning) 38%,var(--border)); }
+.business-weather-card[data-weather-state=rain] { background:linear-gradient(140deg,color-mix(in srgb,var(--danger) 7%,var(--surface)),var(--surface));border-color:color-mix(in srgb,var(--danger) 35%,var(--border)); }
+.analytics-business[data-business-editing=false] .business-weather-card { padding:10px 12px;min-height:0; }
+.business-weather-card .analytics-widget-heading h2 { font-size:14px;line-height:1.4; }
+.analytics-business[data-business-editing=false] .business-weather-card .analytics-widget-heading { margin-bottom:0;gap:6px; }
+.analytics-business[data-business-editing=false] .business-weather-card .analytics-widget-scope { display:none; }
+.business-weather-grid .analytics-volume-weather-summary { min-height:68px;gap:5px;padding:4px 0; }
+.business-weather-grid .analytics-volume-weather .analytics-metric-value { font-size:clamp(32px,2.8vw,46px);margin-bottom:0; }
+.business-weather-grid .analytics-volume-weather-icon { width:64px; }
+.business-weather-grid .analytics-volume-weather-numbers { display:grid;grid-template-columns:auto 1fr;gap:1px 6px;align-items:center; }
+.business-weather-grid .analytics-volume-weather-numbers>.analytics-caption { grid-column:2;grid-row:1;align-self:end;font-size:10px;margin:0 0 5px; }
+.business-weather-grid .analytics-volume-weather-status { grid-column:1/-1;font-size:11px;margin-top:0; }
+.business-weather-card .analytics-details { font-size:11px;margin:4px 0 0;padding:4px 0 0; }
+.business-weather-card .analytics-details>summary { font-size:10px; }
+.business-weather-card .analytics-widget-controls>.button { padding:3px 7px;min-height:26px;font-size:10px; }
+.analytics-business[data-business-editing=false] .business-weather-hero { grid-column:1/-1; }
+.business-weather-hero .analytics-volume-weather-summary { max-width:840px;margin:auto;min-height:60px;padding:0; }
+.business-weather-hero .analytics-volume-weather-numbers { display:grid;grid-template-columns:auto 1fr;gap:0 18px;align-items:center; }
+.business-weather-hero .analytics-metric-value { grid-row:1/3;font-size:clamp(45px,4vw,56px);margin:0; }
+.business-weather-hero .analytics-volume-weather-numbers>.analytics-caption { grid-column:2;grid-row:2;margin:0;font-size:12px; }
+.business-weather-hero .analytics-volume-weather-status { grid-column:2;grid-row:1;margin:0;font-size:16px;align-self:end; }
+.business-weather-hero .analytics-volume-weather-icon { width:78px; }
+.business-weather-date { text-align:right;margin:0 0 0 auto;font-size:11px;white-space:nowrap; }
+.business-weather-disabled { color:var(--muted);font-size:12px;margin:8px 0; }
+.business-weather-legend { display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--muted);font-size:11px;padding:10px 0; }
+.business-weather-legend>span { display:inline-flex;align-items:center;gap:6px; }
+.business-weather-legend i { width:8px;height:8px;border-radius:50%;background:var(--muted); }
+.business-weather-legend [data-state=sun] i { background:var(--success); }
+.business-weather-legend [data-state=watch] i { background:var(--warning); }
+.business-weather-legend [data-state=rain] i { background:var(--danger); }
+.business-empty-cards { display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px; }
+.business-empty-card { border:1px solid var(--border);background:var(--surface);border-radius:16px;padding:18px; }
+.business-empty-card h3 { font-size:14px;margin:0 0 12px; }
+.business-empty-number { font-size:36px;color:var(--muted); }
+.business-empty-section { margin:25px 0; }
+.business-empty-section h2 { font-size:18px; }
+.business-settings .card { margin-bottom:18px; }
+.business-settings-status { margin:0 0 10px;color:var(--muted);font-size:13px; }
+.business-rule-row { display:grid;grid-template-columns:48px minmax(150px,1fr) minmax(210px,1.4fr) minmax(130px,.7fr);gap:16px;padding:18px 0;border-top:1px solid var(--border); }
+.business-rule-order { display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:5px; }
+.business-rule-order .button { min-width:34px;padding:4px 8px; }
+.business-rule-row .field { margin-bottom:12px; }
+.business-rule-row textarea { width:100%;resize:vertical; }
+.business-rule-row select { max-width:100%; }
+.business-sites-host table { width:100%; }
+.business-sites-host textarea { min-width:190px;width:100%;resize:vertical; }
+.business-sites-host input { min-width:140px; }
+.business-import-notes { padding:10px 14px;border-left:3px solid var(--accent);background:var(--surface-2); }
+.business-import-notes p { white-space:pre-wrap; }
+@media(max-width:1150px) { .analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:900px) { .business-rule-row { grid-template-columns:40px minmax(0,1fr) minmax(0,1fr); }.business-rule-thresholds { grid-column:2/-1;display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end; }.business-rule-thresholds .field { margin:0; } }
+@media(max-width:680px) { .analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.business-weather-grid .analytics-volume-weather-icon { width:56px; }.business-rule-row { grid-template-columns:32px minmax(0,1fr); }.business-rule-scope,.business-rule-thresholds { grid-column:2; }.business-rule-thresholds { grid-template-columns:1fr 1fr; }.business-rule-thresholds>.button { grid-column:1/-1; }.business-weather-hero .analytics-volume-weather-icon { width:105px; } }
+@media(max-width:420px) { .analytics-business[data-business-view=weather][data-business-editing=false] .business-weather-grid { grid-template-columns:1fr; } }
 .analytics-matrix-legend { display: flex; flex-wrap: wrap; gap: .6rem 1rem; margin: .8rem 0; color: var(--muted); font-size: .82rem; }
 .analytics-matrix-legend span { display: inline-flex; align-items: center; gap: .4rem; }
 .analytics-matrix-legend i { display: inline-block; width: .65rem; height: .65rem; border-radius: .2rem; }

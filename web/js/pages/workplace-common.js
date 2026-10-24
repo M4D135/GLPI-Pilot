@@ -1,4 +1,4 @@
-import { el, button, card, toolbar, input, select, field, table, dialog, confirm, formatDate } from '../ui.js';
+import { el, button, card, toolbar, input, select, field, table, dialog, confirm, formatDate, isSimulation } from '../ui.js';
 import { publishSharedOperation } from './shared-operations.js';
 
 export const call = (ctx, op, args = {}, options = {}) => ctx.api.call(op, args, { signal: ctx.signal, ...options });
@@ -52,6 +52,7 @@ export const toIso = value => value ? new Date(value).toISOString() : '';
 
 /** A real local editor. Changes are submitted as an allowlisted patch, never as a replacement of read evidence. */
 export function personalEditor(ctx, personal, templates, onSaved) {
+  const simulation=isSimulation(ctx.state.session);
   const notes = textArea(personal.notes, 8000, 8);
   const pinned = checkbox(personal.pinned, 'Épingler ce ticket'); const queued = checkbox(personal.queueOrder != null, 'Dans ma file personnelle');
   const offline = checkbox(personal.offline, 'Conserver les rubriques lues hors connexion');
@@ -67,10 +68,10 @@ export function personalEditor(ctx, personal, templates, onSaved) {
   const template = select(Object.keys(templates || {}).map(name => ({ value: name, label: name })), Object.keys(templates || {})[0] || '');
   const save = run(ctx, async () => {
     const result = await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, notes: notes.value, pinned: pinned.control.checked, queued: queued.control.checked, offline: offline.control.checked, checklist, reminderAt: toIso(reminder.value), snoozedUntil: toIso(snooze.value), snoozeReason: reason.value });
-    ctx.notify('Travail personnel enregistré.', 'success'); if (onSaved) await onSaved(result);
+    ctx.notify(simulation?'Travail personnel enregistré dans la simulation.':'Travail personnel enregistré.', 'success'); if (onSaved) await onSaved(result);
   });
   return el('div', { class: 'work-personal-editor' },
-    note('Le travail personnel reste sur ce poste. « Enregistrer et partager la note » publie uniquement le texte de la note et sa référence de ticket dans l’espace d’équipe.'),
+    note(simulation?'Les notes et rappels restent dans la simulation. Le partage les ajoute à son espace d’équipe pour essayer les parcours collaboratifs.':'Le travail personnel reste sur ce poste. « Enregistrer et partager la note » publie uniquement le texte de la note et sa référence de ticket dans l’espace d’équipe.'),
     toolbar(pinned.element, queued.element, offline.element), field('Mes notes', notes),
     toolbar(button('Enregistrer et partager la note', run(ctx, async () => {
       const saved = await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, notes: notes.value });

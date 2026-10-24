@@ -1,4 +1,4 @@
-import { el, button, toolbar, field, input, table, dialog, showError, formatNumber } from '../ui.js';
+import { el, button, toolbar, field, input, table, dialog, showError, formatNumber, simulationNotice } from '../ui.js';
 
 export const labels = { city: 'Ville', site: 'Site', building: 'Bâtiment' };
 export const stateLabels = { draft: 'Brouillon', ready: 'Prête', done: 'Effectuée' };
@@ -22,7 +22,7 @@ export function page(ctx, title, detail) {
   const cancel = button('Annuler le traitement', () => active?.abort(), { disabled: true });
   const body = el('div', { class: 'terrain-body' });
   const root = el('section', { class: 'terrain-page' }, el('header', { class: 'terrain-heading' },
-    el('div', {}, el('h1', { text: title }), el('p', { text: detail })), cancel), status, errors, body);
+    el('div', {}, el('h1', { text: title }), el('p', { text: detail })), cancel), simulationNotice(ctx.state.session,'Le référentiel, les corrections et les tournées sont modifiables dans la simulation. Les essais des services externes produisent des résultats locaux signalés comme simulés.'), status, errors, body);
   ctx.root.append(root);
   let active = null, busy = false;
   const ownedDialogs = new Set();

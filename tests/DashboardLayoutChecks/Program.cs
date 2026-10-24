@@ -262,6 +262,24 @@ Test("Default section identity is stable through repeated normalization and JSON
     var roundTrip = JsonSerializer.Deserialize<DashboardLayoutSettings>(before)!; roundTrip.Normalize(); roundTrip.Validate();
     Assert(roundTrip.Boards[0].Sections.Single().Key == "" && JsonSerializer.Serialize(roundTrip) == before);
 });
+Test("Native pilot configuration has independent rules geometry and no custom-board capacity cost", () =>
+{
+    var settings = new DashboardSettings(); settings.Normalize();
+    settings.Business.WeatherRules.Add(new() { Id = "team", Label = "Équipe fictive", Kind = "team", Values = new() { "Groupe fictif" }, Visible = false, WeatherEnabled = false, OrangeAbove = 3, RedAbove = 6 });
+    var board = DashboardLayoutSettings.CreateBoard("Groupes", "empty"); board.Id = "business-groups";
+    settings.Business.BoardOverrides.Add(board); settings.Business.Validate();
+    var copied = settings.Copy(); copied.Business.WeatherRules[0].Values.Add("Autre groupe fictif"); copied.Business.BoardOverrides[0].Name = "Copie";
+    Assert(settings.Business.WeatherRules[0].Values.Count == 1 && settings.Business.BoardOverrides[0].Name == "Groupes" && settings.Layout.Boards.Count == 1);
+    var roundTrip = JsonSerializer.Deserialize<DashboardSettings>(JsonSerializer.Serialize(settings))!; roundTrip.Business.Validate();
+    Assert(!roundTrip.Business.WeatherRules[0].Visible && !roundTrip.Business.WeatherRules[0].WeatherEnabled && roundTrip.Business.FreshnessWarningHours == 48);
+});
+Test("Native pilot settings reject duplicate rules foreign overrides and contradictory thresholds", () =>
+{
+    var settings = new BusinessDashboardSettings { WeatherRules = new() { new() { Id = "r", Label = "Volume", OrangeAbove = 10, RedAbove = 5 } } };
+    Invalid(settings.Validate); settings.WeatherRules[0].RedAbove = 20; settings.WeatherRules.Add(settings.WeatherRules[0].Copy()); Invalid(settings.Validate);
+    settings.WeatherRules.RemoveAt(1); settings.BoardOverrides.Add(DashboardLayoutSettings.CreateBoard("Foreign", "empty")); Invalid(settings.Validate);
+    settings.BoardOverrides.Clear(); settings.WeatherRules[0].Kind = "team"; settings.WeatherRules[0].Values = Enumerable.Range(1, 33).Select(index => "Group " + index).ToList(); Invalid(settings.Validate);
+});
 var failures = 0;
 foreach (var (name, run) in checks) { try { run(); Console.WriteLine("PASS " + name); } catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex.Message); } }
 Console.WriteLine($"{checks.Count - failures}/{checks.Count} checks passed.");

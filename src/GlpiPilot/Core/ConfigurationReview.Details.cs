@@ -56,6 +56,9 @@ public static partial class ConfigurationReview
         Add("personal-boards", current.Dashboard.PersonalLayout.Boards, incoming.Dashboard.PersonalLayout.Boards, x => x.Id, x => x.Name);
         Add("presets", current.Dashboard.Layout.FilterPresets, incoming.Dashboard.Layout.FilterPresets, x => x.Name, x => x.Name);
         Add("personal-presets", current.Dashboard.PersonalLayout.FilterPresets, incoming.Dashboard.PersonalLayout.FilterPresets, x => x.Name, x => x.Name);
+        if (BusinessConfigured(current.Dashboard.Business) && BusinessConfigured(incoming.Dashboard.Business)
+            && JsonSerializer.Serialize(current.Dashboard.Business) != JsonSerializer.Serialize(incoming.Dashboard.Business))
+            list.Add(new() { Key = "pilot/profile", Section = "pilot", Name = "Paramètres du pilotage" });
         Add("cities", current.Cities.Cities, incoming.Cities.Cities, x => x.Id, x => x.Name);
         Add("sites", current.Cities.Sites, incoming.Cities.Sites, x => x.Id, x => x.Name);
         Add("buildings", current.Cities.Buildings, incoming.Cities.Buildings, x => x.Id, x => x.Name); return list;
@@ -106,7 +109,13 @@ public static partial class ConfigurationReview
             destination.CatalogFavorites = before.CatalogFavorites.Concat(after.CatalogFavorites.Select(RemapQuery)).Distinct().Take(512).ToList(); destination.CatalogRecent = before.CatalogRecent.Concat(after.CatalogRecent.Select(RemapQuery)).Distinct().Take(30).ToList();
         }
         if (parts.HasFlag(ConfigurationParts.Dashboards))
-        { MergeBoards(result.Dashboard.Layout, current.Dashboard.Layout, source.Dashboard.Layout, "boards", "presets"); MergeBoards(result.Dashboard.PersonalLayout, current.Dashboard.PersonalLayout, source.Dashboard.PersonalLayout, "personal-boards", "personal-presets"); }
+        {
+            MergeBoards(result.Dashboard.Layout, current.Dashboard.Layout, source.Dashboard.Layout, "boards", "presets");
+            MergeBoards(result.Dashboard.PersonalLayout, current.Dashboard.PersonalLayout, source.Dashboard.PersonalLayout, "personal-boards", "personal-presets");
+            var decision = choices.GetValueOrDefault("pilot/profile", "current");
+            if (decision == "both") throw new InvalidDataException("Le pilotage possède un seul ordre de priorité météo. Choisissez les paramètres actuels ou ceux du fichier.");
+            result.Dashboard.Business = decision == "incoming" ? source.Dashboard.Business.Copy() : MergeBusiness(current.Dashboard.Business, source.Dashboard.Business);
+        }
         if (parts.HasFlag(ConfigurationParts.Cities))
         {
             result.Cities.Enabled = source.Cities.Enabled; result.Cities.TitleColumn = source.Cities.TitleColumn; result.Cities.LocationColumn = source.Cities.LocationColumn; result.Cities.SourcePriority = source.Cities.SourcePriority.ToList();
@@ -116,6 +125,6 @@ public static partial class ConfigurationReview
             foreach (var building in source.Cities.Buildings) if (maps.TryGetValue("sites/" + building.SiteId, out var site)) building.SiteId = site;
             result.Cities.Buildings = MergeChosen("buildings", current.Cities.Buildings, source.Cities.Buildings, x => x.Id, x => x.Copy(), x => { x.Id = Guid.NewGuid().ToString("N"); x.Name = Variant(x.Name); }, 5000);
         }
-        result.Cities.Validate(); result.Queries.Validate(); result.Dashboard.Layout.Validate(); result.Dashboard.PersonalLayout.Validate(); result.Normalize(); return result;
+        result.Cities.Validate(); result.Queries.Validate(); result.Dashboard.Layout.Validate(); result.Dashboard.PersonalLayout.Validate(); result.Dashboard.Business.Validate(); result.Normalize(); return result;
     }
 }

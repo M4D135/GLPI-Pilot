@@ -1239,6 +1239,7 @@ Test("Ordered team weather filters allocate a multigroup row to only the first m
 
 Test("Oldest groups preserve calendar ages, source scope, date quality and multigroup participation", () => OldestGroupChecks.Run(Check));
 Test("Author participation preserves union, intersection, assignment, identities and unavailable fields", () => ParticipationChecks.Run(Check));
+BusinessViewChecks.Register(Test, Check);
 
 int failures = 0;
 foreach (var (name, run) in tests)

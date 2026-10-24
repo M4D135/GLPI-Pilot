@@ -49,6 +49,8 @@ public sealed partial class BrowserService : IAsyncDisposable
 
     public async Task OpenAsync(AppSettings settings, CancellationToken cancellationToken, bool background = true)
     {
+        if (AppPaths.SimulationRoot is not null)
+            throw new InvalidOperationException("Un adaptateur de simulation doit traiter cette opération avant toute ouverture du navigateur réel.");
         var uri = TargetUrlPolicy.Validate(settings.PortalUrl);
         var installation = ObjectIdentity.InstallationKey(settings.PortalUrl);
         if (_context != null && (_channel != settings.BrowserChannel || _profileInstallation != installation))
