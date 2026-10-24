@@ -1,4 +1,4 @@
-# GLPI Pilot 3.3.2 — Windows x64
+# GLPI Pilot 3.3.3 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -35,6 +35,24 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 **Afficher le navigateur** permet de reprendre la main à tout moment ; cet affichage manuel reste visible après la connexion. Les formulaires, cases « Se souvenir de moi » et boutons de connexion sont actionnés par l’utilisateur. Le navigateur piloté et la fenêtre de travail restent distincts. Une page GLPI personnalisée peut nécessiter l’apprentissage du tableau ou des sections une première fois.
 
+## Nouveautés de la version 3.3.3
+
+**Le mode simulation permet de travailler dans tous les écrans à partir d’un CSV.** Les effectifs des sites peuvent être saisis et datés dans cet espace ; les ratios sont recalculés sans modifier le profil habituel. Le référentiel du profil est repris au début de la simulation, avec ses communes, sites et adresses. Les valeurs absentes du CSV restent indiquées comme indisponibles.
+
+**Le menu regroupe les rubriques dans des sections repliables.** Assistant et Lectures ciblées sont masqués par défaut, puis réactivables dans la personnalisation. Effectifs devient **Effectifs des sites**, accessible depuis les outils de Sites et masqué du menu par défaut. Les épingles, les préférences de classement, le clavier et les animations réduites sont conservés.
+
+**Les sites peuvent maintenant recevoir leur commune, adresse et coordonnées depuis `wad/sites.csv`.** Pour un profil déjà initialisé, une nouvelle version géographique du fichier complète les champs vides sans écraser les valeurs locales ni recréer les sites supprimés. Le [complément de sites](distribution/sites/README.md) contient les données à ajouter à `wad` ; aucun organisme ni référentiel particulier n’est intégré au moteur.
+
+**Google Maps est accessible depuis les sites et les tournées.** Les liens fonctionnent sans clé, après un clic explicite. Une carte intégrée est également proposée avec une clé Maps Embed API facultative. Les parcours conservent l’ordre des arrêts et sont découpés si nécessaire, sans perdre d’étape. Internet est nécessaire pour afficher Google Maps ; les calculs et la préparation depuis le CSV restent locaux.
+
+**Les aperçus de lignes sont plus lisibles.** Les tableaux ouverts depuis les dashboards, requêtes et analyses utilisent une fenêtre large, des largeurs de colonne adaptées et des cellules alignées en haut. Les textes longs occupent au maximum trois lignes dans l’aperçu ; cliquer une valeur ouvre son contenu complet et son interprétation. Les exports conservent les données complètes.
+
+**Sites distingue correctement une localisation reconnue d’un lieu à vérifier.** Un site unique est reconnu même sans commune ou coordonnées renseignées. Les titres absents, les lieux inconnus et les ambiguïtés restent dans le compteur à vérifier. Lorsque le repérage est disponible, ces deux compteurs couvrent ensemble le stock actif du périmètre. Une commune reconnue sans site précis reste dans la ligne des sites non renseignés du tableau de planification.
+
+**Le filtre existant permet de cumuler plusieurs équipes et groupes.** Dans **Groupes**, **Plus anciens**, **Suivi agents**, **Agents actifs** et **Sites**, ouvrir **Équipes et groupes**, cocher les choix puis cliquer **Appliquer**. Les sélections sont réunies par **OU** : une même ligne commune à plusieurs choix est retenue une seule fois. Les cartes, répartitions, préconisations, listes de tickets et exports utilisent ce même périmètre. **Toutes** retire cette restriction ; chaque rubrique conserve sa sélection pendant la session, séparément dans l’espace habituel et la simulation.
+
+Les règles de détection dans les titres sont conservées : noms et variantes configurés, mots entiers, normalisation des accents et de la ponctuation, ambiguïtés explicites. La correction porte sur les compteurs et le périmètre présenté. Voir les [notes 3.3.3](docs/RELEASE-3.3.3.md) et le [rapport de vérification](docs/Rapport-verification.txt) pour l’état de validation du commit livré.
+
 ## Nouveautés de la version 3.3.2
 
 **Lieux et sites affiche tous les termes de détection d’un site : son nom et ses alias.** Le formulaire précise que le nom est reconnu automatiquement ; les variantes saisies le complètent. Après l’application d’un profil de classeur, un brouillon du référentiel qui n’a pas été modifié reprend automatiquement les nouveaux réglages. Un brouillon déjà modifié est conservé et son conflit reste signalé.
@@ -43,7 +61,7 @@ Un distributeur peut ajouter le fichier facultatif **`wad/sites.csv`**, au forma
 
 **L’import automatique ne se fait qu’une fois par profil utilisateur.** Les modifications et suppressions réalisées ensuite dans l’application sont conservées aux démarrages suivants. En l’absence de `wad/sites.csv`, le démarrage est normal et l’initialisation reste disponible si le fichier est fourni plus tard.
 
-Le logiciel et le pack public restent génériques. Le tableau propre à une organisation est un fichier de données séparé, ajouté à sa distribution privée hors GitHub. L’import CSV du référentiel dans l’interface reste disponible ; cette version n’ajoute pas de sélection Excel à cet écran. Le format du fichier facultatif et les conditions de validation sont décrits dans les [notes 3.3.2](docs/RELEASE-3.3.2.md).
+Le logiciel et le pack public restent génériques. Le tableau de sites est un fichier de données séparé, ajouté à la distribution selon les besoins. Un [complément indépendant](distribution/sites/README.md) est disponible. L’import CSV du référentiel dans l’interface reste disponible ; cette version n’ajoute pas de sélection Excel à cet écran. Le format initial est décrit dans les [notes 3.3.2](docs/RELEASE-3.3.2.md) et son enrichissement géographique dans les [notes 3.3.3](docs/RELEASE-3.3.3.md).
 
 ## Nouveautés de la version 3.3.1
 
@@ -77,7 +95,7 @@ Quand une feuille **Paramétrage** compatible est présente, l’aperçu indique
 
 La connexion et les collectes utilisent une source locale simulée ; l’inspection, le choix d’un tableau, la campagne et leur bilan sont testables. La synchronisation échange avec un central simulé. Les services externes et l’assistant produisent des résultats locaux explicitement signalés. Le parcours de mise à jour utilise des packs fictifs, une version virtuelle et un bilan consultable, avec possibilité de retour arrière. **Simulation avec données fictives** ouvre le même environnement complet, sans fichier à préparer.
 
-Le bandeau **Simulation · toutes les rubriques** reste visible. La couverture réelle de GLPI n’est pas certifiée par un fichier local ; les lectures limitées, formules sans résultat enregistré, identifiants douteux et statuts inconnus restent pris en compte dans la qualité et la météo. Les actions de simulation n’atteignent ni le portail GLPI, ni le central réel, ni les fournisseurs externes.
+Le bandeau **Simulation · toutes les rubriques** reste visible. La couverture réelle de GLPI n’est pas certifiée par un fichier local ; les lectures limitées, formules sans résultat enregistré, identifiants douteux et statuts inconnus restent pris en compte dans la qualité et la météo. Les actions de simulation n’atteignent ni le portail GLPI ni le central réel. Les adaptateurs de services restent simulés ; **Ouvrir Google Maps** est un accès Internet réel demandé explicitement, limité aux lieux affichés dans son aperçu.
 
 **Quitter la simulation** restitue le relevé et les réglages d’origine, ainsi que la bibliothèque, les archives et le travail habituel. Les modifications d’essai, y compris celles des requêtes et tableaux, restent dans la session isolée. Un nouvel import crée une nouvelle simulation ; une sélection annulée ou un import invalide conserve l’état courant. Les exports choisis explicitement peuvent être conservés avant de quitter.
 
@@ -175,7 +193,7 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 
 - Thèmes clair/sombre complets, bouton soleil/lune, suivi facultatif du thème Windows, cinq couleurs d’accent, contraste renforcé et réduction des animations.
 - Zoom **75–150 %**, boutons − / 100 % / + et raccourcis ; densité compacte, équilibrée ou confortable, colonnes figées et mémorisation de la fenêtre.
-- Navigation dépliable ou réduite en rail, tiroir sur fenêtre étroite, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre. Les commandes restent accessibles au clavier et respectent la réduction des animations de l’application ou du système.
+- Navigation par groupes repliables ou réduite en rail, tiroir sur fenêtre étroite, journal repliable, palette **Ctrl+K**, éditeurs de colonnes et de configuration intégrés à la fenêtre. Les commandes restent accessibles au clavier et respectent la réduction des animations de l’application ou du système.
 - Recherche, filtres par colonne et tri multiple calculés en C# sur **toutes les lignes chargées**, avec pages d’affichage bornées. Vues nommées mémorisant filtres, recherche, tri et présentation pour la structure du relevé.
 - Export complet ou export explicite de la vue filtrée ; import local CSV, TSV, TXT, XLSX et XLSM en simulation complète. Le fichier natif reçu reste intact.
 
@@ -204,6 +222,8 @@ Le [suivi des 200 points](docs/Suivi-200-ameliorations.md) indique le code livr�
 - Régions, départements, secteurs, hiérarchie libre, sites et bâtiments ; adresses et coordonnées facultatives, priorités des sources, conditions et exclusions des règles, simulateur avec termes surlignés et preuves.
 - File des lieux à vérifier, corrections locales par installation et identifiant unique ; import CSV du référentiel avec comparatif avant application.
 - Colonnes enrichies, indicateurs de couverture et répartitions par ville/site/territoire.
+- Initialisation facultative par `wad/sites.csv`, avec termes de détection, communes, adresses et coordonnées. Enrichissement des champs manquants sans écraser les corrections locales.
+- Liens Google Maps sans clé et carte intégrée facultative avec une clé Maps Embed API locale, pour un lieu ou un parcours. Aucun contact Google avant l’ouverture demandée.
 - Tableau des sites avec stock actif, zéros, inconnus, préconisations configurables et copie de tous les identifiants du périmètre.
 - Tournées datées à partir d’un panier explicite, états et historique motivé, départ/retour, durées, calendriers de sites et étapes verrouillées. Répartition sur plusieurs jours et techniciens selon compétences, absences, plages de présence et budgets du matin et de l’après-midi ; les capacités inconnues restent exclues de la proposition.
 - Rapprochement avec un nouveau relevé, reconstruction explicite des étapes, briefing HTML imprimable et calendrier ICS. Les trajets sont saisis ou indicatifs par défaut. Un service OSRM compatible peut fournir distances et durées routières après configuration et consentement ; sa provenance et sa date restent visibles.
@@ -250,6 +270,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.3.3](docs/RELEASE-3.3.3.md)
 - [Notes de version 3.3.2](docs/RELEASE-3.3.2.md)
 - [Notes de version 3.3.1](docs/RELEASE-3.3.1.md)
 - [Notes de version 3.3.0](docs/RELEASE-3.3.0.md)

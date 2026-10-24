@@ -216,6 +216,24 @@ public static class CityDetectionService
             "%", available ? explanation + "Part des lignes avec une ville unique reconnue, sur toutes les lignes du périmètre, titres absents et ambiguïtés inclus."
                 : unavailable, confirmedRows, sample));
         var scopedMatches = available ? report.Matches.Where(match => scope!.Contains(match.RowIndex)).ToArray() : Array.Empty<CityMatch>();
+        // General location quality is distinct from municipality coverage. A
+        // standalone site is usable without inventing a city or map coordinates.
+        // Multiple possible sites still require review, even in a known city.
+        var recognizedLocations = scopedMatches.Where(match => (match.State is CityMatchState.Matched or CityMatchState.SiteOnly)
+                && match.SiteState != "ambiguous" && (!string.IsNullOrEmpty(match.CityId) || !string.IsNullOrEmpty(match.SiteId)))
+            .Select(match => match.RowIndex).Distinct().Order().ToArray();
+        var locationsToReview = available ? scope!.Except(recognizedLocations).Order().ToArray() : Array.Empty<int>();
+        foreach (var (key, label, rows, definition, tone) in new[]
+        {
+            ("location-matched", "Localisation reconnue", recognizedLocations,
+                "Commune unique ou site unique reconnu par les sources configurées ou une correction locale, sans ambiguïté de site. "
+                + "Un site sans commune ni coordonnées est reconnu. Une commune seule localise la ligne, mais ne constitue pas un site précis dans le tableau par site.", "normal"),
+            ("location-review", "Localisation à vérifier", locationsToReview,
+                "Aucun lieu reconnu, source inexploitable ou localisation ambiguë, y compris plusieurs sites possibles dans une commune reconnue. "
+                + "Ces lignes complètent exactement Localisation reconnue dans ce périmètre, sans double compte.", "warning")
+        })
+            additions.Add(new(key, label, available ? rows.Length : null, snapshot.Grain,
+                available ? definition : unavailable, rows, sample, tone));
         foreach (var (key, label, predicate) in new (string, string, Func<CityMatch, bool>)[]
         {
             ("site-matched", "Site précis reconnu", match => match.SiteId != null),

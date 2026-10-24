@@ -49,7 +49,7 @@ public sealed partial class PilotApplication
         {
             CityDetectionService.AppendDashboardProbes(snapshot, places, ct); DashboardGeography.Append(snapshot, places, settings.Cities);
             var population = HistoricalDocument is null ? new AnalyticsPopulationStore(DataPath("site-populations.json")).LoadOrEmpty(out _) : HistoricalDocument.Populations;
-            if (population is not null) AnalyticsPopulationStore.Append(snapshot, places, settings.Cities, SnapshotStore.SourceKey(source), population);
+            if (population is not null) AnalyticsPopulationStore.Append(snapshot, places, settings.Cities, AnalyticsPopulationSourceKey(source), population);
         }
         return snapshot;
     }

@@ -42,7 +42,7 @@ public sealed class LanguageAssistantStore
         var plain = Protect(Convert.FromBase64String(settings.ProtectedApiKey), true);
         try { return Encoding.UTF8.GetString(plain); } finally { CryptographicOperations.ZeroMemory(plain); }
     }
-    private static byte[] Protect(byte[] input, bool decrypt)
+    internal static byte[] Protect(byte[] input, bool decrypt, string description = "GLPI Pilot assistant credential")
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("La mémorisation d’une clé utilise la protection du compte Windows. La clé peut être fournie uniquement pour la session sur un autre système.");
         var pointer = Marshal.AllocHGlobal(input.Length); DataBlob output = default;
@@ -50,7 +50,7 @@ public sealed class LanguageAssistantStore
         {
             Marshal.Copy(input, 0, pointer, input.Length); var blob = new DataBlob { Size = input.Length, Data = pointer };
             var succeeded = decrypt ? CryptUnprotectData(ref blob, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1, out output)
-                : CryptProtectData(ref blob, "GLPI Pilot assistant credential", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1, out output);
+                : CryptProtectData(ref blob, description, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1, out output);
             if (!succeeded) throw new Win32Exception(Marshal.GetLastWin32Error(), "La protection locale de la clé a échoué.");
             if (output.Size is < 1 or > 32768) throw new InvalidDataException("Taille de clé protégée invalide.");
             var result = new byte[output.Size]; Marshal.Copy(output.Data, result, 0, result.Length); return result;

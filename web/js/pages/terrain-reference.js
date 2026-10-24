@@ -1,5 +1,6 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, form, confirm, formatNumber } from '../ui.js';
 import { page, pager, lookup, referenceField, highlighted, details, facts, labels, listText, readList, numberOrNull, guid } from './terrain-common.js';
+import { openGoogleMaps, openGoogleMapsSettings } from './google-maps.js';
 
 const sourceNames = { manual: 'Correction locale', location: 'Champ GLPI', building: 'Bâtiment dans le titre', site: 'Site dans le titre', title: 'Ville dans le titre', combined: 'Titre complet' };
 const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -15,6 +16,7 @@ export async function renderReference(ctx) {
     button('Actualiser', p.act(reload)),
     button('Simuler et enregistrer le référentiel', p.act(preview), { primary: true }),
     button('Importer un CSV…', p.act(importCsv)),
+    button('Réglages Google Maps', p.act(() => openGoogleMapsSettings(ctx))),
     button('Exporter le CSV du brouillon…', p.act(async () => { const result = await p.call('terrain.reference.export', draft()); if (!result.cancelled) p.message(`Référentiel enregistré : ${result.path}`); })),
     button('Abandonner le brouillon', p.act(async () => { if (await confirm('Recharger le référentiel', 'Les modifications du brouillon seront abandonnées. Le référentiel enregistré sera rechargé.', 'Recharger')) { state = await p.call('terrain.reference.reset', draft()); await reload(); } }))
   ), warningArea,
@@ -42,6 +44,7 @@ export async function renderReference(ctx) {
       { key: 'aliases', label: kind === 'site' ? 'Termes de détection' : 'Alias', render: row => kind === 'site' ? [row.name, row.aliases].filter(Boolean).join(' ; ') : row.aliases }, { key: 'detail', label: kind === 'city' ? 'Code postal' : kind === 'site' ? 'Adresse' : 'Étage / zone' },
       { key: 'rules', label: kind === 'site' ? 'Plages d’ouverture' : 'Règles', render: row => kind === 'building' ? '—' : String(row.rules) },
       { key: 'actions', label: 'Actions', render: row => toolbar(button('Modifier', p.act(async () => { const result = await p.call('terrain.reference.detail', { kind, id: row.id }); state.draftVersion = result.draftVersion; await edit(kind, result.entry); })),
+        ...(kind === 'site' || kind === 'city' ? [button('Google Maps', p.act(() => openGoogleMaps(ctx, { ...draft(), kind, id: row.id, referenceDraft: true })))] : []),
         button('Retirer', p.act(async () => { if (await confirm(`Retirer ${row.name}`, 'La suppression sera ajoutée au brouillon. Les rattachements existants doivent d’abord être déplacés ou retirés.', 'Retirer')) { state = await p.call('terrain.reference.delete', { ...draft(), kind, id: row.id }); await reload(); } }), { danger: true })) }
     ], { key: 'id', maxRows: 40, emptyText: 'Aucune référence. Ajoutez une ville ou importez votre référentiel CSV.' }), pager(data, next => p.run(async () => { offset = next; await loadList(); })));
   }

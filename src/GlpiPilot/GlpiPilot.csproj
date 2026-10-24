@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>GLPI-Pilot</AssemblyName>
     <RootNamespace>GlpiPilot</RootNamespace>
-    <Version>3.3.2</Version>
+    <Version>3.3.3</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

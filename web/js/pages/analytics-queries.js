@@ -1,3 +1,4 @@
+import { navigationVisible } from '../navigation.js';
 import { el, button, card, toolbar, empty, badge, input, select, field, table, dialog, call, command, heading, caption, details, clone, uuid,
   number, formatNumber, formatDate, rowDialog, pager, checkbox, textArea, getRevision, error } from './analytics-ui.js';
 import { confirm } from '../ui.js';
@@ -39,7 +40,7 @@ export async function renderQueries(ctx) {
   ctx.root.append(toolbar(command(ctx, '+ Requête', () => switchTo(freshQuery()), { primary: true }),
     command(ctx, 'Packs métier', () => packsDialog()), command(ctx, 'Importer un pack', async () => previewPack(await call(ctx, 'queries.import.preview'))),
     command(ctx, 'Exporter la bibliothèque', async () => { const r = await call(ctx, 'queries.export'); if (!r.cancelled) ctx.notify(`Pack enregistré : ${r.path}`); }),
-    command(ctx, 'Assistant de langage', () => ctx.navigate('assistant', { operation: 'query' }))),
+    navigationVisible('assistant', ctx.state.settings?.interface) ? command(ctx, 'Assistant de langage', () => ctx.navigate('assistant', { operation: 'query' })) : null),
     el('div', { class: 'analytics-query-workspace' }, side, editor), results);
   listLibrary();
   if (ctx.params?.assistantDraft) {

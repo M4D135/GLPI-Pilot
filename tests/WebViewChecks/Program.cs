@@ -242,15 +242,15 @@ internal static partial class Program
         await page.Locator(".page-content[data-page=pilot-weather]").WaitForAsync();
         await WaitForPageAsync(page, "document.querySelector('#content')?.getAttribute('aria-busy') === null");
         Require(application.Result?.Rows.Count == 180 && await page.Locator(".page-content[data-page=pilot-weather] .notice.danger").CountAsync() == 0, "The native weather view opens after a demo and computes its indicators in C#.");
-        var routes = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)");
+        var routes = (await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)")).Concat(OptionalNavigationRoutes).Distinct().ToArray();
         foreach (var route in routes)
         {
-            await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
+            await ClickNavigationAsync(page, route);
             await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
             var failures = await page.Locator(".page-content > .notice.danger[role=alert]").AllTextContentsAsync();
             Require(failures.Count == 0, "Screen renders with the real dispatcher: " + route + (failures.Count > 0 ? " · " + string.Join(" | ", failures) : ""));
         }
-        await page.Locator(".nav-item[data-page='records']").ClickAsync();
+        await ClickNavigationAsync(page, "records");
         await page.GetByRole(AriaRole.Textbox, new() { Name = "Recherche du relevé" }).FillAsync("Site exemple A");
         await WaitForPageAsync(page, "document.querySelector('.page-content').innerText.includes('45 / 180 lignes')");
         Require(await page.Locator(".data-table tbody tr").CountAsync() == 45, "Typing a record search returns the complete matching rows from the C# query engine.");
@@ -272,7 +272,7 @@ internal static partial class Program
         Require(await page.GetByRole(AriaRole.Dialog).Locator("tbody tr").CountAsync() == 1, "The column selector searches the schema without changing hidden columns or their order.");
         await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
-        await page.Locator(".nav-item[data-page='settings']").ClickAsync();
+        await ClickNavigationAsync(page, "settings");
         await page.Locator(".page-content[data-page=settings]").GetByRole(AriaRole.Combobox, new() { Name = "Thème", Exact = true }).SelectOptionAsync("light");
         await page.GetByRole(AriaRole.Button, new() { Name = "Appliquer l’apparence", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light'");
@@ -286,10 +286,10 @@ internal static partial class Program
         if (captureArg >= 0 && captureArg + 1 < args.Length)
         {
             var output = Path.GetFullPath(args[captureArg + 1]); Directory.CreateDirectory(output);
-            await page.Locator(".nav-item[data-page='home']").ClickAsync(); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
+            await ClickNavigationAsync(page, "home"); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "home-light.png"), FullPage = true });
             await page.GetByRole(AriaRole.Button, new() { Name = "Changer de thème", Exact = true }).ClickAsync(); await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark'");
-            await page.Locator(".nav-item[data-page='dashboard']").ClickAsync(); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
+            await ClickNavigationAsync(page, "dashboard"); await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "dashboard-dark.png"), FullPage = true });
         }
         await Call(application, "records.test.exit"); await delivery;
@@ -299,7 +299,7 @@ internal static partial class Program
             var observations = new List<string>();
             foreach (var route in new[] { "home", "collect", "records", "quality" })
             {
-                await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
+                await ClickNavigationAsync(page, route);
                 await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
                 observations.Add(await page.Locator(".page-content").InnerTextAsync());
             }
@@ -313,7 +313,7 @@ internal static partial class Program
             && !received.Complete && await page.Locator(".source-status.warning").CountAsync() == 0
             && !(await page.Locator(".source-status").InnerTextAsync()).Contains("concordance à vérifier"),
             "Complete receipt stays unobtrusive across collection screens while the quality page retains sample differences and source warnings without certifying the result.");
-        await page.Locator(".nav-item[data-page='home']").ClickAsync();
+        await ClickNavigationAsync(page, "home");
         await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='home' && !document.querySelector('#content').hasAttribute('aria-busy')");
         await page.Locator(".page-content [aria-label='Bilan de la collecte']").GetByRole(AriaRole.Button, new() { Name = "Qualité du relevé", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='quality' && !document.querySelector('#content').hasAttribute('aria-busy')");
@@ -411,6 +411,10 @@ internal static partial class Program
     private static async Task Until(Func<bool> predicate) { using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10)); while (!predicate()) await Task.Delay(10, deadline.Token); }
     private sealed class TestHost(string root) : IPilotHost
     {
+        public List<string> GoogleMapUrls { get; } = new();
+        public List<GoogleMapFrame> GoogleMapFrames { get; } = new();
+        public Task OpenGoogleMapsAsync(string url) { if (!GoogleMapsService.IsExternalMapUrl(url)) throw new InvalidDataException(); GoogleMapUrls.Add(url); return Task.CompletedTask; }
+        public Task ShowGoogleMapAsync(GoogleMapFrame frame) { if (!GoogleMapsService.IsEmbedUrl(frame.EmbedUrl)) throw new InvalidDataException(); GoogleMapFrames.Add(frame); return Task.CompletedTask; }
         public string? NextOpen { get; set; }
         public string? NextSave { get; set; }
         public IPage? Page { get; set; }

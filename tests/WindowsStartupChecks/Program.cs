@@ -101,7 +101,8 @@ internal sealed class WindowsWebViewFixture
                 await WaitForPageAsync(page, "!document.querySelector('#content').hasAttribute('aria-busy')");
                 Check(await page.Locator(".page-content > .notice.danger[role=alert]").CountAsync() == 0, "The native pack computes and renders the real C# dashboard from synthetic records.");
                 await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "dashboard-light.png"), FullPage = true });
-                var routes = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)");
+                var routes = (await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node => node.dataset.page)"))
+                    .Concat(new[] { "assistant", "enrichment", "populations" }).Distinct().ToArray();
                 foreach (var route in routes)
                 {
                     await NavigateAsync(page, route);
@@ -282,11 +283,28 @@ internal sealed class WindowsWebViewFixture
     }
     private static async Task NavigateAsync(IPage page, string route)
     {
-        // A small VM desktop or higher Windows DPI can collapse the sidebar.
-        // Use its real opening control before selecting the requested screen.
-        if (!await page.Locator(".sidebar").IsVisibleAsync())
-            await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
-        await page.Locator($".nav-item[data-page='{route}']").ClickAsync();
+        var item = page.Locator($".nav-item[data-page='{route}']");
+        if (await item.CountAsync() == 0)
+        {
+            var search = route switch
+            {
+                "assistant" => "Assistant", "enrichment" => "Lectures ciblées", "populations" => "Effectifs",
+                _ => throw new InvalidOperationException("Missing navigation shortcut: " + route)
+            };
+            await page.GetByRole(AriaRole.Button, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync(search);
+            await page.Locator($".command-palette [data-command-id='page:{route}']").ClickAsync();
+        }
+        else
+        {
+            // A small VM desktop or higher Windows DPI can collapse the sidebar.
+            // Open both the sidebar and the actual group before choosing a page.
+            if (!await page.Locator(".sidebar").IsVisibleAsync())
+                await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
+            var toggle = page.Locator($".nav-section:has(.nav-item[data-page='{route}']) .nav-group-toggle");
+            if (await toggle.CountAsync() > 0 && await toggle.GetAttributeAsync("aria-expanded") == "false") await toggle.ClickAsync();
+            await item.ClickAsync();
+        }
         await WaitForPageAsync(page, "id => !!document.querySelector('.page-content[data-page=\"' + id + '\"]') && !document.querySelector('#content').hasAttribute('aria-busy')", route);
     }
     // Poll from the test process: WaitForFunction injects eval, forbidden by the real app CSP.

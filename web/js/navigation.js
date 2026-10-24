@@ -10,11 +10,14 @@ export const navigationGroups = [
   {key:'terrain',label:'Terrain',icon:'map',pages:['tours','terrain-reference','terrain-review']},
   {key:'admin',label:'Réglages et suivi',icon:'settings',pages:['automation','operations','settings','updates','help']}
 ];
-const labels={home:'Accueil',day:'Mon espace',alerts:'Alertes',collect:'Collecte GLPI',sources:'Sources',records:'Relevé',quality:'Qualité',mapping:'Correspondances',library:'Bibliothèque',dashboard:'Mes tableaux',queries:'Requêtes',history:'Historique',populations:'Effectifs',assistant:'Assistant',tickets:'Tickets',enrichment:'Lectures ciblées',technicians:'Techniciens',planning:'Répartition',tours:'Tournées','terrain-reference':'Lieux et sites','terrain-review':'Localisations',automation:'Automatisations',operations:'Journal',settings:'Réglages',updates:'Mises à jour',help:'Aide','pilot-weather':'Météo','pilot-summary':'Pilotage','pilot-groups':'Groupes','pilot-categories':'Catégories','pilot-oldest':'Plus anciens','pilot-followup':'Suivi agents','pilot-participants':'Agents actifs','pilot-sites':'Sites','pilot-settings':'Paramètres'};
+const labels={home:'Accueil',day:'Mon espace',alerts:'Alertes',collect:'Collecte GLPI',sources:'Sources',records:'Relevé',quality:'Qualité',mapping:'Correspondances',library:'Bibliothèque',dashboard:'Mes tableaux',queries:'Requêtes',history:'Historique',populations:'Effectifs des sites',assistant:'Assistant',tickets:'Tickets',enrichment:'Lectures ciblées',technicians:'Techniciens',planning:'Répartition',tours:'Tournées','terrain-reference':'Lieux et sites','terrain-review':'Localisations',automation:'Automatisations',operations:'Journal',settings:'Réglages',updates:'Mises à jour',help:'Aide','pilot-weather':'Météo','pilot-summary':'Pilotage','pilot-groups':'Groupes','pilot-categories':'Catégories','pilot-oldest':'Plus anciens','pilot-followup':'Suivi agents','pilot-participants':'Agents actifs','pilot-sites':'Sites','pilot-settings':'Paramètres'};
 const protectedPages=new Set(['home','settings']);
+const defaultHiddenPages=['assistant','enrichment','populations'];
+const hiddenPages=preferences=>new Set([...(preferences.hiddenNavigation||[]),...((preferences.navigationDefaultsVersion||0)<1?defaultHiddenPages:[])]);
 const defaultGroup=id=>navigationGroups.find(group=>group.pages.includes(id))?.key||'admin';
 const unique=values=>[...new Set(values)];
 export const navigationLabel=page=>labels[page.id]||page.title;
+export const navigationVisible=(id,preferences={})=>protectedPages.has(id)||!hiddenPages(preferences).has(id);
 export function navigationModel(pages,preferences={},includeHidden=false) {
   const groupKeys=navigationGroups.map(group=>group.key);
   const orderedGroups=unique((preferences.navigationGroupOrder||[]).filter(key=>groupKeys.includes(key)));
@@ -27,15 +30,16 @@ export function navigationModel(pages,preferences={},includeHidden=false) {
   }
   const pageIds=new Set(pages.map(page=>page.id));
   const order=unique([...(preferences.navigationOrder||[]).filter(id=>pageIds.has(id)),...navigationGroups.flatMap(group=>group.pages),...pageIds]);
-  const hidden=new Set(preferences.hiddenNavigation||[]),pinned=new Set(preferences.pinnedNavigation||[]);
+  const hidden=hiddenPages(preferences),pinned=new Set(preferences.pinnedNavigation||[]);
   const groupFor=page=>pinned.has(page.id)?'pinned':groupKeys.includes(preferences.navigationGroups?.[page.id])&&preferences.navigationGroups[page.id]!=='pinned'?preferences.navigationGroups[page.id]:defaultGroup(page.id);
   return orderedGroups.map(key=>({...navigationGroups.find(group=>group.key===key),pages:pages.filter(page=>groupFor(page)===key&&(includeHidden||!hidden.has(page.id)||protectedPages.has(page.id))).sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id))}));
 }
 
 export function openNavigationEditor({pages,preferences={},save}) {
   const draft={
+    navigationDefaultsVersion:1,
     navigationOrder:[...(preferences.navigationOrder||[])],
-    hiddenNavigation:[...(preferences.hiddenNavigation||[])].filter(id=>!protectedPages.has(id)),
+    hiddenNavigation:[...hiddenPages(preferences)].filter(id=>!protectedPages.has(id)),
     pinnedNavigation:[...(preferences.pinnedNavigation||[])],
     navigationGroupOrder:[...(preferences.navigationGroupOrder||[])],
     navigationGroups:{...(preferences.navigationGroups||{})}
@@ -44,11 +48,11 @@ export function openNavigationEditor({pages,preferences={},save}) {
   const groupsHost=el('div',{class:'navigation-groups'});
   const status=el('p',{class:'navigation-editor-status',role:'status','aria-live':'polite'});
   const body=el('div',{class:'navigation-editor'},
-    el('p',{class:'navigation-editor-intro',text:'Organisez vos raccourcis par tâche. Les écrans masqués restent accessibles avec Rechercher (Ctrl K). Accueil et Réglages restent toujours visibles.'}),
+    el('p',{class:'navigation-editor-intro',text:'Organisez vos raccourcis par tâche. Dépliez les groupes du menu selon vos besoins. Les écrans masqués restent accessibles avec Rechercher (Ctrl K). Accueil et Réglages ne peuvent pas être masqués.'}),
     el('div',{class:'navigation-editor-tools'},
       button('Tout afficher',()=>{draft.hiddenNavigation=[];paint('Tous les écrans sont visibles.');}),
       button('Masquer les écrans facultatifs',()=>{draft.hiddenNavigation=pages.filter(page=>!protectedPages.has(page.id)).map(page=>page.id);paint('Seuls Accueil et Réglages restent visibles.');}),
-      button('Réinitialiser le menu',()=>{draft.navigationOrder=[];draft.hiddenNavigation=[];draft.pinnedNavigation=[];draft.navigationGroupOrder=[];draft.navigationGroups={};paint('Disposition par défaut restaurée. Enregistrez pour la conserver.');},{icon:'refresh'})),
+      button('Réinitialiser le menu',()=>{draft.navigationOrder=[];draft.hiddenNavigation=[...defaultHiddenPages];draft.pinnedNavigation=[];draft.navigationGroupOrder=[];draft.navigationGroups={};paint('Disposition par défaut restaurée. Assistant, Lectures ciblées et Effectifs des sites sont masqués. Enregistrez pour la conserver.');},{icon:'refresh'})),
     el('p',{class:'help navigation-editor-help',text:'Glissez les poignées pour déplacer une page ou un groupe. Au clavier, utilisez ↑ / ↓ pour réordonner ; sur une page, ← / → change de groupe. Les boutons et la liste Groupe offrent les mêmes actions.'}),
     status,groupsHost);
   const modal=dialog('Personnaliser la navigation',body,[

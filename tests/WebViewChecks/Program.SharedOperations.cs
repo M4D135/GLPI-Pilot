@@ -103,7 +103,7 @@ internal static partial class Program
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
         async Task Ready(string id) => await WaitForPageAsync(page,
             "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
-        async Task Go(string id) { await page.Locator(".nav-item[data-page=" + id + "]").ClickAsync(); await Ready(id); }
+        async Task Go(string id) { await ClickNavigationAsync(page, id); await Ready(id); }
         async Task Idle() => await WaitForPageAsync(page, "!document.querySelector('.page-content button[aria-busy=true]')");
         async Task<TeamWorkspaceItem> Published(string operation)
         {

@@ -6,6 +6,30 @@ using Microsoft.Playwright;
 
 internal static partial class Program
 {
+    private static readonly string[] OptionalNavigationRoutes = ["assistant", "enrichment", "populations"];
+
+    private static async Task ClickNavigationAsync(IPage page, string route)
+    {
+        var item = page.Locator($".nav-item[data-page='{route}']");
+        if (await item.CountAsync() == 0)
+        {
+            var search = route switch
+            {
+                "assistant" => "Assistant", "enrichment" => "Lectures ciblées", "populations" => "Effectifs",
+                _ => throw new InvalidOperationException("Missing navigation shortcut: " + route)
+            };
+            await page.GetByRole(AriaRole.Button, new() { Name = "Rechercher un écran, une action ou un ticket", Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync(search);
+            await page.Locator($".command-palette [data-command-id='page:{route}']").ClickAsync();
+            return;
+        }
+        if (!await page.Locator(".sidebar").IsVisibleAsync())
+            await page.GetByRole(AriaRole.Button, new() { Name = "Navigation", Exact = true }).ClickAsync();
+        var toggle = page.Locator($".nav-section:has(.nav-item[data-page='{route}']) .nav-group-toggle");
+        if (await toggle.CountAsync() > 0 && await toggle.GetAttributeAsync("aria-expanded") == "false") await toggle.ClickAsync();
+        await item.ClickAsync();
+    }
+
     private static async Task CheckNavigationInterfaceAsync(string[] args)
     {
         var web = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../web"));
@@ -171,13 +195,55 @@ internal static partial class Program
         await page.GotoAsync("https://glpi-pilot.local/index.html");
         await page.Locator("body[data-ready=true]").WaitForAsync();
         var defaultIds = await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes => nodes.map(node=>node.dataset.page)");
-        Require(defaultIds.Length == 35 && defaultIds.Distinct().Count() == 35
+        Require(defaultIds.Length == 32 && defaultIds.Distinct().Count() == 32 && !defaultIds.Intersect(OptionalNavigationRoutes).Any()
             && await page.Locator(".nav-section[data-nav-group=collect] .nav-item[data-page=library]").CountAsync() == 1
             && await page.Locator(".nav-section[data-nav-group=workspace] .nav-item[data-page=alerts]").CountAsync() == 1
             && await Button("Personnaliser la navigation").IsVisibleAsync()
             && await page.Locator(".hero").IsVisibleAsync(),
-            "The default task-oriented menu presents every registered route once, groups the library and alerts coherently, and always exposes its customization entry.");
+            "The default task-oriented menu keeps 32 unique shortcuts, hides the optional assistant, targeted reads and populations, and always exposes customization.");
+        Require(await page.EvaluateAsync<bool>("""
+            () => [...document.querySelectorAll('.nav-section')].every(section => {
+              const toggle = section.querySelector('.nav-group-toggle');
+              const items = section.querySelector('.nav-group-items');
+              const expanded = ['workspace', 'pinned'].includes(section.dataset.navGroup);
+              return toggle?.tagName === 'BUTTON' && items?.id === toggle.getAttribute('aria-controls')
+                && toggle.getAttribute('aria-expanded') === String(expanded) && items.hidden === !expanded;
+            })
+            """), "Existing navigation groups expose linked accessible toggles and start folded except the daily workspace and pinned shortcuts.");
         await Capture("navigation-home-light");
+
+        var collectToggle = page.Locator(".nav-group-toggle[data-nav-group-toggle=collect]");
+        await collectToggle.ClickAsync();
+        Require(await collectToggle.GetAttributeAsync("aria-expanded") == "true" && await page.Locator(".nav-item[data-page=collect]").IsVisibleAsync(),
+            "Clicking an existing group heading reveals its shortcuts without introducing a new menu section.");
+        await collectToggle.PressAsync("Enter");
+        var folded = await collectToggle.GetAttributeAsync("aria-expanded") == "false" && !await page.Locator(".nav-item[data-page=collect]").IsVisibleAsync();
+        await collectToggle.PressAsync("Space");
+        Require(folded && await collectToggle.GetAttributeAsync("aria-expanded") == "true"
+            && await collectToggle.EvaluateAsync<bool>("node => node === document.activeElement"),
+            "Enter and Space toggle the same group while retaining keyboard focus on its heading.");
+        await ClickNavigationAsync(page, "collect"); await Ready("collect");
+        await collectToggle.ClickAsync();
+        await ClickNavigationAsync(page, "home"); await Ready("home");
+        Require(await collectToggle.GetAttributeAsync("aria-expanded") == "false",
+            "A group manually folded by the user stays folded when another page is visited in the same UI session.");
+        await SelectHiddenRoute("Collecte GLPI", "Collecte GLPI"); await Ready("collect");
+        Require(await collectToggle.GetAttributeAsync("aria-expanded") == "true" && await page.Locator(".nav-item[data-page=collect]").IsVisibleAsync(),
+            "Navigating through the palette automatically opens the current page's folded group.");
+        await ClickNavigationAsync(page, "home"); await Ready("home");
+
+        await OpenEditor();
+        Require(await Editor().Locator("[data-nav-page]").CountAsync() == 35
+            && await Editor().Locator("[data-nav-page=assistant] input[type=checkbox], [data-nav-page=enrichment] input[type=checkbox], [data-nav-page=populations] input[type=checkbox]").EvaluateAllAsync<bool>("nodes => nodes.length===3 && nodes.every(node=>!node.checked)"),
+            "The navigation editor retains all 35 routes and presents the three optional defaults as reversible visibility choices.");
+        await Editor().GetByRole(AriaRole.Button, new() { Name = "Tout afficher", Exact = true }).ClickAsync();
+        await SaveEditor(); await page.ReloadAsync(); await page.Locator("body[data-ready=true]").WaitForAsync();
+        Require(await page.Locator(".nav-item").CountAsync() == 35 && AppSettings.Load().Interface.HiddenNavigation.Count == 0
+            && AppSettings.Load().Interface.NavigationDefaultsVersion == 1,
+            "Show all survives a fresh frontend load and the versioned defaults do not hide deliberately restored routes again.");
+        await OpenEditor();
+        await Editor().GetByRole(AriaRole.Button, new() { Name = "Réinitialiser le menu", Exact = true }).ClickAsync();
+        await SaveEditor();
 
         await OpenEditor();
         await Editor().GetByRole(AriaRole.Checkbox, new() { Name = "Afficher Aide", Exact = true }).UncheckAsync();
@@ -265,15 +331,16 @@ internal static partial class Program
         await OpenEditor();
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Réinitialiser le menu", Exact = true }).ClickAsync();
         await SaveEditor(); persisted = AppSettings.Load().Interface;
-        await page.Locator(".nav-item[data-page=settings]").ClickAsync(); await Ready("settings");
+        await ClickNavigationAsync(page, "settings"); await Ready("settings");
         await page.Locator(".page-content[data-page=settings]").GetByRole(AriaRole.Button, new() { Name = "Personnaliser la navigation", Exact = true }).ClickAsync();
         var sharedSettingsEditor = await page.Locator("dialog.navigation-modal").IsVisibleAsync()
             && await Editor().Locator(".navigation-item-row").CountAsync() == 35;
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
-        await page.Locator(".nav-item[data-page=home]").ClickAsync(); await Ready("home");
+        await ClickNavigationAsync(page, "home"); await Ready("home");
         Require(sharedSettingsEditor && (await page.Locator(".nav-item").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.page)")).SequenceEqual(defaultIds)
             && persisted.NavigationGroups.Count == 0 && persisted.NavigationGroupOrder.Count == 0
-            && persisted.PinnedNavigation.Count == 0 && persisted.HiddenNavigation.Count == 0 && persisted.NavigationOrder.Count == 0
+            && persisted.PinnedNavigation.Count == 0 && persisted.HiddenNavigation.Order().SequenceEqual(OptionalNavigationRoutes.Order()) && persisted.NavigationOrder.Count == 0
+            && persisted.NavigationDefaultsVersion == 1
             && persisted.Accent == "violet" && persisted.FrozenColumns == 3,
             "Reset restores the default menu without changing other preferences, and Réglages opens the same complete navigation editor.");
 
@@ -294,9 +361,9 @@ internal static partial class Program
             "An old saved menu receives the nine pilot pages beside the daily workspace, while an explicit later group position is preserved.");
         await ApplyPreferences(persisted, "dark");
         await Call(app, "app.demo");
-        await page.Locator(".nav-item[data-page=dashboard]").ClickAsync(); await Ready("dashboard");
+        await ClickNavigationAsync(page, "dashboard"); await Ready("dashboard");
         await Capture("navigation-dashboard-dark");
-        await page.Locator(".nav-item[data-page=home]").ClickAsync(); await Ready("home");
+        await ClickNavigationAsync(page, "home"); await Ready("home");
         var normalMotion = await page.EvaluateAsync<bool>("document.documentElement.dataset.domeniaMotion==='on' && getComputedStyle(document.body,'::before').animationName!=='none'");
         await page.EmulateMediaAsync(new() { ReducedMotion = ReducedMotion.Reduce });
         await WaitForPageAsync(page, "document.documentElement.dataset.domeniaMotion==='off'");
@@ -314,6 +381,7 @@ internal static partial class Program
 
         await page.SetViewportSizeAsync(600, 850);
         await Button("Navigation").ClickAsync();
+        await Capture("navigation-groups-compact");
         await OpenEditor();
         await Capture("navigation-editor-compact");
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Mon espace", Exact = true }).PressAsync("ArrowDown");
@@ -322,6 +390,20 @@ internal static partial class Program
             && externalRequests == 0 && errors.IsEmpty,
             "The compact editor retains keyboard focus after moving a page, fits the viewport, and runs under the real CSP without external requests or browser errors.");
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        await Button("Navigation").ClickAsync();
+        await page.Locator(".nav-group-toggle[data-nav-group-toggle=workspace]").PressAsync("ArrowLeft");
+        await page.Keyboard.PressAsync("Escape");
+        await Button("Navigation").ClickAsync();
+        var compactFocus = await page.EvaluateAsync<string>("document.activeElement?.dataset.navGroupToggle || document.activeElement?.tagName || 'none'");
+        Require(compactFocus == "workspace" && !await page.Locator(".nav-item[data-page=home]").IsVisibleAsync(),
+            "Opening compact navigation with the current page folded focuses its visible group heading (actual focus: " + compactFocus + ").");
+        await page.Keyboard.PressAsync("Escape");
+        await ClickNavigationAsync(page, "populations"); await Ready("populations");
+        await Button("Navigation").ClickAsync();
+        Require(await page.EvaluateAsync<bool>("document.querySelector('.sidebar').contains(document.activeElement) && document.activeElement.getClientRects().length>0")
+            && await page.Locator(".nav-item[data-page=populations]").CountAsync() == 0,
+            "Opening compact navigation on a hidden optional page focuses an available control inside the modal sidebar.");
+        await page.Keyboard.PressAsync("Escape");
         await delivery;
     }
 }

@@ -222,6 +222,8 @@ internal sealed class MainForm : Form, IPilotHost
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http") || uri.UserInfo.Length > 0) throw new InvalidDataException("Lien externe invalide.");
         return UiAsync(() => { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); return true; });
     }
+    public Task ShowGoogleMapAsync(GoogleMapFrame frame)
+        => UiAsync(() => { var map = new GoogleMapsForm(frame); map.Show(this); return true; });
     public async Task CloseAsync() => await UiAsync(() => { BeginInvoke(Close); return true; });
     public Task<byte[]> CapturePngAsync() => UiTaskAsync(async () => { using var image = new MemoryStream(); await _web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image); return image.ToArray(); });
     public async Task PrintPdfAsync(string path) => await UiTaskAsync(async () => { var settings = _web.CoreWebView2.Environment.CreatePrintSettings(); settings.ShouldPrintBackgrounds = true; if (!await _web.CoreWebView2.PrintToPdfAsync(path, settings)) throw new IOException("Le document PDF n’a pas été créé."); return true; });

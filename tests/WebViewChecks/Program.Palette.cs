@@ -132,7 +132,7 @@ internal static partial class Program
                 "Ctrl K leaves a modal editor and its focus intact instead of stacking another dialog.");
             await editor.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
-            await page.Locator(".nav-item[data-page=settings]").ClickAsync(); await Ready("settings");
+            await ClickNavigationAsync(page, "settings"); await Ready("settings");
             var retained = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Pages maximales", Exact = true });
             await retained.FillAsync("321"); await retained.FocusAsync();
             var retainedNode = await retained.ElementHandleAsync();

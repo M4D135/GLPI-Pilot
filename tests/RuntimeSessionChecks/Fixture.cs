@@ -42,6 +42,10 @@ public sealed class SessionFixture : IAsyncDisposable
 
 public sealed class SessionHost : IPilotHost
 {
+    public List<string> GoogleMapUrls { get; } = new();
+    public List<GoogleMapFrame> GoogleMapFrames { get; } = new();
+    public Task OpenGoogleMapsAsync(string url) { if (!GoogleMapsService.IsExternalMapUrl(url)) throw new InvalidDataException(); GoogleMapUrls.Add(url); return Task.CompletedTask; }
+    public Task ShowGoogleMapAsync(GoogleMapFrame frame) { if (!GoogleMapsService.IsEmbedUrl(frame.EmbedUrl)) throw new InvalidDataException(); GoogleMapFrames.Add(frame); return Task.CompletedTask; }
     public string? OpenPath { get; set; }
     public string? SavePath { get; set; }
     public string Clipboard { get; private set; } = "";

@@ -270,7 +270,8 @@ public sealed class AutomationRecipeStep
 
 public sealed class InterfacePreferences
 {
-    // Stable route/group keys only. Labels and task-oriented defaults belong to the UI.
+    public const int CurrentNavigationDefaultsVersion = 1;
+    // Stable route/group keys only. Labels and group organization belong to the UI.
     private static readonly HashSet<string> NavigationIds = new(StringComparer.Ordinal)
     {
         "home", "collect", "sources", "operations", "library", "records", "quality", "mapping",
@@ -291,6 +292,7 @@ public sealed class InterfacePreferences
     public bool FollowWindowsMotion { get; set; } = true;
     public string PreferredMonitor { get; set; } = "";
     public double[] WindowPixelBounds { get; set; } = Array.Empty<double>();
+    public int NavigationDefaultsVersion { get; set; }
     public List<string> NavigationOrder { get; set; } = new();
     public List<string> HiddenNavigation { get; set; } = new();
     public List<string> PinnedNavigation { get; set; } = new();
@@ -320,6 +322,14 @@ public sealed class InterfacePreferences
         if (WindowPixelBounds == null || WindowPixelBounds.Length != 4 || WindowPixelBounds.Any(v => !double.IsFinite(v)) || WindowPixelBounds[2] <= 0 || WindowPixelBounds[3] <= 0) WindowPixelBounds = Array.Empty<double>();
         NavigationOrder = NavigationList(NavigationOrder);
         HiddenNavigation = NavigationList(HiddenNavigation).Where(value => value is not ("home" or "settings")).ToList();
+        // Apply new navigation defaults once to both fresh and existing profiles.
+        // A later explicit reveal must survive normalization, copies and restarts.
+        if (NavigationDefaultsVersion < CurrentNavigationDefaultsVersion)
+        {
+            foreach (var route in new[] { "assistant", "enrichment", "populations" })
+                if (!HiddenNavigation.Contains(route, StringComparer.Ordinal)) HiddenNavigation.Add(route);
+            NavigationDefaultsVersion = CurrentNavigationDefaultsVersion;
+        }
         PinnedNavigation = NavigationList(PinnedNavigation);
         NavigationGroupOrder = (NavigationGroupOrder ?? new()).Where(value => value != null && NavigationGroupIds.Contains(value)).Distinct(StringComparer.Ordinal).Take(NavigationGroupIds.Count).ToList();
         // Pinned is a view of PinnedNavigation, not a second assignment for the same route.

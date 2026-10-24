@@ -146,6 +146,11 @@ public sealed partial class PilotApplication
         public Task<string?> PickFolderAsync(string title) => actual.PickFolderAsync("Simulation · " + title);
         public Task SetClipboardAsync(string text) => actual.SetClipboardAsync(text);
         public Task OpenExternalAsync(string url) => Task.CompletedTask;
+        // Maps are a separate, explicit opt-in. Other simulated external actions remain inert.
+        public Task OpenGoogleMapsAsync(string url) => GoogleMapsService.IsExternalMapUrl(url)
+            ? actual.OpenGoogleMapsAsync(url) : throw new InvalidDataException("Lien Google Maps invalide.");
+        public Task ShowGoogleMapAsync(GoogleMapFrame frame) => GoogleMapsService.IsEmbedUrl(frame.EmbedUrl)
+            ? actual.ShowGoogleMapAsync(frame) : throw new InvalidDataException("Carte Google Maps invalide.");
         public Task CloseAsync() => actual.CloseAsync();
         public Task<byte[]> CapturePngAsync() => actual.CapturePngAsync();
         public Task PrintPdfAsync(string path) => actual.PrintPdfAsync(path);

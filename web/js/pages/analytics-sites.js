@@ -1,8 +1,11 @@
 import { el, table, caption, command, details, formatNumber } from './analytics-ui.js';
+import { openSiteMaps } from './google-maps.js';
 
 export function sitesTable(ctx, sites, activate, copyIds) {
   return table(sites, [
     { key: 'label', label: 'Site' },
+    { key: 'map', label: 'Carte', render: site => command(ctx, 'Google Maps', () => openSiteMaps(ctx, site.key),
+      { disabled: !!site.unknown, attributes: { 'aria-label': `Google Maps · ${site.label}` } }) },
     { key: 'count', label: 'Stock actif', render: site => command(ctx, formatNumber(site.count),
       () => activate({ kind: 'sites', key: site.key }), { disabled: site.count === 0, attributes: { 'aria-label': `${site.label} · ${formatNumber(site.count)} tickets · Voir les lignes` } }) },
     { key: 'tickets', label: 'Premiers identifiants', render: site => el('div', { class: 'analytics-site-ticket-links' },

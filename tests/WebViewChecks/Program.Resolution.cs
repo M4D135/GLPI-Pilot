@@ -108,7 +108,7 @@ internal static partial class Program
         try
         {
             await page.GotoAsync("https://glpi-pilot.local/index.html"); await page.Locator("body[data-ready=true]").WaitForAsync();
-            await page.Locator(".nav-item[data-page=settings]").ClickAsync();
+            await ClickNavigationAsync(page, "settings");
             await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='settings' && !document.querySelector('#content').hasAttribute('aria-busy')");
             var input = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Pages maximales", Exact = true });
             await input.FillAsync("321"); await input.FocusAsync(); var inputNode = await input.ElementHandleAsync();
@@ -189,7 +189,7 @@ internal static partial class Program
             Require(invalidReferenceRefused, "The work-ticket cache lookup refuses an ID paired with another ticket URL before any resolution search.");
 
             await page.SetViewportSizeAsync(1440, 1000);
-            await page.Locator(".nav-item[data-page=tickets]").ClickAsync();
+            await ClickNavigationAsync(page, "tickets");
             await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='tickets' && !document.querySelector('#content').hasAttribute('aria-busy')");
             var notes = page.GetByRole(AriaRole.Textbox, new() { Name = "Mes notes", Exact = true });
             const string unsavedNote = "Observation encore en cours de saisie, sans enregistrement.";

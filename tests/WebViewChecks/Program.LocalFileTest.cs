@@ -67,7 +67,7 @@ internal static partial class Program
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await page.Locator("body[data-ready=true]").WaitForAsync(); await Ready("home");
         async Task Navigate(string id)
         {
-            await page.Locator($".nav-item[data-page='{id}']").ClickAsync(); await Ready(id);
+            await ClickNavigationAsync(page, id); await Ready(id);
         }
         await Button("Importer en simulation").ClickAsync();
         var chooser = page.GetByRole(AriaRole.Dialog, new() { Name = "Choisir le tableau Excel", Exact = true }); await chooser.WaitForAsync();
@@ -101,7 +101,25 @@ internal static partial class Program
             "The imported rows appear immediately in the native weather overview.");
         await Capture("simulation-native-weather");
 
-        var allPages = await page.Locator(".nav-item[data-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.page)");
+        // Keep the Excel-selection checks above, then exercise every screen on
+        // a real CSV import, with the reference already configured locally.
+        var workbookPath = host.NextOpen;
+        var csvPath = Path.Combine(_root, "source-incidents.csv");
+        ExportService.WriteCsv(new ExtractionResult { Headers = app.Result!.Headers.Take(19).ToList(),
+            Rows = app.Result.Rows.Select(row => row.Take(19).ToArray()).ToList() }, csvPath);
+        var simulationSettings = app.Settings.Copy();
+        var mapCity = new CityDefinition { Name = "Commune fictive", Latitude = 44, Longitude = 5 };
+        simulationSettings.Cities.Cities.Add(mapCity);
+        simulationSettings.Cities.Sites.Single().CityId = mapCity.Id;
+        simulationSettings.Cities.Sites.Single().Address = "12 rue de l’Essai, Commune fictive";
+        await Call(app, "settings.save", new { revision = app.Revision, settings = simulationSettings });
+        host.NextOpen = csvPath;
+        await Navigate("home"); await Button("Importer en simulation").ClickAsync(); await Ready("pilot-weather");
+        Require(app.IsTestMode && app.Result!.Provenance.Method == "csv" && app.Result.Headers.Take(19).SequenceEqual(LocalTestHeaders)
+            && app.Result.Rows.Count == 2 && app.Settings.Cities.Sites.Single().Address == "12 rue de l’Essai, Commune fictive",
+            "The real CSV chooser imports all nineteen fields and keeps the configured reference before the complete navigation journey.");
+
+        var allPages = (await page.Locator(".nav-item[data-page]").EvaluateAllAsync<string[]>("nodes=>nodes.map(node=>node.dataset.page)")).Concat(OptionalNavigationRoutes).Distinct().ToArray();
         var businessPages = new[] { "pilot-weather", "pilot-summary", "pilot-groups", "pilot-categories", "pilot-oldest", "pilot-followup", "pilot-participants", "pilot-sites", "pilot-settings" };
         Require(businessPages.All(allPages.Contains), "Every workbook business section and its settings is a native navigation entry.");
         foreach (var id in allPages)
@@ -111,8 +129,73 @@ internal static partial class Program
             Require(await page.Locator(".page-content .notice.danger").CountAsync() == 0
                 && !content.Contains("Disponible après le mode test", StringComparison.Ordinal)
                 && !content.Contains("Collecte en pause", StringComparison.Ordinal),
-                $"The {id} page is usable in the real isolated simulation, without the former restricted-mode screen.");
+                $"The {id} page is usable after the real CSV import, without the former restricted-mode screen.");
         }
+
+        await Navigate("pilot-sites");
+        await page.Locator(".business-dashboard-tools > summary").ClickAsync();
+        await Button("Effectifs des sites (facultatif)").ClickAsync(); await Ready("populations");
+        Require(await Button("+ Période d’effectif").IsEnabledAsync()
+            && (await page.Locator(".page-content").InnerTextAsync()).Contains("Option facultative", StringComparison.Ordinal),
+            "The optional site-population settings open from Sites with a usable form for an imported simulation.");
+        await Button("+ Période d’effectif").ClickAsync();
+        var populationEditor = page.GetByRole(AriaRole.Dialog, new() { Name = "Ajouter un effectif daté", Exact = true });
+        await populationEditor.GetByLabel("Effectif entier positif", new() { Exact = true }).FillAsync("200");
+        await populationEditor.GetByLabel("Référence de l’inventaire", new() { Exact = true }).FillAsync("Inventaire fictif de simulation");
+        await populationEditor.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync();
+        await populationEditor.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await page.GetByRole(AriaRole.Cell, new() { Name = "Inventaire fictif de simulation", Exact = true }).WaitForAsync();
+        var populationState = await Call(app, "populations.list");
+        var withRatio = await Call(app, "dashboard.get", new { revision = app.Revision, businessView = "sites" });
+        var ratio = withRatio.GetProperty("snapshot").GetProperty("metrics").EnumerateArray().Single(metric => metric.GetProperty("key").GetString() == "site-per100-people");
+        Require(populationState.GetProperty("rows")[0].GetProperty("count").GetInt32() == 200 && ratio.GetProperty("value").GetDouble() == .5
+            && !app.Result!.Provenance.SearchVerified && !app.Result.Provenance.ScopeVerified,
+            "Saving the real form computes one localized ticket per 200 people without certifying GLPI provenance.");
+        await Capture("simulation-site-populations");
+        await Button("Retour aux sites").ClickAsync(); await Ready("pilot-sites");
+        Require(await page.Locator(".analytics-sites").CountAsync() > 0, "The optional population settings return directly to Sites.");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Google Maps · Site fictif Nord", Exact = true }).ClickAsync();
+        var mapPreview = page.GetByRole(AriaRole.Dialog, new() { Name = "Google Maps · lieux et parcours", Exact = true });
+        await mapPreview.WaitForAsync();
+        Require(host.GoogleMapUrls.Count == 0 && host.GoogleMapFrames.Count == 0
+            && await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Ouvrir Google Maps", Exact = true }).IsEnabledAsync()
+            && await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher la carte intégrée", Exact = true }).IsDisabledAsync(),
+            "The Sites map preview stays local and offers a working no-key link while clearly requiring a key for the embedded map.");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Ouvrir Google Maps", Exact = true }).ClickAsync();
+        await Until(() => host.GoogleMapUrls.Count > 0);
+        Require(host.GoogleMapUrls.Count == 1 && Uri.UnescapeDataString(host.GoogleMapUrls.Single()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal)
+            && !host.GoogleMapUrls.Single().Contains("Agent", StringComparison.Ordinal),
+            "The explicit map click delegates only the reference address from the CSV simulation to the native host.");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Réglages Google Maps", Exact = true }).ClickAsync();
+        var mapSettings = page.GetByRole(AriaRole.Dialog, new() { Name = "Réglages Google Maps", Exact = true });
+        await mapSettings.GetByLabel("Clé Maps Embed API", new() { Exact = true }).FillAsync("SYNTHETIC_UI_MAP_KEY");
+        Require(await mapSettings.GetByLabel("Mémoriser la clé pour ce compte Windows", new() { Exact = true }).IsDisabledAsync(),
+            "A map key entered during simulation cannot be persisted into the normal Windows profile.");
+        await mapSettings.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync();
+        await mapSettings.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Afficher la carte intégrée", Exact = true }).ClickAsync();
+        await Until(() => host.GoogleMapFrames.Count > 0);
+        Require(host.GoogleMapFrames.Count == 1 && host.GoogleMapFrames.Single().Simulation && host.GoogleMapFrames.Single().EmbedUrl.Contains("/maps/embed/v1/place?", StringComparison.Ordinal),
+            "The dedicated embedded-map request is created only after its explicit button and uses the documented API.");
+        await Capture("simulation-google-maps-preview");
+        await CheckGoogleMapFrameAsync(browser, web, host.GoogleMapFrames.Single());
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+
+        await Navigate("tours");
+        await Button("Google Maps · ordre des communes").ClickAsync(); await mapPreview.WaitForAsync();
+        Require((await mapPreview.InnerTextAsync()).Contains("Ordre des communes", StringComparison.Ordinal)
+            && (await mapPreview.InnerTextAsync()).Contains("44,5", StringComparison.Ordinal),
+            "The current city projection opens its own map preview with its explicit city-level precision.");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await Call(app, "terrain.tours.select", new { revision = app.Revision, rows = new[] { 0 }, selected = true });
+        await Call(app, "terrain.tours.create", new { revision = app.Revision, name = "Tournée cartographique fictive", date = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) });
+        await Navigate("home"); await Navigate("tours");
+        await Button("Planning daté").ClickAsync(); await Button("Google Maps · tournée").ClickAsync(); await mapPreview.WaitForAsync();
+        Require((await mapPreview.InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal)
+            && !(await mapPreview.InnerTextAsync()).Contains("Agent fictif", StringComparison.Ordinal),
+            "The real tour button opens its ordered site itinerary from the imported CSV without participant or ticket text.");
+        await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
 
         await Navigate("records");
         var openRow = page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true });
@@ -213,6 +296,7 @@ internal static partial class Program
             && (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32() == originalLibrary,
             "Leaving the simulation restores the exact prior observation, sites and operational library after all those local mutations.");
         await Navigate("pilot-settings");
+        host.NextOpen = workbookPath;
         var settingsBeforeProfile = System.Text.Json.JsonSerializer.Serialize(app.Settings, PilotApplication.Json);
         await Button("Reprendre les paramètres d’un classeur Excel").ClickAsync();
         var profilePreview = page.GetByRole(AriaRole.Dialog, new() { Name = "Vérifier les paramètres du classeur", Exact = true }); await profilePreview.WaitForAsync();

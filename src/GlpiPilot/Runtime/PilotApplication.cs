@@ -13,6 +13,9 @@ public interface IPilotHost
     Task<string?> PickFolderAsync(string title);
     Task SetClipboardAsync(string text);
     Task OpenExternalAsync(string url);
+    Task OpenGoogleMapsAsync(string url)
+        => GoogleMapsService.IsExternalMapUrl(url) ? OpenExternalAsync(url) : throw new InvalidDataException("Lien Google Maps invalide.");
+    Task ShowGoogleMapAsync(GoogleMapFrame frame) => throw new NotSupportedException("La carte intégrée est disponible dans l’application Windows. Utilisez le lien Google Maps.");
     Task CloseAsync();
     Task<byte[]> CapturePngAsync();
     Task PrintPdfAsync(string path);

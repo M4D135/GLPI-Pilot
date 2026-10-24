@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://www.google.com/maps/embed/v1/; worker-src 'none'">
+<title>Google Maps · GLPI Pilot</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/google-maps.css">
+<script defer src="js/maps-frame.js"></script>
+</head>
+<body class="google-map-body">
+<main class="google-map-window">
+<h1 id="map-title">Google Maps</h1>
+<p id="map-context">Seuls les lieux et coordonnées choisis sont transmis à Google.</p>
+<p id="map-status" class="google-map-status" role="status">Préparation de la carte…</p>
+<iframe id="map-frame" class="google-map-frame" title="Carte Google Maps" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen hidden></iframe>
+<p>Internet est nécessaire. Si la carte ne s’affiche pas, vérifiez la clé Maps Embed API et sa restriction d’origine, ou utilisez Ouvrir Google Maps dans l’aperçu.</p>
+</main>
+</body>
+</html>

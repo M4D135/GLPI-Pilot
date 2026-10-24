@@ -121,7 +121,7 @@ internal static partial class Program
             "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
         async Task OpenLibrary()
         {
-            await page.Locator(".nav-item[data-page=library]").ClickAsync(); await Ready("library");
+            await ClickNavigationAsync(page, "library"); await Ready("library");
             await CaptureSummary().WaitForAsync();
         }
         async Task OpenCapture()
@@ -197,7 +197,7 @@ internal static partial class Program
         await page.Keyboard.PressAsync("Escape");
         await CaptureDialog().WaitForAsync(new() { State = WaitForSelectorState.Detached });
         var focusReturned = await page.EvaluateAsync<bool>("document.activeElement?.textContent.includes('Détail de la collecte')===true");
-        await page.Locator(".nav-item[data-page=home]").ClickAsync(); await Ready("home");
+        await ClickNavigationAsync(page, "home"); await Ready("home");
         Deliver(heldReply!); await delivery;
         Require(focusReturned && await page.GetByRole(AriaRole.Dialog).CountAsync() == 0
             && await page.Locator(".page-content[data-page=home]").CountAsync() == 1

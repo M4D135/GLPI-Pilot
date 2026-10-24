@@ -16,6 +16,7 @@ internal static class SimulationChecks
         Add("preview tokens reject replay, wrong tickets, stale data and cancellation", ActionTokens);
         Add("library capture and team synchronization operate on real local outboxes", LibraryAndTeam);
         Add("archives compare simulated edits without changing the real history", History);
+        Add("optional site populations can be edited and calculated for an imported file without certifying GLPI", PopulationReferences);
         Add("terrain planning persists an exercise route and weather without network", Terrain);
         Add("the assistant ignores credentials and generates locally from the imported stock", Assistant);
         Add("update, installation and rollback form a virtual stateful scenario", Updates);
@@ -205,6 +206,59 @@ internal static class SimulationChecks
         Check(f.App.Result!.Headers.SequenceEqual(headers), "Repeated simulation actions and collections must not duplicate derived geographic columns.");
         Check(f.App.Locations!.Matches.Single(match => match.RowIndex == 0) is { IsOverride: true } match && match.SiteId == site.Id,
             "A manual correction must survive simulated actions, re-enrichment and collection.");
+    }
+
+    private static async Task PopulationReferences(SessionFixture f)
+    {
+        var site = new SiteDefinition { Name = "Atelier fictif", Aliases = new() { "AF" } };
+        var settings = f.App.Settings.Copy(); settings.Cities.Sites.Add(site);
+        await f.Call("settings.save", new { revision = f.App.Revision, settings });
+        var realPath = Path.Combine(f.Root, "site-populations.json");
+        var realEntry = new SitePopulationEntry { SourceKey = SnapshotStore.SourceKey(f.App.Result!), SiteId = site.Id, SiteLabel = site.Name,
+            Unit = "people", Count = 900, FromDate = "2020-01-01", UntilDate = "2099-12-31", Reference = "Référence habituelle fictive" };
+        new AnalyticsPopulationStore(realPath).Save(new[] { realEntry });
+        var realBytes = await File.ReadAllBytesAsync(realPath);
+        f.Host.OpenPath = Path.Combine(f.Root, "sites-for-ratios.csv");
+        await File.WriteAllTextAsync(f.Host.OpenPath, "ID;Titre;Statut\n1;AF imprimante;Nouveau\n2;AF connexion;En attente\n");
+        await f.Call("records.test.import");
+        var list = await f.Call("populations.list");
+        var sourceKey = list.GetProperty("sourceKey").GetString()!;
+        Check(sourceKey.Length > 0 && list.GetProperty("total").GetInt32() == 0 && list.GetProperty("canEdit").GetBoolean()
+            && list.GetProperty("simulation").GetBoolean(),
+            "An imported simulation needs its own usable population context, without borrowing real denominators.");
+        Check(!f.App.Result!.Provenance.SearchVerified && !f.App.Result.Provenance.ScopeVerified && SnapshotStore.SourceKey(f.App.Result) == "",
+            "A usable simulation context must not certify the original file as a GLPI observation.");
+        var date = f.App.Result.ExtractedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var entry = new SitePopulationEntry { SourceKey = sourceKey, SiteId = site.Id, SiteLabel = site.Name, Unit = "people", Count = 200,
+            FromDate = date, UntilDate = date, Reference = "Effectif saisi pour l’essai" };
+        await f.Call("populations.upsert", new { revision = f.App.Revision, entry });
+        var storage = new AnalyticsPopulationStore(Path.Combine(SimulationRoot(f), "site-populations.json"));
+        var unchanged = await File.ReadAllBytesAsync(realPath);
+        Check(storage.Load().Single().Count == 200 && realBytes.SequenceEqual(unchanged));
+        static JsonElement Ratio(JsonElement dashboard) => dashboard.GetProperty("snapshot").GetProperty("metrics").EnumerateArray()
+            .Single(metric => metric.GetProperty("key").GetString() == "site-per100-people");
+        var dashboard = await f.Call("dashboard.get", new { revision = f.App.Revision, businessView = "sites" });
+        Check(Ratio(dashboard).GetProperty("value").GetDouble() == 1, "Two local tickets and 200 declared people must produce one ticket per 100 people.");
+        // The initial imported observation was already archived before this inventory.
+        // A fresh simulated collection captures the new denominator without rewriting it.
+        await f.Call("collect.run");
+        var archiveReceipt = await f.Call("history.archive", new { revision = f.App.Revision });
+        var archive = f.App.Snapshots.Load(archiveReceipt.GetProperty("id").GetString()!);
+        Check(archive.Populations?.Single().Count == 200 && archive.Metadata.SourceKey == sourceKey);
+        var replacement = entry.Copy(); replacement.Count = 100;
+        await f.Call("populations.upsert", new { revision = f.App.Revision, entry = replacement, previous = entry });
+        dashboard = await f.Call("dashboard.get", new { revision = f.App.Revision, businessView = "sites" });
+        Check(Ratio(dashboard).GetProperty("value").GetDouble() == 2 && f.App.Snapshots.Load(archive.Metadata.Id).Populations!.Single().Count == 200);
+        await f.Call("populations.delete", new { entry = replacement });
+        dashboard = await f.Call("dashboard.get", new { revision = f.App.Revision, businessView = "sites" });
+        Check(Ratio(dashboard).GetProperty("value").ValueKind == JsonValueKind.Null, "Missing denominators must stay unavailable, not become zero.");
+        await f.Call("records.test.exit");
+        unchanged = await File.ReadAllBytesAsync(realPath);
+        var restored = await f.Call("populations.list");
+        Check(realBytes.SequenceEqual(unchanged) && restored.GetProperty("rows")[0].GetProperty("count").GetInt32() == 900);
+        var unverified = SessionFixture.Data(); unverified.Provenance.SearchVerified = false; unverified.Provenance.ScopeVerified = false;
+        f.App.LoadSessionFixture(unverified);
+        await Refuse(() => f.Call("populations.upsert", new { revision = f.App.Revision, entry = realEntry }), "confirmé");
     }
 
     private static async Task Assistant(SessionFixture f)

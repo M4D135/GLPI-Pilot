@@ -1,6 +1,26 @@
 /* Structure and interaction only; the shared theme owns color and motion. */
 .nav-section { margin: 0; }
 .nav-section + .nav-section { margin-top: 8px; }
+.nav-section>.nav-group-toggle { display:flex;align-items:center;gap:8px;width:100%;min-height:40px;height:auto;margin:0;padding:9px 8px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--muted);font-family:inherit;font-weight:600;font-size:11px;line-height:1.4;letter-spacing:0;text-transform:none;text-align:left;cursor:pointer; }
+.nav-group-toggle>.icon { width:17px;height:17px;flex:none;color:var(--d-nav-tone,var(--accent)); }
+.nav-group-title { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.nav-group-count { flex:none;font-size:10px;font-variant-numeric:tabular-nums;color:var(--faint); }
+.nav-group-chevron { flex:none;font-size:19px;line-height:1;transition:transform 180ms ease; }
+.nav-group-toggle[aria-expanded=true]>.nav-group-chevron { transform:rotate(90deg); }
+.nav-group-toggle:hover { color:var(--text);background:var(--surface-hover); }
+.nav-section[data-active=true]>.nav-group-toggle { color:var(--text); }
+.nav-section[data-active=true]>.nav-group-toggle[aria-expanded=false] { background:var(--accent-soft);border-color:var(--border); }
+.nav-group-items { padding:2px 0 2px 7px;margin-left:15px;border-left:1px solid var(--border); }
+.nav-group-items[hidden] { display:none; }
+:root[data-domenia-motion=on] .nav-group-items:not([hidden]) { animation:navigation-reveal 180ms ease-out; }
+@keyframes navigation-reveal { from { opacity:.25;transform:translateY(-4px); } to { opacity:1;transform:none; } }
+.shell.nav-collapsed .nav-section>.nav-group-toggle { min-height:34px;height:34px;margin:0;padding:6px;justify-content:center;border:1px solid transparent; }
+.shell.nav-collapsed .nav-group-toggle>:not(.icon) { display:none; }
+.shell.nav-collapsed .nav-group-items { padding:0;margin:0;border:0; }
+:root[data-motion=reduce] .nav-group-chevron,:root[data-contrast=true] .nav-group-chevron { transition:none; }
+:root[data-motion=reduce] .nav-group-items,:root[data-contrast=true] .nav-group-items { animation:none!important; }
+@media(prefers-reduced-motion:reduce) { .nav-group-chevron { transition:none; }.nav-group-items { animation:none!important; } }
+@media(forced-colors:active) { .nav-group-toggle>.icon { color:ButtonText; }.nav-group-items { animation:none!important; }.nav-group-chevron { transition:none; } }
 .nav-customize { flex: none; justify-content: flex-start; margin: 8px 3px; min-width: 0; }
 .nav-customize > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shell.nav-collapsed .nav-customize { justify-content: center; padding-inline: 0; }

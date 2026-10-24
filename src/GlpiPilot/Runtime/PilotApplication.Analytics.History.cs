@@ -177,22 +177,46 @@ public sealed partial class PilotApplication
     }
 
     private AnalyticsPopulationStore AnalyticsPopulationStorage() => new(DataPath("site-populations.json"));
+    private string AnalyticsPopulationSourceKey(ExtractionResult? source)
+    {
+        if (source is null) return "";
+        if (!IsSimulationInstance) return SnapshotStore.SourceKey(source);
+        // This identifies the isolated local corpus, exactly like its simulated
+        // archives. Do not certify or copy the imported rows to obtain the key.
+        return SnapshotStore.SourceKey(new ExtractionResult
+        {
+            Provenance = new()
+            {
+                SearchVerified = true, RequestedUrl = source.Provenance.RequestedUrl,
+                ScopeFingerprint = source.Provenance.ScopeFingerprint
+            }
+        });
+    }
     private object AnalyticsPopulations(JsonElement args)
     {
-        var all = AnalyticsPopulationStorage().Load(); var sourceKey = Result is null ? "" : SnapshotStore.SourceKey(Result);
+        var all = AnalyticsPopulationStorage().Load(); var sourceKey = AnalyticsPopulationSourceKey(Result);
         var key = Text(args, "sourceKey", 200, sourceKey); var offset = Number(args, "offset"); var limit = Number(args, "limit", 100, 1, 200);
         var entries = all.Where(e => key.Length == 0 || e.SourceKey == key).ToArray();
+        var canEdit = Result is not null && sourceKey.Length > 0
+            && (IsSimulationInstance || Result.Provenance is { SearchVerified: true, ScopeVerified: true });
+        var blockedReason = canEdit ? "" : Result is null
+            ? "Chargez un relevé ou ouvrez une simulation avant d’associer des effectifs aux sites."
+            : "Le contexte de ce relevé GLPI n’est pas confirmé. Utilisez une collecte vérifiée ou une simulation pour associer des effectifs.";
         return new { revision = Revision, sourceKey, total = entries.Length, offset, limit, rows = entries.Skip(offset).Take(limit).ToArray(),
             sites = Settings.Cities.Sites.Select(s => new { s.Id, s.Name, s.CityId }).Take(10000).ToArray(),
-            historical = HistoricalDocument is not null, note = "Références locales datées. Les archives déjà enregistrées conservent leurs propres dénominateurs." };
+            canEdit, blockedReason, simulation = IsSimulationInstance,
+            sourceDate = Result?.ExtractedAt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            historical = HistoricalDocument is not null, note = IsSimulationInstance
+                ? "Effectifs d’essai conservés uniquement dans cette simulation. Les archives déjà enregistrées gardent leurs références d’origine."
+                : "Références locales datées. Les archives déjà enregistrées conservent leurs propres effectifs." };
     }
     private static string AnalyticsPopulationKey(SitePopulationEntry e) => e.SourceKey + "|" + e.SiteId + "|" + e.Unit + "|" + e.FromDate;
     private Task<object?> AnalyticsUpsertPopulationAsync(JsonElement args, CancellationToken ct)
     {
         AnalyticsCheckRevision(args); var data = RequireResult();
-        if (data.Provenance is not { SearchVerified: true, ScopeVerified: true }) throw new InvalidDataException("Un contexte de source confirmé est nécessaire pour lier un effectif.");
-        var entry = AnalyticsArgument<SitePopulationEntry>(args, "entry"); var sourceKey = SnapshotStore.SourceKey(data);
-        if (entry.SourceKey != sourceKey || !Settings.Cities.Sites.Any(s => s.Id == entry.SiteId)) throw new InvalidDataException("L’effectif doit utiliser ce contexte et un site du référentiel actuel.");
+        if (!IsSimulationInstance && data.Provenance is not { SearchVerified: true, ScopeVerified: true }) throw new InvalidDataException("Un contexte de source confirmé est nécessaire pour lier un effectif.");
+        var entry = AnalyticsArgument<SitePopulationEntry>(args, "entry"); var sourceKey = AnalyticsPopulationSourceKey(data);
+        if (sourceKey.Length == 0 || entry.SourceKey != sourceKey || !Settings.Cities.Sites.Any(s => s.Id == entry.SiteId)) throw new InvalidDataException("L’effectif doit utiliser ce contexte et un site du référentiel actuel.");
         var previous = args.TryGetProperty("previous", out var oldJson) && oldJson.ValueKind != JsonValueKind.Null ? Read<SitePopulationEntry>(oldJson) : null;
         var entries = AnalyticsPopulationStorage().Load().Select(e => e.Copy()).ToList();
         if (previous is not null)

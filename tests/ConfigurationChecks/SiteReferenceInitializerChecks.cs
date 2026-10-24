@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using GlpiPilot.Core;
@@ -21,6 +22,10 @@ internal static class SiteReferenceInitializerChecks
         yield return Case("Référentiel facultatif : échec de sauvegarde sans marqueur, réessai possible", SaveFailure);
         yield return Case("Référentiel facultatif : repère local conservé lors des imports et exclu du partage", LocalReceipt);
         yield return Case("Référentiel facultatif : simulation sans amorçage du profil habituel", Simulation);
+        yield return Case("Référentiel géographique : villes, adresses et coordonnées distinctes dès le premier import", GeographyInitial);
+        yield return Case("Référentiel géographique : migration de 26 sites existants sans changement d’identité ni doublon", GeographyUpgrade);
+        yield return Case("Référentiel géographique : hash mis à jour, champs locaux et suppressions conservés", GeographyPreservation);
+        yield return Case("Référentiel géographique : incohérences, coordonnées et rattachements ambigus refusés", GeographyInvalid);
 
         (string Name, Action Run) Case(string name, Action<Fixture> check) => (name, () =>
         {
@@ -167,10 +172,91 @@ internal static class SiteReferenceInitializerChecks
 
     private static void Simulation(Fixture f)
     {
-        f.Csv("Site;Alias\nSite Alpha;Alias Alpha\n");
+        f.Csv(GeographyCsv(2));
         var simulationRoot = Path.Combine(Path.GetTempPath(), "GLPI-Pilot-Simulation-" + Guid.NewGuid().ToString("N"));
         using (AppPaths.EnterSimulation(simulationRoot))
             Require(f.Run().State == "simulation" && !Directory.Exists(f.Profile), "Le contexte de simulation ne doit pas importer vers un profil habituel.");
+    }
+
+    private const string GeographicHeaders = "Site;Termes de détection;Ville;Code postal;Adresse;Latitude ville;Longitude ville;Latitude site;Longitude site\n";
+    private static string SiteName(int index) => "Site Exemple " + (index + 1).ToString("D2", CultureInfo.InvariantCulture);
+    private static string GeographyCsv(int count) => GeographicHeaders + string.Join('\n', Enumerable.Range(0, count).Select(index =>
+    {
+        var city = index % 3; var postal = "0000" + city; var cityName = "Commune Exemple " + city;
+        return string.Join(';', SiteName(index), "Alias " + index, cityName, postal, $"{index + 1} rue Exemple, {postal} {cityName}",
+            (40 + city).ToString(CultureInfo.InvariantCulture), (2 + city).ToString(CultureInfo.InvariantCulture),
+            (40 + city + (index + 1) / 1000d).ToString(CultureInfo.InvariantCulture), (2 + city + .001).ToString(CultureInfo.InvariantCulture));
+    })) + "\n";
+
+    private static void GeographyInitial(Fixture f)
+    {
+        f.Csv(GeographyCsv(4)); var result = f.Run(); var saved = f.Read();
+        Require(result.State == "imported" && result.AddedSites == 4 && result.AddedCities == 3 && result.EnrichedSites == 4,
+            "Un profil neuf doit recevoir les sites et leurs communes depuis le même fichier facultatif.");
+        var site = saved.Cities.Sites[0]; var city = saved.Cities.Cities.Single(value => value.Id == site.CityId);
+        Require(site.Name == SiteName(0) && site.Aliases.SequenceEqual(new[] { "Alias 0" }) && site.Address == "1 rue Exemple, 00000 Commune Exemple 0"
+            && site.Latitude == 40.001 && site.Longitude == 2.001 && city.Latitude == 40 && city.Longitude == 2 && city.PostalCode == "00000",
+            "Adresse et coordonnées du site sont distinctes du centre et du code postal de sa commune.");
+        Require(saved.Cities.Sites[3].CityId == site.CityId && saved.Cities.Cities.Select(value => value.Id).Distinct().Count() == 3,
+            "Plusieurs sites d’une commune partagent une référence de ville unique.");
+    }
+
+    private static void GeographyUpgrade(Fixture f)
+    {
+        f.Csv("Site;Termes de détection\n" + string.Join('\n', Enumerable.Range(0, 26).Select(index => SiteName(index) + ";Alias " + index)) + "\n");
+        Require(f.Run().State == "imported", "Le format initial doit fonctionner avant sa mise à jour.");
+        var old = f.Read(); var identifiers = old.Cities.Sites.Select(site => site.Id).ToArray(); var before = File.ReadAllBytes(f.SettingsPath);
+        Require(old.Cities.Sites.Count == 26 && old.Cities.Cities.Count == 0 && old.Cities.Sites.All(site => site.CityId.Length == 0), "Les 26 sites initiaux sont autonomes.");
+        f.Csv(GeographyCsv(26)); var result = f.Run(); var enriched = f.Read();
+        Require(result.State == "updated" && result.AddedSites == 0 && result.AddedAliases == 0 && result.AddedCities == 3 && result.EnrichedSites == 26
+            && enriched.Cities.Sites.Count == 26 && enriched.Cities.Sites.Select(site => site.Id).SequenceEqual(identifiers)
+            && enriched.Cities.Sites.All(site => site.CityId.Length > 0 && site.Address.Length > 0 && site.Latitude.HasValue),
+            "La mise à jour rattache les 26 sites existants à leurs villes sans créer de site supplémentaire ni modifier leurs ID.");
+        Require(enriched.SiteReferenceImportHash != old.SiteReferenceImportHash
+            && enriched.SiteReferenceImportHash == Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(f.CsvPath)))
+            && SettingsRecovery.List(f.SettingsPath).Any(version => before.SequenceEqual(File.ReadAllBytes(version.Path))),
+            "Le nouveau hash est atomique avec la géographie et une sauvegarde complète du profil précédent.");
+        var bytes = File.ReadAllBytes(f.SettingsPath); var backups = SettingsRecovery.List(f.SettingsPath).Count;
+        Require(f.Run().State == "already-imported" && bytes.SequenceEqual(File.ReadAllBytes(f.SettingsPath)) && backups == SettingsRecovery.List(f.SettingsPath).Count,
+            "Le même référentiel enrichi ne réécrit rien au lancement suivant.");
+    }
+
+    private static void GeographyPreservation(Fixture f)
+    {
+        f.Csv("Site;Alias\n" + string.Join('\n', Enumerable.Range(0, 6).Select(index => SiteName(index) + ";Alias " + index)) + "\n");
+        Require(f.Run().State == "imported", "Les sites initiaux doivent être présents.");
+        var edited = f.Read(); var manualCity = new CityDefinition { Name = "Commune personnelle", PostalCode = "99999", Latitude = 1, Longitude = 2 };
+        edited.Cities.Cities.Add(manualCity); edited.Cities.Sites[0].CityId = manualCity.Id;
+        edited.Cities.Sites[1].Address = "Adresse personnelle"; edited.Cities.Sites[2].Latitude = 3; edited.Cities.Sites[2].Longitude = 4;
+        edited.Cities.Sites[3].Aliases.Clear(); edited.Cities.Sites[4].Name = "Nom personnalisé"; edited.Cities.Sites.RemoveAt(5);
+        f.Settings(edited); f.Csv(GeographyCsv(7)); var result = f.Run(); var saved = f.Read();
+        Require(result.State == "updated" && saved.Cities.Sites.Count == 5 && saved.Cities.Sites.Select(site => site.Id).SequenceEqual(edited.Cities.Sites.Select(site => site.Id)),
+            "Un fichier changé ne recrée ni les sites supprimés/renommés ni de nouveaux sites après l’amorçage.");
+        Require(saved.Cities.Sites[0].CityId == manualCity.Id && saved.Cities.Sites[0].Address.Length == 0 && !saved.Cities.Sites[0].Latitude.HasValue
+            && saved.Cities.Sites[1].Address == "Adresse personnelle" && saved.Cities.Sites[1].CityId.Length > 0
+            && saved.Cities.Sites[2].Latitude == 3 && saved.Cities.Sites[2].Longitude == 4 && saved.Cities.Sites[3].Aliases.Count == 0
+            && saved.Cities.Sites[4].Name == "Nom personnalisé" && saved.Cities.Sites[4].CityId.Length == 0,
+            "Les champs manuels et alias supprimés sont préservés ; un rattachement contradictoire ne reçoit pas les coordonnées de l’autre commune.");
+        var before = saved.Cities.Copy(); f.Csv(GeographyCsv(7).Replace("40.001", "40.999", StringComparison.Ordinal));
+        Require(f.Run().State == "updated" && JsonSerializer.Serialize(before) == JsonSerializer.Serialize(f.Read().Cities),
+            "Un nouveau hash ne remplace aucune valeur déjà renseignée.");
+    }
+
+    private static void GeographyInvalid(Fixture f)
+    {
+        var settings = Existing(); settings.SiteReferenceImportHash = new string('A', 64); f.Settings(settings);
+        foreach (var csv in new[]
+        {
+            GeographicHeaders + "Site Alpha;;Commune Exemple;00000;;40;;40;2\n",
+            GeographicHeaders + "Site Alpha;;Commune Exemple;00000;;91;2;40;2\n",
+            GeographicHeaders + "Site Alpha;;Commune Exemple;00000;;40;2;40;181\n",
+            GeographicHeaders + "Site Alpha;;;00000;;40;2;40;2\n",
+            GeographicHeaders + "Site Alpha;;Commune Exemple;00000;;40;2;40;2\nSite Beta;;Commune Exemple;11111;;40;2;40;2\n",
+            GeographicHeaders + "Site Alpha;;Commune Exemple;00000;;40;2;40;2\nSite Beta;;Commune Exemple;00000;;41;2;40;2\n",
+            "Site;Alias;Ville;Commune\nSite Alpha;;Commune Exemple;Commune Exemple\n"
+        }) { f.Csv(csv); RefusedUnchanged(f); }
+        settings.Cities.Sites[0].CityId = ""; settings.Cities.Cities.Add(new() { Name = settings.Cities.Cities[0].Name }); f.Settings(settings);
+        f.Csv(GeographicHeaders + "Ecole Nord;;Commune Exemple;00000;Adresse exemple;40;2;40;2\n"); RefusedUnchanged(f);
     }
 
     private static void RefusedUnchanged(Fixture f)

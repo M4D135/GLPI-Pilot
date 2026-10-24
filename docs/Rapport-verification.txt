@@ -1,4 +1,114 @@
-GLPI Pilot 3.3.2 — Lieux, sites et termes de détection
+GLPI Pilot 3.3.3 — Simulation, sites et tournées
+Contrôles locaux du 24 octobre 2026, avant la validation native de livraison
+Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
+
+PORTÉE
+Le mode simulation reprend le CSV d’incidents et les réglages du profil
+initial dans un espace isolé. Les 35 écrans restent accessibles ; les
+rubriques masquées par défaut peuvent être ouvertes depuis la palette.
+Les effectifs des sites sont éditables et datés en simulation. Leurs ratios
+sont recalculés sans modifier la provenance du fichier ni les archives
+historiques déjà enregistrées. Quitter restitue le profil habituel.
+
+Les groupes du menu sont repliables. Assistant et Lectures ciblées sont
+masqués par défaut, puis réactivables. Effectifs devient Effectifs des sites,
+masqué du menu et accessible depuis les outils de Sites. Le focus clavier
+reste utilisable en mode compact, y compris si le groupe courant est replié
+ou si la page courante est masquée dans le menu.
+
+Les aperçus disposent de colonnes dimensionnées selon leur contenu,
+d’un défilement horizontal et de textes limités à trois lignes. Un clic
+ouvre la valeur complète ; les exports conservent le contenu complet.
+
+Localisation reconnue comprend une commune unique ou un site unique,
+avec ou sans commune/coordonnées. Une ambiguïté de site reste à vérifier,
+même si les sites partagent une commune. Localisation à vérifier complète
+exactement le stock actif retenu, titres absents et lieux inconnus compris.
+Le tableau de planification exige un site précis : une commune seule peut
+être reconnue et rester dans la ligne des sites non renseignés.
+
+Le filtre Équipes et groupes cumule jusqu’à 64 choix réunis par OU, sans
+compter deux fois une ligne commune. Cartes, tableaux, préconisations,
+détails et exports partagent le périmètre. Les cinq rubriques concernées
+conservent des sélections de session distinctes en normal et en simulation.
+Les règles de détection des titres restent fondées sur les noms et variantes
+explicites, avec normalisation des accents et de la ponctuation.
+
+Le fichier facultatif wad/sites.csv accepte les communes, adresses et deux
+paires de coordonnées distinctes. La première initialisation ajoute les
+références. Une nouvelle édition géographique complète les champs vides
+des sites et communes présents, conserve les identités et valeurs locales,
+et ne recrée pas les sites supprimés ni les variantes retirées.
+Une sauvegarde complète précède l’enregistrement atomique et son empreinte.
+
+Google Maps propose des liens sans clé et une carte intégrée facultative
+avec une clé Maps Embed API locale. Les aperçus ne contactent aucun service.
+L’ouverture explicite conserve l’ordre des étapes et découpe les parcours
+longs sans perdre de trajet. Seuls les lieux ou coordonnées sont transmis.
+La fenêtre dédiée n’expose pas le pont de l’application ; la politique
+hors ligne de l’interface principale est conservée. La clé est séparée des
+exports et protégée pour le compte Windows ; en simulation, elle est en
+mémoire. Une clé locale corrompue ne bloque pas les liens sans clé.
+
+VALIDATIONS LOCALES ÉTABLIES
+- FoundationChecks : 36/36, dont migration unique des valeurs de navigation
+  et conservation des choix explicites de réaffichage.
+- ConfigurationChecks : 66/66, dont 18/18 pour l’initialisation et
+  l’enrichissement géographique, leurs sauvegardes et leur non-réapplication.
+- AnalyticsBridgeChecks : 115/115 pour les opérations métier, compteurs,
+  filtres multiples, exports et géographie utilisée depuis un import local.
+- CityDetectionChecks : 105/105 ; DashboardChecks : 140/140 ;
+  DashboardLayoutChecks : 45/45.
+- Navigation WebView : 23/23 avec Chromium et le vrai backend C#.
+- Vues métier et filtre multiple WebView : 23/23, dont 800 × 600,
+  recherche, annulation, deux équipes cumulées et groupe commun.
+- Aperçus de résultats : 36/36 contrôles ciblés sur 22 colonnes,
+  631 lignes paginées, texte long ouvert en entier et fenêtre compacte
+  à zoom 125 %. Hauteur maximale observée corrigée : environ 83 pixels.
+- Simulation runtime : 13/13, avec éditions d’effectifs, ratios, archive,
+  suppression et restauration du profil habituel.
+- Parcours d’import et de simulation WebView : 75/75. La reprise XLSM
+  est conservée puis un CSV à 19 champs est importé par le véritable
+  bouton. Les 35 écrans, les effectifs, les éditions, les tournées et
+  les cartes sont alors contrôlés sur ce CSV.
+- Google Maps runtime : 7/7, dont découpage sans perte d’étape, plafond
+  des URL, clé locale corrompue récupérable, rejet d’un séparateur ambigu,
+  aperçu obsolète et ouverture à la demande en normal et en simulation.
+- Suite WebView complète : 151/151, compilation incluse en environ
+  44,8 secondes dans l’environnement local ; aucun besoin observé
+  d’élargir le délai de 240 secondes du contrôle correspondant en CI.
+- Compilation croisée finale du desktop Windows x64 : aucune erreur,
+  aucun avertissement. Syntaxe JavaScript : 41/41 ; git diff --check valide.
+- Complément géographique réel : 30/30 contrôles distincts, hors tests
+  publics. Installation et migration 26 sites / 13 communes, conservation
+  des termes et identifiants, détection des 26 noms et 36 alias, puis CSV
+  fictif de 26 incidents reconnu à 26/26 et tournée de 26 visites.
+  Aucun appel HTTP, DNS ou socket détecté dans ce parcours simulé.
+
+LIMITES DE VALIDATION
+Les essais d’interface utilisent Chromium, les vrais modules de l’application
+et le backend C#. Les fichiers de test sont synthétiques. Ils ne certifient
+ni un portail d’entreprise, ni le SSO réel, ni la couverture de l’extrait
+métier aperçu dans les captures de l’utilisateur.
+
+Le contrat de la carte intégrée, l’iframe, les adresses et les actions sont
+vérifiés avec une réponse locale interceptée, sans contacter Google. Le
+rendu réel du service Google avec une clé utilisateur reste à vérifier
+avec cette clé et une connexion Internet. Les liens ne demandent pas de clé.
+
+VALIDATION NATIVE ET PUBLICATION
+Les packs PROD et DEV sont publiés seulement après réussite des contrôles
+Windows et PostgreSQL du commit livré. Les parcours du véritable hôte
+Windows, le démarrage, la mise à jour, la reconstruction DEV et l’intégrité
+des archives sont des étapes de ce workflow. Une compilation croisée locale
+ne remplace pas ces contrôles natifs. Le commit inscrit dans wad/version.json,
+les journaux correspondants et les inventaires SHA-256 identifient la livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+Le complément de sites est validé et publié séparément après disponibilité
+de cette version, avec ses propres empreintes et ses sources géographiques.
+
+HISTORIQUE — GLPI Pilot 3.3.2 — Lieux, sites et termes de détection
 État local établi le 24 octobre 2026 avant le pipeline final
 Cible : Windows x64, avec initialisation native facultative du référentiel
 

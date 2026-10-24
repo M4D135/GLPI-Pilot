@@ -90,7 +90,7 @@ internal static partial class Program
 
         await page.GotoAsync("https://glpi-pilot.local/index.html");
         await page.Locator("body[data-ready=true]").WaitForAsync();
-        await page.Locator(".nav-item[data-page=library]").ClickAsync(); await Ready("library");
+        await ClickNavigationAsync(page, "library"); await Ready("library");
         var first = await Call(app, "library.get");
         Require(first.GetProperty("stats").GetProperty("ticketCount").GetInt64() == 3
             && first.GetProperty("stats").GetProperty("conflictCount").GetInt64() > 0
@@ -225,7 +225,7 @@ internal static partial class Program
             && metrics["high"].GetProperty("value").GetDouble() == 1
             && metrics["without-technician"].GetProperty("value").GetDouble() == 1,
             "The analytical projection preserves original French priority and technician columns and computes the expected nonzero indicators from the cached index.");
-        await page.Locator(".nav-item[data-page=library]").ClickAsync(); await Ready("library");
+        await ClickNavigationAsync(page, "library"); await Ready("library");
         await page.SetViewportSizeAsync(760, 850);
         Require(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth<=innerWidth+1") && externalRequests == 0 && errors.IsEmpty,
             "The library fits a compact viewport and runs with the real strict CSP without browser errors or external network requests.");

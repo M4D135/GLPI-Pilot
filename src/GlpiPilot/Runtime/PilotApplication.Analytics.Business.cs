@@ -146,14 +146,39 @@ public sealed partial class PilotApplication
     }
     private void AnalyticsBusinessFocus(JsonElement args, List<DashboardScopeFilter> filters, CancellationToken ct)
     {
-        var focus = Text(args, "focusKey", 1200); if (focus.Length == 0) return;
+        string[] selected;
+        if (args.TryGetProperty("focusKeys", out var choices))
+        {
+            if (choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() > 64)
+                throw new InvalidDataException("Choisissez au maximum 64 équipes ou groupes.");
+            selected = choices.EnumerateArray().Select(choice => choice.ValueKind == JsonValueKind.String ? choice.GetString()! : "").ToArray();
+            if (selected.Any(choice => string.IsNullOrWhiteSpace(choice) || choice.Length > 1200))
+                throw new InvalidDataException("Chaque sélection doit désigner une équipe ou un groupe du catalogue.");
+        }
+        else
+        {
+            var focus = Text(args, "focusKey", 1200);
+            selected = focus.Length == 0 ? Array.Empty<string>() : new[] { focus };
+        }
+        if (selected.Length == 0) return;
         var settings = AnalyticsBusinessSettings(); var observed = BusinessDashboardTemplates.Observe(Result, settings, ct);
-        List<string> values;
-        if (focus.StartsWith("team:", StringComparison.Ordinal))
-            values = BusinessDashboardTemplates.WeatherRules(settings, observed).FirstOrDefault(rule => rule.Kind == "team" && rule.Id == focus[5..])?.Values.ToList()
-                ?? throw new InvalidDataException("Cette équipe n’est plus dans les paramètres.");
-        else if (focus.StartsWith("group:", StringComparison.Ordinal) && observed.Groups.Contains(focus[6..], StringComparer.Ordinal)) values = new() { focus[6..] };
-        else throw new InvalidDataException("Ce groupe n’est plus dans le relevé.");
+        var teams = BusinessDashboardTemplates.WeatherRules(settings, observed).Where(rule => rule.Kind == "team").ToDictionary(rule => rule.Id, StringComparer.Ordinal);
+        var values = new List<string>(); var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var focus in selected.Distinct(StringComparer.Ordinal))
+        {
+            ct.ThrowIfCancellationRequested();
+            IReadOnlyList<string> groups;
+            if (focus.StartsWith("team:", StringComparison.Ordinal))
+                groups = teams.TryGetValue(focus[5..], out var team) ? team.Values
+                    : throw new InvalidDataException("Une équipe sélectionnée n’est plus dans les paramètres. Actualisez le choix du périmètre.");
+            else if (focus.StartsWith("group:", StringComparison.Ordinal) && observed.Groups.Contains(focus[6..], StringComparer.Ordinal)) groups = new[] { focus[6..] };
+            else throw new InvalidDataException("Un groupe sélectionné n’est plus dans le relevé. Actualisez le choix du périmètre.");
+            foreach (var group in groups) if (seen.Add(group)) values.Add(group);
+        }
+        // One OR condition retains each original row once, including tickets
+        // assigned to overlapping teams or to both a team and a selected group.
+        if (values.Count > DashboardScopeFilter.MaximumGroupSelections)
+            throw new InvalidDataException("Les équipes et groupes sélectionnés couvrent trop de groupes. Réduisez la sélection.");
         filters.Add(new() { Kind = "matrix-row", SourceKey = "group-status", Values = values });
     }
 }

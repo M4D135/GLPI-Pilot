@@ -88,7 +88,19 @@ public static class BusinessDashboardTemplates
     public static DashboardBoardSettings Create(string key, DashboardSettings settings, BusinessDashboardValues observed)
     {
         var view = Views.FirstOrDefault(view => view.Key == key) ?? throw new System.IO.InvalidDataException("Rubrique de pilotage inconnue.");
-        if (settings.Business.BoardOverrides.FirstOrDefault(board => board.Id == "business-" + key) is { } saved) return saved.Copy();
+        if (settings.Business.BoardOverrides.FirstOrDefault(board => board.Id == "business-" + key) is { } saved)
+        {
+            var copy = saved.Copy();
+            // Upgrade only the two original native summary cards. Keep custom
+            // municipality probes, labels, filters and presentation untouched.
+            if (key == "sites")
+                foreach (var widget in copy.Widgets.Where(widget => widget.Kind == "metric"))
+                {
+                    if (widget.Id == "business-sites-1" && widget.SourceKey == "city-matched") widget.SourceKey = "location-matched";
+                    if (widget.Id == "business-sites-2" && widget.SourceKey == "city-unmatched") widget.SourceKey = "location-review";
+                }
+            return copy;
+        }
         var board = new DashboardBoardSettings { Id = "business-" + key, Name = view.Title, Description = view.Description, HideUnavailableWidgets = false };
         void Section(string id, string title, string description = "", string accent = "blue") => board.Sections.Add(new() { Key = id, Title = title, Description = description, Accent = accent });
         DashboardWidgetSettings Add(string kind, string source, string title, string section, int span = 4, int height = 260, string accent = "blue")
@@ -201,7 +213,7 @@ public static class BusinessDashboardTemplates
         {
             board.Filters.Add(new() { Kind = "metric", SourceKey = "active" });
             Section("stock", "Stock et localisation"); Section("sites", "Sites et interventions", "Les sites à zéro et les tickets sans site reconnu restent visibles.", "teal");
-            Metrics("stock", ("active", "Stock actif"), ("city-matched", "Localisation reconnue"), ("city-unmatched", "Localisation à vérifier"));
+            Metrics("stock", ("active", "Stock actif"), ("location-matched", "Localisation reconnue"), ("location-review", "Localisation à vérifier"));
             var widget = Add("sites", "sites", "Stock et préconisations par site", "sites", 12, 640, "teal"); widget.WarningValue = settings.Business.SiteInterventionThreshold;
             Distribution("site-reference", "Répartition par site", "sites", 12, "donut");
             Section("focus", "Catégories et ancienneté du périmètre", "Le filtre d’équipe ou de groupe s’applique aussi aux sites, aux catégories et à la liste complète des tickets.", "purple");

@@ -50,28 +50,48 @@ export function pager(ctx, total, offset, size, change) {
     caption(`${total === 0 ? 0 : offset + 1}–${Math.min(total, offset + size)} sur ${formatNumber(total)}`),
     command(ctx, 'Suivant', () => change(offset + size), { disabled: offset + size >= total }));
 }
+function previewColumnSize(label) {
+  const name = String(label).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+  if (/^(id|identifiant|ticket id|id du ticket)$/.test(name)) return { width: 104, nowrap: true };
+  if (/\b(titre|title|sujet|subject)\b/.test(name)) return { width: 360 };
+  if (/\b(description|contenu|content|commentaire)\b/.test(name)) return { width: 420 };
+  if (/date|modification|ouverture|created|updated/.test(name)) return { width: 184 };
+  if (/statut|status/.test(name)) return { width: 184 };
+  if (/priorite|priority|^age\b|^nombre\b|^count\b|progression|ttr/.test(name)) return { width: 136 };
+  return { width: 220 };
+}
 export async function rowDialog(ctx, op, args, title = 'Lignes du relevé', explain = null) {
   const body = el('div', { class: 'analytics-row-dialog' }); const modal = dialog(title, body);
+  modal.element.classList.add('analytics-rows-modal');
   let columnOffset = 0;
   const load = async offset => {
-    const page = await call(ctx, op, { ...args, offset, limit: 50, columnOffset });
+    const pageColumnOffset = columnOffset;
+    const page = await call(ctx, op, { ...args, offset, limit: 50, columnOffset: pageColumnOffset });
     if (ctx.signal.aborted || !modal.element.isConnected) return;
-    const columns = [{ key: 'index', label: 'Ligne', render: row => String(row.index + 1) },
-      ...page.columns.map((label, index) => ({ key: `c${index}`, label, render: row => command(ctx, row.values[index] || '—', async () => {
-        const cell = await call(ctx, 'records.cell', { revision: page.revision, row: row.index, column: columnOffset + index });
+    const columns = [{ key: 'index', label: 'Ligne', width: 68, render: row => String(row.index + 1) },
+      ...page.columns.map((label, index) => {
+        const size = previewColumnSize(label);
+        return { key: `c${index}`, label, width: size.width,
+          header: el('span', { class: 'analytics-preview-column-title', title: label, text: label }),
+          render: row => command(ctx, row.values[index] || '—', async () => {
+        const cell = await call(ctx, 'records.cell', { revision: page.revision, row: row.index, column: pageColumnOffset + index });
         dialog(`Cellule · ${cell.header}`, el('div', {}, caption(`Ligne ${row.index + 1} · rôle ${cell.role || 'non attribué'}`),
           el('h3', { text: 'Valeur brute' }), el('pre', { class: 'analytics-preview', text: cell.raw }),
           el('h3', { text: 'Interprétation' }), el('pre', { class: 'analytics-preview', text: cell.interpreted ?? 'Non interprétable' })));
-      }, { class: 'analytics-cell-value', title: 'Voir la valeur brute complète et son interprétation' }) }))];
-    columns.push({ key: 'open', label: 'Consulter', render: row => command(ctx, 'Ticket',
+      }, { attributes: { class: `button analytics-cell-value${size.nowrap ? ' analytics-cell-nowrap' : ''}` },
+        title: 'Voir la valeur brute complète et son interprétation' }) };
+      })];
+    columns.push({ key: 'open', label: 'Consulter', width: 112, render: row => command(ctx, 'Ticket',
       () => { modal.close(); ctx.navigate('tickets', { rowIndex: row.index, revision: page.revision }); }) });
-    if (explain) columns.push({ key: 'explain', label: 'Décision', render: row => command(ctx, 'Pourquoi ?', async () => {
+    if (explain) columns.push({ key: 'explain', label: 'Décision', width: 124, render: row => command(ctx, 'Pourquoi ?', async () => {
       const result = await call(ctx, 'queries.explain', { ...explain, rowIndex: row.index });
       dialog('Décision de la requête pour cette ligne', el('div', {}, badge(result.decision), caption(result.logic), caption(result.message),
         table(result.conditions, [{ key: 'number', label: 'N°' }, { key: 'field', label: 'Champ' }, { key: 'comparison', label: 'Comparaison' }, { key: 'decision', label: 'Décision' }, { key: 'explanation', label: 'Explication' }])));
     }) });
-    body.replaceChildren(caption(`Cellules affichées jusqu’à ${page.cellLimit} caractères. Les exports conservent les données complètes.`),
-      table(page.rows, columns, { key: 'index', maxRows: 50 }), pager(ctx, page.total, page.offset, 50, load),
+    const preview = table(page.rows, columns, { key: 'index', maxRows: 50, label: 'Aperçu des résultats · défilement horizontal et vertical' });
+    preview.querySelector('table').style.width = `${columns.reduce((sum, column) => sum + column.width, 0)}px`;
+    body.replaceChildren(caption('Aperçu limité à trois lignes par cellule. Cliquez sur une valeur pour la lire entièrement. Les exports conservent toutes les données.'),
+      preview, pager(ctx, page.total, page.offset, 50, load),
       toolbar(command(ctx, 'Colonnes précédentes', async () => { columnOffset = Math.max(0, columnOffset - 20); await load(offset); }, { disabled: columnOffset === 0 }),
         caption(`Colonnes ${page.columns.length ? columnOffset + 1 : 0}–${columnOffset + page.columns.length} sur ${page.totalColumns}`),
         command(ctx, 'Colonnes suivantes', async () => { columnOffset += 20; await load(offset); }, { disabled: columnOffset + page.columns.length >= page.totalColumns })));

@@ -123,7 +123,7 @@ public sealed partial class PilotApplication
                     CityDetectionService.AppendDashboardProbes(snapshot, locations, token);
                     DashboardGeography.Append(snapshot, locations, settings.Cities, token);
                     if (historical is null || historical.Populations is not null)
-                        AnalyticsPopulationStore.Append(snapshot, locations, settings.Cities, SnapshotStore.SourceKey(source), populations);
+                        AnalyticsPopulationStore.Append(snapshot, locations, settings.Cities, AnalyticsPopulationSourceKey(source), populations);
                 }
                 QueryService.AppendDashboardQueries(snapshot, source, settings.Dashboard, settings.Queries, token);
                 DashboardService.RefreshWeatherProfiles(snapshot, settings.Dashboard);

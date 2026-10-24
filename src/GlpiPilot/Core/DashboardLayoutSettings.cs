@@ -447,6 +447,7 @@ public sealed record DashboardVolumeWeather(string State, string Title, string E
 /// <summary>Portable, bounded filters referencing real snapshot cohorts; missing sources fail closed.</summary>
 public sealed class DashboardScopeFilter
 {
+    public const int MaximumGroupSelections = 2048;
     public string Kind { get; set; } = "distribution";
     public string SourceKey { get; set; } = "";
     public string Value { get; set; } = "";
@@ -470,7 +471,7 @@ public sealed class DashboardScopeFilter
             if (value is null || value.Kind is not ("distribution" or "matrix-row" or "metric" or "date")
                 || string.IsNullOrWhiteSpace(value.SourceKey) || value.SourceKey.Length > 120
                 || value.Value is null || value.Value.Length > 2000 || value.Value2 is null || value.Value2.Length > 2000
-                || value.Values is null || value.Values.Count > 32
+                || value.Values is null || value.Values.Count > (value.Kind == "matrix-row" && value.SourceKey == "group-status" ? MaximumGroupSelections : 32)
                 || value.Values.Any(item => string.IsNullOrWhiteSpace(item) || item.Length > 2000)
                 || value.Values.Count > 0 && value.Kind is not ("distribution" or "matrix-row"))
                 throw new InvalidDataException("Un filtre du dashboard est invalide.");

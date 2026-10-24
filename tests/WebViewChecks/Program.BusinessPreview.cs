@@ -17,7 +17,7 @@ internal static partial class Program
         await using var context = await browser.NewContextAsync(new()
         { ViewportSize = new() { Width = 1380, Height = 960 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.Reduce });
         var page = await context.NewPageAsync(); page.SetDefaultTimeout(12000);
-        var errors = new ConcurrentQueue<string>(); var externalRequests = 0;
+        var errors = new ConcurrentQueue<string>(); var dashboardGets = new ConcurrentQueue<string>(); var externalRequests = 0;
         page.PageError += (_, error) => errors.Enqueue(error);
         await context.RouteAsync("**/*", async route =>
         {
@@ -58,6 +58,7 @@ internal static partial class Program
         {
             if (op == "app.ready") return new { ready = true };
             if (op == "host.editor") { app.EditorOpen = data.GetProperty("open").GetBoolean(); return new { updated = true }; }
+            if (op == "dashboard.get") dashboardGets.Enqueue(data.GetRawText());
             return await app.ExecuteAsync(op, data, ct);
         }, Post); bridge = actualBridge;
         await page.ExposeBindingAsync("__pilotSend", (BindingSource _, string json) => bridge.Receive(json));
@@ -69,7 +70,7 @@ internal static partial class Program
             }; window.__pilotDeliver = message => { for (const listener of listeners) listener({ data: message }); }; })();
             """);
         async Task Ready(string id) => await WaitForPageAsync(page, "id => document.querySelector('.page-content')?.dataset.page===id && !document.querySelector('#content').hasAttribute('aria-busy')", id);
-        async Task Navigate(string id) { await page.Locator($".nav-item[data-page='{id}']").ClickAsync(); await Ready(id); }
+        async Task Navigate(string id) { await ClickNavigationAsync(page, id); await Ready(id); }
         async Task Capture(string name)
         {
             var argument = Array.IndexOf(args, "--screenshots"); if (argument < 0 || argument + 1 >= args.Length) return;
@@ -117,13 +118,105 @@ internal static partial class Program
         await Navigate("pilot-participants");
         Require(await page.GetByRole(AriaRole.Columnheader, new() { Name = "Clé GLPI", Exact = true }).IsVisibleAsync(), "Agents actifs exposes the identity key as a visible column.");
         await Navigate("pilot-sites");
+        await CheckBusinessFocusAsync(page, Navigate, () => dashboardGets.Count, Capture);
         await page.GetByRole(AriaRole.Button, new() { Name = "Tickets actifs · demandeur puis site", Exact = true }).ClickAsync();
         var rows = page.Locator("dialog .analytics-row-dialog"); await rows.WaitForAsync();
+        await rows.Locator("tbody tr").First.WaitForAsync();
         Require(await rows.Locator("tbody tr").CountAsync() > 0, "Sites exposes the complete active-ticket detail sorted by requester and site.");
         await page.Keyboard.PressAsync("Escape");
         Require(externalRequests == 0 && errors.IsEmpty, "Native views render without an external request or a JavaScript exception."
             + (errors.IsEmpty ? "" : "\n" + string.Join("\n", errors)));
         await delivery;
+    }
+
+    private static async Task CheckBusinessFocusAsync(IPage page, Func<string, Task> navigate, Func<int> requestCount, Func<string, Task> capture)
+    {
+        ILocator Metric(string view) => page.Locator($"[data-widget-id='business-{view}-0'] .analytics-metric-value");
+        ILocator Picker() => page.GetByRole(AriaRole.Dialog, new() { Name = "Équipes et groupes", Exact = true });
+        async Task Value(string view, string value) => await WaitForPageAsync(page,
+            "data => document.querySelector(`[data-widget-id='business-${data.view}-0'] .analytics-metric-value`)?.textContent.trim()===data.value && !document.querySelector('#content').hasAttribute('aria-busy')", new { view, value });
+        async Task Open() => await page.GetByRole(AriaRole.Button, new() { Name = "Équipes et groupes", Exact = true }).ClickAsync();
+        async Task Apply(string view, string value)
+        {
+            await Picker().GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync();
+            await Value(view, value);
+        }
+        Require((await Metric("sites").InnerTextAsync()).Trim() == "168"
+            && await page.GetByRole(AriaRole.Button, new() { Name = "Équipes et groupes", Exact = true }).CountAsync() == 1,
+            "The existing team filter is a single cumulative control and initially keeps every active source row.");
+        var before = requestCount();
+        await Open();
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 1", Exact = true }).CheckAsync();
+        var search = Picker().GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher une équipe ou un groupe", Exact = true });
+        await search.FillAsync("equipe 2");
+        Require(await Picker().Locator(".business-group-option:visible").CountAsync() == 1
+            && await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 2", Exact = true }).IsVisibleAsync(),
+            "The team picker searches long lists without requiring accents or losing the earlier selection.");
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 2", Exact = true }).CheckAsync();
+        await search.FillAsync("");
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Groupe · Groupe 1", Exact = true }).CheckAsync();
+        Require(await Picker().GetByRole(AriaRole.Checkbox, new() { Checked = true }).CountAsync() == 3
+            && requestCount() == before && (await Metric("sites").InnerTextAsync()).Trim() == "168",
+            "Several checkboxes remain open as a draft and trigger no dashboard recalculation before Apply.");
+        await capture("native-team-multiple-selection");
+        await page.SetViewportSizeAsync(800, 600);
+        Require(await Picker().EvaluateAsync<bool>("""
+            modal => {
+              const rect = modal.getBoundingClientRect();
+              const list = modal.querySelector('.business-group-options');
+              const actions = [...modal.querySelectorAll('.modal-actions button')];
+              return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
+                && document.documentElement.scrollWidth <= innerWidth + 1 && list.scrollHeight > list.clientHeight
+                && actions.length === 2 && actions.every(button => {
+                  const box = button.getBoundingClientRect(); return box.top >= rect.top && box.bottom <= rect.bottom;
+                });
+            }
+            """), "At 800 by 600 pixels the multi-team list scrolls internally while both Cancel and Apply remain inside the visible dialog.");
+        await capture("native-team-multiple-selection-compact");
+        await page.SetViewportSizeAsync(1380, 960);
+        await Apply("sites", "56");
+        Require(requestCount() == before + 1 && (await page.Locator(".business-group-summary").InnerTextAsync()).Contains("+1", StringComparison.Ordinal),
+            "Applying two teams and an overlapping group recalculates once and summarizes all three retained choices.");
+
+        await Metric("sites").ClickAsync();
+        var rows = page.Locator("dialog .analytics-row-dialog");
+        await WaitForPageAsync(page, "document.querySelectorAll('dialog .analytics-row-dialog tbody tr').length===50");
+        async Task<int[]> RowIds() => await rows.Locator("tbody tr td:nth-child(2)").EvaluateAllAsync<int[]>("cells => cells.map(cell => Number(cell.textContent.trim()))");
+        var first = await RowIds();
+        await rows.GetByRole(AriaRole.Button, new() { Name = "Suivant", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelectorAll('dialog .analytics-row-dialog tbody tr').length===6");
+        var ids = first.Concat(await RowIds()).ToArray();
+        Require(ids.SequenceEqual(Enumerable.Range(1, 168).Where(id => (id - 1) % 6 < 2)) && ids.Distinct().Count() == 56,
+            "The cumulative widget drilldown pages through exactly the 56 contributing source IDs without multiplying the overlapping team and group.");
+        await page.Keyboard.PressAsync("Escape");
+
+        await Open();
+        Require(await Picker().GetByRole(AriaRole.Checkbox, new() { Checked = true }).CountAsync() == 3,
+            "Reopening the picker displays every applied team and group as checked.");
+        before = requestCount();
+        await Picker().GetByRole(AriaRole.Button, new() { Name = "Toutes", Exact = true }).ClickAsync();
+        await Picker().GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        Require(requestCount() == before && (await Metric("sites").InnerTextAsync()).Trim() == "56"
+            && await page.GetByRole(AriaRole.Button, new() { Name = "Équipes et groupes", Exact = true }).EvaluateAsync<bool>("node => document.activeElement===node"),
+            "Cancelling draft changes preserves the applied scope and returns keyboard focus to the original filter control.");
+
+        await navigate("pilot-groups"); await Value("groups", "168");
+        await Open();
+        Require(await Picker().GetByRole(AriaRole.Checkbox, new() { Checked = true }).CountAsync() == 0,
+            "A different native section starts with its own unrestricted team selection.");
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Groupe · Groupe 3", Exact = true }).CheckAsync();
+        await Apply("groups", "28");
+        await navigate("pilot-sites"); await Value("sites", "56");
+        Require((await page.Locator(".business-group-summary").InnerTextAsync()).Contains("+1", StringComparison.Ordinal),
+            "Returning to Sites restores its three selections independently of the Groups section.");
+        await page.Locator(".business-group-filter").GetByRole(AriaRole.Button, new() { Name = "Toutes", Exact = true }).ClickAsync();
+        await Value("sites", "168");
+        Require((await page.Locator(".business-group-summary").InnerTextAsync()).Trim() == "Toutes les équipes et tous les groupes",
+            "The visible All control clears the cumulative filter and restores the complete active population.");
+        await navigate("pilot-groups"); await Value("groups", "28");
+        Require((await page.Locator(".business-group-summary").InnerTextAsync()).Trim() == "Groupe · Groupe 3",
+            "Clearing Sites leaves the other section's remembered group selection unchanged.");
+        await navigate("pilot-sites"); await Value("sites", "168");
     }
 
     private static string CreateBusinessPreviewCsv()

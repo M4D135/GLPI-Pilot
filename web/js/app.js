@@ -19,6 +19,7 @@ const registry=new Map(pages.map(page=>[page.id,page]));
 const state={settings:null,session:{loaded:false},version:'',capabilities:[]};
 let current='home',params={},controller=null,cleanup=null,revision=0,logOpen=false,navRequest=0;
 let navCollapsed=false,navToggle;
+const openNavigationGroups=new Set(['workspace','pinned']);
 const narrowNavigation=matchMedia('(max-width:800px)');
 let modalEditor=false,dirtyEditor=false,lastEditor=false;
 function reportEditor(){const open=modalEditor||dirtyEditor||!!document.activeElement?.matches('form input,form textarea,form select');if(open===lastEditor||!api.available)return;lastEditor=open;api.call('host.editor',{open}).catch(error=>notify(error.message,'danger'));}
@@ -46,14 +47,43 @@ function syncNavigation(){
 function closeNavigation(restoreFocus=false){const wasOpen=sidebar?.classList.contains('open');sidebar?.classList.remove('open');syncNavigation();if(wasOpen&&restoreFocus)navToggle?.focus();}
 async function toggleNavigation(){
  if(document.body.classList.contains('focus-mode')){navCollapsed=false;await appearance({preferences:{...state.settings.interface,focusMode:false}});if(!narrowNavigation.matches){syncNavigation();return;}}
- if(narrowNavigation.matches){sidebar.classList.toggle('open');syncNavigation();if(sidebar.classList.contains('open'))navigation.querySelector('[aria-current=page]')?.focus();}
+ if(narrowNavigation.matches){
+  sidebar.classList.toggle('open');syncNavigation();
+  if(sidebar.classList.contains('open')){
+   const currentItem=navigation.querySelector('[aria-current=page]');
+   const group=navigationModel(pages,state.settings.interface||{},true).find(entry=>entry.pages.some(page=>page.id===current));
+   const heading=[...navigation.querySelectorAll('.nav-group-toggle')].find(node=>node.dataset.navGroupToggle===group?.key);
+   const target=[currentItem,heading,...navigation.querySelectorAll('button:not(:disabled),a[href]')]
+    .find(node=>node&&!node.disabled&&node.getClientRects().length>0);
+   target?.focus();
+  }
+ }
  else{navCollapsed=!navCollapsed;syncNavigation();}
 }
-function buildNavigation(){const scroll=navigation.scrollTop;const focused=document.activeElement?.closest('.nav-item')?.dataset.page;navigation.replaceChildren();
- for(const group of navigationModel(pages,state.settings.interface||{})){if(!group.pages.length)continue;const section=el('section',{class:'nav-section',dataset:{navGroup:group.key},'aria-label':group.label},el('div',{class:'nav-group',text:group.label}));for(const page of group.pages){const label=navigationLabel(page);section.append(el('button',{type:'button',class:'nav-item',dataset:{page:page.id},title:page.title,'aria-label':label,'aria-current':page.id===current?'page':undefined,onClick:()=>navigate(page.id)},icon(page.icon||'layers'),el('span',{class:'nav-label',text:label})));}navigation.append(section);}
+function buildNavigation({revealCurrent=false}={}){const scroll=navigation.scrollTop;const focused=document.activeElement?.closest('.nav-item')?.dataset.page;const focusedGroup=document.activeElement?.dataset.navGroupToggle;navigation.replaceChildren();
+ for(const group of navigationModel(pages,state.settings.interface||{})){
+  if(!group.pages.length)continue;
+  const active=group.pages.some(page=>page.id===current);
+  if(revealCurrent&&active)openNavigationGroups.add(group.key);
+  const section=el('section',{class:'nav-section',dataset:{navGroup:group.key,active:String(active)},'aria-label':group.label});
+  const list=el('div',{class:'nav-group-items',id:`nav-items-${group.key}`,hidden:!openNavigationGroups.has(group.key)});
+  const toggle=el('button',{type:'button',class:'nav-group nav-group-toggle',dataset:{navGroupToggle:group.key},title:group.label,'aria-label':group.label,'aria-expanded':String(!list.hidden),'aria-controls':list.id,
+   onClick:()=>{
+    const expand=list.hidden||navCollapsed;
+    if(navCollapsed){navCollapsed=false;syncNavigation();}
+    if(expand)openNavigationGroups.add(group.key);else openNavigationGroups.delete(group.key);
+    list.hidden=!expand;toggle.setAttribute('aria-expanded',String(expand));
+   },onKeydown:event=>{
+    if(event.key==='ArrowRight'&&list.hidden){event.preventDefault();toggle.click();}
+    else if(event.key==='ArrowLeft'&&!list.hidden){event.preventDefault();toggle.click();}
+   }},icon(group.icon),el('span',{class:'nav-group-title',text:group.label}),el('span',{class:'nav-group-count',text:group.pages.length,'aria-hidden':'true'}),el('span',{class:'nav-group-chevron','aria-hidden':'true',text:'›'}));
+  for(const page of group.pages){const label=navigationLabel(page);list.append(el('button',{type:'button',class:'nav-item',dataset:{page:page.id},title:page.title,'aria-label':label,'aria-current':page.id===current?'page':undefined,onClick:()=>navigate(page.id),onKeydown:event=>{if(event.key==='ArrowLeft'){event.preventDefault();openNavigationGroups.delete(group.key);list.hidden=true;toggle.setAttribute('aria-expanded','false');toggle.focus();}}},icon(page.icon||'layers'),el('span',{class:'nav-label',text:label})));}
+  section.append(toggle,list);navigation.append(section);
+ }
  if(groupTitle)groupTitle.textContent=navigationModel(pages,state.settings.interface||{},true).find(group=>group.pages.some(page=>page.id===current))?.label||'Mon espace';
  navigation.scrollTop=scroll;
  if(focused&&!narrowNavigation.matches)[...navigation.querySelectorAll('.nav-item')].find(item=>item.dataset.page===focused)?.focus({preventScroll:true});
+ if(focusedGroup&&!narrowNavigation.matches)[...navigation.querySelectorAll('.nav-group-toggle')].find(item=>item.dataset.navGroupToggle===focusedGroup)?.focus({preventScroll:true});
  syncNavigation();
 }
 function customizeNavigation(){
@@ -75,7 +105,7 @@ async function exitLocalTest(){const session=await api.call('records.test.exit')
 function openLog(){logOpen=!logOpen;if(!logOpen){logPanel?.remove();return;}logPanel=el('section',{class:'log-panel','aria-label':'Journal de la session'},el('div',{class:'card-heading'},el('h2',{text:'Journal de la session'}),button('Fermer',openLog,{icon:'close'})),el('div',{class:'log-lines',text:logs.length?logs.join('\n'):'Aucun message pour cette session.'}));document.body.append(logPanel);}
 async function navigate(id,nextParams={},options={}){
  if(!registry.has(id)){notify('Cet espace n’est pas disponible.','danger');return;}
- const request=++navRequest;if(typeof cleanup==='function'){try{await cleanup();}catch(error){notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation();pageTitle.textContent=page.title;const crumb=document.querySelector('#breadcrumb-page');if(crumb)crumb.textContent=page.title;groupTitle.textContent=navigationModel(pages,state.settings.interface||{},true).find(group=>group.pages.some(entry=>entry.id===id))?.label||page.group||'Mon espace';document.title=`${page.title} · GLPI Pilot`;const desc=document.querySelector('#page-description');desc.textContent=descriptions[id]||'';desc.hidden=!descriptions[id];content.setAttribute('aria-busy','true');
+ const request=++navRequest;if(typeof cleanup==='function'){try{await cleanup();}catch(error){notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation({revealCurrent:true});pageTitle.textContent=page.title;const crumb=document.querySelector('#breadcrumb-page');if(crumb)crumb.textContent=page.title;groupTitle.textContent=navigationModel(pages,state.settings.interface||{},true).find(group=>group.pages.some(entry=>entry.id===id))?.label||page.group||'Mon espace';document.title=`${page.title} · GLPI Pilot`;const desc=document.querySelector('#page-description');desc.textContent=descriptions[id]||'';desc.hidden=!descriptions[id];content.setAttribute('aria-busy','true');
  const pageRoot=el('div',{class:`page-content${options.preserveScroll?'':' page-enter'}`,dataset:{page:id}});content.replaceChildren(pageRoot);
  try{
   const done=await page.render({root:pageRoot,api,state,signal,navigate,notify,refresh:()=>navigate(current,params,{preserveScroll:true}),params:nextParams,pages});if(signal.aborted){if(typeof done==='function')done();return;}cleanup=done;

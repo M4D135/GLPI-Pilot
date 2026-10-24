@@ -12,6 +12,9 @@ const definitions = [
   ['participants', 'pilot-participants', 'Agents actifs', 'Suivis, tâches, intersection et union des participations.', 'chart'],
   ['sites', 'pilot-sites', 'Sites', 'Stock des sites, identifiants et préparation des interventions.', 'map']
 ].map(([key, route, title, description, icon]) => ({ key, route, title, description, icon }));
+// Keep each view's choices for this UI session, independently in normal and
+// simulation workspaces. Nothing is written to the user's saved parameters.
+const focusSessions = new WeakMap();
 export const pages = [...definitions.map(view => ({ id: view.route, title: view.title, group: 'Pilotage GLPI', icon: view.icon,
   render: ctx => renderBusiness(ctx, view) })), { id: 'pilot-settings', title: 'Paramètres du pilotage', group: 'Pilotage GLPI', icon: 'settings', render: renderBusinessSettings }];
 
@@ -34,11 +37,23 @@ async function renderBusiness(ctx, view) {
     } else ctx.root.append(empty(view.title, view.description));
     ctx.root.dataset.ready = 'true'; return cleanup;
   }
+  let session = focusSessions.get(ctx.state);
+  if (!session) { session = new Map(); focusSessions.set(ctx.state, session); }
+  const sessionKey = `${ctx.state.session?.testMode || ctx.state.session?.simulation ? 'simulation' : 'normal'}:${view.key}`;
+  const explicit = ctx.params?.focusKeys !== undefined ? ctx.params.focusKeys
+    : ctx.params?.focusKey !== undefined ? (ctx.params.focusKey ? [ctx.params.focusKey] : []) : session.get(sessionKey) ?? [];
+  const requested = Array.isArray(explicit) ? [...new Set(explicit)] : [];
+  const available = new Set([...bootstrap.focus.map(item => item.key), ...bootstrap.groups.map(label => `group:${label}`)]);
+  const focusKeys = requested.filter(key => available.has(key));
+  const removed = requested.length - focusKeys.length;
   const business = { ...view, groups: bootstrap.groups, focus: bootstrap.focus, rules: bootstrap.business.weatherRules,
+    focusWarning: removed ? `${formatNumber(removed)} sélection(s) ne sont plus disponibles dans ce relevé. Le filtre a été actualisé ; vérifiez les équipes et groupes retenus.` : '',
     focusEnabled: ['oldest', 'followup', 'participants', 'sites', 'groups'].includes(view.key) };
   const api = { ...ctx.api, call: (operation, args = {}, options) => ctx.api.call(operation,
-    operation.startsWith('dashboard.') ? { ...args, businessView: view.key, focusKey: ctx.params?.focusKey ?? '' } : args, options) };
-  return renderDashboard({ ...ctx, api, business });
+    operation.startsWith('dashboard.') ? { ...args, businessView: view.key, focusKeys } : args, options) };
+  const result = await renderDashboard({ ...ctx, params: { ...ctx.params, focusKeys }, api, business });
+  if (!ctx.signal.aborted) session.set(sessionKey, [...focusKeys]);
+  return result;
 }
 
 async function renderBusinessSettings(ctx) {

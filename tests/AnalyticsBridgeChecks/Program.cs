@@ -57,6 +57,8 @@ internal static partial class Program
         {
             await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); CheckScopedHistory();
             await CheckStockViewsRuntime();
+            await CheckSiteLocationSummaryRuntime();
+            await CheckSiteGeographySimulationRuntime();
             if (args.Contains("--web")) { await CheckWeb(args); await CheckStockViewsWeb(args); }
             Console.WriteLine($"{_passed}/{_passed} analytics bridge and scoped-history checks passed.");
         }

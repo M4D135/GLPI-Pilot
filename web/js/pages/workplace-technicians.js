@@ -1,3 +1,4 @@
+import { navigationVisible } from '../navigation.js';
 import { el, replaceChildren, button, card, toolbar, input, select, field, form, dialog, confirm, badge } from '../ui.js';
 import { call, run, revision, note, pre, date, label, heading, dataTable, pager, tabs, checkbox, textArea, ticketButton } from './workplace-common.js';
 import { publishSharedOperation } from './shared-operations.js';
@@ -37,7 +38,7 @@ async function showRows(ctx, technicianKey, measure) {
   const root = el('div'); let page = 0; const panel = dialog('Tickets du périmètre', root, [{ label: 'Fermer', action: close => close() }]);
   const load = async () => {
     const result = await call(ctx, 'workplace.technicians.rows', { revision: revision(ctx), technicianKey, measure, page });
-    root.replaceChildren(dataTable(result.rows, [{ key: 'open', label: 'Fiche', render: row => button('Ouvrir', () => { panel.close(); ctx.navigate('tickets', { rowIndex: row.rowIndex, revision: result.revision }); }) }, ...result.headers.map((header, index) => ({ key: String(index), label: header, render: row => row.values[index] || '' }))]), pager(result.page, result.pageSize, result.total, run(ctx, async value => { page = value; await load(); })), button('Préparer la lecture de cette page', run(ctx, async () => { await call(ctx, 'workplace.enrichment.prepare', { revision: result.revision, rows: result.rows.map(r => r.rowIndex), label: 'Indicateur technicien · ' + measure }); panel.close(); ctx.navigate('enrichment'); })));
+    replaceChildren(root, dataTable(result.rows, [{ key: 'open', label: 'Fiche', render: row => button('Ouvrir', () => { panel.close(); ctx.navigate('tickets', { rowIndex: row.rowIndex, revision: result.revision }); }) }, ...result.headers.map((header, index) => ({ key: String(index), label: header, render: row => row.values[index] || '' }))]), pager(result.page, result.pageSize, result.total, run(ctx, async value => { page = value; await load(); })), navigationVisible('enrichment', ctx.state.settings?.interface) ? button('Préparer la lecture de cette page', run(ctx, async () => { await call(ctx, 'workplace.enrichment.prepare', { revision: result.revision, rows: result.rows.map(r => r.rowIndex), label: 'Indicateur technicien · ' + measure }); panel.close(); ctx.navigate('enrichment'); })) : null);
   }; await load();
 }
 

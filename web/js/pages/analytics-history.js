@@ -152,9 +152,12 @@ function scenarioChart(rows) {
 }
 
 export async function renderPopulations(ctx) {
-  const cleanup = heading(ctx, 'Effectifs et postes par site', 'Inventaire local daté pour les taux de tickets pour 100 unités. Les dénominateurs absents, périmés ou ambigus restent inconnus.');
+  const cleanup = heading(ctx, 'Effectifs des sites (facultatif)', 'Nombre de personnes ou de postes pour les ratios de tickets par site.');
   const host = el('div'); let current = null;
-  ctx.root.append(toolbar(command(ctx, '+ Période d’effectif', () => edit(null), { primary: true }), command(ctx, 'Actualiser', () => load(0)),
+  const add = command(ctx, '+ Période d’effectif', () => edit(null), { primary: true }); add.disabled = true;
+  ctx.root.append(caption('Option facultative : renseignez le nombre de personnes ou de postes de chaque site pour les ratios « tickets pour 100 ». Le stock de tickets et la reconnaissance des sites fonctionnent sans ces chiffres.'),
+    caption('Exemple : 10 tickets pour un site de 200 personnes donnent 5 tickets pour 100 personnes. L’effectif doit être valide à la date du relevé ; il provient de votre inventaire, pas du nombre de techniciens attribués aux tickets.'),
+    toolbar(command(ctx, 'Retour aux sites', () => ctx.navigate('pilot-sites')), add, command(ctx, 'Actualiser', () => load(0)),
     command(ctx, 'Importer un référentiel', async () => {
       const preview = await call(ctx, 'populations.import.preview'); if (preview.cancelled) return;
       dialog('Vérifier l’inventaire importé', el('div', {}, caption(`${preview.added} nouvelles périodes · ${preview.replaced} remplacements de même site/unité/date · ${preview.identical} identiques ignorées.`),
@@ -163,23 +166,32 @@ export async function renderPopulations(ctx) {
     }), command(ctx, 'Exporter le référentiel', async () => { const r = await call(ctx, 'populations.export'); if (!r.cancelled) ctx.notify(`Inventaire exporté : ${r.path}`); })), host);
   async function load(offset) {
     current = await call(ctx, 'populations.list', { offset, limit: 100 });
-    host.replaceChildren(caption(current.note), current.sourceKey ? badge('Contexte du relevé actif') : caption('Aucun contexte confirmé : chargez un relevé vérifié pour associer des effectifs.', 'warning'),
-      table(current.rows, [...populationColumns(), { key: 'edit', label: 'Actions', render: entry => toolbar(command(ctx, 'Modifier', () => edit(entry)),
+    add.disabled = !current.canEdit || !current.sites.length;
+    const prerequisite = !current.canEdit ? caption(current.blockedReason, 'warning')
+      : !current.sites.length ? el('div', {}, caption('Ajoutez d’abord les sites concernés dans les paramètres du pilotage. Aucun effectif n’est nécessaire pour commencer à les utiliser.'),
+        command(ctx, 'Définir les sites', () => ctx.navigate('pilot-settings')))
+      : badge(current.simulation ? 'Simulation · effectifs d’essai' : 'Références du relevé affiché');
+    host.replaceChildren(caption(current.note), prerequisite,
+      ...(current.sourceDate ? [caption(`Période à couvrir pour ce relevé : ${current.sourceDate}. Les références absentes ou périmées laissent le ratio indisponible.`)] : []),
+      current.rows.length ? table(current.rows, [...populationColumns(), { key: 'edit', label: 'Actions', render: entry => toolbar(command(ctx, 'Modifier', () => edit(entry), { disabled: !current.canEdit }),
         command(ctx, 'Retirer', async () => {
           if (!await confirm('Retirer cette période', `Retirer l’effectif ${entry.count} ${entry.unitLabel} de ${entry.siteLabel}, du ${entry.fromDate} au ${entry.untilDate} ?`, 'Retirer')) return;
           await call(ctx, 'populations.delete', { entry }); await load(offset);
-        }, { danger: true })) }], { maxRows: 100 }), pager(ctx, current.total, current.offset, 100, load));
+        }, { danger: true })) }], { maxRows: 100 }) : empty('Aucun effectif renseigné pour ce contexte', 'Vous pouvez laisser cette option vide. Ajoutez une période uniquement pour utiliser les ratios par personne ou par poste.'),
+      pager(ctx, current.total, current.offset, 100, load));
   }
   function edit(previous) {
-    if (!current?.sourceKey) throw new Error('Chargez un relevé au contexte confirmé avant de définir des effectifs.');
+    if (!current?.canEdit) throw new Error(current?.blockedReason || 'Chargez un relevé ou ouvrez une simulation avant de définir des effectifs.');
     if (!current.sites.length) throw new Error('Créez d’abord les sites dans le référentiel géographique.');
     const site = select(current.sites.map(s => ({ value: s.id, label: s.name })), previous?.siteId ?? current.sites[0].id);
     const unit = select([{ value: 'people', label: 'Personnes' }, { value: 'workstations', label: 'Postes' }], previous?.unit ?? 'people');
-    const count = input(previous?.count ?? '', { type: 'number', min: 1, max: 1000000000, step: 1 }); const today = new Date().toISOString().slice(0, 10);
-    const from = input(previous?.fromDate ?? today, { type: 'date' }); const until = input(previous?.untilDate ?? today, { type: 'date' }); const reference = input(previous?.reference ?? '', { maxLength: 1000 });
+    const count = input(previous?.count ?? '', { type: 'number', min: 1, max: 1000000000, step: 1 }); const referenceDate = current.sourceDate || new Date().toISOString().slice(0, 10);
+    const from = input(previous?.fromDate ?? referenceDate, { type: 'date' }); const until = input(previous?.untilDate ?? referenceDate, { type: 'date' }); const reference = input(previous?.reference ?? '', { maxLength: 1000 });
     dialog(previous ? 'Modifier la période d’effectif' : 'Ajouter un effectif daté', el('div', { class: 'analytics-form-grid' }, field('Site', site), field('Unité', unit), field('Effectif entier positif', count),
       field('Valide à partir du', from), field('Valide jusqu’au inclus', until), field('Référence de l’inventaire', reference)), [{ label: 'Enregistrer', primary: true, action: async close => {
-        const selected = current.sites.find(s => s.id === site.value); const entry = { sourceKey: current.sourceKey, siteId: site.value, siteLabel: selected.name, unit: unit.value,
+        const selected = current.sites.find(s => s.id === site.value);
+        if (!selected) throw new Error('Choisissez un site du référentiel actuel.');
+        const entry = { sourceKey: current.sourceKey, siteId: site.value, siteLabel: selected.name, unit: unit.value,
           count: Number(count.value), fromDate: from.value, untilDate: until.value, reference: reference.value };
         await call(ctx, 'populations.upsert', { revision: current.revision, entry, previous }); close(); await load(0);
       } }]);

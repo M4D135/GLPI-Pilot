@@ -182,8 +182,201 @@ internal static partial class Program
         app.LoadFixture(source, partialLocations);
         var incomplete = await Call(app, "dashboard.get");
         Check(!Widget(incomplete, "stock-sites").GetProperty("available").GetBoolean()
+            && Metric(incomplete, "location-matched").GetProperty("value").ValueKind == JsonValueKind.Null
+            && Metric(incomplete, "location-review").GetProperty("value").ValueKind == JsonValueKind.Null
             && Widget(incomplete, "stock-oldest").GetProperty("available").GetBoolean(),
-            "An incomplete site match report cannot fabricate zero sites while unrelated oldest calculations remain usable.");
+            "An incomplete site match report cannot fabricate zero sites or location totals while unrelated oldest calculations remain usable.");
+    }
+
+    private static async Task CheckSiteLocationSummaryRuntime()
+    {
+        // One real local-file session covers the native Sites page, including the
+        // original summary cards saved by an earlier release and an explicit team.
+        var city = new CityDefinition { Name = "Commune Exemple" };
+        var north = new SiteDefinition { Name = "Atelier Nord", Aliases = new() { "AN" } };
+        var south = new SiteDefinition { Name = "Atelier Sud", Aliases = new() { "AS" } };
+        var east = new SiteDefinition { Name = "Campus Est", CityId = city.Id };
+        var west = new SiteDefinition { Name = "Campus Ouest", CityId = city.Id };
+        var settings = new AppSettings { Queries = new(),
+            Cities = new() { Cities = new() { city }, Sites = new() { north, south, east, west } } };
+        settings.Dashboard.Business.SiteInterventionThreshold = 2;
+        settings.Dashboard.Business.WeatherRules = new()
+        {
+            new() { Id = "team-support", Kind = "team", Label = "Équipe support", Values = new() { "Support", "Relais" } },
+            new() { Id = "team-relay", Kind = "team", Label = "Équipe relais", Values = new[] { "Relais" }
+                .Concat(Enumerable.Range(1, 31).Select(index => "Groupe sans ticket " + index)).ToList() }
+        };
+        var source = Data(0,
+            Row("1", title: "AN imprimante"),
+            Row("2", "En attente", group: "Support;Relais", title: "Campus Est réseau"),
+            Row("3", title: "Hors référentiel"),
+            Row("4", title: "Atelier Nord Atelier Sud"),
+            Row("5", title: ""),
+            Row("6", title: "Campus Est Campus Ouest"),
+            Row("7", group: "Autre", title: "Commune Exemple"),
+            Row("8", "Résolu", title: "Atelier Nord"),
+            Row("9", "Statut personnalisé", title: "Atelier Sud"),
+            Row("10", group: "Autre", title: "AN autre intervention"));
+        var observed = BusinessDashboardTemplates.Observe(source, settings.Dashboard);
+        var board = BusinessDashboardTemplates.Create("sites", settings.Dashboard, observed);
+        Check(board.Widgets.Single(widget => widget.Id == "business-sites-1").SourceKey == "location-matched"
+            && board.Widgets.Single(widget => widget.Id == "business-sites-2").SourceKey == "location-review",
+            "A new native Sites page uses general location probes instead of municipality-only coverage.");
+        board.Widgets.Single(widget => widget.Id == "business-sites-1").SourceKey = "city-matched";
+        board.Widgets.Single(widget => widget.Id == "business-sites-1").Title = "Mes lieux reconnus";
+        board.Widgets.Single(widget => widget.Id == "business-sites-1").Span = 8;
+        board.Widgets.Single(widget => widget.Id == "business-sites-2").SourceKey = "city-unmatched";
+        board.Widgets.Add(new() { Id = "custom-city", Kind = "metric", SourceKey = "city-matched", Title = "Communes uniquement", Section = "stock", ShowMiniHistory = false });
+        settings.Dashboard.Business.BoardOverrides.Add(board);
+        var storedBoard = JsonSerializer.Serialize(board, PilotApplication.Json);
+        var csvPath = Path.Combine(_root, "site-location-source.csv"); ExportService.WriteCsv(source, csvPath);
+        var exportRoot = Path.Combine(Path.GetTempPath(), "GLPI-Pilot-Site-Exports-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(exportRoot);
+        try
+        {
+            var host = new AnalyticsTestHost { OpenPath = csvPath };
+            await using var app = new PilotApplication(host, (_, _) => { }, settings,
+                snapshots: new SnapshotStore(Path.Combine(_root, "site-location-history")));
+            await Call(app, "records.test.import");
+            var model = await Call(app, "dashboard.get", new { businessView = "sites" });
+            JsonElement Content(string id) => Widget(model, id).GetProperty("content");
+            JsonElement Site(string name) => Content("business-sites-3").GetProperty("sites").EnumerateArray().Single(site => Str(site, "label") == name);
+            async Task<int[]> Rows(string kind, string key, string widgetId = "")
+            {
+                var result = await Call(app, "dashboard.rows", new { runId = Str(model, "runId"), revision = app.Revision, kind, key, widgetId });
+                return result.GetProperty("rows").EnumerateArray().Select(row => Int(row, "index")).ToArray();
+            }
+            var upgraded = Widget(model, "business-sites-1").GetProperty("settings");
+            Check(app.IsTestMode && app.Result is { Complete: false, Provenance.SearchVerified: false }
+                && Str(upgraded, "sourceKey") == "location-matched" && Str(upgraded, "title") == "Mes lieux reconnus" && Int(upgraded, "span") == 8
+                && Str(Widget(model, "business-sites-2").GetProperty("settings"), "sourceKey") == "location-review"
+                && Str(Widget(model, "custom-city").GetProperty("settings"), "sourceKey") == "city-matched"
+                && JsonSerializer.Serialize(app.Settings.Dashboard.Business.BoardOverrides.Single(), PilotApplication.Json) == storedBoard,
+                "Import simulation upgrades only the two legacy native location probes, preserving customized layout, private settings and unverified file provenance.");
+            var recognized = await Rows("metric", "location-matched", "business-sites-1");
+            var review = await Rows("metric", "location-review", "business-sites-2");
+            var active = await Rows("metric", "active", "business-sites-0");
+            Check(Content("business-sites-0").GetProperty("value").GetDouble() == 8
+                && Content("business-sites-1").GetProperty("value").GetDouble() == 4
+                && Content("business-sites-2").GetProperty("value").GetDouble() == 4
+                && recognized.SequenceEqual(new[] { 0, 1, 6, 9 }) && review.SequenceEqual(new[] { 2, 3, 4, 5 })
+                && recognized.Intersect(review).Count() == 0 && recognized.Concat(review).Order().SequenceEqual(active),
+                "Native Sites partitions active rows into recognized locations and review, including standalone sites without coordinates, absent titles and both kinds of ambiguity.");
+            Check(Content("custom-city").GetProperty("value").GetDouble() == 3
+                && Int(Site(north.Name), "count") == 2 && Str(Site(north.Name), "advice") == "Intervention à planifier"
+                && Int(Content("business-sites-3").GetProperty("sites").EnumerateArray().Single(site => site.GetProperty("unknown").GetBoolean()), "count") == 5,
+                "Municipality-only probes retain their historical meaning, while a recognized city without a precise site stays in the unknown-site workload bucket.");
+
+            model = await Call(app, "dashboard.get", new { businessView = "sites", focusKey = "group:Support" });
+            var focused = await Rows("metric", "active", "business-sites-0");
+            var unknown = Content("business-sites-3").GetProperty("sites").EnumerateArray().Single(site => site.GetProperty("unknown").GetBoolean());
+            Check(focused.SequenceEqual(new[] { 0, 1, 2, 3, 4, 5 })
+                && Content("business-sites-1").GetProperty("value").GetDouble() == 2 && Content("business-sites-2").GetProperty("value").GetDouble() == 4
+                && Int(Content("business-sites-3"), "population") == 6 && Int(Site(north.Name), "count") == 1 && Str(Site(north.Name), "advice") == "À suivre"
+                && (await Rows("metric", "location-matched", "business-sites-1")).SequenceEqual(new[] { 0, 1 })
+                && (await Rows("sites", Str(Site(north.Name), "key"), "business-sites-3")).SequenceEqual(new[] { 0 })
+                && (await Rows("sites", Str(unknown, "key"), "business-sites-3")).SequenceEqual(new[] { 2, 3, 4, 5 }),
+                "The existing group filter scopes every location card, site count, planning recommendation and contributor drilldown to the same original active rows.");
+            model = await Call(app, "dashboard.get", new { businessView = "sites", focusKey = "team:team-support" });
+            Check((await Rows("metric", "active", "business-sites-0")).SequenceEqual(focused)
+                && Content("business-sites-1").GetProperty("value").GetDouble() == 2 && Int(Content("business-sites-3"), "population") == 6,
+                "The legacy single-team selection remains compatible and combines its groups without counting a multigroup ticket twice.");
+            model = await Call(app, "dashboard.get", new { businessView = "sites", focusKeys = new[] { "team:team-support", "team:team-relay", "group:Autre" } });
+            Check((await Rows("metric", "active", "business-sites-0")).SequenceEqual(active)
+                && Content("business-sites-1").GetProperty("value").GetDouble() == 4 && Int(Content("business-sites-3"), "population") == 8
+                && Str(Site(north.Name), "advice") == "Intervention à planifier",
+                "Cumulative team and group selection uses OR, adding other selected groups without intersecting teams or duplicating overlapping tickets.");
+            model = await Call(app, "dashboard.get", new { businessView = "sites", focusKeys = new[] { "team:team-support", "team:team-relay", "group:Relais" }, focusKey = "group:Autre" });
+            var groupFilter = model.GetProperty("commonFilters").EnumerateArray().Single(filter => Str(filter, "sourceKey") == "group-status");
+            Check((await Rows("metric", "active", "business-sites-0")).SequenceEqual(focused)
+                && groupFilter.GetProperty("values").GetArrayLength() == 33 && Int(Content("business-sites-3"), "population") == 6
+                && Content("business-sites-1").GetProperty("value").GetDouble() == 2
+                && (await Rows("metric", "location-review", "business-sites-2")).SequenceEqual(new[] { 2, 3, 4, 5 })
+                && Str(Site(north.Name), "advice") == "À suivre",
+                "Several teams can expand beyond 32 groups in one deduplicated condition; the explicit array takes precedence over a legacy single selection.");
+
+            ExtractionResult? csv = null;
+            foreach (var format in new[] { "csv", "xlsx" })
+            {
+                host.SavePath = Path.Combine(exportRoot, "sites-support." + format);
+                await Call(app, "reports.export", new { runId = Str(model, "runId"), revision = app.Revision, format });
+                var export = format == "csv" ? NativeCsvImportService.Read(host.SavePath, "", null, 10000, false, default)
+                    : XlsxImportService.Read(host.SavePath, 10000, default);
+                string Value(string section, string label) => export.Rows.Single(row => row[0] == section && row[1] == label)[2];
+                static IEnumerable<string> SiteRows(ExtractionResult data) => data.Rows.Where(row => row[0] == "Sites"
+                    || row[0] == "Indicateurs" && row[1] is "Localisation reconnue" or "Localisation à vérifier").Select(row => string.Join('\t', row));
+                Check(Value("Indicateurs", "Localisation reconnue") == "2" && Value("Indicateurs", "Localisation à vérifier") == "4"
+                    && Value("Sites", "Stock actif") == "6" && Value("Sites", north.Name) == "1"
+                    && (csv is null || SiteRows(export).SequenceEqual(SiteRows(csv))),
+                    $"The {format.ToUpperInvariant()} report exports the same selected team, general location totals and site workload as the native Sites page.");
+                csv = export;
+            }
+            host.SavePath = Path.Combine(exportRoot, "sites-support.html");
+            await Call(app, "reports.export", new { runId = Str(model, "runId"), revision = app.Revision, format = "html" });
+            var html = File.ReadAllText(host.SavePath);
+            Check(Enumerable.Range(1, 6).All(index => html.Contains($"id=\"ticket-row-{index}\"", StringComparison.Ordinal))
+                && Enumerable.Range(7, 4).All(index => !html.Contains($"id=\"ticket-row-{index}\"", StringComparison.Ordinal))
+                && html.Contains("Localisation reconnue", StringComparison.Ordinal) && html.Contains("Support", StringComparison.Ordinal),
+                "The HTML report contains exactly the six selected active source rows, excluding other groups, resolved tickets and unknown statuses.");
+            await Reject<InvalidDataException>(() => Call(app, "dashboard.get", new { businessView = "sites", focusKeys = new[] { "team:team-support", "group:Absent" } }),
+                "A cumulative filter rejects a missing selection instead of silently broadening the scope.");
+            await Reject<InvalidDataException>(() => Call(app, "dashboard.get", new { businessView = "sites", focusKeys = "team:team-support" }),
+                "The cumulative team filter requires an explicit array of selections.");
+            await Reject<InvalidDataException>(() => Call(app, "dashboard.get", new { businessView = "sites", focusKeys = Enumerable.Repeat("group:Support", 65).ToArray() }),
+                "The cumulative team filter enforces its bounded selection limit before calculating a report.");
+            model = await Call(app, "dashboard.get", new { businessView = "sites", focusKeys = Array.Empty<string>(), focusKey = "group:Support" });
+            Check((await Rows("metric", "active", "business-sites-0")).SequenceEqual(active),
+                "Clearing the selection returns to all groups even when a legacy single-selection parameter is still present.");
+        }
+        finally { Directory.Delete(exportRoot, true); }
+    }
+
+    private static async Task CheckSiteGeographySimulationRuntime()
+    {
+        var application = Path.Combine(_root, "geography-pack"); Directory.CreateDirectory(Path.Combine(application, "wad"));
+        var csv = Path.Combine(application, "wad", "sites.csv"); var profile = Path.Combine(_root, "geography-profile", "settings.json");
+        File.WriteAllText(csv, "Site;Termes de détection\nSite Alpha;Annexe Alpha\nSite Bêta;Annexe Bêta\n");
+        var initialized = SiteReferenceInitializer.TryInitialize(application, profile);
+        File.WriteAllText(csv, """
+            Site;Termes de détection;Ville;Code postal;Adresse;Latitude ville;Longitude ville;Latitude site;Longitude site
+            Site Alpha;Annexe Alpha;Commune Alpha;00001;1 rue Exemple, 00001 Commune Alpha;40;2;40.01;2.01
+            Site Bêta;Annexe Bêta;Commune Bêta;00002;2 rue Exemple, 00002 Commune Bêta;41;3;41.01;3.01
+            """);
+        var updated = SiteReferenceInitializer.TryInitialize(application, profile); var settings = SettingsRecovery.Read(profile);
+        var original = File.ReadAllBytes(profile); var references = JsonSerializer.Serialize(settings.Cities, PilotApplication.Json);
+        Check(initialized.State == "imported" && updated.State == "updated" && settings.Cities.Sites.Count == 2 && settings.Cities.Cities.Count == 2,
+            "A startup reference upgrade completes existing standalone sites before a real local-file simulation is opened.");
+        var source = Data(0, Row("201", title: "Annexe Alpha imprimante"), Row("202", title: "Site Bêta réseau"),
+            Row("203", title: "Lieu inconnu"), Row("204", "Résolu", title: "Site Alpha"));
+        var sourcePath = Path.Combine(_root, "geography-incidents.csv"); ExportService.WriteCsv(source, sourcePath);
+        var host = new AnalyticsTestHost { OpenPath = sourcePath };
+        await using var app = new PilotApplication(host, (_, _) => { }, settings,
+            snapshots: new SnapshotStore(Path.Combine(_root, "geography-history")));
+        await Call(app, "records.test.import");
+        var projection = await Call(app, "terrain.tours.projection", new { revision = app.Revision, order = "alphabetical" });
+        Check(app.IsTestMode && app.Result is { Complete: false, Provenance.SearchVerified: false }
+            && projection.GetProperty("available").GetBoolean() && Int(projection, "total") == 2 && Int(projection, "tickets") == 3
+            && Int(projection, "unlocated") == 1 && Int(projection, "completedExcluded") == 1 && projection.GetProperty("canUseProximity").GetBoolean()
+            && projection.GetProperty("items").EnumerateArray().Select(item => Str(item, "cityName")).SequenceEqual(new[] { "Commune Alpha", "Commune Bêta" }),
+            "An imported incident CSV uses the profile's cities in simulation: active tickets form real municipality stops, resolved rows are excluded and unknown places stay visible.");
+        var sites = await Call(app, "dashboard.get", new { businessView = "sites" });
+        var alpha = app.Settings.Cities.Sites.Single(site => site.Name == "Site Alpha");
+        var sitePoint = await Call(app, "terrain.tours.point", new { place = "site:" + alpha.Id });
+        Check(Metric(sites, "city-matched").GetProperty("value").GetDouble() == 2
+            && Metric(sites, "location-matched").GetProperty("value").GetDouble() == 2
+            && sitePoint.GetProperty("latitude").GetDouble() == 40.01 && sitePoint.GetProperty("longitude").GetDouble() == 2.01,
+            "Sites and city grouping share the freshly enriched simulation evidence, while a site route uses its exact coordinates rather than the municipality center.");
+        await Call(app, "terrain.tours.select", new { revision = app.Revision, rows = new[] { 0, 1 } });
+        var tour = await Call(app, "terrain.tours.create", new { revision = app.Revision, name = "Visites de simulation", date = DateTime.Today.ToString("yyyy-MM-dd") });
+        var calculated = await Call(app, "terrain.tours.calculate", new { revision = app.Revision, draftVersion = Int(tour, "draftVersion") });
+        Check(Int(tour.GetProperty("draft"), "stops") == 2 && Int(calculated, "total") == 2
+            && calculated.GetProperty("items").EnumerateArray().Select(visit => Str(visit, "address"))
+                .SequenceEqual(new[] { "1 rue Exemple, 00001 Commune Alpha", "2 rue Exemple, 00002 Commune Bêta" })
+            && calculated.GetProperty("items")[1].GetProperty("straightLineKm").GetDouble() > 0,
+            "Simulation creates and calculates a local tour from the imported rows with the supplied site addresses and a real straight-line distance.");
+        await Call(app, "records.test.exit");
+        Check(!app.IsTestMode && original.SequenceEqual(File.ReadAllBytes(profile)) && JsonSerializer.Serialize(app.Settings.Cities, PilotApplication.Json) == references,
+            "Leaving the imported CSV simulation preserves the complete ordinary geographic profile and its initialization receipt.");
     }
 
     private static async Task CheckStockViewsWeb(string[] args)
