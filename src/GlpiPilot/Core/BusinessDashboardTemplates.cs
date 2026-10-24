@@ -154,7 +154,7 @@ public static partial class BusinessDashboardTemplates
             {
                 var section = rule.Kind switch { "team" => "teams", "category" => "categories", _ => "stock" };
                 var widget = Add("metric", rule.SourceKey, rule.Label, section, rule.Kind == "metric" && rule.SourceKey == "active" ? 12 : 3, 260, rule.Kind == "category" ? "purple" : rule.Kind == "team" ? "teal" : "blue");
-                widget.Id = "weather-" + StableId("rule", rule.Id); widget.Hidden = !rule.Visible; widget.Presentation = rule.WeatherEnabled ? "weather-volume" : "compact";
+                widget.Id = WeatherWidgetId(rule.Id); widget.Hidden = !rule.Visible; widget.Presentation = rule.WeatherEnabled ? "weather-volume" : "compact";
                 widget.WarningValue = rule.WeatherEnabled ? rule.OrangeAbove : null; widget.CriticalValue = rule.WeatherEnabled ? rule.RedAbove : null; widget.Note = rule.Note;
                 if (rule.Kind != "metric") widget.Filters.Add(new() { Kind = rule.Kind == "team" ? "matrix-row" : "distribution",
                     SourceKey = rule.Kind switch { "team" => "group-status", "category" => "active-category", _ => "active-type" },
@@ -250,6 +250,7 @@ public static partial class BusinessDashboardTemplates
     private static DashboardBoardSettings? ExistingWeather(DashboardLayoutSettings layout) => layout.Boards
         .Where(board => board.Widgets.Count(widget => widget.Kind == "metric" && widget.Presentation == "weather-volume") >= 2)
         .OrderByDescending(board => board.Widgets.Count(widget => widget.Kind == "metric" && widget.Presentation == "weather-volume")).FirstOrDefault();
+    public static string WeatherWidgetId(string ruleId) => "weather-" + StableId("rule", ruleId);
     private static string StableId(string prefix, string value) => prefix + "-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..20].ToLowerInvariant();
     private static string Clean(string text) => string.Concat(text.Normalize(NormalizationForm.FormD).Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)).ToLowerInvariant().Trim();
 }

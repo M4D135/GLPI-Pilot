@@ -14,6 +14,7 @@ import { renderHistory } from './analytics-history.js';
 import { renderQueries } from './analytics-queries.js';
 import { renderTechnicians, renderPlanning } from './workplace-technicians.js';
 import { renderAssistant } from './analytics-assistant.js';
+import { teamScopeCatalog, teamScopeSelection } from '../team-scope.js';
 
 const memories = new WeakMap();
 const tools = {
@@ -32,7 +33,7 @@ export async function renderPilotWorkspace(ctx) {
   let memory = memories.get(state); if (!memory) { memory = new Map(); memories.set(state, memory); }
   const memoryKey = isSimulation(state.session) ? 'simulation' : 'normal';
   const previous = memory.get(memoryKey) || {};
-  const scope = { focusKeys: ctx.params?.focusKeys ?? previous.focusKeys ?? [], technicianKey: ctx.params?.technicianKey ?? previous.technicianKey ?? '',
+  const scope = { focusKeys: ctx.params?.focusKeys ?? (ctx.params?.focusKey !== undefined ? (ctx.params.focusKey ? [ctx.params.focusKey] : []) : previous.focusKeys ?? []), technicianKey: ctx.params?.technicianKey ?? previous.technicianKey ?? '',
     crossFilters: ctx.params?.crossFilters ?? previous.crossFilters ?? [], composition: ctx.params?.boardId ?? previous.composition ?? 'service' };
   const call = (operation, args = {}, options = {}) => api.call(operation, args, { signal, ...options });
   const run = () => ({ runId: model.runId, revision: model.revision });
@@ -60,8 +61,8 @@ export async function renderPilotWorkspace(ctx) {
     modal?.element.addEventListener('pilot:closed', () => { if (!disposed) void load().catch(reason => error(ctx, reason)); }, { once: true });
   }
   function focusText() {
-    const labels = new Map([...(bootstrap?.focus || []).map(item => [item.key, item.label]), ...(bootstrap?.groups || []).map(label => [`group:${label}`, label])]);
-    return scope.focusKeys.length ? scope.focusKeys.map(key => labels.get(key) || key).join(' + ') : 'Toutes les équipes';
+    const selected = teamScopeSelection(teamScopeCatalog(bootstrap?.focus || [], bootstrap?.groups || []), scope.focusKeys);
+    return selected.keys.length ? [...selected.options.map(item => item.label), ...selected.unknownKeys].join(' + ') : 'Toutes les équipes';
   }
   function drawHeader() {
     const receipt = extractionStatus(state.session);
@@ -86,7 +87,8 @@ export async function renderPilotWorkspace(ctx) {
     technician.addEventListener('change', () => { scope.technicianKey = technician.value; if (scope.composition !== 'service') scope.composition = 'service'; void load().catch(reason => error(ctx, reason)); });
     const customize = button(editing ? 'Terminer la composition' : 'Composer', () => { editing = !editing; drawHeader(); draw(); },
       { icon: editing ? 'check' : 'layers', attributes: { 'aria-pressed': String(editing), 'data-compose': 'pilot' } });
-    const teamsButton = button('Équipes', null, { icon: 'users', attributes: { 'data-filter-teams': '', 'aria-haspopup': 'dialog' } });
+    const teamCount = teamScopeSelection(teamScopeCatalog(bootstrap.focus, bootstrap.groups), scope.focusKeys).keys.length;
+    const teamsButton = button(teamCount ? `Équipes (${teamCount})` : 'Équipes', null, { icon: 'users', attributes: { 'data-filter-teams': '', 'aria-haspopup': 'dialog' } });
     teamsButton.addEventListener('click', () => chooseTeams(teamsButton));
     const more = el('details', { class: 'workspace-menu' }, el('summary', { class: 'button', text: 'Analyser et organiser' }),
       el('div', { class: 'workspace-menu-content' }, panelButton('Comparer les observations', 'history', 'history'), panelButton('Construire une analyse', 'queries', 'filter'),
@@ -130,9 +132,17 @@ export async function renderPilotWorkspace(ctx) {
             button('Connecter GLPI', () => navigate('data'), { icon: 'download' }))));
         root.dataset.ready = 'true'; return;
       }
-      const valid = new Set([...bootstrap.focus.map(item => item.key), ...bootstrap.groups.map(item => `group:${item}`)]);
-      const previousCount = scope.focusKeys.length; scope.focusKeys = scope.focusKeys.filter(key => valid.has(key));
-      if (previousCount !== scope.focusKeys.length) notify('Le périmètre a été actualisé : certaines équipes ne sont plus présentes dans ce relevé.', 'warning');
+      const selection = teamScopeSelection(teamScopeCatalog(bootstrap.focus, bootstrap.groups), scope.focusKeys);
+      if (selection.unknownKeys.length) {
+        model = null; board = null; savedLayout = null; historyData = null;
+        drawHeader(); replaceChildren(scopeLabel); replaceChildren(provenance); replaceChildren(navigation); replaceChildren(status);
+        const choose = button('Choisir les équipes', null, { icon: 'users' }); choose.addEventListener('click', () => chooseTeams(choose));
+        replaceChildren(content, card('Équipes à actualiser',
+          caption(`${formatNumber(selection.unknownKeys.length)} sélection(s) ne sont plus disponibles dans ce relevé. Choisissez le périmètre à utiliser pour reprendre les calculs.`),
+          toolbar(choose, command(ctx, 'Afficher toutes les équipes', async () => { scope.focusKeys = []; await load(); }))));
+        root.dataset.ready = 'true'; return;
+      }
+      scope.focusKeys = selection.keys;
       const layouts = personal() ? state.settings.dashboard.personalLayout : state.settings.dashboard.layout;
       if (scope.composition !== 'service' && !layouts?.boards?.some(item => item.id === scope.composition)) {
         scope.composition = 'service'; notify('Cette composition n’est plus disponible. Le pilotage du service est affiché.', 'warning');
@@ -147,6 +157,7 @@ export async function renderPilotWorkspace(ctx) {
 
   function draw() {
     root.dataset.businessEditing = String(editing); root.dataset.layoutEditing = String(editing);
+    root.dataset.weatherScope = model.weatherScope?.mode || 'service';
     replaceChildren(content); replaceChildren(navigation);
     content.dataset.density = board.density || 'comfortable';
     if (model.comparison) content.append(comparisonCard(model.snapshot, model.comparison));
@@ -160,15 +171,22 @@ export async function renderPilotWorkspace(ctx) {
     let rendered = 0;
     for (const section of board.sections) {
       if (section.hidden && !editing) continue;
-      const items = board.widgets.filter(item => item.section === section.key && !item.hidden && (editing || !board.hideUnavailableWidgets || widgets.get(item.id)?.available !== false));
+      const items = board.widgets.filter(item => {
+        if (item.section !== section.key || item.hidden) return false;
+        const widget = widgets.get(item.id), context = widget?.weatherContext;
+        return editing || context?.applicable !== false && !context?.representedByHero && (!board.hideUnavailableWidgets || widget?.available !== false);
+      });
       if (!items.length && !editing) continue;
-      const block = el('section', { class: `pilot-block accent-${section.accent}`, 'data-section-key': section.key, 'aria-label': section.title });
+      const scopedWeather = section.key === 'weather' && model.weatherScope && model.weatherScope.mode !== 'service';
+      const sectionTitle = scopedWeather ? 'La météo du périmètre' : section.title;
+      const sectionDescription = scopedWeather ? 'Les volumes et les seuils sont présentés pour la sélection en cours.' : section.description;
+      const block = el('section', { class: `pilot-block accent-${section.accent}`, 'data-section-key': section.key, 'aria-label': sectionTitle });
       const shortTitle = { weather: 'Météo', flow: 'Stock', attention: 'À traiter', teams: 'Équipes', analysis: 'Demandes', people: 'Contributions', actions: 'Notes' }[section.key] || section.title;
-      const go = button(shortTitle, () => block.scrollIntoView({ block: 'start', behavior: document.documentElement.dataset.motion === 'reduce' ? 'instant' : 'smooth' }), { icon: sectionIcons[section.key] || 'chart', title: section.title, attributes: { 'aria-label': section.title } });
+      const go = button(shortTitle, () => block.scrollIntoView({ block: 'start', behavior: document.documentElement.dataset.motion === 'reduce' ? 'instant' : 'smooth' }), { icon: sectionIcons[section.key] || 'chart', title: sectionTitle, attributes: { 'aria-label': sectionTitle } });
       navigation.append(go);
       block.append(el('header', { class: 'pilot-block-heading' }, el('div', {},
         el('span', { class: 'workspace-eyebrow', text: String(++rendered).padStart(2, '0') }),
-        el('h2', { text: section.title }), section.description ? caption(section.description) : null),
+        el('h2', { text: sectionTitle }), sectionDescription ? caption(sectionDescription) : null),
         toolbar(editing ? command(ctx, 'Régler la section', () => sectionEditor(section)) : null, section.key === 'teams' ? button('Voir sur la carte', () => navigate('terrain-map', { focusKeys: scope.focusKeys, technicianKeys: scope.technicianKey ? [scope.technicianKey] : [] }), { icon: 'map' }) : null)));
       const collapsed = !editing && (board.collapsedSections || []).includes(section.key);
       const toggle = button(collapsed ? 'Déplier' : 'Replier', async () => { await persist(draft => { const selected = new Set(draft.collapsedSections || []); if (selected.has(section.key)) selected.delete(section.key); else selected.add(section.key); draft.collapsedSections = [...selected]; }); },
@@ -177,12 +195,16 @@ export async function renderPilotWorkspace(ctx) {
       const grid = el('div', { class: 'pilot-widget-grid analytics-widget-grid', hidden: collapsed });
       for (const setting of items) {
         const widget = widgets.get(setting.id); if (!widget) continue;
-        const weather = setting.presentation === 'weather-volume';
+        const context = widget.weatherContext;
+        const scopedPlaceholder = context?.applicable === false || context?.representedByHero === true;
+        const weather = widget.settings.presentation === 'weather-volume';
         const title = widgetTitle(widget, model.catalog);
-        const mainWeather = weather && setting.sourceKey === 'active' && !setting.filters.length;
+        const mainWeather = weather && (context ? context.role === 'hero' : setting.sourceKey === 'active' && !setting.filters.length);
         const article = el('article', { class: `analytics-widget pilot-widget style-${setting.style} accent-${setting.accent}${weather ? ' business-weather-card' : ''}${mainWeather ? ' business-weather-hero' : ''}${setting.kind === 'metric' && !weather ? ' analytics-kpi-card' : ''}`,
           'data-widget-id': setting.id, 'data-span': setting.span, 'data-widget-kind': setting.kind, 'data-auto-height': setting.autoHeight, 'data-available': widget.available,
           'data-weather-state': weather ? widget.content?.volumeWeather?.state || 'unknown' : undefined,
+          'data-weather-role': context?.role, 'data-weather-applicable': context ? String(context.applicable) : undefined,
+          'data-weather-represented': context ? String(context.representedByHero) : undefined,
           style: { '--span': setting.span, '--widget-height': `${setting.height}px` } });
         const controls = editing ? toolbar(
           command(ctx, 'Régler', () => openWidgetEditor(ctx, { model, board, persist }, setting)),
@@ -190,6 +212,9 @@ export async function renderPilotWorkspace(ctx) {
           command(ctx, '↓', () => move(setting, 1), { disabled: setting.locked, title: 'Déplacer la carte vers la fin' }))
           : button('Détail', () => activate(widget, { kind: 'scope' }).catch(reason => error(ctx, reason)), { title: `Voir les lignes de ${title}` });
         article.append(el('div', { class: 'analytics-widget-heading' }, el('h3', { text: title }), controls),
+          scopedPlaceholder ? el('div', { class: 'workspace-weather-placeholder', 'data-weather-placeholder': '' },
+            badge(context.representedByHero ? 'Présentée dans la météo principale' : 'Hors du périmètre sélectionné'),
+            caption('Cette carte reste dans votre composition. Elle sera de nouveau affichée lorsque le périmètre la concernera.')) :
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
             { snapshot: model.snapshot, historical: model.historical, compactWeather: !mainWeather, preserveWidgetAccent: editing || scope.composition !== 'service',
               onControls: () => navigate('data', { panel: 'quality' }), copyIds: async selection => { const result = await call('dashboard.copyIds', { ...run(), widgetId: widget.id, ...selection }); notify(`${formatNumber(result.count)} identifiants copiés.`); } }));
@@ -221,20 +246,25 @@ export async function renderPilotWorkspace(ctx) {
     await persist(draft => { [draft.widgets[a], draft.widgets[b]] = [draft.widgets[b], draft.widgets[a]]; });
   }
   function chooseTeams(trigger) {
-    const selected = new Set(scope.focusKeys), search = input('', { type: 'search', placeholder: 'Chercher une équipe ou un groupe', 'aria-label': 'Rechercher une équipe ou un groupe' });
+    const entries = teamScopeCatalog(bootstrap.focus, bootstrap.groups);
+    const selection = teamScopeSelection(entries, scope.focusKeys);
+    const selected = new Set(selection.options.map(option => option.key)), search = input('', { type: 'search', placeholder: 'Chercher une équipe', 'aria-label': 'Rechercher une équipe' });
     const fold = value => value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr');
-    const entries = [...bootstrap.focus.map(item => ({ key: item.key, label: item.label, category: 'Équipe' })), ...bootstrap.groups.map(label => ({ key: `group:${label}`, label, category: 'Groupe GLPI' }))];
     const host = el('div', { class: 'workspace-choice-grid' });
-    const drawChoices = () => replaceChildren(host, ...entries.filter(item => fold(item.label).includes(fold(search.value))).map(item => {
-      const choice = checkbox(item.label, selected.has(item.key)); choice.element.append(el('small', { text: item.category }));
-      choice.control.setAttribute('aria-label', `${item.category} · ${item.label}`);
+    const drawChoices = () => replaceChildren(host, ...entries.filter(item => fold(item.search).includes(fold(search.value))).map(item => {
+      const choice = checkbox(item.label, selected.has(item.key));
+      if (item.detail) choice.element.append(el('small', { text: item.detail }));
+      choice.element.dataset.teamKey = item.key;
+      choice.control.setAttribute('aria-label', item.label);
+      if (item.detail) choice.control.setAttribute('aria-description', item.detail);
       choice.control.addEventListener('change', () => choice.control.checked ? selected.add(item.key) : selected.delete(item.key)); return choice.element;
     }));
     search.addEventListener('input', drawChoices); drawChoices();
     const modal = dialog('Choisir plusieurs équipes', el('div', {}, caption('Les choix se cumulent ; chaque ticket reste compté une seule fois dans le périmètre.'),
+      selection.unknownKeys.length ? caption('Les anciennes sélections absentes seront retirées si vous appliquez ce nouveau périmètre.', 'warning') : null,
       toolbar(search, button('Toutes', () => { selected.clear(); drawChoices(); })), host),
       [{ label: 'Annuler', action: close => close() }, { label: 'Appliquer', primary: true, action: async close => {
-        if (selected.size > 64) throw new Error('Choisissez au maximum 64 équipes ou groupes.'); scope.focusKeys = [...selected]; close(); await load();
+        if (selected.size > 64) throw new Error('Choisissez au maximum 64 équipes.'); scope.focusKeys = [...selected]; close(); await load();
       } }], { returnFocus: trigger }); modal.element.dataset.workspacePanel = 'teams';
   }
   function chooseFilters() {

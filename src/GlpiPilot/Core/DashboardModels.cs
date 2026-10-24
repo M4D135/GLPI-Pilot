@@ -25,6 +25,8 @@ public sealed record DashboardSignal(string Label, int Count, int Sample, int Po
     int[] Rows, string Explanation);
 public sealed record DashboardWeather(string State, string Title, string Symbol, double? Score,
     int MeasuredWeight, string Description, IReadOnlyList<DashboardSignal> Signals);
+public sealed record DashboardStockWeatherEntry(string Label, double? Value, string Unit, string State, string StateLabel,
+    double? WarningValue, double? CriticalValue, bool LowerIsBetter, string Scope, string Explanation);
 public sealed record DashboardFocusRow(int Index, string Id, string Title, string Status,
     string Priority, string Group, double? AgeDays, string Reasons);
 public sealed record DashboardDateValue(int Row, DateTime Date);

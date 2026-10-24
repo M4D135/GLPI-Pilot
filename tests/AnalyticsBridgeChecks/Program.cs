@@ -55,7 +55,7 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
-            await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); CheckScopedHistory();
+            await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); await CheckWeatherScopeRuntime(); CheckScopedHistory();
             await CheckStockViewsRuntime();
             await CheckSiteLocationSummaryRuntime();
             await CheckSiteGeographySimulationRuntime();

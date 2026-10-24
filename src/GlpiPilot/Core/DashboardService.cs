@@ -889,7 +889,7 @@ public static class DashboardService
         + (snapshot.OldestGroups is not { } oldest ? 0L : !oldest.Available ? 1L : 7L + oldest.Oldest.Count + oldest.Groups.Sum(group => 6L + group.Oldest.Count))
         + 1L + (snapshot.SiteWorkload.Available ? snapshot.SiteWorkload.Sites.Count : 0);
 
-    public static ExtractionResult ToExport(DashboardSnapshot snapshot)
+    public static ExtractionResult ToExport(DashboardSnapshot snapshot, IReadOnlyList<DashboardStockWeatherEntry>? stockWeather = null)
     {
         var data = new ExtractionResult
         {
@@ -906,8 +906,13 @@ public static class DashboardService
             Add("Périmètre", "Vue sélectionnée", snapshot.ScopeLabel, "", "", "Toutes les valeurs de ce bilan sont recalculées sur ce périmètre du relevé.");
             Add("Périmètre", "Relevé source", snapshot.SourceRowCount.ToString(CultureInfo.InvariantCulture), "lignes récupérées", snapshot.SourceExpectedTotal?.ToString(CultureInfo.InvariantCulture) ?? "Total GLPI inconnu", "Un ticket affecté à plusieurs techniciens peut figurer dans plusieurs vues individuelles ; ne pas additionner leurs totaux.");
         }
-        Add("Météo", snapshot.Weather.Title, snapshot.Weather.Score?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", "/100", snapshot.Weather.MeasuredWeight + " de pondérations disponibles", snapshot.Weather.Description);
-        foreach (var signal in snapshot.Weather.Signals) Add("Météo", signal.Label, signal.Count.ToString(), snapshot.Grain, $"{signal.Sample} / {signal.Population} actifs", signal.Explanation);
+        var weightedSection = stockWeather is null ? "Météo" : "Indice pondéré · distinct de la météo de stock";
+        Add(weightedSection, snapshot.Weather.Title, snapshot.Weather.Score?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", "/100", snapshot.Weather.MeasuredWeight + " de pondérations disponibles", snapshot.Weather.Description);
+        foreach (var signal in snapshot.Weather.Signals) Add(weightedSection, signal.Label, signal.Count.ToString(), snapshot.Grain, $"{signal.Sample} / {signal.Population} actifs", signal.Explanation);
+        if (stockWeather is not null)
+            foreach (var entry in stockWeather)
+                Add("Météo de stock", entry.Label, entry.Value?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", entry.Unit, entry.StateLabel,
+                    entry.Scope + ". " + entry.Explanation);
         foreach (var metric in snapshot.Metrics) Add("Indicateurs", metric.Label, metric.Value?.ToString("G", CultureInfo.InvariantCulture) ?? "Non disponible", metric.Unit, metric.Sample?.ToString() ?? "", metric.Explanation);
         foreach (var dist in snapshot.Distributions)
         {

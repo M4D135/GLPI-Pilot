@@ -2,6 +2,7 @@ import { el, button, card, toolbar, empty, badge, input, select, field, table, f
 import { page, pager } from './terrain-common.js';
 import { mountMap } from './maps.js';
 import { navigationVisible } from '../navigation.js';
+import { teamScopeCatalog, teamScopeSelection } from '../team-scope.js';
 
 const statusChoices = [
   { key: '1', label: 'Nouveau' }, { key: '2', label: 'En cours · attribué' },
@@ -120,8 +121,9 @@ export async function renderTicketMap(ctx) {
     const counter = el('p', { class: 'maps-picker-count', role: 'status', 'aria-live': 'polite' });
     const fold = value => value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase('fr');
     const rows = choices.map(choice => {
-      const control = input('', { type: 'checkbox', checked: draft.has(choice.key) });
-      const label = el('label', { class: 'maps-picker-option' }, control, el('span', { text: choice.label }));
+      const control = input(choice.key, { type: 'checkbox', checked: draft.has(choice.key), 'aria-label': choice.label, 'aria-description': choice.detail });
+      const label = el('label', { class: 'maps-picker-option' }, control, el('div', {}, el('div', { text: choice.label }),
+        choice.detail ? el('small', { class: 'help', text: choice.detail }) : null));
       control.addEventListener('change', () => { if (control.checked) draft.add(choice.key); else draft.delete(choice.key); update(); });
       return { control, label, key: choice.key, searchable: fold(`${choice.label} ${choice.search || ''}`) };
     });
@@ -144,8 +146,8 @@ export async function renderTicketMap(ctx) {
     query.addEventListener('input', update); update(); if (choices.length > 8) query.focus();
   }
   function paintControls() {
-    const teams = [...model.choices.teams.map(team => ({ key: team.key, label: `Équipe · ${team.label}`, search: team.groups.join(' ') })),
-      ...model.choices.groups.map(group => ({ key: `group:${group}`, label: `Groupe · ${group}` }))];
+    const teams = teamScopeCatalog(model.choices.teams, model.choices.groups);
+    const teamSelection = teamScopeSelection(teams, filters.focusKeys);
     const technicians = [...model.choices.technicians.map(person => ({ key: person.key, label: person.name })), { key: '@unassigned', label: 'Sans technicien attribué' }];
     const type = select([{ value: 'all', label: 'Tous les types' }, { value: 'incident', label: 'Incidents' }, { value: 'request', label: 'Demandes' }, { value: 'unknown', label: 'Type non reconnu' }], filters.type);
     type.setAttribute('aria-label', 'Type de ticket'); type.disabled = !model.choices.typeAvailable;
@@ -157,16 +159,16 @@ export async function renderTicketMap(ctx) {
       button('Tous les techniciens', p.act(async () => { filters.mine = false; filters.technicianKeys = []; await load(); }), { primary: !filters.mine && !filters.technicianKeys.length, icon: 'users' }),
       button('Mes tickets', p.act(async () => { if (!model.choices.personalKey) { await ctx.navigate('technicians'); return; } filters.mine = true; filters.technicianKeys = []; await load(); }),
         { primary: filters.mine, icon: 'ticket', title: model.choices.personalName ? `Tickets attribués à ${model.choices.personalName}` : 'Choisir d’abord mon identité dans les techniciens' }),
-      button(`Équipes et groupes${filters.focusKeys.length ? ` (${filters.focusKeys.length})` : ''}`, () => multiChoice('Équipes et groupes', teams, filters.focusKeys, values => { filters.focusKeys = values; }), { icon: 'layers' }),
+      button(`Équipes${teamSelection.keys.length ? ` (${teamSelection.keys.length})` : ''}`, () => multiChoice('Équipes', teams, teamSelection.keys, values => { filters.focusKeys = values; }), { icon: 'layers' }),
       button(`Techniciens${filters.technicianKeys.length ? ` (${filters.technicianKeys.length})` : ''}`, () => multiChoice('Techniciens attribués', technicians, filters.technicianKeys,
         values => { filters.technicianKeys = values; filters.mine = false; }), { icon: 'users', disabled: !model.choices.technicianAvailable }),
       type, button(`Statuts actifs (${filters.statusCodes.length}/4)`, () => multiChoice('Statuts actifs', statusChoices, filters.statusCodes.map(String),
         values => { filters.statusCodes = values.map(Number); }, { allowEmpty: false })),
       el('label', { class: 'maps-visit-date' }, el('span', { text: 'Visites prévues' }), date),
       button('Actualiser', p.act(() => load()), { icon: 'refresh' }));
-    const groupLabels = teams.filter(choice => filters.focusKeys.includes(choice.key)).map(choice => choice.label);
+    const groupLabels = teamSelection.options.map(choice => choice.label);
     const personLabels = filters.mine ? [model.choices.personalName] : technicians.filter(choice => filters.technicianKeys.includes(choice.key)).map(choice => choice.label);
-    scopeSummary.textContent = [groupLabels.length ? groupLabels.join(' · ') : 'Toutes les équipes et tous les groupes',
+    scopeSummary.textContent = [groupLabels.length ? groupLabels.join(' · ') : 'Toutes les équipes',
       personLabels.length ? personLabels.join(' · ') : 'Tous les techniciens', `${formatNumber(model.totals.tickets)} ${unit()} · relevé du ${formatDate(model.sourceDate)}`].join(' — ');
   }
   function paintTotals() {

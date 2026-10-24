@@ -1241,6 +1241,7 @@ Test("Oldest groups preserve calendar ages, source scope, date quality and multi
 Test("Author participation preserves union, intersection, assignment, identities and unavailable fields", () => ParticipationChecks.Run(Check));
 BusinessViewChecks.Register(Test, Check);
 WorkspaceChecks.Register(Test, Check);
+WeatherScopeChecks.Register(Test, Check);
 
 int failures = 0;
 foreach (var (name, run) in tests)

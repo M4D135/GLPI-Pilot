@@ -1,4 +1,4 @@
-# GLPI Pilot 3.4.0 — Windows x64
+# GLPI Pilot 3.4.1 — Windows x64
 
 **Un espace de travail pour exploiter les recherches GLPI accessibles par navigateur et SSO.** Extraction complète, dashboards global et personnel, bibliothèque de tickets, connaissances et espace d’équipe, techniciens, requêtes, lieux, tournées et historiques. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Une base PostgreSQL indépendante peut partager les observations et les contributions entre les postes.
 
@@ -25,6 +25,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 | `wad/sources/` dans DEV | Sources C#, sources web, tests et scripts de reconstruction |
 
+## Correction 3.4.1 : équipes et météo du périmètre
+
+Le filtre **Équipes** propose chaque périmètre une seule fois. Une équipe qui reprend exactement un groupe GLPI ne crée plus deux choix identiques. Les correspondances qui réunissent plusieurs groupes restent disponibles, avec les groupes concernés indiqués dans le sélecteur. Les anciennes sélections restent reconnues ; les réglages ne sont pas supprimés.
+
+La météo principale suit le périmètre choisi. Si une équipe est sélectionnée et que sa règle couvre exactement les tickets affichés, ses seuils s’appliquent à la carte principale et sa petite carte ne se répète plus dessous. Les équipes hors sélection ne sont plus présentées comme des zéros maîtrisés. Une sélection combinée ou partielle conserve son volume, avec une indication explicite lorsqu’aucun seuil ne correspond à ce périmètre ; les seuils d’équipes ne sont pas additionnés. Les [notes 3.4.1](docs/RELEASE-3.4.1.md) détaillent les cas de chevauchement et la conservation des compositions.
+
 ## Six espaces, une interface reconstruite
 
 La version **3.4.0** remplace le catalogue d’écrans par six espaces conçus autour du travail à accomplir. Les outils détaillés s’ouvrent dans leur contexte ; le menu ne propose plus les anciennes vues comme une série d’onglets.
@@ -38,7 +44,7 @@ La version **3.4.0** remplace le catalogue d’écrans par six espaces conçus a
 | **Données** | Import CSV/Excel, collecte GLPI, qualité, correspondances, bibliothèque, recherche de précédents et espace d’équipe |
 | **Réglages** | Apparence, animations, météo et équipes, automatisations, stockage, mises à jour et diagnostic |
 
-**Pilotage partage un même périmètre** entre ses sept sections : météo, stock, attention, équipes, demandes, contributions et notes. Cumuler plusieurs équipes et groupes ne compte pas deux fois un ticket commun. Les limites et la source des chiffres restent visibles ; chaque mesure ouvre les lignes qui la composent. **Composer** permet de modifier les cartes, leur taille, leur visibilité et leur ordre. Les compositions personnalisées restent disponibles.
+**Pilotage partage un même périmètre** entre ses sept sections : météo, stock, attention, équipes, demandes, contributions et notes. Cumuler plusieurs équipes ne compte pas deux fois un ticket commun. Les limites et la source des chiffres restent visibles ; chaque mesure ouvre les lignes qui la composent. **Composer** permet de modifier les cartes, leur taille, leur visibilité et leur ordre. Les compositions personnalisées restent disponibles.
 
 **Tickets fusionne le relevé et le dossier.** Sur grand écran, la liste et la fiche sont côte à côte ; les fenêtres plus étroites disposent d’un retour à la liste. Les filtres, la sélection et la position de lecture sont conservés. Les notes personnelles se sauvegardent par leur action explicite ; le brouillon de suivi termine sa sauvegarde dans le contexte courant avant un changement de simulation.
 
@@ -309,6 +315,7 @@ Le remplacement manuel reste possible : fermer l’application et extraire le no
 
 - [Guide utilisateur](docs/Guide-GLPI-Pilot.html)
 - [Bibliothèque, résolution, base locale et partage central](docs/Bibliotheque-et-partage.md)
+- [Notes de version 3.4.1](docs/RELEASE-3.4.1.md)
 - [Notes de version 3.4.0](docs/RELEASE-3.4.0.md)
 - [Notes de version 3.3.4](docs/RELEASE-3.3.4.md)
 - [Notes de version 3.3.3](docs/RELEASE-3.3.3.md)

@@ -7,6 +7,7 @@ import { participationTable, participationRosterEditor } from './analytics-parti
 import { sitesTable } from './analytics-sites.js';
 import { navigationVisible } from '../navigation.js';
 import { openSiteMap } from './maps.js';
+import { teamScopeCatalog, teamScopeSelection } from '../team-scope.js';
 
 const kindNames = { metric: 'Indicateur', distribution: 'Répartition', weather: 'Météo', timeline: 'Chronologie', attention: 'Points d’attention', quality: 'Qualité',
   note: 'Note', matrix: 'Matrice', histogram: 'Histogramme', boxplot: 'Boîtes à moustaches', scatter: 'Nuage de points', history: 'Historique', map: 'Carte locale',
@@ -24,6 +25,9 @@ export async function renderDashboard(ctx) {
   let editing = ctx.params?.editing === true;
   const params = { boardId: ctx.params?.boardId, technicianKey: ctx.params?.technicianKey ?? '', crossFilters: ctx.params?.crossFilters ?? [],
     ...(business ? { focusKeys: ctx.params?.focusKeys ?? (ctx.params?.focusKey ? [ctx.params.focusKey] : []) } : {}) };
+  const focusOptions = business?.focusEnabled ? teamScopeCatalog(business.focus, business.groups).map(option => ({ ...option, value: option.key })) : [];
+  const focusSelection = teamScopeSelection(focusOptions, params.focusKeys || []);
+  if (business?.focusEnabled) params.focusKeys = focusSelection.keys;
   const loading = empty('Calcul du tableau de bord…', 'Les widgets sont publiés ensemble lorsque leurs périmètres sont prêts.'); ctx.root.append(loading);
   const model = await call(ctx, 'dashboard.get', Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined)));
   if (ctx.signal.aborted) return cleanup;
@@ -93,16 +97,14 @@ export async function renderDashboard(ctx) {
     ? command(ctx, 'Rétablir la présentation de cette rubrique', () => dialog('Rétablir la présentation', caption('La disposition de cette rubrique sera reconstruite avec vos paramètres actuels. Les autres tableaux et les seuils restent conservés.'),
       [{ label: 'Rétablir cette rubrique', action: async close => { await call(ctx, 'dashboard.business.reset'); close(); go({ boardId: undefined }); } }]))
     : command(ctx, '+ Tableau de bord', () => newBoardDialog(ctx, personal, go)), undoControl, redoControl));
-  const focusOptions = business?.focusEnabled ? [...business.focus.map(item => ({ value: item.key, label: `Équipe · ${item.label}`, search: (item.groups || []).join(' ') })),
-    ...business.groups.map(label => ({ value: `group:${label}`, label: `Groupe · ${label}`, search: '' }))] : [];
-  const focusLabels = focusOptions.filter(item => params.focusKeys?.includes(item.value)).map(item => item.label);
-  const focusText = focusLabels.length ? `${focusLabels.slice(0, 2).join(' · ')}${focusLabels.length > 2 ? ` · +${focusLabels.length - 2}` : ''}` : 'Toutes les équipes et tous les groupes';
-  const focusButton = business?.focusEnabled ? button('Équipes et groupes', null, { icon: 'users', attributes: { 'aria-haspopup': 'dialog' } }) : null;
+  const focusLabels = focusSelection.options.map(item => item.label);
+  const focusText = focusLabels.length ? `${focusLabels.slice(0, 2).join(' · ')}${focusLabels.length > 2 ? ` · +${focusLabels.length - 2}` : ''}` : 'Toutes les équipes';
+  const focusButton = business?.focusEnabled ? button('Équipes', null, { icon: 'users', attributes: { 'aria-haspopup': 'dialog' } }) : null;
   // Open synchronously without disabling the trigger: closing the dialog can
   // then restore keyboard focus to this same control.
   focusButton?.addEventListener('click', () => focusDialog());
   const focus = focusButton ? el('div', { class: 'business-group-filter' }, focusButton,
-    command(ctx, 'Toutes', () => go({ focusKeys: [], crossFilters: [] }), { disabled: !focusLabels.length, title: 'Afficher toutes les équipes et tous les groupes' })) : null;
+    command(ctx, 'Toutes', () => go({ focusKeys: [], crossFilters: [] }), { disabled: !focusLabels.length, title: 'Afficher toutes les équipes' })) : null;
   const focusSummary = focusButton ? el('p', { class: 'business-group-summary', role: 'status', 'aria-live': 'polite', text: focusText, title: focusLabels.join('\n') || focusText }) : null;
   const toolsId = `dashboard-tools-${uuid()}`;
   const toolsPanel = business ? el('div', { class: 'business-dashboard-tools-content no-print', id: toolsId, hidden: true }) : null;
@@ -157,20 +159,22 @@ export async function renderDashboard(ctx) {
 
   function focusDialog() {
     const draft = new Set(params.focusKeys); const limit = 64;
-    const search = input('', { type: 'search', placeholder: 'Nom d’équipe ou de groupe', maxLength: 180 });
+    const search = input('', { type: 'search', placeholder: 'Nom d’équipe', maxLength: 180 });
     const count = el('p', { class: 'business-group-count', role: 'status', 'aria-live': 'polite' });
-    const noMatch = caption('Aucune équipe ni aucun groupe ne correspond à la recherche.');
+    const noMatch = caption('Aucune équipe ne correspond à la recherche.');
     const fold = value => value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase('fr').trim();
     const entries = focusOptions.map(option => {
       const choice = checkbox(option.label, draft.has(option.value));
       choice.element.classList.add('business-group-option'); choice.control.value = option.value;
+      choice.element.lastElementChild.replaceWith(el('div', {}, el('div', { text: option.label }), option.detail ? el('small', { class: 'help', text: option.detail }) : null));
+      choice.control.setAttribute('aria-label', option.label); choice.control.setAttribute('aria-description', option.detail);
       choice.control.addEventListener('change', () => { if (choice.control.checked) draft.add(option.value); else draft.delete(option.value); update(); });
       return { ...choice, search: fold(`${option.label} ${option.search}`) };
     });
-    const options = el('div', { class: 'business-group-options', role: 'group', 'aria-label': 'Équipes et groupes disponibles' }, ...entries.map(entry => entry.element), noMatch);
+    const options = el('div', { class: 'business-group-options', role: 'group', 'aria-label': 'Équipes disponibles' }, ...entries.map(entry => entry.element), noMatch);
     const body = el('div', { class: 'business-group-picker' },
       caption('Les choix se cumulent. Chaque ligne du relevé est comptée une seule fois dans ce périmètre.'),
-      focusOptions.length > 8 ? field('Rechercher une équipe ou un groupe', search) : null,
+      focusOptions.length > 8 ? field('Rechercher une équipe', search) : null,
       toolbar(button('Toutes', () => { draft.clear(); update(); }), count), options);
     function update() {
       const query = fold(search.value); let visible = 0;
@@ -180,10 +184,10 @@ export async function renderDashboard(ctx) {
         entry.element.hidden = !entry.search.includes(query); if (!entry.element.hidden) visible++;
       }
       noMatch.hidden = visible > 0;
-      count.textContent = draft.size ? `${formatNumber(draft.size)} sélection(s)${draft.size >= limit ? ' · limite de 64 atteinte' : ''}` : 'Toutes les équipes et tous les groupes';
+      count.textContent = draft.size ? `${formatNumber(draft.size)} sélection(s)${draft.size >= limit ? ' · limite de 64 atteinte' : ''}` : 'Toutes les équipes';
     }
     search.addEventListener('input', update); update();
-    const modal = dialog('Équipes et groupes', body, [{ label: 'Annuler', action: close => close() }, { label: 'Appliquer', primary: true, action: async close => {
+    const modal = dialog('Équipes', body, [{ label: 'Annuler', action: close => close() }, { label: 'Appliquer', primary: true, action: async close => {
       const focusKeys = focusOptions.filter(option => draft.has(option.value)).map(option => option.value);
       close();
       if (focusKeys.length !== params.focusKeys.length || focusKeys.some(key => !params.focusKeys.includes(key))) await go({ focusKeys, crossFilters: [] });

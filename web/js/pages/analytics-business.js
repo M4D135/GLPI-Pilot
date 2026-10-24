@@ -1,6 +1,7 @@
 import { el, button, card, toolbar, empty, badge, input, select, field, table, dialog, call, command, heading, caption,
   checkbox, textArea, clone, uuid, formatNumber } from './analytics-ui.js';
 import { renderDashboard } from './analytics-dashboard.js';
+import { teamScopeCatalog, teamScopeSelection } from '../team-scope.js';
 
 const definitions = [
   ['weather', 'pilot-weather', 'Météo', 'Stock, catégories et équipes : volumes, météo et actions du service.', 'sun'],
@@ -42,14 +43,17 @@ async function renderBusiness(ctx, view) {
   const sessionKey = `${ctx.state.session?.testMode || ctx.state.session?.simulation ? 'simulation' : 'normal'}:${view.key}`;
   const explicit = ctx.params?.focusKeys !== undefined ? ctx.params.focusKeys
     : ctx.params?.focusKey !== undefined ? (ctx.params.focusKey ? [ctx.params.focusKey] : []) : session.get(sessionKey) ?? [];
-  const requested = Array.isArray(explicit) ? [...new Set(explicit)] : [];
-  const available = new Set([...bootstrap.focus.map(item => item.key), ...bootstrap.groups.map(label => `group:${label}`)]);
-  const focusKeys = requested.filter(key => available.has(key));
-  const removed = requested.length - focusKeys.length;
+  const selection = teamScopeSelection(teamScopeCatalog(bootstrap.focus, bootstrap.groups), explicit);
+  if (selection.unknownKeys.length) {
+    ctx.root.append(card('Équipes à actualiser', caption(`${formatNumber(selection.unknownKeys.length)} sélection(s) ne sont plus disponibles. Aucun périmètre élargi n’a été appliqué.`, 'warning'),
+      toolbar(button('Afficher toutes les équipes', () => ctx.navigate(view.route, { ...ctx.params, focusKeys: [] })),
+        selection.options.length ? button('Garder uniquement les équipes disponibles', () => ctx.navigate(view.route, { ...ctx.params, focusKeys: selection.options.map(option => option.key) })) : null)));
+    ctx.root.dataset.ready = 'true'; return cleanup;
+  }
+  const focusKeys = selection.keys;
   const business = { ...view, groups: bootstrap.groups, focus: bootstrap.focus, rules: bootstrap.business.weatherRules,
     customLayout: bootstrap.business.boardOverrides?.some(board => board.id === `business-${view.key}`) === true,
     usingWeatherDefaults: bootstrap.usingWeatherDefaults === true,
-    focusWarning: removed ? `${formatNumber(removed)} sélection(s) ne sont plus disponibles dans ce relevé. Le filtre a été actualisé ; vérifiez les équipes et groupes retenus.` : '',
     focusEnabled: ['oldest', 'followup', 'participants', 'sites', 'groups'].includes(view.key) };
   const api = { ...ctx.api, call: (operation, args = {}, options) => ctx.api.call(operation,
     operation.startsWith('dashboard.') ? { ...args, businessView: view.key, focusKeys } : args, options) };
@@ -112,6 +116,7 @@ export async function renderBusinessSettings(ctx) {
   ctx.root.append(toolbar(save, button('Voir la météo', () => ctx.navigate('pilot-weather'), { icon: 'chart' }), profileImport), status,
     card('Règles de lecture', caption('Un seuil orange ou rouge n’est franchi qu’au-delà de la valeur saisie. Laisser les seuils vides affiche le volume avec « Seuils à définir ».'),
       caption('Repères de départ à adapter : stock global 100 / 200 ; incidents et demandes 50 / 100 ; catégories, équipes et autres compteurs de stock 10 / 20 (orange / rouge). Ce ne sont pas des objectifs de capacité ou de SLA.'),
+      caption('Les équipes reprennent les groupes GLPI. Une correspondance peut réunir plusieurs groupes sous un nom plus lisible ; un même périmètre apparaît une seule fois dans les filtres.'),
       caption('Les équipes suivent l’ordre ci-dessous : chaque ticket est rattaché à la première équipe correspondante, même si cette équipe est masquée. « Météo » désactive seulement la couleur ; « Afficher » masque la carte.'),
       !model.configured ? caption('Les règles proposées reprennent une disposition existante ou les groupes et catégories du relevé. Enregistrer les rend explicites pour les prochains relevés.') : null),
     card('Actualité du service', el('div', { class: 'analytics-form-grid' }, field('Rappel de fraîcheur · heures', freshness, 'Vide : aucun rappel. Ce délai ne recolore pas la météo.'),

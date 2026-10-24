@@ -35,6 +35,7 @@ export function widgetContent(ctx, widget, activate, more, options = {}) {
       body.append(el('div', { class: 'analytics-volume-weather-summary' },
         el('div', { class: 'analytics-volume-weather-numbers' }, metric, caption(unavailable ? 'Donnée indisponible' : data.unit),
           el('strong', { class: 'analytics-volume-weather-status', text: weather.title })), weatherScene(weather.state)));
+      if (widget.weatherContext?.reason) body.append(el('p', { class: 'analytics-weather-context', text: widget.weatherContext.reason }));
       const thresholds = weatherThresholds(data, setting, weather.state); if (thresholds) body.append(thresholds);
       if (setting.note && !options.compactWeather) body.append(el('p', { class: 'analytics-volume-weather-note', text: setting.note }));
       if (setting.showDescription || options.compactWeather && setting.note) body.append(details(options.compactWeather ? 'Seuils et définition' : 'Seuils, périmètre et définition',

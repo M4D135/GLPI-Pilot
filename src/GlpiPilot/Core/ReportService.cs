@@ -9,7 +9,8 @@ namespace GlpiPilot.Core;
 public static class ReportService
 {
     public const long MaximumBytes = 256L * 1024 * 1024;
-    public static ExportResult WriteHtml(DashboardSnapshot snapshot, ExtractionResult source, string criteria, string path, CancellationToken ct = default)
+    public static ExportResult WriteHtml(DashboardSnapshot snapshot, ExtractionResult source, string criteria, string path, CancellationToken ct = default,
+        IReadOnlyList<DashboardStockWeatherEntry>? stockWeather = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot); ArgumentNullException.ThrowIfNull(source);
         var rows = snapshot.ScopeRows.Distinct().Order().ToArray();
@@ -75,6 +76,19 @@ public static class ReportService
                 Pair("Complétude", snapshot.Complete ? "Relevé source complet confirmé" : "Relevé incomplet ou exhaustivité non confirmée");
                 Pair("Contexte et recherche vérifiés", source.Provenance is { SearchVerified: true, ScopeVerified: true } ? "Oui" : "Non / non disponible");
                 W("</tbody></table><pre>" + H(criteria) + "</pre><p class=\"warning\">Les chiffres concernent les lignes de ce périmètre. Une absence n’est pas une résolution. Les durées calculaires ne sont pas des temps de travail. Un ticket multi-affecté peut contribuer à plusieurs catégories ; leurs totaux ne sont pas nécessairement additionnables.</p>");
+                if (stockWeather is not null)
+                {
+                    W("<h2 id=\"stock-weather\">Météo de stock du périmètre</h2><table><thead><tr><th>Indicateur</th><th>Volume</th><th>État</th><th>Vigilance</th><th>Tension</th><th>Périmètre et méthode</th></tr></thead><tbody>");
+                    foreach (var entry in stockWeather)
+                    {
+                        var direction = entry.LowerIsBetter ? "> " : "< ";
+                        W("<tr><td>" + H(entry.Label) + "</td><td>" + H(entry.Value?.ToString("0.###", CultureInfo.CurrentCulture) ?? "Indisponible") + " " + H(entry.Unit)
+                            + "</td><td>" + H(entry.StateLabel) + "</td><td>" + H(entry.WarningValue.HasValue ? direction + entry.WarningValue.Value.ToString("G", CultureInfo.CurrentCulture) : "Non appliqué")
+                            + "</td><td>" + H(entry.CriticalValue.HasValue ? direction + entry.CriticalValue.Value.ToString("G", CultureInfo.CurrentCulture) : "Non appliqué")
+                            + "</td><td>" + H(entry.Scope + ". " + entry.Explanation) + "</td></tr>");
+                    }
+                    W("</tbody></table>");
+                }
                 W("<h2 id=\"metrics\">Indicateurs et dénominateurs</h2><table><thead><tr><th>Indicateur</th><th>Valeur</th><th>Unité</th><th>Échantillon</th><th>Méthode et limites</th></tr></thead><tbody>");
                 foreach (var metric in snapshot.Metrics) W("<tr><td>" + H(metric.Label) + "</td><td>" + H(metric.Value?.ToString("0.###", CultureInfo.CurrentCulture) ?? "Indisponible") + "</td><td>" + H(metric.Unit) + "</td><td>" + H(metric.Sample?.ToString("N0") ?? "—") + "</td><td>" + H(metric.Explanation) + "</td></tr>");
                 W("</tbody></table><h2 id=\"charts\">Graphiques et répartitions</h2><div class=\"charts\">");

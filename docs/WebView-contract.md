@@ -86,6 +86,12 @@ Les erreurs métier sont affichées ; pas de catch silencieux ni succès simulé
 
 ## Moteurs et composants
 
+### Périmètre d’équipes et météo — 3.4.1
+
+`team-scope.js` compose le catalogue unique depuis les équipes configurées et les groupes observés. Les options de même ensemble de groupes partagent leurs clés d’alias. La comparaison suit `OrdinalIgnoreCase` du moteur, sans normalisation des accents ou de la ponctuation. Une clé inconnue reste signalée et ne doit pas élargir silencieusement le périmètre.
+
+`dashboard.get` conserve le `layout` brut pour l’édition. Le contexte calculé est exposé dans `weatherScope` et dans `widgets[].weatherContext` : rôle `hero`, `team` ou `other`, règle, applicabilité, représentation par la carte principale et explication. Les `widgets[].settings` peuvent contenir les seuils effectifs de cette lecture ; ils ne servent pas à remplacer les réglages persistés. Les cartes hors périmètre ou déjà représentées sont écartées en lecture, avec un emplacement explicite dans Composer. La comparaison des lignes et la météo restent calculées en C#, y compris pour les exports.
+
 Les moteurs métier restent répartis par domaine, indépendamment des six destinations visibles :
 
 - Analytics : `PilotApplication.Analytics*.cs`, moteurs Dashboard, historique, requêtes et rapports ; composition dans `pilot-workspace.js` et composants `analytics-*.js` réutilisés.

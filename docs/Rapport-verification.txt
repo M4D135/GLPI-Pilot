@@ -1,3 +1,40 @@
+GLPI Pilot 3.4.1 — Équipes sans doublons et météo du périmètre
+Contrôles locaux du 24 octobre 2026, avant publication du pack Windows
+
+CORRECTIONS
+- Catalogue partagé Pilotage/Terrain : un choix par ensemble de groupes,
+  anciennes clés conservées, regroupements et homonymes explicités.
+- Météo principale d'une équipe exacte : seuils de cette équipe, carte
+  identique non répétée, équipes hors périmètre non évaluées comme zéro.
+- Cumul et sous-ensembles : volumes exacts, aucun seuil global ou objectif
+  non applicable ; priorité entre équipes expliquée par ses vrais volumes.
+- La comparaison utilise les indices source, pas l'égalité des nombres.
+- Disposition brute conservée ; seuils, cible et contexte de lecture sont
+  projetés sans réécriture des paramètres. Un mini-historique propre à
+  une équipe reste sur sa carte ; une météo désactivée conserve sa cible.
+- Compositions personnalisées : neutralisation des filtres transitoires,
+  conservation des seuils liés aux seuls filtres enregistrés.
+- Exports CSV, XLSX et HTML cohérents avec la météo de stock affichée.
+
+VALIDATIONS LOCALES 3.4.1
+- DashboardChecks : 155/155, dont 10 scénarios supplémentaires de météo.
+- AnalyticsBridgeChecks backend : 171/171, dont 25 assertions de portée,
+  indices, export et vraie importation CSV suivie du retour de simulation.
+- Pilotage/Terrain WebView : 69/69, dont les parcours 84 tickets d'équipe,
+  union 96 sans doublon, priorité 18/12, sous-périmètres 42, anciens alias,
+  clés disparues, conservation du profil et vérification géométrique.
+- Captures synthétiques clair/sombre : météo exacte, cumul neutre,
+  sélection Terrain, seuils accessibles dans une carte de hauteur 240 px.
+- Compilation Windows x64 Release : 0 avertissement et 0 erreur.
+- Syntaxe des modules JavaScript et git diff --check : réussis.
+
+Ces résultats locaux ne remplacent pas le démarrage réel du pack Windows.
+La publication exige aussi les gates Windows, PostgreSQL, démarrage EXE,
+mise à jour/retour arrière, intégrité du pack et reconstruction DEV.
+Le workflow du commit publié est la preuve de ces validations natives :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+ARCHIVE — VÉRIFICATIONS DE LA REFONTE 3.4.0
 GLPI Pilot 3.4.0 — Refonte des six espaces et carte centrale des tickets
 Contrôles locaux du 24 octobre 2026, avant validation native du pack
 Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#

@@ -24,6 +24,7 @@ public sealed partial class PilotApplication
         public required string TechnicianKey { get; init; }
         public required bool SourceTicketIdentityReliable { get; init; }
         public required bool SourceStatusesKnown { get; init; }
+        public BusinessWeatherProjection? StockWeather { get; init; }
         public bool IsLocalFileTest { get; init; }
         public bool TestFileReadComplete { get; init; }
         public bool HistoryLoaded { get; set; }
@@ -99,7 +100,16 @@ public sealed partial class PilotApplication
         var board = layout.Boards.FirstOrDefault(b => b.Id == boardId)?.Copy() ?? throw new InvalidDataException("Tableau de bord introuvable.");
         var cross = args.TryGetProperty("crossFilters", out var crossJson) ? Read<List<DashboardScopeFilter>>(crossJson) : new();
         var common = DashboardScopeFilter.CopyList(board.Filters.Concat(cross));
-        if (businessView.Length > 0 || args.TryGetProperty("focusKeys", out _)) AnalyticsBusinessFocus(args, common, ct);
+        var otherScope = personal || common.Count > 0;
+        var focus = businessView.Length > 0 || args.TryGetProperty("focusKeys", out _)
+            ? AnalyticsBusinessFocus(args, common, ct) : new AnalyticsBusinessSelection(Array.Empty<string>(), Array.Empty<string>());
+        var weatherSettings = businessView is "workspace" or "weather" ? AnalyticsBusinessSettings() : null;
+        var weatherObserved = weatherSettings is null ? null : BusinessDashboardTemplates.Observe(source, weatherSettings, ct);
+        var customWeatherScope = weatherSettings is null && businessView.Length == 0 && (personal || cross.Count > 0 || focus.Keys.Count > 0)
+            && board.Widgets.Any(widget => widget.Kind == "metric" && widget.Presentation == "weather-volume");
+        IReadOnlyList<BusinessWeatherRule>? weatherRules = weatherSettings is not null ? BusinessDashboardTemplates.WeatherRules(weatherSettings, weatherObserved!)
+            : customWeatherScope ? Array.Empty<BusinessWeatherRule>() : null;
+        var weatherBoard = weatherSettings is null ? board : BusinessDashboardTemplates.Create("weather", weatherSettings, weatherObserved!);
         DashboardScopeFilter.ValidateList(common);
         var historical = HistoricalDocument; var locations = historical?.LocationEvidence?.ToReport(source) ?? Locations;
         var historySource = IsSimulationInstance && historical is null ? SimulationObservation() : source;
@@ -113,7 +123,7 @@ public sealed partial class PilotApplication
                 : DashboardService.Calculate(source, settings.Dashboard, at, token);
             // A filtered card must not hide an uncertain source row and thereby certify
             // the remaining count. Personal layouts also retain the unfiltered evidence.
-            var weatherSource = personal && board.Widgets.Any(widget => !widget.Hidden && widget.Kind == "metric" && widget.Presentation == "weather-volume")
+            var weatherSource = personal && (weatherSettings is not null || board.Widgets.Any(widget => !widget.Hidden && widget.Kind == "metric" && widget.Presentation == "weather-volume"))
                 ? DashboardService.Calculate(source, settings.Dashboard, at, token) : baseline;
             void Append(DashboardSnapshot snapshot)
             {
@@ -151,8 +161,10 @@ public sealed partial class PilotApplication
             }
             var comparison = board.ComparisonEnabled ? board.ComparisonFilters.Count == 0 ? baseline
                 : Calculate(DashboardService.ResolveScope(baseline, board.ComparisonFilters, token), "Comparaison · " + AnalyticsDescribe(board.ComparisonFilters)) : null;
+            var stockWeather = weatherRules is null ? null : BusinessWeatherProjection.Create(board, weatherRules, weatherBoard!, weatherSource,
+                current, widgets, focus.Keys, focus.Groups, otherScope, token);
             return new AnalyticsRun { Revision = revision, Source = source, Settings = settings, Rules = SnapshotStore.RulesFingerprint(settings),
-                Baseline = baseline, Current = current, Comparison = comparison, Board = board, Common = common, Widgets = widgets,
+                Baseline = baseline, Current = current, Comparison = comparison, Board = stockWeather?.Board ?? board, Common = common, Widgets = widgets, StockWeather = stockWeather,
                 TechnicianKey = technician, History = new(Snapshots, historySource, settings, baseline, technician, token),
                 SourceTicketIdentityReliable = weatherSource.Grain == "tickets", SourceStatusesKnown = weatherSource.Metric("unknown-status")?.Value == 0,
                 IsLocalFileTest = IsTestMode, TestFileReadComplete = _localFileTest?.FileReadComplete == true };
@@ -163,7 +175,7 @@ public sealed partial class PilotApplication
         var journal = businessView.Length > 0 ? AnalyticsBusinessJournal(businessView, layout) : AnalyticsJournal(personal);
         return new { runId = result.Id, revision, layout, layoutHistory = new { undo = journal.Undo.Count, redo = journal.Redo.Count }, boardId, businessView, technicianKey = technician, snapshot = AnalyticsSummary(result.Current),
             comparison = result.Comparison is null ? null : AnalyticsSummary(result.Comparison),
-            widgets = board.Widgets.Where(w => !w.Hidden).Select(w => AnalyticsWidget(result, w)).ToArray(),
+            widgets = result.Board.Widgets.Where(w => !w.Hidden).Select(w => AnalyticsWidget(result, w)).ToArray(), weatherScope = result.StockWeather?.Scope,
             catalog = AnalyticsCatalog(result.Baseline), commonFilters = common, historical = historical is not null,
             simulation = result.IsLocalFileTest, simulationFileReadComplete = result.TestFileReadComplete,
             sourceIdentityReliable = result.SourceTicketIdentityReliable, sourceStatusesKnown = result.SourceStatusesKnown,
@@ -213,16 +225,15 @@ public sealed partial class PilotApplication
         (f.Exclude ? "sauf " : "") + f.SourceKey + (f.Kind == "metric" ? "" : " = " + string.Join(" OU ", f.Selections()) + (f.Kind == "date" ? " → " + f.Value2 : "")
             + (f.IncludeDescendants ? " (sous-catégories incluses)" : ""))));
     private static object AnalyticsMetric(DashboardMetric m) => AnalyticsMetric(m, null, true);
-    private static object AnalyticsMetric(DashboardMetric m, DashboardWidgetSettings? widget, bool complete, bool simulation = false) => new
+    private static object AnalyticsMetric(DashboardMetric m, DashboardWidgetSettings? widget, bool complete, bool simulation = false, DashboardVolumeWeather? weatherOverride = null) => new
     {
         m.Key, m.Label, m.Value, m.Unit, explanation = AnalyticsClip(m.Explanation), m.Sample, m.Tone, count = m.Rows.Length,
-        volumeWeather = widget?.Presentation == "weather-volume" ? AnalyticsVolumeWeather(widget, m.Value, complete, simulation) : null
+        volumeWeather = widget?.Presentation == "weather-volume" ? AnalyticsVolumeWeather(widget, m.Value, complete, simulation, weatherOverride) : null
     };
-    private static object AnalyticsVolumeWeather(DashboardWidgetSettings widget, double? value, bool complete, bool simulation)
+    private static object AnalyticsVolumeWeather(DashboardWidgetSettings widget, double? value, bool complete, bool simulation, DashboardVolumeWeather? weatherOverride = null)
     {
-        var weather = widget.EvaluateVolumeWeather(value, complete);
-        return new { weather.State, title = simulation ? "Simulation · " + weather.Title : weather.Title,
-            explanation = simulation ? "Simulation des seuils sur le fichier local ; aucune couverture GLPI n’est confirmée. " + weather.Explanation : weather.Explanation, simulation };
+        var weather = AnalyticsEvaluateStockWeather(widget, value, complete, simulation, weatherOverride);
+        return new { weather.State, weather.Title, weather.Explanation, simulation };
     }
     private static bool AnalyticsVolumeWeatherReliable(AnalyticsRun run, DashboardSnapshot snapshot, DashboardWidgetSettings widget)
     {
@@ -279,7 +290,8 @@ public sealed partial class PilotApplication
     {
         var s = run.Widgets[widget.Id]; object? content = widget.Kind switch
         {
-            "metric" => s.Metric(widget.SourceKey) is { } metric ? AnalyticsMetric(metric, widget, AnalyticsVolumeWeatherReliable(run, s, widget), run.IsLocalFileTest) : null,
+            "metric" => s.Metric(widget.SourceKey) is { } metric ? AnalyticsMetric(metric, widget, AnalyticsVolumeWeatherReliable(run, s, widget), run.IsLocalFileTest,
+                run.StockWeather?.Overrides.GetValueOrDefault(widget.Id)) : null,
             "distribution" => s.Distributions.FirstOrDefault(d => d.Key == widget.SourceKey) is { } distribution ? AnalyticsDistribution(distribution, widget.TopCount, widget.Presentation) : null,
             "weather" => AnalyticsWeather(s.WeatherProfiles.GetValueOrDefault(widget.SourceKey) ?? s.Weather),
             "timeline" => s.Timeline.TakeLast(366).Select(d => new { d.Date, created = d.Created.Length, resolved = d.Resolved.Length, closed = d.Closed.Length }).ToArray(),
@@ -330,7 +342,8 @@ public sealed partial class PilotApplication
             "sites" => s.SiteWorkload.UnavailableReason,
             _ => "Les colonnes ou les valeurs nécessaires à ce widget ne sont pas disponibles dans ce périmètre."
         };
-        return new { id = widget.Id, settings = widget, content, rowCount = s.RowCount, s.ScopeLabel, available, unavailableReason };
+        return new { id = widget.Id, settings = widget, content, rowCount = s.RowCount, s.ScopeLabel, available, unavailableReason,
+            weatherContext = run.StockWeather?.Contexts.GetValueOrDefault(widget.Id) };
     }
 
     private Task<object?> AnalyticsSaveLayoutAsync(JsonElement args, CancellationToken ct)
@@ -528,9 +541,11 @@ public sealed partial class PilotApplication
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         var criteria = AnalyticsDescribe(run.Common) + "\n" + string.Join("\n", run.Board.Widgets.Where(w => !w.Hidden && w.Filters.Count > 0).Select(w => w.Title + " : " + AnalyticsDescribe(w.Filters)));
-        var exported = kind == "html" ? ReportService.WriteHtml(run.Current, run.Source, criteria, path, ct)
-            : kind == "csv" ? ExportService.WriteCsv(DashboardService.ToExport(run.Current), path, ct)
-            : ExportService.WriteXlsx(DashboardService.ToExport(run.Current), path, ct);
+        var stockWeather = AnalyticsStockWeatherEntries(run);
+        if (run.StockWeather is { } projection) criteria += "\nMétéo de stock · " + projection.Scope.Label + " : " + projection.Scope.Reason;
+        var exported = kind == "html" ? ReportService.WriteHtml(run.Current, run.Source, criteria, path, ct, stockWeather)
+            : kind == "csv" ? ExportService.WriteCsv(DashboardService.ToExport(run.Current, stockWeather), path, ct)
+            : ExportService.WriteXlsx(DashboardService.ToExport(run.Current, stockWeather), path, ct);
         return new { exported.Path, exported.Rows, format = kind };
     }
 }

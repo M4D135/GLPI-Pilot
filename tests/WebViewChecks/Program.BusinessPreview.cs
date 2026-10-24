@@ -153,25 +153,26 @@ internal static partial class Program
             """), "Pilotage commands have equal heights and non-overlapping hit targets.");
         var before = dashboardGets.Count;
         await page.Locator("[data-filter-teams]").ClickAsync();
-        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 1", Exact = true }).CheckAsync();
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe 1", Exact = true }).CheckAsync();
         await Picker().GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
         Require(dashboardGets.Count == before && await Stock().InnerTextAsync() == "168"
             && await page.Locator("[data-filter-teams]").EvaluateAsync<bool>("node=>document.activeElement===node"),
             "Cancelling a draft team choice leaves figures unchanged and returns keyboard focus to its trigger.");
         await page.Locator("[data-filter-teams]").ClickAsync();
-        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 1", Exact = true }).CheckAsync();
-        var search = Picker().GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher une équipe ou un groupe", Exact = true });
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe 1", Exact = true }).CheckAsync();
+        var search = Picker().GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher une équipe", Exact = true });
         await search.FillAsync("equipe 2");
         Require(await Picker().GetByRole(AriaRole.Checkbox).CountAsync() == 1
-            && await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 2", Exact = true }).IsVisibleAsync(),
+            && await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe 2", Exact = true }).IsVisibleAsync(),
             "The cumulative team picker searches accent-insensitively while preserving hidden selections.");
-        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe · Équipe 2", Exact = true }).CheckAsync();
-        await search.FillAsync(""); await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Groupe GLPI · Groupe 1", Exact = true }).CheckAsync();
-        Require(await Picker().GetByRole(AriaRole.Checkbox, new() { Checked = true }).CountAsync() == 3 && dashboardGets.Count == before,
-            "Multiple team and group choices remain a draft and do not calculate until Apply.");
+        await Picker().GetByRole(AriaRole.Checkbox, new() { Name = "Équipe 2", Exact = true }).CheckAsync();
+        await search.FillAsync("");
+        Require(await Picker().GetByRole(AriaRole.Checkbox, new() { Checked = true }).CountAsync() == 2 && dashboardGets.Count == before
+            && await Picker().GetByRole(AriaRole.Checkbox).CountAsync() == 6,
+            "Each team and its equivalent raw group share one choice; two checked teams remain a draft until Apply.");
         await Capture("pilot-team-picker");
         await Picker().GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync(); await StockValue("56"); await Settled();
-        Require(dashboardGets.Count == before + 1 && (await page.Locator(".workspace-scope-summary").InnerTextAsync()).Contains("Équipe 1 + Équipe 2 + Groupe 1", StringComparison.Ordinal)
+        Require(dashboardGets.Count == before + 1 && (await page.Locator(".workspace-scope-summary").InnerTextAsync()).Contains("Équipe 1 + Équipe 2", StringComparison.Ordinal)
             && (await page.Locator("[data-widget-id=business-pilotage-0] .analytics-metric-value").InnerTextAsync()).Trim() == "56",
             "One recalculation applies the same deduplicated 56-ticket perimeter to the weather and analytical stock.");
         await Stock().ClickAsync(); var rows = page.Locator("dialog .analytics-row-dialog");
@@ -186,13 +187,13 @@ internal static partial class Program
         await WaitForPageAsync(page, "document.querySelectorAll('dialog .analytics-row-dialog tbody tr').length===6");
         var ids = first.Concat(await RowIds()).ToArray();
         Require(ids.SequenceEqual(Enumerable.Range(1, 168).Where(id => (id - 1) % 6 < 2)) && ids.Distinct().Count() == 56,
-            "The drilldown pages through all 56 exact source IDs once despite the overlapping team and group selection.");
+            "The drilldown pages through all 56 exact source IDs once for the two unique team choices.");
         await page.Keyboard.PressAsync("Escape");
         await page.Locator(".pilot-section-index").GetByRole(AriaRole.Button, new() { Name = "Suivre la contribution", Exact = true }).ClickAsync();
         Require(await Stock().InnerTextAsync() == "56" && dashboardGets.Count == before + 1,
             "Moving through the analytical sections keeps the common perimeter without replacing the workspace or recalculating.");
         await Navigate("home"); await Navigate("pilot"); await StockValue("56"); await Settled();
-        Require((await page.Locator(".workspace-scope-summary").InnerTextAsync()).Contains("Équipe 1 + Équipe 2 + Groupe 1", StringComparison.Ordinal),
+        Require((await page.Locator(".workspace-scope-summary").InnerTextAsync()).Contains("Équipe 1 + Équipe 2", StringComparison.Ordinal),
             "Returning to Pilotage restores the unified scope for the current simulation.");
         await page.GetByRole(AriaRole.Button, new() { Name = "Réinitialiser", Exact = true }).ClickAsync(); await StockValue("168"); await Settled();
         Require((await page.Locator(".workspace-scope-summary").InnerTextAsync()).Contains("Toutes les équipes", StringComparison.Ordinal),

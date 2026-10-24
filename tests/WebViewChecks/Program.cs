@@ -21,6 +21,7 @@ internal static partial class Program
             if (args.Contains("--business-preview-only"))
             {
                 await CheckBusinessPreviewAsync(args);
+                await CheckWeatherScopeInterfaceAsync(args);
                 Console.WriteLine($"{_passed}/{_passed} native pilot views WebView checks passed.");
                 return;
             }

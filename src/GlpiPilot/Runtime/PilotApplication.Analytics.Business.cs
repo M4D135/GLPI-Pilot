@@ -150,7 +150,8 @@ public sealed partial class PilotApplication
         var result = DashboardLayoutSettings.AppendBoards(Settings.Dashboard.Layout, new() { ActiveBoardId = board.Id, Boards = new() { board } });
         AnalyticsPersistLayout(false, result.Layout); return Task.FromResult<object?>(new { saved = true, boardId = result.Layout.ActiveBoardId });
     }
-    private void AnalyticsBusinessFocus(JsonElement args, List<DashboardScopeFilter> filters, CancellationToken ct)
+    private sealed record AnalyticsBusinessSelection(IReadOnlyList<string> Keys, IReadOnlyList<string> Groups);
+    private AnalyticsBusinessSelection AnalyticsBusinessFocus(JsonElement args, List<DashboardScopeFilter> filters, CancellationToken ct)
     {
         string[] selected;
         if (args.TryGetProperty("focusKeys", out var choices))
@@ -166,7 +167,7 @@ public sealed partial class PilotApplication
             var focus = Text(args, "focusKey", 1200);
             selected = focus.Length == 0 ? Array.Empty<string>() : new[] { focus };
         }
-        if (selected.Length == 0) return;
+        if (selected.Length == 0) return new(Array.Empty<string>(), Array.Empty<string>());
         var settings = AnalyticsBusinessSettings(); var observed = BusinessDashboardTemplates.Observe(Result, settings, ct);
         var teams = BusinessDashboardTemplates.WeatherRules(settings, observed).Where(rule => rule.Kind == "team").ToDictionary(rule => rule.Id, StringComparer.Ordinal);
         var values = new List<string>(); var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -186,5 +187,6 @@ public sealed partial class PilotApplication
         if (values.Count > DashboardScopeFilter.MaximumGroupSelections)
             throw new InvalidDataException("Les équipes et groupes sélectionnés couvrent trop de groupes. Réduisez la sélection.");
         filters.Add(new() { Kind = "matrix-row", SourceKey = "group-status", Values = values });
+        return new(selected.Distinct(StringComparer.Ordinal).ToArray(), values);
     }
 }
