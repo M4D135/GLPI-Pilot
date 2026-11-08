@@ -1,0 +1,65 @@
+name: GLPI 9.5 - capture des pages réelles
+# Installs a throwaway GLPI 9.5.13 with fictitious tickets and saves the HTML of the pages the ticket library reads.
+# Manual or from its dedicated branch only. No private portal, account or data is involved.
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/glpi95-collection-20261029]
+    paths: ['tests/Glpi95Fixtures/**', 'tests/Glpi95LiveChecks/**', 'src/GlpiPilot/Core/**', '.github/workflows/glpi95-fixtures.yml']
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231
+        with:
+          php-version: '7.4'
+          extensions: mysqli, gd, intl, xml, zip, bz2, exif, mbstring, curl, json
+          tools: none
+      - name: Démarrer GLPI 9.5.13 et MariaDB
+        run: |
+          set -euo pipefail
+          docker run -d --name db -p 3306:3306 -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=glpi -e MARIADB_USER=glpi -e MARIADB_PASSWORD=glpi mariadb:10.6
+          curl -fsSL https://github.com/glpi-project/glpi/releases/download/9.5.13/glpi-9.5.13.tgz | tar xz
+          for i in $(seq 1 60); do docker exec db mariadb -uglpi -pglpi -e 'select 1' glpi >/dev/null 2>&1 && break; sleep 2; done
+          (cd glpi && php bin/console glpi:database:install --db-host=127.0.0.1 --db-name=glpi --db-user=glpi --db-password=glpi --default-language=fr_FR --no-interaction --force)
+          rm -f glpi/install/install.php
+          python3 tests/Glpi95Fixtures/seed.py > seed-tickets.sql
+          docker exec -i db mariadb -uglpi -pglpi glpi < tests/Glpi95Fixtures/seed.sql
+          docker exec -i db mariadb -uglpi -pglpi glpi < seed-tickets.sql
+          docker exec db mariadb -uglpi -pglpi -e 'select count(*) tickets from glpi_tickets; select count(*) followups from glpi_itilfollowups' glpi
+          (cd glpi && nohup php -S 127.0.0.1:8080 -t . > ../php-server.log 2>&1 &)
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8080/index.php >/dev/null && break; sleep 1; done
+      - name: Capturer les pages
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet playwright==1.48.0
+          python3 -m playwright install --with-deps chromium >/dev/null
+          python3 tests/Glpi95Fixtures/capture.py http://127.0.0.1:8080 artifacts/glpi95
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+      - name: Moteur réel de la bibliothèque contre GLPI 9.5
+        run: |
+          set -euo pipefail
+          dotnet build tests/Glpi95LiveChecks/Glpi95LiveChecks.csproj -c Release -p:PlaywrightPlatform=linux
+          pwsh tests/Glpi95LiveChecks/bin/Release/net10.0/playwright.ps1 install --with-deps chromium > /dev/null
+          dotnet run --no-build --project tests/Glpi95LiveChecks/Glpi95LiveChecks.csproj -c Release -- http://127.0.0.1:8080 30 8 artifacts/glpi95/live-report.json
+      - name: Journaux GLPI
+        if: always()
+        run: |
+          mkdir -p artifacts/glpi95
+          cp php-server.log artifacts/glpi95/ 2>/dev/null || true
+          cp -r glpi/files/_log artifacts/glpi95/glpi-logs 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: glpi95-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/glpi95/
+          retention-days: 14
+          if-no-files-found: warn

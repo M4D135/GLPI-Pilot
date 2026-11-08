@@ -1,0 +1,32 @@
+/* Scope this layout to the widget editor: the legacy six-column filter grid
+   must not stretch checkboxes or hide exclusion labels behind action buttons. */
+.widget-filter-editor,.widget-filter-list,.widget-filter-values{min-width:0}
+.widget-filter-list{display:grid;gap:14px}
+.widget-filter-condition{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
+.widget-filter-condition[data-filter-mode=exclude]{border-left:3px solid var(--warning)}
+.widget-filter-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.widget-filter-heading>strong{flex:1;min-width:120px;overflow-wrap:anywhere}
+.widget-filter-condition .field{min-width:0}
+.widget-filter-condition :is(select,textarea){width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+.widget-filter-condition .help{margin:0;line-height:1.55;overflow-wrap:anywhere}
+.widget-filter-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:12px}
+.widget-filter-advanced{margin-top:10px;min-width:0}
+.widget-filter-advanced>summary{cursor:pointer;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.widget-filter-advanced[open]>summary{margin-bottom:10px}
+.widget-group-chips{display:flex;align-items:start;flex-wrap:wrap;gap:6px;margin:10px 0;min-width:0}
+.widget-group-chips .button{max-width:100%;min-width:0;white-space:normal;text-align:left;height:auto}
+.widget-group-chips .button>span{overflow-wrap:anywhere;min-width:0}
+.widget-filter-check,.widget-group-option{display:flex;align-items:flex-start;gap:10px;white-space:normal;min-width:0;cursor:pointer}
+.widget-filter-check input[type=checkbox],.widget-group-option input[type=checkbox]{width:17px!important;height:17px!important;min-width:17px;flex:0 0 17px;margin:2px 0;accent-color:var(--accent)}
+.widget-group-option>span{min-width:0;overflow-wrap:anywhere;flex:1}
+.widget-group-option strong,.widget-group-option small{display:block;white-space:normal;overflow-wrap:anywhere}
+.widget-group-options{max-height:42vh;overflow:auto;border:1px solid var(--border);border-radius:8px;min-width:0}
+.widget-group-option{padding:11px;border-bottom:1px solid var(--border)}
+.widget-group-option:has(input:checked){background:var(--accent-soft)}
+.widget-group-picker{display:grid;gap:10px;min-width:0}
+.widget-group-picker .toolbar{flex-wrap:wrap}
+.widget-group-picker .button{max-width:100%;white-space:normal;height:auto}
+.widget-group-picker .button>span{min-width:0;overflow-wrap:anywhere}
+.widget-group-dialog{width:min(720px,calc(100vw - 24px))}
+.widget-filter-editor [hidden],.widget-group-dialog [hidden]{display:none!important}
+@media(max-width:600px){.widget-filter-heading>.button{width:100%}.widget-filter-condition{padding:10px}.widget-group-dialog>.modal-body{padding:12px}.widget-group-picker .toolbar>.button{flex:1 1 160px}}

@@ -1,0 +1,92 @@
+Natural Earth — fond terrestre mondial à l’échelle 1:110 000 000
+===============================================================
+
+Données : Natural Earth, couche physique « Land », continents et grandes îles.
+Auteurs principaux : Tom Patterson et Nathaniel Vaughn Kelso, avec les
+contributeurs de Natural Earth. Projet soutenu par NACIS.
+
+Statut : domaine public, selon les conditions publiées par Natural Earth.
+Ces conditions autorisent l’utilisation, la modification et la redistribution,
+y compris commerciale, sans autorisation préalable ni attribution obligatoire.
+Les données sont proposées sans garantie d’exactitude ou d’adéquation à un usage.
+La présente notice conserve volontairement la provenance.
+
+Conditions officielles, consultées le 24 octobre 2026 :
+https://www.naturalearthdata.com/about/terms-of-use/
+Description de la couche :
+https://www.naturalearthdata.com/downloads/110m-physical-vectors/110m-land/
+Dépôt source :
+https://github.com/nvkelso/natural-earth-vector
+
+Source épinglée
+---------------
+Commit : 693f11422f4e08d2da4566b854dda53eb7c39fb3
+Date du commit : 2020-12-13T07:33:56Z
+Fichier : geojson/ne_110m_land.geojson
+URL immuable :
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/693f11422f4e08d2da4566b854dda53eb7c39fb3/geojson/ne_110m_land.geojson
+Taille de la source : 138160 octets
+SHA-256 de la source :
+9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9
+
+Fichier livré
+-------------
+web/vendor/natural-earth/land.js
+Module ES exportant par défaut une FeatureCollection GeoJSON, sans appel réseau.
+Coordonnées WGS84 dans l’ordre [longitude, latitude], en degrés.
+127 polygones, 128 anneaux fermés, 5143 couples de coordonnées.
+Les géométries et les coordonnées sont conservées sans simplification ni arrondi
+supplémentaire. Seules les propriétés descriptives et les métadonnées sont retirées,
+puis le GeoJSON est compacté et placé dans un export JavaScript statique.
+Cette couche représente les terres et les côtes ; elle ne contient ni frontières
+administratives, ni noms de pays, ni rues, ni données de calcul routier.
+Il s’agit d’un repère mondial simplifié, sans précision d’adresse ou d’entrée.
+
+Taille générée en UTF-8 avec fins de ligne LF : 126045 octets
+SHA-256 du module généré avec ces fins de ligne :
+0333226331462242ee9d13f6c2a1a2946bed427ea11518ea23073bce94c4288d
+
+Reproduction
+------------
+Depuis la racine du dépôt, exécuter ce script avec Python 3 (bibliothèque standard).
+Le téléchargement n’est nécessaire que pour régénérer le fichier fournisseur ;
+l’application utilise ensuite uniquement le module livré dans son dossier web.
+
+    import hashlib
+    import json
+    import math
+    from pathlib import Path
+    from urllib.request import Request, urlopen
+
+    commit = "693f11422f4e08d2da4566b854dda53eb7c39fb3"
+    url = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
+           + commit + "/geojson/ne_110m_land.geojson")
+    request = Request(url, headers={"User-Agent": "GLPI-Pilot-offline-map-vendor/1.0"})
+    with urlopen(request, timeout=30) as response:
+        raw = response.read()
+    assert hashlib.sha256(raw).hexdigest() == (
+        "9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9")
+    source = json.loads(raw)
+    assert source["type"] == "FeatureCollection" and len(source["features"]) == 127
+    features = []
+    for feature in source["features"]:
+        geometry = feature["geometry"]
+        assert geometry["type"] == "Polygon"
+        for ring in geometry["coordinates"]:
+            assert len(ring) >= 4 and ring[0] == ring[-1]
+            for point in ring:
+                assert len(point) == 2 and all(math.isfinite(v) for v in point)
+                assert -180 <= point[0] <= 180 and -90 <= point[1] <= 90
+        features.append({"type": "Feature", "properties": {}, "geometry": geometry})
+    land = {"type": "FeatureCollection", "features": features}
+    header = ("// Natural Earth 1:110m land (public domain). "
+              "See licenses/NaturalEarth-PUBLIC-DOMAIN.txt.\n")
+    output = (header + "export default "
+              + json.dumps(land, ensure_ascii=False, separators=(",", ":"))
+              + ";\n").encode("utf-8")
+    assert len(output) == 126045
+    assert hashlib.sha256(output).hexdigest() == (
+        "0333226331462242ee9d13f6c2a1a2946bed427ea11518ea23073bce94c4288d")
+    target = Path("web/vendor/natural-earth/land.js")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(output)

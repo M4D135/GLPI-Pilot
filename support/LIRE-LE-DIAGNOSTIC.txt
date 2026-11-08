@@ -1,0 +1,30 @@
+﻿GLPI Pilot — si l’EXE ne démarre pas
+
+1. Extraire tout le pack. Garder GLPI-Pilot.exe et son dossier wad côte à côte.
+2. Fermer les autres fenêtres de GLPI Pilot si elles sont ouvertes.
+3. Dans wad\support, double-cliquer sur DIAGNOSTIC_DEMARRAGE.cmd, normalement,
+   sans « Exécuter en tant qu’administrateur ».
+4. Attendre au maximum 20 secondes après le lancement de GLPI Pilot.
+   Si une fenêtre du logiciel apparaît, la laisser ouverte pendant ce délai.
+5. Un rapport s’ouvre dans le Bloc-notes. Copier son contenu pour le diagnostic.
+
+Le rapport est enregistré dans %LOCALAPPDATA%\GLPI-Pilot\Logs.
+Si ce dossier n’est pas accessible, le repli est %TEMP%\GLPI-Pilot\Logs.
+Le fichier se nomme diagnostic-demarrage-AAAAMMJJ-HHMMSS-xxxxxx.txt.
+
+Le lanceur vérifie l’EXE et son pilote, indique le runtime annoncé dans le
+manifeste du pack, puis lance cet EXE. Il relève l’éventuelle erreur Windows,
+la sortie d’erreur du processus lancé et son code de sortie s’il se ferme
+pendant les 20 secondes. Sinon, il indique que le processus est toujours actif.
+Cela ne garantit pas que sa fenêtre est visible. Le logiciel reste ouvert.
+Le nouveau demarrage-dernier.log de GLPI Pilot est ajouté lorsqu’il existe.
+Un ancien journal non mis à jour pendant cet essai n’est pas recopié.
+
+Si PowerShell ne peut pas exécuter le script, le Bloc-notes ouvre à la place
+lanceur-demarrage-dernier.log avec l’erreur de cet appel. Transmettre cette
+erreur au support informatique du poste. Le lanceur respecte la politique
+de sécurité configurée et ne la modifie pas.
+
+Ce diagnostic n’installe rien et ne modifie ni réglages, ni session SSO,
+ni attribut de blocage des fichiers. Il ne lit pas les tickets, la configuration,
+les journaux système Windows ou les autres processus.

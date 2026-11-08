@@ -1,0 +1,73 @@
+name: Sites — retrait des données privées
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'distribution/sites/**'
+      - '.github/workflows/sites.yml'
+      - '.github/scripts/remove_private_site_assets.py'
+      - '.github/scripts/test_remove_private_site_assets.py'
+      - '.github/scripts/redact_private_site_release_notes.py'
+      - '.github/scripts/test_redact_private_site_release_notes.py'
+      - '.github/scripts/private_site_release_note_plan.json'
+
+# The former publisher is retired. No CSV or site archive is built or uploaded.
+permissions:
+  contents: read
+
+concurrency:
+  group: sites-data-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  remove:
+    name: Retirer les seuls fichiers de sites privés et vérifier leur absence
+    if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Récupérer le script de maintenance
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Vérifier les protections sur des données fictives
+        run: python3 -m unittest discover -s .github/scripts -p 'test_remove_private_site_assets.py' -v
+      - name: Vérifier les corrections de notes sur des releases fictives
+        run: python3 -m unittest discover -s .github/scripts -p 'test_redact_private_site_release_notes.py' -v
+      - name: Retirer les trois noms autorisés de toutes les releases et des artefacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 .github/scripts/remove_private_site_assets.py
+          --repository "$GITHUB_REPOSITORY" --apply
+          --report "$RUNNER_TEMP/private-site-removal-report.json"
+      - name: Assainir uniquement les six corps de notes revus
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 .github/scripts/redact_private_site_release_notes.py
+          --repository "$GITHUB_REPOSITORY"
+          --plan .github/scripts/private_site_release_note_plan.json --apply
+          --report "$RUNNER_TEMP/private-site-note-redaction-report.json"
+      - name: Résumer les vérifications
+        shell: bash
+        run: |
+          python3 - <<'PYREPORT'
+          import json, os, pathlib
+          report = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'private-site-removal-report.json').read_text())
+          notes = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'private-site-note-redaction-report.json').read_text())
+          if report['status'] != 'passed' or notes['status'] != 'passed':
+              raise SystemExit('Le retrait ou les notes n’ont pas été vérifiés.')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
+              output.write('## Retrait des données de sites terminé\n\n')
+              output.write(f"- {len(report['deleted'])} fichier(s) retiré(s), absence HTTP 404 vérifiée.\n")
+              output.write('- Les trois noms de fichiers ne figurent plus dans les releases ni dans les artefacts Actions.\n')
+              output.write(f"- {len(notes['updated'])} note(s) assainie(s), {len(notes['already_redacted'])} déjà conforme(s) ; corps exacts vérifiés.\n")
+              output.write('- Les autres métadonnées et toutes les pièces jointes restent inchangées lors de la correction des notes.\n')
+              output.write('- Aucun exécutable, pack Windows, tag ou historique Git n’a été réécrit.\n')
+          PYREPORT

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Fixture — Tableaux complexes</title><style>body{font:15px Segoe UI;margin:24px}section{margin:24px 0}table{border-collapse:collapse}td,th,[role=gridcell],[role=columnheader]{padding:9px;border:1px solid #bbb}[role=row]{display:flex}[role=gridcell],[role=columnheader]{min-width:100px}.hidden{display:none}.pagination{display:flex;gap:20px;margin:10px 0}</style></head><body>
+<section><h2>Tickets avec regroupement</h2><table id="complex"><thead><tr><th rowspan="2">ID</th><th colspan="2">Demande</th><th rowspan="2">État</th><th class="hidden">Secret masqué</th></tr><tr><th>Nom</th><th>Nom</th><th class="hidden">Masqué</th></tr></thead><tbody>
+<tr data-id="1"><td>1</td><td rowspan="2">Réseau</td><td>Incident « été »</td><td><span role="img" aria-label="Ouvert"></span><input type="hidden" value="NE-PAS-EXPORTER"><input type="password" value="NE-PAS-EXPORTER" hidden></td><td class="hidden">INVISIBLE</td></tr>
+<tr data-id="2"><td>2</td><td><input type="text" value="Champ modifiable"></td><td><select><option>Ouvert</option><option selected>Résolu</option></select></td><td class="hidden">INVISIBLE</td></tr>
+<tr data-id="3"><td>3</td><td>Matériel</td><td>Description<br>sur deux lignes<table><tr><td>CONTENU-IMBRIQUÉ-EXCLU</td></tr></table></td><td>Fermé</td><td class="hidden">INVISIBLE</td></tr>
+</tbody></table><nav class="pagination"><span>Affichage de 1 à 3 sur 3 éléments</span><button id="complex-next" disabled title="Page suivante">Suivant</button></nav></section>
+<section><h2>Grille virtualisée</h2><div role="grid" id="aria-grid" aria-label="Vue partielle des utilisateurs" aria-rowcount="51" aria-colcount="3">
+<div role="row"><div role="columnheader" aria-colindex="1">ID</div><div role="columnheader" aria-colindex="2">Nom</div><div role="columnheader" aria-colindex="3">Service</div></div>
+<div role="row" data-id="21" aria-rowindex="2"><div role="gridcell" aria-colindex="1">21</div><div role="gridcell" aria-colindex="2">Élodie</div><div role="gridcell" aria-colindex="3">Support</div></div>
+<div role="row" data-id="22" aria-rowindex="3"><div role="gridcell" aria-colindex="1">22</div><div role="gridcell" aria-colindex="2">François</div><div role="gridcell" aria-colindex="3">Infrastructure</div></div>
+</div><nav class="pagination"><span>Affichage de 1 à 2 sur 50 éléments</span><button id="aria-next" aria-label="Next page">›</button></nav></section>
+<section><h2>Aucun résultat</h2><table id="empty-table"><thead><tr><th>ID</th><th>Nom</th></tr></thead><tbody><tr><td colspan="2">Aucun élément trouvé</td></tr></tbody></table></section>
+<section><h2>Sans en-tête</h2><table id="no-header"><tbody><tr><td>Premier enregistrement</td><td>001</td></tr><tr><td>Deuxième enregistrement</td><td>002</td></tr></tbody></table></section>
+<section><h2>Pagination ambiguë</h2><table id="ambiguous"><thead><tr><th>ID</th></tr></thead><tbody><tr><td>88</td></tr></tbody></table><nav class="pagination"><a href="?page=2" rel="next">Suivant</a><a href="?page=4" rel="next">Suivant</a></nav></section>
+<section><h2>Boutons ambigus</h2><table id="ambiguous-buttons"><thead><tr><th>ID</th></tr></thead><tbody><tr><td>89</td></tr></tbody></table><nav class="pagination"><button type="button">Suivant</button><button type="button">Suivant</button></nav></section>
+</body></html>

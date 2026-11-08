@@ -1,0 +1,19 @@
+/* A visible board label must not shift only its select below peer actions. */
+.pilot-workspace .workspace-board-choice{
+  display:flex;flex-direction:row;align-items:center;gap:8px;
+  flex:0 1 auto;min-width:0;max-width:100%;
+}
+.pilot-workspace .workspace-board-choice>.field-label{
+  margin:0;flex:0 0 auto;font-size:11px;white-space:nowrap;
+}
+.pilot-workspace .workspace-board-choice>select{
+  width:220px;max-width:100%;min-width:0;flex:1 1 145px;
+}
+@media(max-width:1400px){
+  .pilot-workspace .workspace-board-choice{gap:6px}
+  .pilot-workspace .workspace-board-choice>select{width:185px}
+}
+@media(max-width:680px){
+  .pilot-workspace .workspace-board-choice{flex:1 1 100%;width:100%}
+  .pilot-workspace .workspace-board-choice>select{width:0}
+}

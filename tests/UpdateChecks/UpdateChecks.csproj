@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/GlpiPilot/Core/UpdateService*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/AdministrationCapabilities.cs" Link="Core/AdministrationCapabilities.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/AppPaths.cs" Link="Core/AppPaths.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/BrowserChannels.cs" Link="Core/BrowserChannels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/PackComponents.cs" Link="Core/PackComponents.cs" />
+  </ItemGroup>
+</Project>

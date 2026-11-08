@@ -1,0 +1,8 @@
+{
+  "name": "pesto-guides",
+  "private": true,
+  "description": "Fabrication des guides Word et PDF de Pesto",
+  "dependencies": {
+    "docx": "^9.9.0"
+  }
+}

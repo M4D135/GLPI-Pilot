@@ -1,0 +1,151 @@
+name: Collecte reprenable - moteur et transferts sans publication
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [codex/collecte-reprenable-20261028]
+    paths: ['src/**', 'tests/**', 'web/**', '.github/workflows/library-collection-check.yml']
+permissions:
+  contents: read
+jobs:
+  collection-core:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Consigner le contexte
+        run: |
+          New-Item -ItemType Directory -Path artifacts/library-collection -Force | Out-Null
+          "Commit: $env:GITHUB_SHA`nRun: $env:GITHUB_RUN_ID / $env:GITHUB_RUN_ATTEMPT" | Set-Content artifacts/library-collection/context.log
+          $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'No Chromium test browser on this runner.' }
+          "GLPI_TEST_CHROMIUM=$browser" >> $env:GITHUB_ENV
+      - name: Reprise durable et transfert atomique sur SQLite reel
+        run: |
+          dotnet run --project tests/LibraryCollectionCoreChecks/LibraryCollectionCoreChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/core.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection core checks failed.' }
+      - name: Controleur et enregistrement des commandes Csharp
+        run: |
+          dotnet run --project tests/LibraryCollectionChecks/LibraryCollectionChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/runtime.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection runtime checks failed.' }
+      - name: Parcours complet pause reprise et mise a jour differentielle
+        run: |
+          dotnet run --project tests/LibraryCollectionJourneyChecks/LibraryCollectionJourneyChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/journey.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection browser journeys failed.' }
+      - name: Menu de collecte et fermeture ticket avec la CSP de production
+        run: |
+          $driver = Join-Path $PWD 'tests/LibraryCollectionChecks/bin/Release/net10.0/.playwright'
+          $node = Join-Path $driver 'node/win32_x64/node.exe'
+          $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+          $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/library-collection/screenshots'
+          Remove-Item Env:GLPI_TEST_OFFLINE_BLOBS -ErrorAction SilentlyContinue
+          & $node tests/LibraryCollectionChecks/ui.cjs 2>&1 | Tee-Object artifacts/library-collection/ui.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection interface checks failed.' }
+          & $node tests/TicketControlChecks/run.cjs 2>&1 | Tee-Object artifacts/library-collection/tickets.log
+          if ($LASTEXITCODE -ne 0) { throw 'Ticket panel checks failed.' }
+      - name: Non-regression de la bibliotheque existante
+        run: |
+          dotnet run --project tests/TicketLibraryChecks/TicketLibraryChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/library.log
+          if ($LASTEXITCODE -ne 0) { throw 'Existing library checks failed.' }
+      - name: Lectures navigateur sur portail synthetique uniquement
+        run: |
+          dotnet run --project tests/TicketLibraryAcquisitionChecks/TicketLibraryAcquisitionChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/acquisition.log
+          if ($LASTEXITCODE -ne 0) { throw 'Existing acquisition checks failed.' }
+      - name: Compiler les controles des vrais EXE et verifier les gardes des packs
+        run: |
+          dotnet build tests/WindowsStartupChecks/WindowsStartupChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/native-compile.log
+          if ($LASTEXITCODE -ne 0) { throw 'Native collection harness failed to compile.' }
+          python tests/ReleasePackChecks/test_verify.py 2>&1 | Tee-Object artifacts/library-collection/pack-verifier.log
+          if ($LASTEXITCODE -ne 0) { throw 'Release pack verifier checks failed.' }
+      - name: Conserver les preuves sans publication
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: library-collection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/library-collection/
+  ergonomics:
+    uses: ./.github/workflows/ergonomics-check.yml
+  sso-regression:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Retours SSO sur portail fictif avec les assertions existantes
+        run: |
+          New-Item -ItemType Directory -Path artifacts/collection-sso -Force | Out-Null
+          $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'No Chromium test browser on this runner.' }
+          $env:GLPI_TEST_CHROMIUM = $browser
+          $env:GLPI_TEST_FILTER = 'SSO terminé sur le tableau de bord'
+          $env:GLPI_TEST_TRACE = '1'
+          foreach ($attempt in 1..3) {
+            dotnet run --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object "artifacts/collection-sso/attempt-$attempt.log"
+            if ($LASTEXITCODE -ne 0) { throw 'Existing SSO return assertion failed; inspect the synthetic trace.' }
+          }
+      - name: Conserver les traces synthetiques
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: collection-sso-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/collection-sso/
+  postgres-collector:
+    name: Verrou du collecteur sur PostgreSQL 17 reel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+        env:
+          POSTGRES_DB: glpi_pilot_checks
+          POSTGRES_USER: glpi_pilot_checks
+          POSTGRES_PASSWORD: glpi_pilot_ephemeral_ci
+        ports: ['127.0.0.1:5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U glpi_pilot_checks -d glpi_pilot_checks"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      GLPI_PILOT_TEST_POSTGRES: 'Host=127.0.0.1;Port=5432;Database=glpi_pilot_checks;Username=glpi_pilot_checks;Password=glpi_pilot_ephemeral_ci;SSL Mode=Disable;GSS Encryption Mode=Disable;Include Error Detail=false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Exclusion reprise et perte de session sans lecture GLPI
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/collection-lease
+          printf 'Commit: %s\nRun: %s / %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/collection-lease/context.log
+          timeout 180s dotnet run --project tests/LibraryCollectorPostgresChecks/LibraryCollectorPostgresChecks.csproj -c Release 2>&1 | tee artifacts/collection-lease/postgres.log
+          grep -Fx '6/6 PostgreSQL collector lease checks passed.' artifacts/collection-lease/postgres.log
+      - name: Conserver les preuves du verrou PostgreSQL
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: collection-lease-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/collection-lease/

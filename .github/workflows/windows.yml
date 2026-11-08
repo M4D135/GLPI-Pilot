@@ -1,0 +1,433 @@
+name: Windows et PostgreSQL — qualification des packs PROD / PROD-LIGHT
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'web/**'
+      - 'package.json'
+      - '.gitattributes'
+      - 'tests/**'
+      - 'support/**'
+      - 'build.ps1'
+      - 'build-tools/**'
+      - '.github/actions/retain-evidence/**'
+      - '.github/workflows/windows.yml'
+      - '.github/workflows/library-collection-check.yml'
+      - '.github/workflows/library-compatibility-check.yml'
+      - '.github/workflows/ergonomics-check.yml'
+      - '.github/workflows/terrain-interface-check.yml'
+      - '.github/workflows/publish-verified-release.yml'
+      - 'global.json'
+      - 'NuGet.Config'
+      - 'nuget.config'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+
+# Documentation-only pushes (README.md, docs/, licenses/) do not start this long qualification; they still
+# change the packs, so run this workflow by hand on main before publishing: publication requires a complete
+# successful run on the exact main commit.
+# Qualification is read-only. Publication is a separate explicit workflow after archive inspection.
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A release branch is qualified by hand, then pushed fast-forward to main: the same commit does not need a second
+  # 90-minute qualification. Publication binds to the commit (build-tools/select-verified-release.py), not to the branch.
+  already-qualified:
+    name: Commit déjà qualifié par un run complet ?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          # Fail open: when the API is unavailable the full qualification simply runs, as before this gate existed.
+          skip=false
+          if [[ "$EVENT" == push ]]; then
+            runs=$(gh api "repos/$GH_REPO/actions/workflows/windows.yml/runs?head_sha=$SHA&status=success&per_page=20" --jq ".workflow_runs[] | select(.id != $RUN_ID) | .id") || { echo 'API GitHub indisponible : qualification complète lancée.' >> "$GITHUB_STEP_SUMMARY"; runs=; }
+            for run in $runs; do
+              complete=$(gh api "repos/$GH_REPO/actions/runs/$run/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Windows x64 · contrôles réels et packs" and .conclusion == "success")] | length') || complete=0
+              if [[ "$complete" == 1 ]]; then
+                echo "Commit $SHA déjà qualifié par le run complet $run ; cette répétition est passée." >> "$GITHUB_STEP_SUMMARY"
+                skip=true; break
+              fi
+            done
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+  ergonomics:
+    needs: already-qualified
+    if: needs.already-qualified.outputs.skip != 'true'
+    name: Collecte, ergonomie et pilotage ticket · Standard/Admin
+    uses: ./.github/workflows/library-compatibility-check.yml
+
+  # Fast gate: exercise only the recent source-switch and refresh regressions.
+  # Avoid running the 30+ minute packaging pipeline for a broken WebView selector.
+  preflight-webview:
+    needs: already-qualified
+    if: needs.already-qualified.outputs.skip != 'true'
+    name: Prévalidation rapide · sources et actualisation
+    runs-on: windows-2025
+    timeout-minutes: 18
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Contrôler les scripts et le sélecteur de rafraîchissement
+        run: |
+          node --check web/js/app.js
+          node --check web/js/source-cache.js
+          node --check web/js/pages/data-workspace.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax error' }
+          python -m unittest discover -s tests/ReleasePackChecks -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Explicit publication guards failed' }
+      - name: WebView sources et refresh · Standard/Admin
+        timeout-minutes: 14
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $browsers = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Google\Chrome\Application\chrome.exe')
+          $browser = $browsers | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'No Chromium browser on runner' }
+          $env:GLPI_TEST_CHROMIUM = $browser
+          foreach ($edition in @('false','true')) {
+            foreach ($suite in @('--data-source-workflow-only','--workspace-refresh-only')) {
+              Write-Host "Preflight $edition $suite"
+              dotnet run --project tests/WebViewChecks/WebViewChecks.csproj -c Release -p:PlaywrightPlatform=win "-p:PilotAdmin=$edition" -- $suite
+              if ($LASTEXITCODE -ne 0) { throw "Preflight failed for $edition $suite" }
+            }
+          }
+
+  terrain-interface:
+    needs: already-qualified
+    if: needs.already-qualified.outputs.skip != 'true'
+    name: Prévalidation Terrain et derniers parcours Standard/Admin
+    uses: ./.github/workflows/terrain-interface-check.yml
+
+  windows-checks:
+    needs: already-qualified
+    if: needs.already-qualified.outputs.skip != 'true'
+    name: Windows x64 · contrôles C# et WebView
+    runs-on: windows-2025
+    # Séparés des packs et lancés en parallèle sur un autre runner hébergé : un échec ou une relance des packs ne
+    # refait plus ces 45 min de contrôles déjà verts (gh run rerun --failed ne relance que le job en échec).
+    # Plafond : somme des étapes (18+30+10+30 = 88 min) plus la préparation et la conservation des journaux.
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+    steps:
+      - name: Récupérer les sources
+        # Official release v7.0.1; immutable commit verified through the GitHub API.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Installer le SDK .NET 10 qualifié
+        id: dotnet
+        # Official release v6.0.0.
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          # Same SDK as the qualified 3.9.0 packs; a floating channel selected
+          # 10.0.403 before its Microsoft download endpoint became available.
+          dotnet-version: '10.0.402'
+          architecture: x64
+
+      - name: Sélectionner le SDK et préparer les journaux
+        env:
+          CI_DOTNET_SDK: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          if (-not (Test-Path -LiteralPath global.json)) {
+            @{ sdk = @{ version = $env:CI_DOTNET_SDK; rollForward = 'latestPatch'; allowPrerelease = $false } } |
+              ConvertTo-Json -Depth 3 | Set-Content -LiteralPath global.json -Encoding utf8
+          }
+          New-Item -ItemType Directory -Path artifacts/windows-ci/logs -Force | Out-Null
+          dotnet --info | Tee-Object -FilePath artifacts/windows-ci/logs/dotnet-info.log
+          if ($LASTEXITCODE -ne 0) { throw '.NET information unavailable.' }
+          if (-not [Environment]::UserInteractive -or (Get-Process -Id $PID).SessionId -eq 0) { throw 'La qualification des EXE nécessite une session Windows interactive.' }
+          "Commit: $env:GITHUB_SHA`nRunner: $env:RUNNER_OS / $env:RUNNER_ARCH`nOS: $([Environment]::OSVersion.VersionString)" |
+            Set-Content -LiteralPath artifacts/windows-ci/logs/build-context.log -Encoding utf8
+
+      - name: Diagnostics, pilotage, calendrier et partage métier
+        timeout-minutes: 18
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
+
+      - name: Vérifier le navigateur et les exports sur des pages synthétiques
+        # Quatre suites en série, chacune avec son build puis sa propre garde de 180 s dans Invoke-WindowsCi.ps1.
+        # Le plafond de l'étape doit donc dépasser la somme des gardes internes, sinon il tue un run qui avance.
+        timeout-minutes: 30
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
+
+      - name: Vérifier la lecture des fiches pour la bibliothèque sur des pages synthétiques
+        # Build hors garde (120 s) puis exécution sous sa propre garde de 180 s dans Invoke-WindowsCi.ps1.
+        timeout-minutes: 10
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage LibraryAcquisitionChecks
+
+      - name: Vérifier les moteurs C# et toutes les interfaces WebView
+        # Common interface, calendar, sharing, simulation, motion, saved slides and weather/site correction in both editions.
+        # Individual suites keep their own bounded deadlines in Invoke-WindowsCi.ps1.
+        timeout-minutes: 30
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage WebViewChecks
+
+      - name: Conserver les journaux des contrôles, même en cas d’échec
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: windows-webview-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/windows-ci/logs/
+
+  windows:
+    needs: already-qualified
+    if: needs.already-qualified.outputs.skip != 'true'
+    name: Windows x64 · contrôles réels et packs
+    runs-on: windows-2025
+    # Le plafond du job doit dépasser la SOMME des plafonds de ses étapes (40+15+10+100 = 165 min plus la
+    # préparation et la conservation des preuves), sinon GitHub envoie une demande d'annulation pendant l'étape la
+    # plus longue et le plafond de cette étape devient inatteignable. À 90 min, le job était tué à 1 h 31 alors
+    # que « Vérifier le remplacement réel du pack » était mesuré à 35 min à lui seul sur le pack PROD.
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+    steps:
+      - name: Récupérer les sources
+        # Official release v7.0.1; immutable commit verified through the GitHub API.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Installer le SDK .NET 10 qualifié
+        id: dotnet
+        # Official release v6.0.0.
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          # Same SDK as the qualified 3.9.0 packs; a floating channel selected
+          # 10.0.403 before its Microsoft download endpoint became available.
+          dotnet-version: '10.0.402'
+          architecture: x64
+
+      - name: Sélectionner le SDK et préparer les journaux
+        env:
+          CI_DOTNET_SDK: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          if (-not (Test-Path -LiteralPath global.json)) {
+            @{ sdk = @{ version = $env:CI_DOTNET_SDK; rollForward = 'latestPatch'; allowPrerelease = $false } } |
+              ConvertTo-Json -Depth 3 | Set-Content -LiteralPath global.json -Encoding utf8
+          }
+          New-Item -ItemType Directory -Path artifacts/windows-ci/logs -Force | Out-Null
+          dotnet --info | Tee-Object -FilePath artifacts/windows-ci/logs/dotnet-info.log
+          if ($LASTEXITCODE -ne 0) { throw '.NET information unavailable.' }
+          if (-not [Environment]::UserInteractive -or (Get-Process -Id $PID).SessionId -eq 0) { throw 'La qualification des EXE nécessite une session Windows interactive.' }
+          "Commit: $env:GITHUB_SHA`nRunner: $env:RUNNER_OS / $env:RUNNER_ARCH`nOS: $([Environment]::OSVersion.VersionString)" |
+            Set-Content -LiteralPath artifacts/windows-ci/logs/build-context.log -Encoding utf8
+
+      - name: Construire les packs PROD et PROD-LIGHT (exe + wad)
+        id: pack
+        timeout-minutes: 40
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
+
+      - name: Préparer le harnais natif et la configuration fictive
+        id: prepare_native
+        # Checkout propre : le harnais natif et RuntimeSessionChecks se compilent ici (gardes internes 420 + 300 + 120 s).
+        timeout-minutes: 15
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PreparePackStartup
+
+      - name: Démarrer les vrais EXE, vérifier le zoom et le PDF · PROD-LIGHT
+        if: "!cancelled() && steps.prepare_native.outcome == 'success'"
+        timeout-minutes: 10
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartupLight
+
+      - name: Vérifier le remplacement réel du pack et le retour arrière
+        if: "!cancelled() && steps.prepare_native.outcome == 'success'"
+        # Quatre contrôles lancent le vrai EXE et son assistant de maintenance sur des copies jetables du pack
+        # PROD-LIGHT publié (sans runtime fixe : PROD pesait 566 MB), puis re-hachent le pack plusieurs fois. Chacun a son propre budget dans le fixture
+        # (12 min, 20 min pour les trois qui attendent l'assistant), soit 72 min au pire, et le plafond externe
+        # du harnais est à 80 min : le plafond de l'étape doit couvrir les deux plus la construction du harnais,
+        # sinon GitHub tue le job avant que le fixture ait pu nommer la phase qui a épuisé son délai.
+        timeout-minutes: 100
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage UpdateStartup
+
+      - name: Conserver le pack PROD-LIGHT Windows (sans runtime WebView2)
+        uses: ./.github/actions/retain-evidence
+        with:
+          path: ${{ steps.pack.outputs.prod-light-pack-path }}
+
+      - name: Joindre le pack PROD-LIGHT Windows au run
+        # Official release v7.0.2. ZIP joint tel quel (archive: false) : l'empreinte de l'artefact est celle du pack,
+        # que la publication compare au reçu du journal et à l'empreinte inspectée avant de le promouvoir.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          path: ${{ steps.pack.outputs.prod-light-pack-path }}
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+      - name: Résumé du résultat Windows
+        run: |
+          @"
+          ## Validation Windows terminée
+          - Contrôles des diagnostics, configurations, dashboards, dispositions, recherche, techniciens, villes, tournées et requêtes : exécutés avec succès.
+          - Bibliothèque SQLite et contributions d’équipe : persistance, versions, conflits et reprise contrôlés localement.
+          - Calendrier commun : récurrences, fuseaux, contraintes, lots indivisibles et isolation de la simulation contrôlés.
+          - Dossier partagé : échanges réels entre processus, reprise après coupure et données métier communes contrôlés sur des dossiers temporaires ; aucun serveur SMB privé qualifié.
+          - Acquisition tous statuts, onglets de consultation, pagination et restauration de la recherche : contrôlées sur des pages synthétiques.
+          - Interfaces locales HTML/CSS/ES modules : parcours et interactions contrôlés avec les vrais handlers C# et la CSP de production.
+          - Données : collecte GLPI prioritaire, CSV disponible et préparation des collectes groupées contrôlés dans Standard et Admin, avec sélection mémorisée et refus des révisions périmées.
+          - Configuration par défaut dans wad : génération, démarrage, compatibilité du fichier racine et préservation lors des mises à jour et retours arrière contrôlés.
+          - Calendrier et bibliothèque : parcours dédiés, partage facultatif, comparaison des versions et captures joints aux journaux.
+          - Actualiser Interventions : maintien de la vue active, des filtres et des sélections, sans réouverture du référentiel ni collecte implicite, contrôlé dans Standard et Admin.
+          - Aperçus du référentiel : anciens profils, dates manquantes et dispositions historiques contrôlés, avec refus des changements réels de contexte.
+          - Seuils météo : parcours Standard/Admin, valeurs et pourcentages, filtres distincts, restauration après redémarrage sans CSV, présentation HTML/PDF et isolation démo contrôlés.
+          - Diapos préparées : placement libre, redimensionnement, sauvegarde et reprise, exports HTML/PDF 16:9 ; impression native de deux pages contrôlée.
+          - Corrections de site individuelles et groupées : parcours Standard/Admin, cache restauré sans CSV, retrait et isolation de la démo contrôlés.
+          - Pack PROD-LIGHT extrait : vrai hôte WinForms/WebView2 visible sur le runtime Evergreen, handshake après premier rendu, profil synthétique isolé, fermeture normale.
+          - Zoom natif réel à 125 %, remise à 100 %, fenêtre compacte et restauration de 110 % dans un nouveau processus.
+          - Mise à jour réelle sur copies du pack PROD-LIGHT : processus en cours et EXE verrouillé refusés, démarrage confirmé puis restauration après échec forcé.
+          - Captures des vues Windows en thèmes clair/sombre et à plusieurs tailles jointes aux journaux.
+          - Le ZIP PROD-LIGHT original est joint au run, sans enveloppe, pendant 7 jours ; ce journal atteste son SHA-256. Le pack PROD (runtime WebView2 inclus) n'est ni conservé ni publié.
+          - Chaque ZIP contient GLPI-Pilot.exe, GLPI-Pilot-Admin.exe et wad à sa racine ; .NET est embarqué. PROD, construit seulement pour vérifier que l'exécutable est identique, n'est ni démarré ni conservé ; PROD-LIGHT (seul pack publié) utilise le runtime installé sur Windows ou celui du Socle.
+          - Démarrage du pack PROD-LIGHT : exercé sur le runtime Evergreen du runner ; son absence bloque la qualification.
+          - Les packs construits utilisent le même exécutable vérifié ; empreintes de chaque fichier contrôlées.
+          - Copier et inspecter l'original PROD-LIGHT avant promotion ; conserver les reçus du run et de sa tentative.
+          - Navigation, portée et exports : contrôlés dans un navigateur isolé sur des pages synthétiques.
+          - Les journaux et le SHA-256 sont joints séparément. Le portail GLPI et le SSO de l’entreprise n’ont pas été testés.
+          "@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Conserver les journaux, même en cas d’échec
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: windows-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/windows-ci/logs/
+
+  postgres:
+    needs: already-qualified
+    if: needs.already-qualified.outputs.skip != 'true'
+    name: PostgreSQL 17 · synchronisation réelle
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        # Official docker.io/library/postgres:17 OCI index; registry digest verified 2026-10-22.
+        image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+        env:
+          POSTGRES_DB: glpi_pilot_checks
+          POSTGRES_USER: glpi_pilot_checks
+          # Disposable CI service only; never a deployment credential.
+          POSTGRES_PASSWORD: glpi_pilot_ephemeral_ci
+        ports:
+          - '127.0.0.1:5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U glpi_pilot_checks -d glpi_pilot_checks"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      GLPI_PILOT_TEST_POSTGRES: 'Host=127.0.0.1;Port=5432;Database=glpi_pilot_checks;Username=glpi_pilot_checks;Password=glpi_pilot_ephemeral_ci;SSL Mode=Disable;GSS Encryption Mode=Disable;Include Error Detail=false'
+    steps:
+      - name: Récupérer les sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Installer le SDK .NET 10 qualifié
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Consigner le contexte et le moteur PostgreSQL réel
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/postgres-ci/logs
+          dotnet --info | tee artifacts/postgres-ci/logs/dotnet-info.log
+          printf 'Commit: %s\nRunner: %s / %s\nOS: %s\n' "$GITHUB_SHA" "$RUNNER_OS" "$RUNNER_ARCH" "$(uname -sr)" > artifacts/postgres-ci/logs/build-context.log
+          docker exec "$POSTGRES_CONTAINER" psql -U glpi_pilot_checks -d glpi_pilot_checks -Atc 'SHOW server_version;' | tee artifacts/postgres-ci/logs/postgres-version.log
+          grep -Eq '^17\.' artifacts/postgres-ci/logs/postgres-version.log
+      - name: Vérifier les échanges versionnés de la bibliothèque et de l’équipe
+        run: |
+          set -euo pipefail
+          timeout 300s dotnet run --project tests/TicketLibraryChecks/TicketLibraryChecks.csproj -c Release -- --postgres 2>&1 | tee artifacts/postgres-ci/logs/ticket-library-postgres-checks.log
+          timeout 300s dotnet run --project tests/SharedWorkspaceChecks/SharedWorkspaceChecks.csproj -c Release -- --postgres 2>&1 | tee artifacts/postgres-ci/logs/shared-workspace-postgres-checks.log
+          python3 - <<'PY'
+          import pathlib, re
+          root = pathlib.Path('artifacts/postgres-ci/logs')
+          suites = [('ticket-library-postgres-checks.log', 'ticket library', 55, 11), ('shared-workspace-postgres-checks.log', 'shared workspace', 44, 19)]
+          for name, label, expected_total, expected_postgres in suites:
+              report = (root / name).read_text(encoding='utf-8')
+              summaries = re.findall(r'^(\d+)/(\d+) ' + re.escape(label) + r' checks passed\.$', report, re.M)
+              if summaries != [(str(expected_total), str(expected_total))]:
+                  raise SystemExit(f'{name}: expected one {expected_total}/{expected_total} successful summary')
+              real = len(re.findall(r'^PASS PostgreSQL:', report, re.M))
+              if real != expected_postgres:
+                  raise SystemExit(f'{name}: expected {expected_postgres} real PostgreSQL scenarios, found {real}')
+              print(f'{name}: {summaries[0][0]}/{summaries[0][1]} checks, including {real} real PostgreSQL scenarios')
+          PY
+      - name: Vérifier le provisionnement Admin et les droits du compte technique
+        run: |
+          set -euo pipefail
+          timeout 300s dotnet run --project tests/AdministrationChecks/AdministrationChecks.csproj -c Release -- --postgres 2>&1 | tee artifacts/postgres-ci/logs/administration-postgres-checks.log
+          python3 - <<'PYADMIN'
+          import pathlib, re
+          report = pathlib.Path('artifacts/postgres-ci/logs/administration-postgres-checks.log').read_text(encoding='utf-8')
+          if not re.search(r'^([1-9]\d*)/\1 administration checks passed\.$', report, re.M):
+              raise SystemExit('Administration checks did not complete successfully')
+          PYADMIN
+      - name: Résumé du résultat PostgreSQL
+        run: |
+          {
+            echo '## Validation PostgreSQL 17 terminée'
+            echo '- Serveur officiel éphémère, deux bases SQLite locales ou plus et échanges PostgreSQL réels.'
+            echo '- Versions, conflits, accusés de réception, reprise des curseurs et annulation contrôlés.'
+            echo '- Lots de calendrier et conflits métier : validation atomique, comparaison et propagation vers un troisième client contrôlées.'
+            echo '- Les schémas de test sont isolés ; aucun serveur ou identifiant de production utilisé.'
+            echo '- Les journaux PostgreSQL sont joints séparément aux preuves Windows.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Conserver les preuves PostgreSQL, même en cas d’échec
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: postgres-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/postgres-ci/logs/

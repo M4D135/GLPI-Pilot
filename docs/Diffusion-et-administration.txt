@@ -1,0 +1,190 @@
+GLPI PILOT 3.10.1 — DIFFUSION, MISES À JOUR ET ADMINISTRATION
+
+LES DEUX PACKS WINDOWS X64
+
+GLPI-Pilot_3.10.1_PROD_Windows-x64.zip : logiciel prêt à utiliser.
+GLPI-Pilot_3.10.1_DEV_Windows-x64.zip : mêmes deux exécutables de livraison,
+avec les sources, tests et scripts supplémentaires dans wad/sources.
+SHA256SUMS.txt : empreintes des deux archives, publié avec les packs.
+
+À la racine de chaque ZIP :
+  GLPI-Pilot.exe         utilisation Standard
+  GLPI-Pilot-Admin.exe   utilisation et outils d’administration
+  wad/                  ressources et runtime communs
+
+Extraire tout le pack dans un dossier local accessible en écriture. Ne pas
+lancer depuis le partage réseau. L’Admin donne les fonctions de maintenance
+dans GLPI Pilot ; il n’accorde pas une élévation Windows ni des droits serveur.
+Fermer le lanceur déjà ouvert avant d’utiliser l’autre avec le même profil.
+
+Pour fournir la Standard aux techniciens, retirer GLPI-Pilot-Admin.exe du
+dossier extrait avant diffusion. Conserver GLPI-Pilot.exe et wad ensemble.
+Le moteur Standard refuse les commandes Admin, même appelées directement.
+Une mise à jour ne remet pas un lanceur Admin absent. Si l’Admin est installé,
+les deux EXE sont remplacés, vérifiés et restaurés ensemble en cas d’échec.
+Le manifeste du pack officiel décrit les deux EXE ; le journal de transaction
+reflète les fichiers réellement installés, dont l’Admin seulement s’il était présent.
+Ne pas recomprimer un pack modifié sous le nom du ZIP officiel : son empreinte
+ne serait plus celle de la publication. Pour équiper un poste déjà Standard
+en Admin, fermer l’application et réextraire le pack officiel complet dans
+un nouveau dossier ; les données restent dans leur profil habituel.
+
+CONFIGURATION FOURNIE AVEC LE DOSSIER DE DIFFUSION
+
+Régler le logiciel dans le dossier PROD, puis utiliser dans Réglages
+« Définir comme configuration par défaut ». Le bouton écrit automatiquement
+wad/GLPI-Pilot.deployment.json dans le dossier à diffuser. Un profil neuf
+l’applique automatiquement ; un profil existant reçoit une proposition au
+premier lancement de cette version, avec aperçu et sauvegarde avant remplacement.
+Le choix garder/remplacer est mémorisé pour cette version et ce fichier.
+Voir Configuration-deploiement.txt pour les options couvertes et la restauration.
+Le JSON personnalisé reste externe au ZIP officiel et ne change jamais les droits
+du lanceur. La mise à jour préserve ce défaut local même si elle remplace wad.
+L’ancien fichier à côté des EXE reste lu seulement si le fichier de wad est absent.
+
+MISE À JOUR PAR PARTAGE RÉSEAU
+
+Exemple du dossier administré \\serveur\diffusion\GLPI-Pilot :
+  GLPI-Pilot_3.10.1_PROD_Windows-x64.zip
+  SHA256SUMS.txt
+  GLPI-Pilot-Sites-v1.csv      (facultatif)
+  GLPI-Pilot-Sites.sha256      (facultatif, avec le CSV)
+
+Exemple de ligne SHA256SUMS.txt (remplacer l’empreinte par les 64 vrais
+caractères hexadécimaux ; ne pas utiliser ce texte comme manifeste) :
+  <SHA-256 du ZIP>  GLPI-Pilot_3.10.1_PROD_Windows-x64.zip
+
+Le même dossier peut garder plusieurs versions, le PROD-LIGHT et le DEV.
+L’assistant retient la version Windows x64 la plus récente de l’édition du
+poste inscrite au manifeste : PROD pour un poste installé avec le pack
+complet, PROD-LIGHT pour un poste installé avec le pack allégé (sans runtime
+WebView2 embarqué) ; il ignore les autres éditions et fichiers temporaires. Utiliser les noms de livraison officiels.
+Ne pas décompresser le ZIP dans le partage pour cette mise à jour.
+
+Côté diffuseur : télécharger les octets officiels vérifiés, transférer le ZIP
+sous un nom temporaire, puis le renommer une fois la copie terminée. Préparer
+également le manifeste sous un nom temporaire et le renommer en dernier.
+Limiter les droits d’écriture du partage aux responsables de diffusion.
+Les agents ont besoin de lecture avec leur session Windows ; l’application
+ne demande ni ne mémorise de mot de passe SMB.
+
+Dans Réglages, ouvrir Mise à jour et retour arrière. Renseigner et enregistrer
+le dossier partagé, rechercher le pack, contrôler le bilan, puis demander sa
+copie et sa vérification. La copie est locale : la taille, le SHA-256 et les
+métadonnées sont contrôlés avant la préparation. L’installation reste une
+action séparée et explicite. GitHub et le choix d’un ZIP local restent disponibles.
+Aucune recherche réseau automatique ni bascule silencieuse de source.
+
+Si le dossier est inaccessible ou le fichier incomplet/modifié, la préparation
+est refusée ; l’installation courante demeure utilisable. Réessayer après la
+fin de publication. Fermer toutes les instances Standard/Admin avant remplacement.
+L’assistant conserve les binaires précédents, attend la confirmation de démarrage
+de la nouvelle interface et restaure les anciens en cas d’échec. Si Windows
+bloque aussi la restauration, garder la sauvegarde indiquée dans le bilan.
+Le retour des binaires ne restaure pas une base ou une migration de schéma.
+
+Un SHA-256 voisin du ZIP vérifie la cohérence des fichiers. L’authenticité
+dépend de la source de confiance et, si configurée, de la signature Authenticode.
+Une publication sans certificat est signalée comme non signée ; aucune signature
+n’est fabriquée. La politique de signature s’applique aux deux exécutables.
+
+PATCH DES SITES INDÉPENDANT DE L’APPLICATION
+
+Dans le lanceur Admin, enregistrer le référentiel validé puis utiliser l’export
+du patch depuis la page Mise à jour et retour arrière. Choisir un dossier local.
+Un nouveau sous-dossier daté contient :
+  GLPI-Pilot-Sites-v1.csv
+  GLPI-Pilot-Sites.sha256
+
+Le suffixe v1 désigne le format. Le CSV contient les colonnes complètes du
+référentiel de villes, sites et bâtiments, dont leurs Id stables. Préparer
+les modifications dans l’éditeur puis exporter ; ne pas inventer de nouveaux
+Id pour renommer ou déplacer un site existant. Aucune ligne de ticket n’est
+exportée. Vérifier les coordonnées, contacts et informations du référentiel
+avant de le diffuser aux destinataires autorisés.
+
+Le format technique et son encodage réversible sont décrits dans
+[FORMAT-PATCH-SITES.md](FORMAT-PATCH-SITES.md). Utiliser l’export Admin pour
+préserver les téléphones +33, les coordonnées négatives et les apostrophes.
+
+Déposer les deux fichiers sur le même partage que les packs. Transférer sous
+noms temporaires, renommer le CSV complet puis le manifeste en dernier. Le
+manifeste indépendant contient une seule ligne :
+  <SHA-256 réel du CSV>  GLPI-Pilot-Sites-v1.csv
+
+Dans la Standard ou l’Admin : enregistrer le partage, comparer le patch,
+lire les ajouts et les modifications avant/après (pagination disponible), puis
+confirmer. Les remplacements des valeurs locales sont explicitement présentés.
+Annuler ne change rien. Les éléments absents ne sont pas supprimés, les Id
+existants restent identiques ; les liens des interventions et tournées sont
+préservés. Un brouillon de référentiel non enregistré doit d’abord être
+terminé ou abandonné. Une archive historique doit être fermée.
+
+Un contexte local changé après l’aperçu, un fichier modifié, un mauvais hash,
+des colonnes incompatibles ou des Id absents sont refusés avant application.
+L’aperçu expire après 30 minutes. Les paramètres sont enregistrés atomiquement
+et l’empreinte appliquée est conservée. Rejouer un patch identique ne crée ni
+doublon ni nouvelle modification. Les corrections individuelles de localisation
+restent dans leur fichier distinct ; le patch ne modifie aucun ticket distant.
+
+Avant une modification, une sauvegarde sites-avant-patch-*.json est écrite
+sous %LOCALAPPDATA%\GLPI-Pilot\Backups. Elle utilise le format de configuration
+partielle : pour restaurer le référentiel précédent, importer cette sauvegarde
+depuis les réglages de configuration, examiner le comparatif et confirmer.
+Elle restaure le référentiel complet antérieur ; les autres réglages restent
+inchangés. Ne pas supprimer un site ajouté entre-temps sans vérifier ses liens.
+
+La démonstration refuse tout accès réel aux partages de mise à jour et aux
+patchs ; elle conserve ses propres scénarios fictifs de mise à jour.
+
+ADMINISTRATION DES BASES
+
+Les outils sont dans Partage entre postes avec le lanceur Admin :
+- Réinitialisation des tickets locaux, ou de toute la base locale comprenant
+  les données communes de l’équipe. Un bilan et une confirmation sont requis.
+  Une copie SQLite cohérente et son hash sont conservés avant suppression.
+  Les notes personnelles, exports et autres fichiers hors base sont préservés.
+  La synchronisation automatique est suspendue. Une reprise de synchronisation
+  peut rapatrier les données centrales : la remise à zéro ne supprime rien sur
+  le serveur. Un bilan périmé ne peut pas autoriser une suppression.
+- Préparation PostgreSQL : le serveur PostgreSQL doit déjà exister et être
+  joignable. L’Admin peut créer la base absente et préparer les tables applicatives.
+  Les identifiants administrateur sont temporaires, distincts du compte technique,
+  non mémorisés. Le compte technique de travail ne doit pas être propriétaire,
+  ni posséder des droits de création/administration ; les agents synchronisent
+  avec des droits limités. Aucune installation du serveur ni ouverture de port.
+  Une préparation interrompue se reprend ; les objets créés sont conservés.
+  Le mot de passe d’un compte technique déjà existant n’est pas réinitialisé.
+  Le compte administrateur doit pouvoir créer la base et le rôle s’ils manquent,
+  puis préparer les objets du schéma public et attribuer leurs accès. Un compte
+  technique ayant des droits supplémentaires, même hérités de PUBLIC, est refusé.
+  Sur une base existante, ces droits doivent être examinés par l’administrateur :
+  le logiciel ne révoque pas les permissions des autres utilisateurs. Le bouton
+  Tester la connexion vérifie les versions et identités des deux espaces sans
+  créer de table. La synchronisation ordinaire ne prépare pas les schémas.
+
+Pour restaurer une sauvegarde SQLite : fermer les deux lanceurs et vérifier
+que plus aucun processus n’utilise cette base. Déplacer ensemble la base actuelle
+et ses fichiers -wal/-shm éventuels dans un dossier de conservation distinct.
+Copier ensuite la sauvegarde vérifiée sous le nom et à l’emplacement habituels
+de la base locale ; ne laisser aucun ancien fichier -wal/-shm à cet emplacement.
+Conserver la sauvegarde originale. Garder la synchronisation suspendue jusqu’à
+vérification du contenu et de l’identité de la base centrale. Ne jamais remplacer
+une base ouverte ou déposer SQLite sur le partage SMB.
+
+VALIDATION
+
+Les fixtures et la CI utilisent des données fictives isolées. La CI Windows
+qualifie les packs et leur démarrage réel ; le job PostgreSQL utilise un serveur
+éphémère. Les droits et interruptions d’un vrai partage d’entreprise, le SSO réel
+et les postes physiques restent à vérifier dans cet environnement. Consulter
+les preuves associées au commit et aux empreintes des archives réellement diffusées.
+
+PREMIER PASSAGE DEPUIS UNE VERSION ANTÉRIEURE À 3.6
+
+L’ancien vérificateur attendait un seul EXE à la racine : il refuse le nouveau
+pack à deux lanceurs. Pour cette première transition, fermer l’ancienne version,
+conserver son dossier, extraire intégralement le PROD 3.10.1 dans un nouveau dossier
+local puis lancer la Standard ou l’Admin. Le profil local reste au même emplacement.
+Retirer l’EXE Admin avant diffusion aux agents. Les mises à jour suivantes depuis
+3.6 utilisent le nouvel assistant ; ne pas contourner le contrôle de l’ancien ZIP.

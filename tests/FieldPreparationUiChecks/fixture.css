@@ -1,0 +1,3 @@
+/* Only the missing application shell is simulated; product styles and controls are unchanged. */
+body{display:block;overflow:auto;height:auto;min-height:100vh}
+.field-ui-test-root{width:100%;min-width:0;padding:16px;box-sizing:border-box}

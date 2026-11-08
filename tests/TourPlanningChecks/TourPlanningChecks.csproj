@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/GlpiPilot/Core/AppPaths.cs" Link="Core/AppPaths.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/BrowserChannels.cs" Link="Core/BrowserChannels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/PackComponents.cs" Link="Core/PackComponents.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ScheduledTour*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/TourExternalServices.cs" Link="Core/TourExternalServices.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TourPlanningService.cs" Link="Core/TourPlanningService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="Core/CitySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="Core/CityDetectionService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TechnicianDashboardService.cs" Link="Core/TechnicianDashboardService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="Core/DashboardService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="Core/DashboardModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardSettings.cs" Link="Core/DashboardSettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardLayout*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardParticipation.cs" Link="Core/DashboardParticipation.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardOldestGroups.cs" Link="Core/DashboardOldestGroups.cs" />
+  </ItemGroup>
+</Project>

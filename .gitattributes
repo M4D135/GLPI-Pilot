@@ -1,0 +1,2 @@
+# Keep the exact upstream bytes of vendored map assets, including on Windows.
+web/vendor/** -text

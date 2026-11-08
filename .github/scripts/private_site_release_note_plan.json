@@ -1,0 +1,47 @@
+{
+  "repository": "M4D135/GLPI-Pilot",
+  "releases": [
+    {
+      "release_id": 422682913,
+      "tag_name": "v3.3.3",
+      "original_body_sha256": "334e735c892a7b4c4f2c7f53c69829160a4c019e2b9549aef221a42da84196b0",
+      "redacted_body_sha256": "721f9ecea2a85f5bdf2b15a279bf2321b7a85caeb1611c423026f58db94b9499",
+      "body_file": "docs/RELEASE-3.3.3.md"
+    },
+    {
+      "release_id": 423057808,
+      "tag_name": "v3.5.0",
+      "original_body_sha256": "61fc65dc260c31c6c70b1f90112aa6e92f3e8b7f34cbd98245e5deb757780991",
+      "redacted_body_sha256": "b2119c148df8ce8b632592724a61c3f8119ab4b7f6f57f40ecbbf05c01a26d83",
+      "body_file": "docs/RELEASE-3.5.0.md"
+    },
+    {
+      "release_id": 423395654,
+      "tag_name": "v3.8.1",
+      "original_body_sha256": "d2b274e98616620133c6c92092a612e70b350232a9a7cab340710d687ae1dfdf",
+      "redacted_body_sha256": "ce8f55e6841349e71decaaf269a148c17c99dc548d3acb75da323a68b203fcaa",
+      "body_file": "docs/RELEASE-3.8.1.md"
+    },
+    {
+      "release_id": 423557601,
+      "tag_name": "v3.9.0",
+      "original_body_sha256": "044dad6433be809253efe7b6ce958e8091a1ac6ae844ef5ec25667a49e8b372d",
+      "redacted_body_sha256": "758ca2b78555df655129b9230fc5aaac438aead69d16ab2f5dc0492a5718a95a",
+      "body_file": "docs/RELEASE-3.9.0.md"
+    },
+    {
+      "release_id": 423704969,
+      "tag_name": "v3.10.0",
+      "original_body_sha256": "eca580769da92c78113322be4c574b6bcf932f21a979d2c01073e6c88bc13fa1",
+      "redacted_body_sha256": "f33befb310a81d9df932f2a565958f68f989f7a737187c53e77f253f2a7312de",
+      "body_file": "docs/RELEASE-3.10.0.md"
+    },
+    {
+      "release_id": 423991766,
+      "tag_name": "v3.10.1",
+      "original_body_sha256": "ce223a91a9b47f869f101c6f0a25ca54511eb0dac07fc0c28aabeac785bddb71",
+      "redacted_body_sha256": "d94622b089df1aa06f629d2d5bc83e7ee2125db9a431289021488349dcda0c0c",
+      "body_file": "docs/RELEASE-3.10.1.md"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+/* Contextual controls and reading surfaces. No business-state overrides. */
+/* app.css */
+/* Reading views keep a single vertical scroll region and return to their origin. */
+.reading-focus.modal{width:min(1500px,calc(100vw - 24px));max-width:calc(100vw - 24px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px)}
+.reading-focus>.modal-heading{flex:0 0 auto;min-width:0}
+.reading-focus>.modal-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+.reading-focus>.modal-actions:empty{display:none}
+.reading-focus-content{min-width:0;max-width:100%}
+.reading-options{min-width:0;max-width:100%;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.reading-options>summary{cursor:pointer;min-height:40px;padding:10px 12px;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.reading-options>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.reading-options-body{display:grid;gap:12px;min-width:0;padding:0 12px 12px}
+.reading-options-body>.toolbar{margin-bottom:0;flex-wrap:wrap}
+@media(max-width:680px){.reading-focus.modal{width:calc(100vw - 12px);max-width:calc(100vw - 12px);height:calc(100dvh - 12px);max-height:calc(100dvh - 12px)}.reading-focus>.modal-body{padding:12px}}
+
+/* maps.css */
+/* Embedded map: the wheel belongs to the page. Full-screen is an explicit mode. */
+.maps-workspace[data-map-list=false]>.maps-grid{grid-template-columns:minmax(0,1fr)}
+.maps-workspace .maps-place-list[hidden]{display:none}
+.maps-workspace:not([data-map-expanded=true]) .maps-place-list{max-height:none;overflow:visible;padding:0}
+.maps-workspace:not([data-map-expanded=true]) .maps-grid{align-items:start}
+.maps-workspace:not([data-map-expanded=true]) .maps-place .maps-coordinates{display:none}
+.maps-reading-focus .maps-canvas{height:clamp(280px,65dvh,900px);min-height:280px}
+.maps-reading-focus .maps-place-list{max-height:65dvh;overflow:auto;overscroll-behavior:contain}
+.maps-workspace .reading-options{align-self:stretch}
+@media(max-width:760px){.maps-workspace[data-map-list=true]>.maps-grid{grid-template-columns:minmax(0,1fr)}.maps-workspace[data-map-list=true]:not([data-map-expanded=true]) .maps-stage{display:none}.maps-reading-focus .maps-place-list{max-height:none;overflow:visible}}
+
+/* terrain.css */
+/* A route is a list of visits; the detailed timetable is secondary. */
+.tour-stop-list{list-style:none;display:grid;gap:10px;margin:12px 0;padding:0;min-width:0}
+.tour-stop-card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:start;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);min-width:0}
+.tour-stop-number{display:grid;place-items:center;min-height:32px;border-radius:50%;background:var(--accent-soft);font-variant-numeric:tabular-nums;font-weight:650}
+.tour-stop-copy{min-width:0}.tour-stop-copy h3{margin:0;font-size:15px;overflow-wrap:anywhere}.tour-stop-copy p{margin:5px 0;overflow-wrap:anywhere}
+.tour-stop-card>.toolbar{margin:0;flex-wrap:wrap;justify-content:flex-end}
+.tour-create-bar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:12px 0 16px}
+.tour-create-bar>.form-grid{flex:1 1 350px;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;min-width:0}
+.terrain-tours-page .reading-options{margin:12px 0}
+.terrain-tours-page .table-scroll{max-height:none;overflow-x:auto}
+@media(max-width:760px){.tour-stop-card{grid-template-columns:28px minmax(0,1fr);gap:8px}.tour-stop-card>.toolbar{grid-column:2;justify-content:flex-start}.tour-create-bar>.form-grid{grid-template-columns:minmax(0,1fr);flex-basis:100%}.tour-create-bar>.button{width:100%}}
+
+/* tickets.css */
+/* Ticket piloting uses the existing action dialog and one contextual section. */
+.ticket-control-hub{border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;min-width:0}
+.ticket-control-hub h3{margin:0 0 10px;overflow-wrap:anywhere}
+.ticket-control-hub .toolbar{flex-wrap:wrap;min-width:0}
+.ticket-control-hub .button{white-space:normal;text-align:left;max-width:100%}
+.ticket-control-hub [aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.ticket-control-local,.ticket-action-settings{margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:9px}
+.ticket-control-local>summary,.ticket-action-settings>summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere}
+.ticket-control-local[open]>summary,.ticket-action-settings[open]>summary{margin-bottom:10px}
+.tickets-tool-content :is(select,textarea,input){max-width:100%;min-width:0}
+.work-write-plan .work-text{overflow-wrap:anywhere;white-space:pre-wrap;max-height:none;overflow:visible}
+@media(max-width:600px){.ticket-control-hub .toolbar{display:grid;grid-template-columns:1fr}.ticket-control-hub{padding:10px}}
+
+/* workspace-grid.css */
+/* Reading mode is a responsive summary, not a small scrolling application.
+   The precise saved geometry remains untouched and is used while composing. */
+.pilot-workspace[data-layout-editing=false] .pilot-widget-grid[data-workspace-grid]>.pilot-widget{height:auto;max-height:none}
+.pilot-workspace[data-layout-editing=false] .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:0 0 auto;overflow:visible;overscroll-behavior:auto}
+.pilot-workspace[data-layout-editing=false] .pilot-widget :is(.table-scroll,.analytics-chart,.analytics-distribution,.analytics-oldest-groups){max-height:none;overflow-y:visible}
+.pilot-workspace[data-layout-editing=false] .pilot-widget .table-scroll{overflow-x:auto}
+.pilot-workspace .pilot-widget [data-reading-hidden=true]{display:none!important}
+.workspace-reading-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;min-width:0}
+.workspace-reading-caption{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.workspace-reading-footer>.button{flex:0 0 auto;min-height:34px}
+.pilot-widget[data-reading-size=small] :is(.analytics-metric-value,.analytics-volume-weather-numbers .analytics-metric-value){font-size:clamp(28px,3.4vw,46px)}
+.pilot-widget[data-reading-size=small] .pilot-weather-scene{max-width:100px;height:76px}
+.workspace-widget-focus .analytics-widget-body{height:auto;max-height:none;overflow:visible;min-width:0}
+.workspace-widget-focus :is(.table-scroll,.analytics-chart,.analytics-distribution,.analytics-oldest-groups){max-height:none;overflow-y:visible}
+.workspace-widget-focus .table-scroll{overflow-x:auto}
+@media print{.pilot-widget [data-reading-hidden=true]{display:table-row!important}.pilot-widget .analytics-bar-row[data-reading-hidden=true]{display:grid!important}.workspace-reading-footer{display:none!important}}
+
+/* field-preparation.css */
+/* Compact preparation rows: quantities first, metadata on demand. */
+.field-material-line-compact{gap:6px;padding:12px 14px}
+.field-line-main{display:grid;grid-template-columns:minmax(140px,1fr) minmax(72px,100px) minmax(72px,100px) minmax(64px,90px) auto;gap:12px;align-items:center;min-width:0}
+.field-line-main>header{min-width:0}.field-line-main .field{min-width:0;max-width:100%}
+.field-line-main .button{min-height:38px;white-space:normal;text-align:left}
+.field-line-details{min-width:0;border-top:1px solid var(--border)}
+.field-line-details>summary{cursor:pointer;padding:8px 0;color:var(--muted);font-size:12px}
+.field-line-details[open]{display:grid;gap:8px}
+.field-editor-actions{position:sticky;bottom:-20px;padding:12px 0;background:var(--bg);border-top:1px solid var(--border);z-index:2;margin-bottom:0}
+.field-material-editor .field-add-material{order:0}
+@media(max-width:760px){.field-line-main{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.field-line-main>header{grid-column:1/-1}.field-line-main>.field-remaining{grid-column:1}.field-line-main>.button{grid-column:2}.field-editor-actions{bottom:-12px}.field-editor-actions>.button{flex:1 1 160px}}
+
+.field-selection-bar[hidden]{display:none}
+.field-selection-bar{position:sticky;top:8px;z-index:3;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
+button.field-metric{text-align:left;color:var(--text);font:inherit;cursor:pointer}
+button.field-metric:hover{border-color:var(--accent)}
+button.field-metric:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.field-advanced-filters>summary{overflow-wrap:anywhere;line-height:1.5}

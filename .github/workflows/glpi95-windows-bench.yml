@@ -1,0 +1,91 @@
+name: GLPI 9.5 sous Windows - banc de la collecte
+# Throwaway GLPI 9.5.13 on Windows (PHP 7.4 and MariaDB on the runner, fictitious tickets) and the real collection with Edge:
+# full collection with pause and resume, unchanged pass, pass after five GLPI changes, then volume (1 500 tickets).
+# Manual or from its dedicated branch only. No private portal, account or data; no pack, no publication.
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/glpi95-collection-20261029]
+    paths: ['tests/Glpi95Bench/**', 'tests/Glpi95Fixtures/**', 'src/GlpiPilot/Core/**', 'src/GlpiPilot/Runtime/**', '.github/workflows/glpi95-windows-bench.yml']
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: windows-2025
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231
+        with:
+          php-version: '7.4'
+          extensions: mysqli, gd, intl, xml, zip, bz2, exif, mbstring, curl, fileinfo, json
+          tools: none
+      - uses: shogo82148/actions-setup-mysql@fb8ae72ad9f2f8244e594d6d48a981e975aee78e
+        with:
+          distribution: mariadb
+          mysql-version: '10.6'
+          root-password: root
+      - name: Installer GLPI 9.5.13 et 30 tickets fictifs
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path artifacts/bench -Force | Out-Null
+          function Sql([string]$file) { cmd /c "mysql --default-character-set=utf8mb4 --host=127.0.0.1 --user=glpi --password=glpi glpi < $file"; if ($LASTEXITCODE -ne 0) { throw "SQL failed: $file" } }
+          mysql --host=127.0.0.1 --user=root --password=root -e "CREATE DATABASE glpi CHARACTER SET utf8mb4; CREATE USER 'glpi'@'%' IDENTIFIED BY 'glpi'; GRANT ALL ON glpi.* TO 'glpi'@'%'; FLUSH PRIVILEGES;"
+          curl.exe -fsSL -o glpi.tgz https://github.com/glpi-project/glpi/releases/download/9.5.13/glpi-9.5.13.tgz
+          tar -xzf glpi.tgz
+          Push-Location glpi
+          php bin/console glpi:database:install --db-host=127.0.0.1 --db-name=glpi --db-user=glpi --db-password=glpi --default-language=fr_FR --no-interaction --force
+          if ($LASTEXITCODE -ne 0) { throw 'GLPI installation failed.' }
+          Remove-Item install/install.php
+          Pop-Location
+          Sql tests/Glpi95Fixtures/seed.sql
+          $env:PYTHONIOENCODING = 'utf-8'; cmd /c "python tests\Glpi95Fixtures\seed.py 30 1 > seed-60.sql"
+          Sql seed-60.sql
+          mysql --host=127.0.0.1 --user=glpi --password=glpi glpi -e "UPDATE glpi_users SET list_limit = 20 WHERE name = 'glpi'; SELECT COUNT(*) AS tickets FROM glpi_tickets;"
+          $edge = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { throw 'Microsoft Edge is missing.' }
+          "GLPI_TEST_CHROMIUM=$edge" >> $env:GITHUB_ENV
+          dotnet build tests/Glpi95Bench/Glpi95Bench.csproj -c Release -p:PlaywrightPlatform=win
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark build failed.' }
+      - name: Banc - collecte, reprise, passage inchangé, cinq modifications, volume
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The runner ends a step's background processes: the GLPI server lives in this single step.
+          $server = Start-Process -FilePath php -ArgumentList '-S', '127.0.0.1:8080', '-t', 'glpi' -RedirectStandardOutput php-out.log -RedirectStandardError php-err.log -WindowStyle Hidden -PassThru
+          $ready = $false
+          for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest http://127.0.0.1:8080/index.php -UseBasicParsing | Out-Null; $ready = $true; break } catch { Start-Sleep 1 } }
+          if (-not $ready) { throw 'The GLPI server did not answer.' }
+          function Bench([string]$name, [string[]]$arguments) {
+            dotnet run --no-build --project tests/Glpi95Bench/Glpi95Bench.csproj -c Release -- @arguments 2>&1 | Tee-Object "artifacts/bench/$name.log"
+            if ($LASTEXITCODE -ne 0) { throw "Benchmark phase failed: $name" }
+          }
+          Bench collect @('collect', 'http://127.0.0.1:8080', '30', 'bench-data', 'artifacts/bench/collect.json')
+          cmd /c "mysql --default-character-set=utf8mb4 --host=127.0.0.1 --user=glpi --password=glpi glpi < tests/Glpi95Fixtures/change.sql"
+          if ($LASTEXITCODE -ne 0) { throw 'GLPI change failed.' }
+          Bench changed @('changed', 'http://127.0.0.1:8080', '30', '5', 'bench-data', 'artifacts/bench/changed.json')
+          $env:PYTHONIOENCODING = 'utf-8'; cmd /c "python tests\Glpi95Fixtures\seed.py 1470 31 > seed-volume.sql"
+          cmd /c "mysql --default-character-set=utf8mb4 --host=127.0.0.1 --user=glpi --password=glpi glpi < seed-volume.sql"
+          if ($LASTEXITCODE -ne 0) { throw 'Volume seed failed.' }
+          Bench volume @('volume', 'http://127.0.0.1:8080', '1500', '20', 'artifacts/bench/volume.json')
+          Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+      - name: Journaux
+        if: always()
+        run: |
+          Copy-Item php-out.log, php-err.log artifacts/bench/ -ErrorAction SilentlyContinue
+          Copy-Item glpi/files/_log artifacts/bench/glpi-logs -Recurse -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: glpi95-windows-bench-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/bench/
+          retention-days: 30
+          if-no-files-found: warn

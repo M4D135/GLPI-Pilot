@@ -1,0 +1,64 @@
+name: Terrain et derniers parcours WebView - sans publication
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  terrain-interface:
+    runs-on: windows-2025
+    timeout-minutes: 18
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Consigner le commit et choisir le navigateur
+        run: |
+          New-Item -ItemType Directory -Path artifacts/terrain-interface -Force | Out-Null
+          $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'No Chromium browser on the runner.' }
+          "GLPI_TEST_CHROMIUM=$browser" >> $env:GITHUB_ENV
+          "Commit: $env:GITHUB_SHA`nRun: $env:GITHUB_RUN_ID / $env:GITHUB_RUN_ATTEMPT" | Set-Content artifacts/terrain-interface/context.log
+      - name: Moteur Terrain C# et stockage réels
+        run: |
+          dotnet run --project tests/TerrainBridgeChecks/TerrainBridgeChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/terrain-interface/bridge.log
+          if ($LASTEXITCODE -ne 0) { throw 'Terrain bridge checks failed.' }
+      - name: Vérifier la sélection après sauvegarde et la reprise après erreur
+        timeout-minutes: 3
+        run: |
+          dotnet run --project tests/FieldPreparationUiChecks/FieldPreparationUiChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/terrain-interface/preparation.log
+          if ($LASTEXITCODE -ne 0 -or -not (Select-String -Path artifacts/terrain-interface/preparation.log -Pattern '^20/20 field browser checks passed\.$' -Quiet)) { throw 'Field preparation interface checks failed or are incomplete.' }
+      - name: Parcours carte et tournée avec le vrai pont C#
+        timeout-minutes: 3
+        run: |
+          $driver = Join-Path $PWD 'tests/TerrainBridgeChecks/bin/Release/net10.0/.playwright'
+          $node = Join-Path $driver 'node/win32_x64/node.exe'
+          $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+          $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/terrain-interface/screenshots'
+          & $node tests/TerrainWebChecks/run.cjs 2>&1 | Tee-Object artifacts/terrain-interface/ui.log
+          if ($LASTEXITCODE -ne 0) { throw 'Terrain interface checks failed.' }
+          if (-not (Select-String -Path artifacts/terrain-interface/ui.log -Pattern '^31/31 terrain WebView page checks passed\.$' -Quiet)) { throw 'Incomplete Terrain interface checks.' }
+      - name: Administration, sélection météo et correction des lieux Standard/Admin
+        run: |
+          foreach ($edition in @('false', 'true')) {
+            foreach ($suite in @('--administration-only', '--weather-selection-only', '--location-correction-only')) {
+              dotnet run --project tests/WebViewChecks/WebViewChecks.csproj -c Release -p:PlaywrightPlatform=win "-p:PilotAdmin=$edition" -- $suite --screenshots "artifacts/terrain-interface/$edition-$suite" 2>&1 | Tee-Object "artifacts/terrain-interface/$edition-$suite.log"
+              if ($LASTEXITCODE -ne 0) { throw "Interface checks failed ($edition $suite)." }
+            }
+          }
+      - name: Conserver les preuves sans publier de pack
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: terrain-interface-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/terrain-interface/

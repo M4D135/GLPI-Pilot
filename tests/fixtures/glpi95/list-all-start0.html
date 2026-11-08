@@ -1,0 +1,711 @@
+<!-- Page réelle de GLPI 9.5.13 jetable, données fictives (tests/Glpi95Fixtures), scripts retirés. -->
+<!DOCTYPE html><html lang="fr"><head><title>GLPI - Tickets</title><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta property="glpi:csrf_token" content="b717ee9d41de392fb8447df5e116e3630fc75c81681c7d9ed469e5aa46bfedfc">
+<style type="text/css"></style><style id="gs_inline_css_1182009159" type="text/css">       #dashboard-1182009159 .cell-add {          width: 35.36363636363637px;          height: 38.36363636363637px;       }       #dashboard-1182009159 .grid-guide {          background-size: 35.36363636363637px 38.36363636363637px;          bottom: 38.36363636363637px;       }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='0'] {             left: 0%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='1'] {             min-width: 3.0303030303030303%;             width: 3.0303030303030303%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='1'] {             left: 3.0303030303030303%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='2'] {             min-width: 3.0303030303030303%;             width: 6.0606060606060606%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='2'] {             left: 6.0606060606060606%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='3'] {             min-width: 3.0303030303030303%;             width: 9.09090909090909%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='3'] {             left: 9.09090909090909%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='4'] {             min-width: 3.0303030303030303%;             width: 12.121212121212121%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='4'] {             left: 12.121212121212121%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='5'] {             min-width: 3.0303030303030303%;             width: 15.151515151515152%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='5'] {             left: 15.151515151515152%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='6'] {             min-width: 3.0303030303030303%;             width: 18.18181818181818%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='6'] {             left: 18.18181818181818%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='7'] {             min-width: 3.0303030303030303%;             width: 21.21212121212121%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='7'] {             left: 21.21212121212121%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='8'] {             min-width: 3.0303030303030303%;             width: 24.242424242424242%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='8'] {             left: 24.242424242424242%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='9'] {             min-width: 3.0303030303030303%;             width: 27.272727272727273%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='9'] {             left: 27.272727272727273%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='10'] {             min-width: 3.0303030303030303%;             width: 30.303030303030305%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='10'] {             left: 30.303030303030305%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='11'] {             min-width: 3.0303030303030303%;             width: 33.333333333333336%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='11'] {             left: 33.333333333333336%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='12'] {             min-width: 3.0303030303030303%;             width: 36.36363636363636%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='12'] {             left: 36.36363636363636%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='13'] {             min-width: 3.0303030303030303%;             width: 39.39393939393939%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='13'] {             left: 39.39393939393939%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='14'] {             min-width: 3.0303030303030303%;             width: 42.42424242424242%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='14'] {             left: 42.42424242424242%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='15'] {             min-width: 3.0303030303030303%;             width: 45.45454545454545%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='15'] {             left: 45.45454545454545%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='16'] {             min-width: 3.0303030303030303%;             width: 48.484848484848484%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='16'] {             left: 48.484848484848484%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='17'] {             min-width: 3.0303030303030303%;             width: 51.515151515151516%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='17'] {             left: 51.515151515151516%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='18'] {             min-width: 3.0303030303030303%;             width: 54.54545454545455%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='18'] {             left: 54.54545454545455%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='19'] {             min-width: 3.0303030303030303%;             width: 57.57575757575758%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='19'] {             left: 57.57575757575758%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='20'] {             min-width: 3.0303030303030303%;             width: 60.60606060606061%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='20'] {             left: 60.60606060606061%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='21'] {             min-width: 3.0303030303030303%;             width: 63.63636363636363%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='21'] {             left: 63.63636363636363%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='22'] {             min-width: 3.0303030303030303%;             width: 66.66666666666667%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='22'] {             left: 66.66666666666667%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='23'] {             min-width: 3.0303030303030303%;             width: 69.6969696969697%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='23'] {             left: 69.6969696969697%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='24'] {             min-width: 3.0303030303030303%;             width: 72.72727272727272%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='24'] {             left: 72.72727272727272%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='25'] {             min-width: 3.0303030303030303%;             width: 75.75757575757575%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='25'] {             left: 75.75757575757575%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='26'] {             min-width: 3.0303030303030303%;             width: 78.78787878787878%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='26'] {             left: 78.78787878787878%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='27'] {             min-width: 3.0303030303030303%;             width: 81.81818181818181%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='27'] {             left: 81.81818181818181%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='28'] {             min-width: 3.0303030303030303%;             width: 84.84848484848484%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='28'] {             left: 84.84848484848484%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='29'] {             min-width: 3.0303030303030303%;             width: 87.87878787878788%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='29'] {             left: 87.87878787878788%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='30'] {             min-width: 3.0303030303030303%;             width: 90.9090909090909%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='30'] {             left: 90.9090909090909%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='31'] {             min-width: 3.0303030303030303%;             width: 93.93939393939394%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='31'] {             left: 93.93939393939394%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='32'] {             min-width: 3.0303030303030303%;             width: 96.96969696969697%;          }#dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-x='32'] {             left: 96.96969696969697%;          }          #dashboard-1182009159 .grid-stack > .grid-stack-item[data-gs-width='33'] {             min-width: 3.0303030303030303%;             width: 100%;          }</style><style type="text/css" data-gs-style-id="gridstack-style-84286"></style></head>
+<body class="layout_lefttab"><div id="header"><header role="banner" id="header_top"><div id="c_logo"><a href="/front/central.php" accesskey="1" title="Accueil"><span class="sr-only">Accueil</span></a></div><div id="c_preference"><ul><li id="deconnexion"><a href="/front/logout.php" title="Déconnexion" class="fa fa-sign-out-alt"><span class="sr-only">Déconnexion&gt;</span></a></li>
+<li id="preferences_link"><a href="/front/preference.php" title="Mes préférences - glpi" class="fa fa-cog"><span class="sr-only">Mes préférences</span><span id="myname">glpi</span></a></li><li id="debug_mode"><a href="/ajax/switchdebug.php" class="fa fa-bug debugoff" title="Changer de mode - Mode débug inactif"><span class="sr-only">Changer de mode</span></a></li><li id="bookmark_link"><a href="#" id="showSavedSearchesLink" class="fa fa-star" title="Charger une recherche sauvegardée"><span class="sr-only">Recherches sauvegardées</span></a></li><li id="help_link"><a href="http://glpi-project.org/help-central" target="_blank" title="Aide" class="fa fa-question"><span class="sr-only">Aide</span></a></li><li id="language_link"><a href="/front/preference.php?forcetab=User$1" title="Français">Français</a></li><li id="c_recherche">
+<form role="search" method="get" action="/front/search.php">
+<span id="champRecherche"><input size="15" type="search" name="globalsearch" placeholder="Rechercher" aria-labelledby="globalsearchglass"><button type="submit" name="globalsearchglass" id="globalsearchglass"><i class="fa fa-search"></i><span class="sr-only">Rechercher</span></button></span>
+<input type="hidden" name="_glpi_csrf_token" value="fixture">
+</form>
+</li></ul></div>
+</header><div id="c_menu"><ul id="menu" class="fullmenu"><li id="menu1" data-id="1" class=""><a href="/front/dashboard_assets.php" class="itemP">Parc</a><ul class="ssmenu"><li class="">
+                        <a href="/front/computer.php" accesskey="o">
+                           <i class="fa-fw fas fa-laptop"></i>
+                           <u>O</u>rdinateurs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/monitor.php">
+                           <i class="fa-fw fas fa-desktop"></i>
+                           Moniteurs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/software.php" accesskey="s">
+                           <i class="fa-fw fas fa-cube"></i>
+                           Logiciel<u>s</u>
+                        </a>
+                     </li><li class="">
+                        <a href="/front/networkequipment.php">
+                           <i class="fa-fw fas fa-network-wired"></i>
+                           Matériels réseau
+                        </a>
+                     </li><li class="">
+                        <a href="/front/peripheral.php">
+                           <i class="fa-fw fab fa-usb"></i>
+                           Périphériques
+                        </a>
+                     </li><li class="">
+                        <a href="/front/printer.php">
+                           <i class="fa-fw fas fa-print"></i>
+                           Imprimantes
+                        </a>
+                     </li><li class="">
+                        <a href="/front/cartridgeitem.php">
+                           <i class="fa-fw fas fa-fill-drip"></i>
+                           Cartouches
+                        </a>
+                     </li><li class="">
+                        <a href="/front/consumableitem.php">
+                           <i class="fa-fw fas fa-box-open"></i>
+                           Consommables
+                        </a>
+                     </li><li class="">
+                        <a href="/front/phone.php">
+                           <i class="fa-fw fas fa-phone"></i>
+                           Téléphones
+                        </a>
+                     </li><li class="">
+                        <a href="/front/rack.php">
+                           <i class="fa-fw fas fa-server"></i>
+                           Baies
+                        </a>
+                     </li><li class="">
+                        <a href="/front/enclosure.php">
+                           <i class="fa-fw fas fa-th"></i>
+                           Châssis
+                        </a>
+                     </li><li class="">
+                        <a href="/front/pdu.php">
+                           <i class="fa-fw fas fa-plug"></i>
+                           PDU
+                        </a>
+                     </li><li class="">
+                        <a href="/front/passivedcequipment.php">
+                           <i class="fa-fw fas fa-th-list"></i>
+                           Équipements passifs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/item_device.php?itemtype=Item_DeviceSimcard">
+                           <i class="fa-fw fas fa-sim-card"></i>
+                           Cartes SIM
+                        </a>
+                     </li><li class="">
+                        <a href="/front/allassets.php">
+                           <i class="fa-fw fas fa-list"></i>
+                           Global
+                        </a>
+                     </li></ul></li><li id="menu2" data-id="2" class="active"><a href="/front/dashboard_helpdesk.php" class="itemP">Assistance</a><ul class="ssmenu"><li class="active">
+                        <a href="/front/ticket.php" accesskey="t">
+                           <i class="fa-fw fas fa-exclamation-circle"></i>
+                           <u>T</u>ickets
+                        </a>
+                     </li><li class="">
+                        <a href="/front/ticket.form.php">
+                           <i class="fa-fw fas fa-plus"></i>
+                           Créer un ticket
+                        </a>
+                     </li><li class="">
+                        <a href="/front/problem.php">
+                           <i class="fa-fw fas fa-exclamation-triangle"></i>
+                           Problèmes
+                        </a>
+                     </li><li class="">
+                        <a href="/front/change.php">
+                           <i class="fa-fw fas fa-clipboard-check"></i>
+                           Changements
+                        </a>
+                     </li><li class="">
+                        <a href="/front/planning.php" accesskey="p">
+                           <i class="fa-fw far fa-calendar-alt"></i>
+                           <u>P</u>lanning
+                        </a>
+                     </li><li class="">
+                        <a href="/front/stat.php" accesskey="a">
+                           <i class="fa-fw fas fa-chart-bar"></i>
+                           St<u>a</u>tistiques
+                        </a>
+                     </li><li class="">
+                        <a href="/front/ticketrecurrent.php" accesskey="n">
+                           <i class="fa-fw fas fa-stopwatch"></i>
+                           Tickets récurre<u>n</u>ts
+                        </a>
+                     </li></ul></li><li id="menu3" data-id="3" class=""><a href="/front/softwarelicense.php" class="itemP">Gestion</a><ul class="ssmenu"><li class="">
+                        <a href="/front/softwarelicense.php">
+                           <i class="fa-fw fas fa-key"></i>
+                           Lice<u>n</u>ces
+                        </a>
+                     </li><li class="">
+                        <a href="/front/budget.php">
+                           <i class="fa-fw fas fa-calculator"></i>
+                           Budgets
+                        </a>
+                     </li><li class="">
+                        <a href="/front/supplier.php">
+                           <i class="fa-fw fas fa-dolly"></i>
+                           Fournisseurs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/contact.php">
+                           <i class="fa-fw fas fa-user-tie"></i>
+                           Contacts
+                        </a>
+                     </li><li class="">
+                        <a href="/front/contract.php">
+                           <i class="fa-fw fas fa-file-signature"></i>
+                           Contrats
+                        </a>
+                     </li><li class="">
+                        <a href="/front/document.php" accesskey="d">
+                           <i class="fa-fw far fa-file"></i>
+                           <u>D</u>ocuments
+                        </a>
+                     </li><li class="">
+                        <a href="/front/line.php">
+                           <i class="fa-fw fas fa-phone"></i>
+                           Lignes
+                        </a>
+                     </li><li class="">
+                        <a href="/front/certificate.php">
+                           <i class="fa-fw fas fa-certificate"></i>
+                           Certificats
+                        </a>
+                     </li><li class="">
+                        <a href="/front/datacenter.php">
+                           <i class="fa-fw fas fa-warehouse"></i>
+                           Data centers
+                        </a>
+                     </li><li class="">
+                        <a href="/front/cluster.php">
+                           <i class="fa-fw fas fa-project-diagram"></i>
+                           Clusters
+                        </a>
+                     </li><li class="">
+                        <a href="/front/domain.php">
+                           <i class="fa-fw fas fa-globe-americas"></i>
+                           Domai<u>n</u>es
+                        </a>
+                     </li><li class="">
+                        <a href="/front/appliance.php">
+                           <i class="fa-fw fas fa-cubes"></i>
+                           Applicatifs
+                        </a>
+                     </li></ul></li><li id="menu4" data-id="4" class=""><a href="/front/project.php" class="itemP">Outils</a><ul class="ssmenu"><li class="">
+                        <a href="/front/project.php">
+                           <i class="fa-fw fas fa-columns"></i>
+                           Projets
+                        </a>
+                     </li><li class="">
+                        <a href="/front/reminder.php">
+                           <i class="fa-fw far fa-sticky-note"></i>
+                           Notes
+                        </a>
+                     </li><li class="">
+                        <a href="/front/rssfeed.php">
+                           <i class="fa-fw fas fa-rss"></i>
+                           Flux RSS
+                        </a>
+                     </li><li class="">
+                        <a href="/front/knowbaseitem.php" accesskey="b">
+                           <i class="fa-fw fas fa-question"></i>
+                           <u>B</u>ase de connaissances
+                        </a>
+                     </li><li class="">
+                        <a href="/front/reservationitem.php">
+                           <i class="fa-fw fas fa-calendar-check"></i>
+                           Réservations
+                        </a>
+                     </li><li class="">
+                        <a href="/front/report.php" accesskey="e">
+                           <i class="fa-fw fas fa-file-medical-alt"></i>
+                           Rapports
+                        </a>
+                     </li><li class="">
+                        <a href="/front/savedsearch.php">
+                           <i class="fa-fw far fa-bookmark"></i>
+                           Recherches sauvegardées
+                        </a>
+                     </li></ul></li><li id="menu5" data-id="5" class=""><a href="/front/user.php" class="itemP">Administration</a><ul class="ssmenu"><li class="">
+                        <a href="/front/user.php" accesskey="u">
+                           <i class="fa-fw fas fa-user"></i>
+                           <u>U</u>tilisateurs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/group.php" accesskey="g">
+                           <i class="fa-fw fas fa-users"></i>
+                           <u>G</u>roupes
+                        </a>
+                     </li><li class="">
+                        <a href="/front/entity.php">
+                           <i class="fa-fw fas fa-layer-group"></i>
+                           E<u>n</u>tités
+                        </a>
+                     </li><li class="">
+                        <a href="/front/rule.php">
+                           <i class="fa-fw fas fa-book"></i>
+                           Règles
+                        </a>
+                     </li><li class="">
+                        <a href="/front/dictionnary.php">
+                           <i class="fa-fw fas fa-book"></i>
+                           Dictionnaires
+                        </a>
+                     </li><li class="">
+                        <a href="/front/profile.php">
+                           <i class="fa-fw fas fa-user-check"></i>
+                           Profils
+                        </a>
+                     </li><li class="">
+                        <a href="/front/queuednotification.php">
+                           <i class="fa-fw far fa-list-alt"></i>
+                           File d'attente des notifications
+                        </a>
+                     </li><li class="">
+                        <a href="/front/event.php">
+                           <i class="fa-fw fas fa-scroll"></i>
+                           Journaux
+                        </a>
+                     </li></ul></li><li id="menu6" data-id="6" class=""><a href="/front/dropdown.php" class="itemP">Configuration</a><ul class="ssmenu"><li class="">
+                        <a href="/front/dropdown.php">
+                           <i class="fa-fw fas fa-edit"></i>
+                           I<u>n</u>titulés
+                        </a>
+                     </li><li class="">
+                        <a href="/front/devices.php">
+                           <i class="fa-fw far fa-square"></i>
+                           Composants
+                        </a>
+                     </li><li class="">
+                        <a href="/front/setup.notification.php">
+                           <i class="fa-fw fas fa-bell"></i>
+                           Notifications
+                        </a>
+                     </li><li class="">
+                        <a href="/front/slm.php">
+                           <i class="fa-fw fas fa-file-contract"></i>
+                           Niveaux de services
+                        </a>
+                     </li><li class="">
+                        <a href="/front/config.form.php">
+                           <i class="fa-fw fas fa-cog"></i>
+                           Générale
+                        </a>
+                     </li><li class="">
+                        <a href="/front/fieldunicity.php">
+                           <i class="fa-fw fas fa-fingerprint"></i>
+                           U<u>n</u>icité des champs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/crontask.php">
+                           <i class="fa-fw fas fa-stopwatch"></i>
+                           Actions automatiques
+                        </a>
+                     </li><li class="">
+                        <a href="/front/setup.auth.php">
+                           <i class="fa-fw fas fa-sign-in-alt"></i>
+                           Authentification
+                        </a>
+                     </li><li class="">
+                        <a href="/front/mailcollector.php">
+                           <i class="fa-fw fas fa-inbox"></i>
+                           Collecteurs
+                        </a>
+                     </li><li class="">
+                        <a href="/front/link.php">
+                           <i class="fa-fw fas fa-link"></i>
+                           Liens externes
+                        </a>
+                     </li><li class="">
+                        <a href="/front/plugin.php">
+                           <i class="fa-fw fas fa-puzzle-piece"></i>
+                           Plugins
+                        </a>
+                     </li></ul></li></ul><a href="#" onclick="$('#show_all_menu').dialog('open'); return false;" id="menu_all_button"><i class="fa fa-bars"></i></a></div><div id="c_ssmenu2"><ul><li class="breadcrumb_item"><a href="/front/central.php" title="Accueil">Accueil</a></li><li class="breadcrumb_item"><a href="/front/dashboard_helpdesk.php" title="Assistance">Assistance</a></li><li class="breadcrumb_item"><a href="/front/ticket.php" class="here" title="Tickets"><i class="fas fa-exclamation-circle"></i>&nbsp;Tickets</a></li><li class="icons_block"><span><a href="/front/ticket.form.php" class="pointer" title="Ajouter"><i class="fa fa-plus"></i>
+                                 <span class="sr-only">Ajouter</span></a></span><span><a href="/front/ticket.php" class="pointer" title="Rechercher"><i class="fa fa-search"></i>
+                                 <span class="sr-only">Rechercher</span></a></span><span><a href="/front/tickettemplate.php" title="Gérer gabarits..."><i class="pointer fa fa-layer-group"></i></a></span><span><a href="/front/ticket.php?reset=reset&amp;criteria%5B0%5D%5Bfield%5D=55&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=2&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B1%5D%5Bfield%5D=59&amp;criteria%5B1%5D%5Bsearchtype%5D=equals&amp;criteria%5B1%5D%5Bvalue%5D=2&amp;criteria%5B1%5D%5Blink%5D=AND&amp;criteria%5B2%5D%5Bfield%5D=52&amp;criteria%5B2%5D%5Bsearchtype%5D=equals&amp;criteria%5B2%5D%5Bvalue%5D=2&amp;criteria%5B2%5D%5Blink%5D=AND&amp;criteria%5B3%5D%5Bfield%5D=12&amp;criteria%5B3%5D%5Bsearchtype%5D=equals&amp;criteria%5B3%5D%5Bvalue%5D=6&amp;criteria%5B3%5D%5Blink%5D=AND%20NOT&amp;criteria%5B4%5D%5Bfield%5D=12&amp;criteria%5B4%5D%5Bsearchtype%5D=equals&amp;criteria%5B4%5D%5Bvalue%5D=5&amp;criteria%5B4%5D%5Blink%5D=AND%20NOT" class="pointer"><img title="Ticket attendant votre validation" alt="Ticket attendant votre validation" src="/pics/menu_showall.png" class="pointer"></a></span></li></ul></div></div>
+<span class="fa-stack fa-lg" id="backtotop" style="display: none"><i class="fa fa-circle fa-stack-2x primary-fg-inverse"></i><a href="#" class="fa fa-arrow-up fa-stack-1x primary-fg" title="Retour en haut de page"><span class="sr-only">Top of the page</span></a></span><main role="main" id="page">      <div class="dashboard  mini" id="dashboard-1182009159">
+         
+                  
+         <span class="toolbar">
+            <i class="fas fa-history auto-refresh" title="Basculer l'auto rafraichissement"></i>
+            <i class="fas fa-moon night-mode" title="Basuler le mode nuit"></i>
+            <i class="fas fa-edit fs-toggle edit-dashboard" title="Basculer le mode édition"></i>
+         </span>
+         
+                     <div class="grid-guide">
+               <div class="cell-add" data-x="0" data-y="0">&nbsp;</div><div class="cell-add" data-x="1" data-y="0">&nbsp;</div><div class="cell-add" data-x="2" data-y="0">&nbsp;</div><div class="cell-add" data-x="3" data-y="0">&nbsp;</div><div class="cell-add" data-x="4" data-y="0">&nbsp;</div><div class="cell-add" data-x="5" data-y="0">&nbsp;</div><div class="cell-add" data-x="6" data-y="0">&nbsp;</div><div class="cell-add" data-x="7" data-y="0">&nbsp;</div><div class="cell-add" data-x="8" data-y="0">&nbsp;</div><div class="cell-add" data-x="9" data-y="0">&nbsp;</div><div class="cell-add" data-x="10" data-y="0">&nbsp;</div><div class="cell-add" data-x="11" data-y="0">&nbsp;</div><div class="cell-add" data-x="12" data-y="0">&nbsp;</div><div class="cell-add" data-x="13" data-y="0">&nbsp;</div><div class="cell-add" data-x="14" data-y="0">&nbsp;</div><div class="cell-add" data-x="15" data-y="0">&nbsp;</div><div class="cell-add" data-x="16" data-y="0">&nbsp;</div><div class="cell-add" data-x="17" data-y="0">&nbsp;</div><div class="cell-add" data-x="18" data-y="0">&nbsp;</div><div class="cell-add" data-x="19" data-y="0">&nbsp;</div><div class="cell-add" data-x="20" data-y="0">&nbsp;</div><div class="cell-add" data-x="21" data-y="0">&nbsp;</div><div class="cell-add" data-x="22" data-y="0">&nbsp;</div><div class="cell-add" data-x="23" data-y="0">&nbsp;</div><div class="cell-add" data-x="24" data-y="0">&nbsp;</div><div class="cell-add" data-x="25" data-y="0">&nbsp;</div><div class="cell-add" data-x="26" data-y="0">&nbsp;</div><div class="cell-add" data-x="27" data-y="0">&nbsp;</div><div class="cell-add" data-x="28" data-y="0">&nbsp;</div><div class="cell-add" data-x="29" data-y="0">&nbsp;</div><div class="cell-add" data-x="30" data-y="0">&nbsp;</div><div class="cell-add" data-x="31" data-y="0">&nbsp;</div><div class="cell-add" data-x="32" data-y="0">&nbsp;</div><div class="cell-add" data-x="0" data-y="1">&nbsp;</div><div class="cell-add" data-x="1" data-y="1">&nbsp;</div><div class="cell-add" data-x="2" data-y="1">&nbsp;</div><div class="cell-add" data-x="3" data-y="1">&nbsp;</div><div class="cell-add" data-x="4" data-y="1">&nbsp;</div><div class="cell-add" data-x="5" data-y="1">&nbsp;</div><div class="cell-add" data-x="6" data-y="1">&nbsp;</div><div class="cell-add" data-x="7" data-y="1">&nbsp;</div><div class="cell-add" data-x="8" data-y="1">&nbsp;</div><div class="cell-add" data-x="9" data-y="1">&nbsp;</div><div class="cell-add" data-x="10" data-y="1">&nbsp;</div><div class="cell-add" data-x="11" data-y="1">&nbsp;</div><div class="cell-add" data-x="12" data-y="1">&nbsp;</div><div class="cell-add" data-x="13" data-y="1">&nbsp;</div><div class="cell-add" data-x="14" data-y="1">&nbsp;</div><div class="cell-add" data-x="15" data-y="1">&nbsp;</div><div class="cell-add" data-x="16" data-y="1">&nbsp;</div><div class="cell-add" data-x="17" data-y="1">&nbsp;</div><div class="cell-add" data-x="18" data-y="1">&nbsp;</div><div class="cell-add" data-x="19" data-y="1">&nbsp;</div><div class="cell-add" data-x="20" data-y="1">&nbsp;</div><div class="cell-add" data-x="21" data-y="1">&nbsp;</div><div class="cell-add" data-x="22" data-y="1">&nbsp;</div><div class="cell-add" data-x="23" data-y="1">&nbsp;</div><div class="cell-add" data-x="24" data-y="1">&nbsp;</div><div class="cell-add" data-x="25" data-y="1">&nbsp;</div><div class="cell-add" data-x="26" data-y="1">&nbsp;</div><div class="cell-add" data-x="27" data-y="1">&nbsp;</div><div class="cell-add" data-x="28" data-y="1">&nbsp;</div><div class="cell-add" data-x="29" data-y="1">&nbsp;</div><div class="cell-add" data-x="30" data-y="1">&nbsp;</div><div class="cell-add" data-x="31" data-y="1">&nbsp;</div><div class="cell-add" data-x="32" data-y="1">&nbsp;</div>
+            </div>
+         <div class="grid-stack grid-stack-33 grid-stack-instance-9596 grid-stack-static" id="grid-stack-1182009159" style="width: 100%; height: 112.091px;" data-gs-current-height="3">
+                     <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_tickets_closed_ccf7246b-645a-40d2-8206-fa33c769e3f5" data-gs-width="4" data-gs-height="2" data-gs-x="24" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#fafafa&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_tickets_closed&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_555bf978494c8efb74b717271176d7eb1fee7a8f&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_783870107 {
+            background-color: #fafafa;
+            color: #939393;
+         }
+
+         #bn_783870107:hover {
+            background-color: #d3d3d3;
+            border: 1px solid #adadad;
+         }
+      </style>
+      <a href="/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=6&amp;&amp;reset=reset" id="bn_783870107" class="card big-number  filter-dates filter-dates_mod filter-itilcategory filter-group_tech filter-user_tech filter-requesttype filter-location" title="">
+         <span class="content">            <span title="5" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">3</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets fermés" style="width: 100%; font-size: 12.3211px;">Tickets fermés</div>
+         <i class="main-icon fas fa-archive" style="color: #939393"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_Ticket_d5bf3576-5033-40fb-bbdb-292294a7698e" data-gs-width="4" data-gs-height="2" data-gs-x="0" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#ffd957&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_Ticket&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_07f0d4d07acaeae1e2480f5045fbe3475367e528&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_1325357137 {
+            background-color: #ffd957;
+            color: #8a6b00;
+         }
+
+         #bn_1325357137:hover {
+            background-color: #ffc80b;
+            border: 1px solid #bd9200;
+         }
+      </style>
+      <a href="/front/ticket.php?&amp;reset=reset" id="bn_1325357137" class="card big-number  filter-dates filter-dates_mod filter-requesttype filter-location" title="">
+         <span class="content">            <span title="30" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">19</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets" style="width: 100%; font-size: 12.3211px;">Tickets</div>
+         <i class="main-icon fas fa-exclamation-circle" style="color: #8a6b00"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_tickets_incoming_055e813c-b0ce-4687-91ef-559249e8ddd8" data-gs-width="4" data-gs-height="2" data-gs-x="4" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#6fd169&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_tickets_incoming&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_70554a58c0d1f9db7d04eadfd2884c201fd6e848&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_13680413 {
+            background-color: #6fd169;
+            color: #1d541a;
+         }
+
+         #bn_13680413:hover {
+            background-color: #3fb638;
+            border: 1px solid #2b7b26;
+         }
+      </style>
+      <a href="/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=1&amp;&amp;reset=reset" id="bn_13680413" class="card big-number  filter-dates filter-dates_mod filter-itilcategory filter-group_tech filter-user_tech filter-requesttype filter-location" title="">
+         <span class="content">            <span title="5" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">3</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets entrants" style="width: 100%; font-size: 12.3211px;">Tickets entrants</div>
+         <i class="main-icon fas fa-exclamation-circle" style="color: #1d541a"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_tickets_waiting_793c665b-b620-4b3a-a5a8-cf502defc008" data-gs-width="4" data-gs-height="2" data-gs-x="8" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#ffcb7d&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_tickets_waiting&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_565ff48e3b95b36fe9a00d910fde4a4e4076a79e&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_1653878309 {
+            background-color: #ffcb7d;
+            color: #b06a00;
+         }
+
+         #bn_1653878309:hover {
+            background-color: #ffac31;
+            border: 1px solid #e38800;
+         }
+      </style>
+      <a href="/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=4&amp;&amp;reset=reset" id="bn_1653878309" class="card big-number  filter-dates filter-dates_mod filter-itilcategory filter-group_tech filter-user_tech filter-requesttype filter-location" title="">
+         <span class="content">            <span title="5" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">3</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets en attente" style="width: 100%; font-size: 12.3211px;">Tickets en attente</div>
+         <i class="main-icon fas fa-pause-circle" style="color: #b06a00"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_tickets_assigned_d3d2f697-52b4-435e-9030-a760dd649085" data-gs-width="4" data-gs-height="2" data-gs-x="12" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#eaf4f7&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_tickets_assigned&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_c8bbd66fe0f00ef42263da580119007b87fee1da&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_154323174 {
+            background-color: #eaf4f7;
+            color: #56a7bf;
+         }
+
+         #bn_154323174:hover {
+            background-color: #b3d7e2;
+            border: 1px solid #7bbacd;
+         }
+      </style>
+      <a href="/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=2&amp;&amp;reset=reset" id="bn_154323174" class="card big-number  filter-dates filter-dates_mod filter-itilcategory filter-group_tech filter-user_tech filter-requesttype filter-location" title="">
+         <span class="content">            <span title="5" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">3</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets assignés" style="width: 100%; font-size: 12.3211px;">Tickets assignés</div>
+         <i class="main-icon fas fa-users" style="color: #56a7bf"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_tickets_planned_0c7f3569-c23b-4ee3-8e85-279229b23e70" data-gs-width="4" data-gs-height="2" data-gs-x="16" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#6298d5&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_tickets_planned&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_f239064593accd47b510ee2b783a3054f74ff9a9&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_807304090 {
+            background-color: #6298d5;
+            color: #173454;
+         }
+
+         #bn_807304090:hover {
+            background-color: #3171b9;
+            border: 1px solid #214c7d;
+         }
+      </style>
+      <a href="/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=3&amp;&amp;reset=reset" id="bn_807304090" class="card big-number  filter-dates filter-dates_mod filter-itilcategory filter-group_tech filter-user_tech filter-requesttype filter-location" title="">
+         <span class="content">            <span title="5" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">3</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets planifiés" style="width: 100%; font-size: 12.3211px;">Tickets planifiés</div>
+         <i class="main-icon fas fa-calendar-check" style="color: #173454"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-id="bn_count_tickets_solved_ae2406cf-e8e8-410b-b355-46e3f5705ee8" data-gs-width="4" data-gs-height="2" data-gs-x="20" data-gs-y="0" data-card-options="{&quot;color&quot;:&quot;#d7d7d7&quot;,&quot;widgettype&quot;:&quot;bigNumber&quot;,&quot;use_gradient&quot;:&quot;0&quot;,&quot;limit&quot;:&quot;7&quot;,&quot;card_id&quot;:&quot;bn_count_tickets_solved&quot;,&quot;cache_key&quot;:&quot;dashboard_card_mini_tickets_3f5f840b34a26dc8b1a62b317dfa2158d078c51f&quot;}" style="color: #000000">
+            <span class="controls">
+               <i class="refresh-item fas fa-sync-alt" title="Rafraîchir cette carte"></i>
+               <i class="edit-item fas fa-edit" title="Éditer cette carte"></i>
+               <i class="delete-item fas fa-times" title="Supprimer cette carte"></i>
+            </span>
+            <div class="grid-stack-item-content ui-draggable-handle">      <style>
+         #bn_349256585 {
+            background-color: #d7d7d7;
+            color: #717171;
+         }
+
+         #bn_349256585:hover {
+            background-color: #b0b0b0;
+            border: 1px solid #8a8a8a;
+         }
+      </style>
+      <a href="/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=5&amp;&amp;reset=reset" id="bn_349256585" class="card big-number  filter-dates filter-dates_mod filter-itilcategory filter-group_tech filter-user_tech filter-requesttype filter-location" title="">
+         <span class="content">            <span title="5" class="formatted-number" data-precision="0" style="width: 100%; font-size: 9.63053px;">
+               <span class="number">3</span>
+               <span class="suffix"></span>
+            </span></span>
+         <div class="label" title="Tickets résolus" style="width: 100%; font-size: 12.3211px;">Tickets résolus</div>
+         <i class="main-icon far fa-check-square" style="color: #717171"></i>
+      </a></div>
+         <div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>         <div class="grid-stack-item lock-bottom ui-draggable ui-resizable ui-resizable-autohide ui-draggable-disabled ui-resizable-disabled" data-gs-no-resize="true" data-gs-no-move="true" data-gs-height="1" data-gs-width="33" data-gs-x="0" data-gs-y="2"><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90; display: none;"></div></div>
+         </div>
+      </div><div class="search_page"><form name="searchformTicket" method="get" action="/front/ticket.php"><div id="searchcriteria" class=""><ul id="criteriatableticket1593599958"><li class="normalcriteria headerRow" id="searchrowTicket460505234"><input type="hidden" name="is_deleted" value="0" id="is_deleted"><input type="hidden" name="as_map" value="0" id="as_map"><i class="far fa-minus-square remove-search-criteria" alt="-" title="Supprimer une règle" data-rowid="searchrowTicket460505234"></i>&nbsp;<select name="criteria[0][link]" id="dropdown_criteria_0__link_1004296911" size="1" data-select2-id="dropdown_criteria_0__link_1004296911" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="AND" selected="" data-select2-id="2">-----</option><option value="AND NOT">PAS</option></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="1" style="width: 80px;"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_criteria_0__link_1004296911-container"><span class="select2-selection__rendered" id="select2-dropdown_criteria_0__link_1004296911-container" role="textbox" aria-readonly="true" title="-----"><span>-----</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span><select name="criteria[0][field]" id="dropdown_criteria_0__field_554099593" size="1" data-select2-id="dropdown_criteria_0__field_554099593" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="view">Éléments visualisés</option><optgroup label="Caractéristiques"><option value="1">Titre</option><option value="21">Description</option><option value="2">ID</option><option value="12" selected="" data-select2-id="4">Statut</option><option value="10">Urgence</option><option value="11">Impact</option><option value="3">Priorité</option><option value="15">Date d'ouverture</option><option value="16">Date de clôture</option><option value="18">TTR</option><option value="82">Temps de résolution dépassé</option><option value="17">Date de résolution</option><option value="19">Dernière modification</option><option value="7">Catégorie</option><option value="80">Entité</option><option value="64">Dernière modification par</option><option value="155">TTO</option><option value="159">TTO dépassé</option><option value="180">TTR interne</option><option value="182">TTR interne dépassé</option><option value="185">TTO interne</option><option value="187">TTO interne dépassé</option><option value="188">Prochain niveau d'escalade</option><option value="14">Type</option><option value="131">Types d'élément associé</option><option value="9">Source de la demande</option><option value="83">Lieu</option><option value="101">Adresse</option><option value="102">Code postal</option><option value="103">Ville</option><option value="104">État</option><option value="105">Pays</option><option value="84">Numéro du bâtiment</option><option value="85">Numéro de la pièce</option><option value="86">Commentaires du lieu</option><option value="998">Latitude</option><option value="999">Longitude</option></optgroup><optgroup label="Demandeur"><option value="4">Demandeur</option><option value="71">Groupe demandeur</option><option value="22">Rédacteur</option></optgroup><optgroup label="Observateur"><option value="66">Observateur</option><option value="65">Groupe observateur</option></optgroup><optgroup label="Attribué à"><option value="5">Technicien</option><option value="6">Assigné à un fournisseur</option><option value="8">Groupe de techniciens</option></optgroup><optgroup label="Notifications"><option value="35">Suivi par courriel</option><option value="34">Courriel pour le suivi</option></optgroup><optgroup label="SLAs"><option value="37">SLAs&amp;nbsp;TTO</option><option value="30">SLAs&amp;nbsp;TTR</option><option value="32">SLAs&amp;nbsp;Niveau d'escalade</option></optgroup><optgroup label="OLA"><option value="190">OLA&amp;nbsp;TTO interne</option><option value="191">OLA&amp;nbsp;TTR interne</option><option value="192">OLA&amp;nbsp;Niveau d'escalade</option></optgroup><optgroup label="Validation"><option value="51">Validation minimale nécessaire</option><option value="52">Validation</option><option value="53">Commentaire de la demande</option><option value="54">Commentaire de la validation</option><option value="55">Statut de validation</option><option value="56">Date de la demande</option><option value="57">Date de la validation</option><option value="58">Demandeur</option><option value="59">Valideur</option></optgroup><optgroup label="Enquête de satisfaction"><option value="31">Type</option><option value="60">Date de création</option><option value="61">Date de la réponse</option><option value="62">Satisfaction</option><option value="63">Commentaires</option></optgroup><optgroup label="Suivis"><option value="25">Description</option><option value="36">Date</option><option value="27">Nombre de suivis</option><option value="29">Source de la demande</option><option value="91">Suivi privé</option><option value="93">Rédacteur</option></optgroup><optgroup label="Tâches"><option value="26">Description</option><option value="28">Nombre de tâches</option><option value="20">Catégorie</option><option value="92">Tâche privée</option><option value="94">Rédacteur</option><option value="95">Technicien responsable</option><option value="112">Groupe responsable</option><option value="96">Durée</option><option value="97">Date</option><option value="33">Statut</option><option value="173">Date de début</option><option value="174">Date de fin</option><option value="175">Gabarit de tâche</option></optgroup><optgroup label="Statistiques"><option value="154">Délai de résolution</option><option value="152">Délai de clôture</option><option value="153">Délai d'attente</option><option value="150">Délai de prise en compte</option></optgroup><optgroup label="Tickets liés"><option value="40">Tous les tickets liés</option><option value="47">Tickets dupliqués</option><option value="41">Nombre de tickets liés</option><option value="46">Nombre de tickets dupliqués</option><option value="50">Tickets parents</option><option value="67">Tickets enfants</option><option value="68">Nombre de tickets enfants</option><option value="69">Nombre de tickets parents</option></optgroup><optgroup label="Solution"><option value="23">Type de solution</option><option value="24">Solution</option><option value="38">N'importe quel statut de solution</option><option value="39">Dernier statut de solution</option></optgroup><optgroup label="Coût"><option value="48">Coût total</option><option value="42">Coût horaire</option><option value="49">Coût - Durée</option><option value="43">Coût fixe</option><option value="44">Coût matériel</option></optgroup><optgroup label="Problèmes"><option value="200">Nombre de problèmes</option><option value="201">Problème</option><option value="202">Statut</option><option value="203">Date de résolution</option><option value="204">Date d'ouverture</option></optgroup><optgroup label="Documents"><option value="119">Nombre de documents</option></optgroup></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="3" style="width: 170px;"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_criteria_0__field_554099593-container"><span class="select2-selection__rendered" id="select2-dropdown_criteria_0__field_554099593-container" role="textbox" aria-readonly="true" title="Statut"><span>Caractéristiques - Statut</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span><span id="SearchSpanTicket0"><select name="criteria[0][searchtype]" id="dropdown_criteria_0__searchtype_668163298" size="1" data-select2-id="dropdown_criteria_0__searchtype_668163298" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="equals" selected="" data-select2-id="6">est</option></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="5" style="width: 105px;"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_criteria_0__searchtype_668163298-container"><span class="select2-selection__rendered" id="select2-dropdown_criteria_0__searchtype_668163298-container" role="textbox" aria-readonly="true" title="est"><span>est</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span><span id="spansearchtypecriteriaTicket0"><select name="criteria[0][value]" id="dropdown_criteria_0__value_2037956586" size="1" data-select2-id="dropdown_criteria_0__value_2037956586" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="1">Nouveau</option><option value="2">En cours (Attribué)</option><option value="3">En cours (Planifié)</option><option value="4">En attente</option><option value="5">Résolu</option><option value="6">Clos</option><option value="notold">Non résolu</option><option value="notclosed">Non clos</option><option value="process">En cours</option><option value="old">Résolu + Clos</option><option value="all" selected="" data-select2-id="8">Tous</option></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="7" style="width: 100%;"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_criteria_0__value_2037956586-container"><span class="select2-selection__rendered" id="select2-dropdown_criteria_0__value_2037956586-container" role="textbox" aria-readonly="true" title="Tous"><span>Tous</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span></span></span></li><li id="more-criteria1885328175" class="normalcriteria headerRow" style="display: none;">...</li></ul><div class="search_actions"><span id="addsearchcriteria1885328175" class="secondary">
+               <i class="fas fa-plus-square"></i>
+               règle
+            </span><span id="addmetasearchcriteria1885328175" class="secondary">
+                  <i class="far fa-plus-square"></i>
+                  règle globale
+               </span><span id="addcriteriagroup1885328175" class="secondary">
+               <i class="fas fa-plus-circle"></i>
+               groupe
+            </span><input type="submit" name="search" value="Rechercher" class="submit"><a href="#" onclick="savesearch.dialog('open'); return false;" class="fa fa-star bookmark_record save" title="Sauvegarder la recherche courante"><span class="sr-only">Sauvegarder la recherche courante</span></a>
+<a class="fa fa-undo reset-search" href="/front/ticket.php?reset=reset" title="Remise à zéro"><span class="sr-only">Remise à zéro</span></a><a class="fa fa-angle-double-up fa-fw fold-search" href="#" title="Masquer la recherche"></a></div><input type="hidden" name="itemtype" value="Ticket"><input type="hidden" name="start" value="0"></div>
+<input type="hidden" name="_glpi_csrf_token" value="fixture">
+</form>
+<div><table class="tab_cadre_pager"><tbody><tr><td width="31%" class="tab_bg_2"><form method="POST" action="/front/ticket.php?sort=19&amp;order=DESC&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;&amp;start=0"><span class="responsive_hidden">Affichage (nombre d'éléments)</span>&nbsp;<select name="glpilist_limit" id="dropdown_glpilist_limit1036654167" onchange="submit()" size="1" data-select2-id="dropdown_glpilist_limit1036654167" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="5">5</option><option value="10" selected="" data-select2-id="10">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option><option value="40">40</option><option value="50">50</option><option value="100">100</option><option value="150">150</option><option value="200">200</option><option value="250">250</option><option value="500">500</option><option value="750">750</option><option value="990">990</option><option value="1000">1000</option><option value="2000">2000</option><option value="3000">3000</option><option value="4000">4000</option><option value="5000">5000</option><option value="10000">10000</option><option value="9999999">9999999</option></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="9"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_glpilist_limit1036654167-container"><span class="select2-selection__rendered" id="select2-dropdown_glpilist_limit1036654167-container" role="textbox" aria-readonly="true" title="10"><span>10</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span>
+<input type="hidden" name="_glpi_csrf_token" value="fixture">
+</form>
+</td><td class="tab_bg_2"><div class="pager_controls"><input type="checkbox" name="as_map" id="as_map" value="1"><label for="as_map"><span title="Afficher sur la carte" class="pointer fa fa-globe-americas" onclick="toogle('as_map','','','');
+                                 document.forms['searchformTicket'].submit();"></span></label><span class="fa fa-wrench pointer" title="Sélectionnez les éléments à afficher par défaut" onclick="$('#search_config_top').dialog('open');">
+                     <span class="sr-only">Sélectionnez les éléments à afficher par défaut</span></span><div class="switch grey_border pager_controls"><label for="is_deletedswitch325208204" title="Montrer la corbeille"><span class="sr-only">Montrer la corbeille</span><input type="hidden" name="is_deleted" value="0"> <input type="checkbox" id="is_deletedswitch325208204" name="is_deleted" value="1" onclick="toogle('is_deleted','','','');
+                              document.forms['searchformTicket'].submit();"><span class="fa fa-trash-alt pointer"></span><span class="lever"></span></label></div></div></td><td class="tab_bg_2 responsive_hidden" width="30%"><form method="GET" action="/front/report.dynamic.php"><input type="hidden" name="item_type" value="Ticket"><input type="hidden" name="sort" value="19"><input type="hidden" name="order" value="DESC"><input type="hidden" name="criteria%5B0%5D%5Blink%5D" value="AND"><input type="hidden" name="criteria%5B0%5D%5Bfield%5D" value="12"><input type="hidden" name="criteria%5B0%5D%5Bsearchtype%5D" value="equals"><input type="hidden" name="criteria%5B0%5D%5Bvalue%5D" value="all"><input type="hidden" name="start" value="0"><select name="display_type" id="dropdown_display_type988712925" size="1" data-select2-id="dropdown_display_type988712925" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="2" data-select2-id="12">Page courante en PDF paysage</option><option value="4">Page courante en PDF portrait</option><option value="1">Page courante en SLK</option><option value="3">Page courante en CSV</option><option value="-2">Toutes les pages en PDF paysage</option><option value="-4">Toutes les pages en PDF portrait</option><option value="-1">Toutes les pages en SLK</option><option value="-3">Toutes les pages en CSV</option></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="11"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_display_type988712925-container"><span class="select2-selection__rendered" id="select2-dropdown_display_type988712925-container" role="textbox" aria-readonly="true" title="Page courante en PDF paysage"><span>Page courante en PDF paysage</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span><button type="submit" name="export" class="unstyled pointer" title="Exporter"><i class="far fa-save"></i><span class="sr-only">Exporter<span>
+<input type="hidden" name="_glpi_csrf_token" value="fixture">
+
+</span></span></button></form></td><td width="20%" class="tab_bg_2 b">De 1 à 10 sur 30</td>
+<th class="right"><a href="/front/ticket.php?sort=19&amp;order=DESC&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;&amp;start=10">
+               <i class="fa fa-chevron-right" title="Suivant"></i></a></th>
+<th class="right"><a href="/front/ticket.php?sort=19&amp;order=DESC&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;&amp;start=20"><i class="fa fa-step-forward" title="Fin"></i></a></th>
+</tr></tbody></table></div><form name="massformTicket" id="massformTicket" method="post" action="/front/massiveaction.php">
+<table class="tab_glpi" width="95%"><tbody><tr><td width="30px"><img src="/pics/arrow-left-top.png" alt=""></td><td width="100%" class="left"><a class="vsubmit" onclick="massiveaction_windowa32fb9491ebaf1247ac7acf148447e88.dialog(&quot;open&quot;);" href="#modal_massaction_contenta32fb9491ebaf1247ac7acf148447e88" title="Actions">Actions</a></td></tr></tbody></table><div class="center"><table border="0" class="tab_cadrehov">
+<thead><tr class="tab_bg_2"><th class=""><div class="form-group-checkbox">
+                  <input title="Tout cocher comme" type="checkbox" class="new_checkbox" name="_checkall_555246857" id="checkall_555246857" onclick="if ( checkAsCheckboxes('checkall_555246857', 'massformTicket'))
+                                                   {return true;}">
+                  <label class="label-checkbox" for="checkall_555246857" title="Tout cocher comme">
+                     <span class="check"></span>
+                     <span class="box"></span>
+                  </label>
+               </div></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=2&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">ID</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=1&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Titre</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=12&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Statut</a></th>
+<th class="order_DESC"><a href="/front/ticket.php?itemtype=Ticket&amp;sort=19&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Dernière modification</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=15&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Date d'ouverture</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=3&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Priorité</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=4&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Demandeur - Demandeur</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=5&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Attribué à - Technicien</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=7&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Catégorie</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=18&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">TTR</a></th>
+</tr></thead><tbody><tr class="tab_bg_2"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_4788934" name="item[Ticket][26]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_4788934"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">26</td>
+<td valign="top"><a id="Ticket26" href="/front/ticket.form.php?id=26" data-hasqtip="0">Ticket fictif 026 · Connexion site exemple Nord</a> <div id="contentTicket26" class="invisible">Description fictive du ticket 26.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-calendar planned" title="En cours (Planifié)"></i>&nbsp;En cours (Planifié)</span></td>
+<td valign="top">27-10-2026 10:26</td>
+<td valign="top">27-09-2026 09:26</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1324953433" href="/front/user.form.php?id=2"><span id="tooltip1324953433" class="fas fa-info pointer" data-hasqtip="1"></span></a><div id="contenttooltip1324953433" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink382892322" href="/front/user.form.php?id=2"><span id="tooltip382892322" class="fas fa-info pointer" data-hasqtip="2"></span></a><div id="contenttooltip382892322" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Réseau</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_1"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_339186996" name="item[Ticket][25]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_339186996"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">25</td>
+<td valign="top"><a id="Ticket25" href="/front/ticket.form.php?id=25" data-hasqtip="3">Ticket fictif 025 · Imprimante site exemple Nord</a> <div id="contentTicket25" class="invisible">Description fictive du ticket 25.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus far fa-circle assigned" title="En cours (Attribué)"></i>&nbsp;En cours (Attribué)</span></td>
+<td valign="top">26-10-2026 10:25</td>
+<td valign="top">26-09-2026 09:25</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1030506621" href="/front/user.form.php?id=2"><span id="tooltip1030506621" class="fas fa-info pointer" data-hasqtip="4"></span></a><div id="contenttooltip1030506621" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink1906681941" href="/front/user.form.php?id=2"><span id="tooltip1906681941" class="fas fa-info pointer" data-hasqtip="5"></span></a><div id="contenttooltip1906681941" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Impression</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_2"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_994030506" name="item[Ticket][24]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_994030506"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">24</td>
+<td valign="top"><a id="Ticket24" href="/front/ticket.form.php?id=24" data-hasqtip="6">Ticket fictif 024 · Connexion site exemple Sud</a> <div id="contentTicket24" class="invisible">Description fictive du ticket 24.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-circle new" title="Nouveau"></i>&nbsp;Nouveau</span></td>
+<td valign="top">25-10-2026 10:24</td>
+<td valign="top">25-09-2026 09:24</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1131626575" href="/front/user.form.php?id=2"><span id="tooltip1131626575" class="fas fa-info pointer" data-hasqtip="7"></span></a><div id="contenttooltip1131626575" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink2125467958" href="/front/user.form.php?id=2"><span id="tooltip2125467958" class="fas fa-info pointer" data-hasqtip="8"></span></a><div id="contenttooltip2125467958" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Réseau</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_1"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_1686113326" name="item[Ticket][23]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_1686113326"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">23</td>
+<td valign="top"><a id="Ticket23" href="/front/ticket.form.php?id=23" data-hasqtip="9">Ticket fictif 023 · Imprimante site exemple Nord</a> <div id="contentTicket23" class="invisible">Description fictive du ticket 23.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-circle closed" title="Clos"></i>&nbsp;Clos</span></td>
+<td valign="top">24-10-2026 10:23</td>
+<td valign="top">24-09-2026 09:23</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink511341893" href="/front/user.form.php?id=2"><span id="tooltip511341893" class="fas fa-info pointer" data-hasqtip="10"></span></a><div id="contenttooltip511341893" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink827531097" href="/front/user.form.php?id=2"><span id="tooltip827531097" class="fas fa-info pointer" data-hasqtip="11"></span></a><div id="contenttooltip827531097" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Impression</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_2"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_1482451821" name="item[Ticket][22]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_1482451821"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">22</td>
+<td valign="top"><a id="Ticket22" href="/front/ticket.form.php?id=22&amp;forcetab=Ticket$2" data-hasqtip="12">Ticket fictif 022 · Connexion site exemple Nord</a> <div id="contentTicket22" class="invisible">Description fictive du ticket 22.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus far fa-circle solved" title="Résolu"></i>&nbsp;Résolu</span></td>
+<td valign="top">23-10-2026 10:22</td>
+<td valign="top">23-09-2026 09:22</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1696770452" href="/front/user.form.php?id=2"><span id="tooltip1696770452" class="fas fa-info pointer" data-hasqtip="13"></span></a><div id="contenttooltip1696770452" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink172402441" href="/front/user.form.php?id=2"><span id="tooltip172402441" class="fas fa-info pointer" data-hasqtip="14"></span></a><div id="contenttooltip172402441" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Réseau</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_1"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_1215507467" name="item[Ticket][21]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_1215507467"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">21</td>
+<td valign="top"><a id="Ticket21" href="/front/ticket.form.php?id=21" data-hasqtip="15">Ticket fictif 021 · Imprimante site exemple Sud</a> <div id="contentTicket21" class="invisible">Description fictive du ticket 21.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-circle waiting" title="En attente"></i>&nbsp;En attente</span></td>
+<td valign="top">22-10-2026 10:21</td>
+<td valign="top">22-09-2026 09:21</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1020145639" href="/front/user.form.php?id=2"><span id="tooltip1020145639" class="fas fa-info pointer" data-hasqtip="16"></span></a><div id="contenttooltip1020145639" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink642165579" href="/front/user.form.php?id=2"><span id="tooltip642165579" class="fas fa-info pointer" data-hasqtip="17"></span></a><div id="contenttooltip642165579" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Impression</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_2"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_585596943" name="item[Ticket][20]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_585596943"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">20</td>
+<td valign="top"><a id="Ticket20" href="/front/ticket.form.php?id=20" data-hasqtip="18">Ticket fictif 020 · Connexion site exemple Nord</a> <div id="contentTicket20" class="invisible">Description fictive du ticket 20.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-calendar planned" title="En cours (Planifié)"></i>&nbsp;En cours (Planifié)</span></td>
+<td valign="top">21-10-2026 10:20</td>
+<td valign="top">21-09-2026 09:20</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1640614089" href="/front/user.form.php?id=2"><span id="tooltip1640614089" class="fas fa-info pointer" data-hasqtip="19"></span></a><div id="contenttooltip1640614089" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink1774834859" href="/front/user.form.php?id=2"><span id="tooltip1774834859" class="fas fa-info pointer" data-hasqtip="20"></span></a><div id="contenttooltip1774834859" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Réseau</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_1"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_454761804" name="item[Ticket][19]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_454761804"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">19</td>
+<td valign="top"><a id="Ticket19" href="/front/ticket.form.php?id=19" data-hasqtip="21">Ticket fictif 019 · Imprimante site exemple Nord</a> <div id="contentTicket19" class="invisible">Description fictive du ticket 19.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus far fa-circle assigned" title="En cours (Attribué)"></i>&nbsp;En cours (Attribué)</span></td>
+<td valign="top">20-10-2026 10:19</td>
+<td valign="top">20-09-2026 09:19</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink127917164" href="/front/user.form.php?id=2"><span id="tooltip127917164" class="fas fa-info pointer" data-hasqtip="22"></span></a><div id="contenttooltip127917164" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink1719664909" href="/front/user.form.php?id=2"><span id="tooltip1719664909" class="fas fa-info pointer" data-hasqtip="23"></span></a><div id="contenttooltip1719664909" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Impression</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_2"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_1164416551" name="item[Ticket][18]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_1164416551"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">18</td>
+<td valign="top"><a id="Ticket18" href="/front/ticket.form.php?id=18" data-hasqtip="24">Ticket fictif 018 · Connexion site exemple Sud</a> <div id="contentTicket18" class="invisible">Description fictive du ticket 18.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-circle new" title="Nouveau"></i>&nbsp;Nouveau</span></td>
+<td valign="top">19-10-2026 10:18</td>
+<td valign="top">19-09-2026 09:18</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1660405771" href="/front/user.form.php?id=2"><span id="tooltip1660405771" class="fas fa-info pointer" data-hasqtip="25"></span></a><div id="contenttooltip1660405771" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink843666225" href="/front/user.form.php?id=2"><span id="tooltip843666225" class="fas fa-info pointer" data-hasqtip="26"></span></a><div id="contenttooltip843666225" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Réseau</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_1"><td width="10" valign="top"><span class="form-group-checkbox"><input type="checkbox" class="new_checkbox" id="check_849795178" name="item[Ticket][17]" value="1" data-glpicore-ma-tags="common"><label class="label-checkbox" title="" for="check_849795178"> <span class="check"></span> <span class="box"></span>&nbsp;</label></span></td>
+<td valign="top">17</td>
+<td valign="top"><a id="Ticket17" href="/front/ticket.form.php?id=17" data-hasqtip="27">Ticket fictif 017 · Imprimante site exemple Nord</a> <div id="contentTicket17" class="invisible">Description fictive du ticket 17.</div></td>
+<td valign="top"><span class="no-wrap"><i class="itilstatus fas fa-circle closed" title="Clos"></i>&nbsp;Clos</span></td>
+<td valign="top">18-10-2026 10:17</td>
+<td valign="top">18-09-2026 09:17</td>
+<td valign="top"><div class="priority_block" style="border-color: #ffcece">
+                        <span style="background: #ffcece"></span>&nbsp;Moyenne
+                       </div></td>
+<td valign="top">glpi <a id="tooltiplink1586847769" href="/front/user.form.php?id=2"><span id="tooltip1586847769" class="fas fa-info pointer" data-hasqtip="28"></span></a><div id="contenttooltip1586847769" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">glpi <a id="tooltiplink2110529718" href="/front/user.form.php?id=2"><span id="tooltip2110529718" class="fas fa-info pointer" data-hasqtip="29"></span></a><div id="contenttooltip2110529718" class="invisible"><strong>Nom</strong> : glpi<br><strong>Identifiant</strong> : glpi<br></div></td>
+<td valign="top">Impression</td>
+<td valign="top"></td>
+</tr><tr class="tab_bg_2"><th class=""><div class="form-group-checkbox">
+                  <input title="Tout cocher comme" type="checkbox" class="new_checkbox" name="_checkall_25967571" id="checkall_25967571" onclick="if ( checkAsCheckboxes('checkall_25967571', 'massformTicket'))
+                                                   {return true;}">
+                  <label class="label-checkbox" for="checkall_25967571" title="Tout cocher comme">
+                     <span class="check"></span>
+                     <span class="box"></span>
+                  </label>
+               </div></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=2&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">ID</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=1&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Titre</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=12&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Statut</a></th>
+<th class="order_DESC"><a href="/front/ticket.php?itemtype=Ticket&amp;sort=19&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Dernière modification</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=15&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Date d'ouverture</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=3&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Priorité</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=4&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Demandeur - Demandeur</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=5&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Attribué à - Technicien</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=7&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">Catégorie</a></th>
+<th class=""><a href="/front/ticket.php?itemtype=Ticket&amp;sort=18&amp;order=ASC&amp;start=0&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;">TTR</a></th>
+</tr></tbody></table></div>
+<table class="tab_glpi" width="95%"><tbody><tr><td width="30px"><img src="/pics/arrow-left.png" alt=""></td><td width="100%" class="left"><a class="vsubmit" onclick="massiveaction_windowa32fb9491ebaf1247ac7acf148447e88.dialog(&quot;open&quot;);" href="#modal_massaction_contenta32fb9491ebaf1247ac7acf148447e88" title="Actions">Actions</a></td></tr></tbody></table>
+<input type="hidden" name="_glpi_csrf_token" value="fixture">
+</form>
+<div><table class="tab_cadre_pager"><tbody><tr><td width="31%" class="tab_bg_2"><form method="POST" action="/front/ticket.php?sort=19&amp;order=DESC&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;&amp;start=0"><span class="responsive_hidden">Affichage (nombre d'éléments)</span>&nbsp;<select name="glpilist_limit" id="dropdown_glpilist_limit963809724" onchange="submit()" size="1" data-select2-id="dropdown_glpilist_limit963809724" tabindex="-1" class="select2-hidden-accessible" aria-hidden="true"><option value="5">5</option><option value="10" selected="" data-select2-id="14">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option><option value="40">40</option><option value="50">50</option><option value="100">100</option><option value="150">150</option><option value="200">200</option><option value="250">250</option><option value="500">500</option><option value="750">750</option><option value="990">990</option><option value="1000">1000</option><option value="2000">2000</option><option value="3000">3000</option><option value="4000">4000</option><option value="5000">5000</option><option value="10000">10000</option><option value="9999999">9999999</option></select><span class="select2 select2-container select2-container--default" dir="ltr" data-select2-id="13"><span class="selection"><span class="select2-selection select2-selection--single" role="combobox" aria-haspopup="true" aria-expanded="false" tabindex="0" aria-disabled="false" aria-labelledby="select2-dropdown_glpilist_limit963809724-container"><span class="select2-selection__rendered" id="select2-dropdown_glpilist_limit963809724-container" role="textbox" aria-readonly="true" title="10"><span>10</span></span><span class="select2-selection__arrow" role="presentation"><b role="presentation"></b></span></span></span><span class="dropdown-wrapper" aria-hidden="true"></span></span>
+<input type="hidden" name="_glpi_csrf_token" value="fixture">
+</form>
+</td><td class="tab_bg_2"><div class="pager_controls"><span class="fa fa-wrench pointer" title="Sélectionnez les éléments à afficher par défaut" onclick="$('#search_config_bottom').dialog('open');">
+                     <span class="sr-only">Sélectionnez les éléments à afficher par défaut</span></span></div></td><td width="20%" class="tab_bg_2 b">De 1 à 10 sur 30</td>
+<th class="right"><a href="/front/ticket.php?sort=19&amp;order=DESC&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;&amp;start=10">
+               <i class="fa fa-chevron-right" title="Suivant"></i></a></th>
+<th class="right"><a href="/front/ticket.php?sort=19&amp;order=DESC&amp;criteria%5B0%5D%5Blink%5D=AND&amp;criteria%5B0%5D%5Bfield%5D=12&amp;criteria%5B0%5D%5Bsearchtype%5D=equals&amp;criteria%5B0%5D%5Bvalue%5D=all&amp;&amp;start=20"><i class="fa fa-step-forward" title="Fin"></i></a></th>
+</tr></tbody></table></div></div></main><footer role="contentinfo" id="footer"><table role="presentation"><tbody><tr><td class="right"><a href="http://glpi-project.org/" title="Powered by Teclib and contributors" class="copyright">GLPI 9.5.13 Copyright (C) 2015-2022 Teclib' and contributors</a></td></tr></tbody></table></footer><div id="showSavedSearches" class="slidepanel onright" style="display: none;"><div class="header"><button type="button" class="close ui-button ui-widget ui-state-default ui-corner-all ui-button-icon-only ui-dialog-titlebar-close" title="Fermer"><span class="ui-button-icon-primary ui-icon ui-icon-closethick"></span><span class="ui-button-text">Fermer</span></button><a href="/front/savedsearch.php"><img class="icon" src="/pics/menu_config.png" alt="Gérer les recherches sauvegardées" title="Gérer les recherches sauvegardées"></a><h3>Recherches sauvegardées</h3></div><div class="contents"></div></div><div tabindex="-1" role="dialog" class="ui-dialog ui-corner-all ui-widget ui-widget-content ui-front ui-draggable ui-resizable" aria-describedby="show_all_menu" aria-labelledby="ui-id-1" style="display: none; position: absolute;"><div class="ui-dialog-titlebar ui-corner-all ui-widget-header ui-helper-clearfix ui-draggable-handle"><span id="ui-id-1" class="ui-dialog-title">&nbsp;</span><button type="button" class="ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close" title="Close"><span class="ui-button-icon ui-icon ui-icon-closethick"></span><span class="ui-button-icon-space"> </span>Close</button></div><div id="show_all_menu" class="invisible ui-dialog-content ui-widget-content" style="display: block;"><dl><dt class="primary-bg primary-fg"><a class="primary-fg" href="/front/dashboard_assets.php" title="Parc">Parc</a></dt><dd><a href="/front/computer.php"><i class="fa-fw fas fa-laptop"></i>&nbsp;Ordinateurs</a></dd><dd><a href="/front/monitor.php"><i class="fa-fw fas fa-desktop"></i>&nbsp;Moniteurs</a></dd><dd><a href="/front/software.php"><i class="fa-fw fas fa-cube"></i>&nbsp;Logiciels</a></dd><dd><a href="/front/networkequipment.php"><i class="fa-fw fas fa-network-wired"></i>&nbsp;Matériels réseau</a></dd><dd><a href="/front/peripheral.php"><i class="fa-fw fab fa-usb"></i>&nbsp;Périphériques</a></dd><dd><a href="/front/printer.php"><i class="fa-fw fas fa-print"></i>&nbsp;Imprimantes</a></dd><dd><a href="/front/cartridgeitem.php"><i class="fa-fw fas fa-fill-drip"></i>&nbsp;Cartouches</a></dd><dd><a href="/front/consumableitem.php"><i class="fa-fw fas fa-box-open"></i>&nbsp;Consommables</a></dd><dd><a href="/front/phone.php"><i class="fa-fw fas fa-phone"></i>&nbsp;Téléphones</a></dd><dd><a href="/front/rack.php"><i class="fa-fw fas fa-server"></i>&nbsp;Baies</a></dd><dd><a href="/front/enclosure.php"><i class="fa-fw fas fa-th"></i>&nbsp;Châssis</a></dd><dd><a href="/front/pdu.php"><i class="fa-fw fas fa-plug"></i>&nbsp;PDU</a></dd><dd><a href="/front/passivedcequipment.php"><i class="fa-fw fas fa-th-list"></i>&nbsp;Équipements passifs</a></dd><dd><a href="/front/item_device.php?itemtype=Item_DeviceSimcard"><i class="fa-fw fas fa-sim-card"></i>&nbsp;Cartes SIM</a></dd><dd><a href="/front/allassets.php"><i class="fa-fw fas fa-list"></i>&nbsp;Global</a></dd></dl><dl><dt class="primary-bg primary-fg"><a class="primary-fg" href="/front/dashboard_helpdesk.php" title="Assistance">Assistance</a></dt><dd><a href="/front/ticket.php"><i class="fa-fw fas fa-exclamation-circle"></i>&nbsp;Tickets</a></dd><dd><a href="/front/ticket.form.php"><i class="fa-fw fas fa-plus"></i>&nbsp;Créer un ticket</a></dd><dd><a href="/front/problem.php"><i class="fa-fw fas fa-exclamation-triangle"></i>&nbsp;Problèmes</a></dd><dd><a href="/front/change.php"><i class="fa-fw fas fa-clipboard-check"></i>&nbsp;Changements</a></dd><dd><a href="/front/planning.php"><i class="fa-fw far fa-calendar-alt"></i>&nbsp;Planning</a></dd><dd><a href="/front/stat.php"><i class="fa-fw fas fa-chart-bar"></i>&nbsp;Statistiques</a></dd><dd><a href="/front/ticketrecurrent.php"><i class="fa-fw fas fa-stopwatch"></i>&nbsp;Tickets récurrents</a></dd></dl><dl><dt class="primary-bg primary-fg"><a class="primary-fg" href="/front/softwarelicense.php" title="Gestion">Gestion</a></dt><dd><a href="/front/softwarelicense.php"><i class="fa-fw fas fa-key"></i>&nbsp;Licences</a></dd><dd><a href="/front/budget.php"><i class="fa-fw fas fa-calculator"></i>&nbsp;Budgets</a></dd><dd><a href="/front/supplier.php"><i class="fa-fw fas fa-dolly"></i>&nbsp;Fournisseurs</a></dd><dd><a href="/front/contact.php"><i class="fa-fw fas fa-user-tie"></i>&nbsp;Contacts</a></dd><dd><a href="/front/contract.php"><i class="fa-fw fas fa-file-signature"></i>&nbsp;Contrats</a></dd><dd><a href="/front/document.php"><i class="fa-fw far fa-file"></i>&nbsp;Documents</a></dd><dd><a href="/front/line.php"><i class="fa-fw fas fa-phone"></i>&nbsp;Lignes</a></dd><dd><a href="/front/certificate.php"><i class="fa-fw fas fa-certificate"></i>&nbsp;Certificats</a></dd><dd><a href="/front/datacenter.php"><i class="fa-fw fas fa-warehouse"></i>&nbsp;Data centers</a></dd><dd><a href="/front/cluster.php"><i class="fa-fw fas fa-project-diagram"></i>&nbsp;Clusters</a></dd><dd><a href="/front/domain.php"><i class="fa-fw fas fa-globe-americas"></i>&nbsp;Domaines</a></dd><dd><a href="/front/appliance.php"><i class="fa-fw fas fa-cubes"></i>&nbsp;Applicatifs</a></dd></dl><dl><dt class="primary-bg primary-fg"><a class="primary-fg" href="/front/project.php" title="Outils">Outils</a></dt><dd><a href="/front/project.php"><i class="fa-fw fas fa-columns"></i>&nbsp;Projets</a></dd><dd><a href="/front/reminder.php"><i class="fa-fw far fa-sticky-note"></i>&nbsp;Notes</a></dd><dd><a href="/front/rssfeed.php"><i class="fa-fw fas fa-rss"></i>&nbsp;Flux RSS</a></dd><dd><a href="/front/knowbaseitem.php"><i class="fa-fw fas fa-question"></i>&nbsp;Base de connaissances</a></dd><dd><a href="/front/reservationitem.php"><i class="fa-fw fas fa-calendar-check"></i>&nbsp;Réservations</a></dd><dd><a href="/front/report.php"><i class="fa-fw fas fa-file-medical-alt"></i>&nbsp;Rapports</a></dd><dd><a href="/front/savedsearch.php"><i class="fa-fw far fa-bookmark"></i>&nbsp;Recherches sauvegardées</a></dd></dl><dl><dt class="primary-bg primary-fg"><a class="primary-fg" href="/front/user.php" title="Administration">Administration</a></dt><dd><a href="/front/user.php"><i class="fa-fw fas fa-user"></i>&nbsp;Utilisateurs</a></dd><dd><a href="/front/group.php"><i class="fa-fw fas fa-users"></i>&nbsp;Groupes</a></dd><dd><a href="/front/entity.php"><i class="fa-fw fas fa-layer-group"></i>&nbsp;Entités</a></dd><dd><a href="/front/rule.php"><i class="fa-fw fas fa-book"></i>&nbsp;Règles</a></dd><dd><a href="/front/dictionnary.php"><i class="fa-fw fas fa-book"></i>&nbsp;Dictionnaires</a></dd><dd><a href="/front/profile.php"><i class="fa-fw fas fa-user-check"></i>&nbsp;Profils</a></dd><dd><a href="/front/queuednotification.php"><i class="fa-fw far fa-list-alt"></i>&nbsp;File d'attente des notifications</a></dd><dd><a href="/front/event.php"><i class="fa-fw fas fa-scroll"></i>&nbsp;Journaux</a></dd></dl><dl><dt class="primary-bg primary-fg"><a class="primary-fg" href="/front/dropdown.php" title="Configuration">Configuration</a></dt><dd><a href="/front/dropdown.php"><i class="fa-fw fas fa-edit"></i>&nbsp;Intitulés</a></dd><dd><a href="/front/devices.php"><i class="fa-fw far fa-square"></i>&nbsp;Composants</a></dd><dd><a href="/front/setup.notification.php"><i class="fa-fw fas fa-bell"></i>&nbsp;Notifications</a></dd><dd><a href="/front/slm.php"><i class="fa-fw fas fa-file-contract"></i>&nbsp;Niveaux de services</a></dd><dd><a href="/front/config.form.php"><i class="fa-fw fas fa-cog"></i>&nbsp;Générale</a></dd><dd><a href="/front/fieldunicity.php"><i class="fa-fw fas fa-fingerprint"></i>&nbsp;Unicité des champs</a></dd><dd><a href="/front/crontask.php"><i class="fa-fw fas fa-stopwatch"></i>&nbsp;Actions automatiques</a></dd><dd><a href="/front/setup.auth.php"><i class="fa-fw fas fa-sign-in-alt"></i>&nbsp;Authentification</a></dd><dd><a href="/front/mailcollector.php"><i class="fa-fw fas fa-inbox"></i>&nbsp;Collecteurs</a></dd><dd><a href="/front/link.php"><i class="fa-fw fas fa-link"></i>&nbsp;Liens externes</a></dd><dd><a href="/front/plugin.php"><i class="fa-fw fas fa-puzzle-piece"></i>&nbsp;Plugins</a></dd></dl></div><div class="ui-resizable-handle ui-resizable-n" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-e" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-s" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-w" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-sw" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-ne" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-nw" style="z-index: 90;"></div></div><div tabindex="-1" role="dialog" class="ui-dialog ui-corner-all ui-widget ui-widget-content ui-front ui-draggable ui-resizable" aria-describedby="loadbookmark" aria-labelledby="ui-id-2" style="display: none; position: absolute;"><div class="ui-dialog-titlebar ui-corner-all ui-widget-header ui-helper-clearfix ui-draggable-handle"><span id="ui-id-2" class="ui-dialog-title">Charger une recherche sauvegardée</span><button type="button" class="ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close" title="Close"><span class="ui-button-icon ui-icon ui-icon-closethick"></span><span class="ui-button-icon-space"> </span>Close</button></div><div id="loadbookmark" class="ui-dialog-content ui-widget-content"><iframe id="Iframeloadbookmark" class="iframe hidden"></iframe></div><div class="ui-resizable-handle ui-resizable-n" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-e" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-s" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-w" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-sw" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-ne" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-nw" style="z-index: 90;"></div></div><div tabindex="-1" role="dialog" class="ui-dialog ui-corner-all ui-widget ui-widget-content ui-front ui-draggable ui-resizable" aria-describedby="ui-id-3" aria-labelledby="ui-id-4" style="display: none; position: absolute;"><div class="ui-dialog-titlebar ui-corner-all ui-widget-header ui-helper-clearfix ui-draggable-handle"><span id="ui-id-4" class="ui-dialog-title">Sauvegarder la recherche courante</span><button type="button" class="ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close" title="Close"><span class="ui-button-icon ui-icon ui-icon-closethick"></span><span class="ui-button-icon-space"> </span>Close</button></div><div id="ui-id-3" class="ui-dialog-content ui-widget-content"></div><div class="ui-resizable-handle ui-resizable-n" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-e" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-s" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-w" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-sw" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-ne" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-nw" style="z-index: 90;"></div></div><div tabindex="-1" role="dialog" class="ui-dialog ui-corner-all ui-widget ui-widget-content ui-front ui-draggable ui-resizable" aria-describedby="search_config_top" aria-labelledby="ui-id-5" style="display: none; position: absolute;"><div class="ui-dialog-titlebar ui-corner-all ui-widget-header ui-helper-clearfix ui-draggable-handle"><span id="ui-id-5" class="ui-dialog-title">Sélectionnez les éléments à afficher par défaut</span><button type="button" class="ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close" title="Close"><span class="ui-button-icon ui-icon ui-icon-closethick"></span><span class="ui-button-icon-space"> </span>Close</button></div><div id="search_config_top" class="ui-dialog-content ui-widget-content"><iframe id="Iframesearch_config_top" class="iframe hidden"></iframe></div><div class="ui-resizable-handle ui-resizable-n" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-e" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-s" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-w" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-sw" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-ne" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-nw" style="z-index: 90;"></div></div><div tabindex="-1" role="dialog" class="ui-dialog ui-corner-all ui-widget ui-widget-content ui-front ui-draggable ui-resizable" aria-describedby="massiveactioncontenta32fb9491ebaf1247ac7acf148447e88" aria-labelledby="ui-id-6" style="display: none; position: absolute;"><div class="ui-dialog-titlebar ui-corner-all ui-widget-header ui-helper-clearfix ui-draggable-handle"><span id="ui-id-6" class="ui-dialog-title">Actions</span><button type="button" class="ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close" title="Close"><span class="ui-button-icon ui-icon ui-icon-closethick"></span><span class="ui-button-icon-space"> </span>Close</button></div><div id="massiveactioncontenta32fb9491ebaf1247ac7acf148447e88" class="ui-dialog-content ui-widget-content"></div><div class="ui-resizable-handle ui-resizable-n" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-e" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-s" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-w" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-sw" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-ne" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-nw" style="z-index: 90;"></div></div><div tabindex="-1" role="dialog" class="ui-dialog ui-corner-all ui-widget ui-widget-content ui-front ui-draggable ui-resizable" aria-describedby="search_config_bottom" aria-labelledby="ui-id-7" style="display: none; position: absolute;"><div class="ui-dialog-titlebar ui-corner-all ui-widget-header ui-helper-clearfix ui-draggable-handle"><span id="ui-id-7" class="ui-dialog-title">Sélectionnez les éléments à afficher par défaut</span><button type="button" class="ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close" title="Close"><span class="ui-button-icon ui-icon ui-icon-closethick"></span><span class="ui-button-icon-space"> </span>Close</button></div><div id="search_config_bottom" class="ui-dialog-content ui-widget-content"><iframe id="Iframesearch_config_bottom" class="iframe hidden"></iframe></div><div class="ui-resizable-handle ui-resizable-n" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-e" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-s" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-w" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-se ui-icon ui-icon-gripsmall-diagonal-se" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-sw" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-ne" style="z-index: 90;"></div><div class="ui-resizable-handle ui-resizable-nw" style="z-index: 90;"></div></div></body></html>

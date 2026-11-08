@@ -1,0 +1,91 @@
+GLPI Pilot 3.9.0 — Seuils météo par sélection et bases de pourcentage
+
+DÉFINIR OU MODIFIER LES SEUILS
+
+1. Dans Pilotage, sélectionner les équipes et les filtres souhaités.
+2. Sur une carte météo, ouvrir « Seuils pour cette sélection ».
+3. Choisir la valeur de l’indicateur ou « Pourcentage (%) » lorsque le calcul
+   d’une part de tickets est possible.
+4. Choisir « Cette sélection uniquement », ou, en pourcentage, « Ce widget,
+   toutes les sélections ». Choisir la base et saisir vigilance et tension.
+5. Enregistrer. La carte garde son volume et présente la base du ratio.
+
+Les seuils sont franchis strictement : l’égalité reste dans l’état précédent.
+« Une valeur plus basse est préférable » utilise une vigilance au-dessus du
+premier seuil, puis une tension au-dessus du second. En sens inverse, les
+franchissements se font en dessous des seuils. Les pourcentages vont de 0 à 100.
+
+Pour retirer une règle, rouvrir ce panneau, sélectionner sa portée et choisir
+« Supprimer ces seuils ». Supprimer une exception laisse reprendre la règle
+réutilisable du widget si elle existe. Sans règle correspondante, la météo
+conserve son comportement prudent et les seuils d’équipes ne sont pas additionnés.
+
+CHOISIR ENTRE VALEUR ABSOLUE ET POURCENTAGE
+
+Une valeur absolue mesure un volume : par exemple 40 tickets en attente.
+Un pourcentage mesure une part : 40 tickets en attente parmi 200 tickets actifs
+donnent 20 %. Ce même ratio peut correspondre à des volumes très différents.
+Il ne mesure pas à lui seul la charge par personne ou le temps de traitement,
+qui demandent des informations supplémentaires.
+
+Une règle en pourcentage réutilisable évite d’enregistrer chaque combinaison
+d’équipes. Une exception par sélection reste utile lorsque le périmètre possède
+ses propres objectifs. Les deux mécanismes peuvent coexister ; l’exception
+exacte a priorité sur la règle réutilisable.
+
+BASES PROPOSÉES
+
+- Tickets actifs de la sélection : dénominateur commun avant les filtres propres
+  à la carte. Adapté aux parts de tickets en attente, nouveaux, sans technicien,
+  d’une catégorie, d’un type ou d’un autre sous-ensemble actif.
+- Tous les tickets de la sélection : inclut les états présents dans la source,
+  notamment pour les tickets résolus ou clos et les volumes de flux.
+- Tickets actifs ou tous les tickets de la source entière : part du périmètre
+  courant dans l’ensemble des données chargées. Pour la source complète, la
+  part de tous les tickets actifs dans ces mêmes tickets vaut normalement 100 %.
+- Population évaluable de la sélection, lorsque l’indicateur la définit :
+  priorité reconnue ; urgence ou impact reconnus ; date d’ouverture exploitable ;
+  date de modification exploitable et cohérente ; date d’échéance exploitable.
+
+La base conseillée dépend de l’indicateur. Elle peut être changée. Aucun seuil
+numérique n’est activé automatiquement lors du choix d’une base.
+
+La carte compte toujours les mêmes tickets. Les pourcentages de sélection sont
+calculés avant les filtres propres au widget pour permettre, par exemple, une
+part « incidents / tickets actifs de l’équipe ». Le moteur vérifie que les tickets
+du numérateur appartiennent bien à la base. Une base incompatible, nulle ou
+absente donne un pourcentage indisponible, jamais un faux 0 % rassurant.
+
+Les champs reconnus restent distincts : TTR + Progression n’est pas une échéance,
+le délai de prise en compte n’est pas l’âge, et les nombres déclarés de groupes
+ou de rédacteurs ne sont pas des effectifs de techniciens. Les colonnes absentes
+restent absentes. Les durées conservent leur unité ; un indicateur natif en %
+s’évalue directement dans son unité, sans nouvelle division.
+
+RECONNAÎTRE ET RETROUVER LA SÉLECTION
+
+Les réglages exacts tiennent compte de la source/recherche, des groupes, du
+technicien, des dates, des inclusions et exclusions, des sous-catégories, des
+filtres communs et de la carte, des requêtes et de l’interprétation des colonnes.
+Permuter des équipes ou des valeurs équivalentes retrouve la même exception.
+Changer le sens d’un filtre, une date ou le périmètre produit une autre sélection.
+
+Les filtres et réglages sont enregistrés dans la configuration du tableau,
+retrouvés au redémarrage et transmis par l’export/import de configuration ainsi
+que « Définir comme configuration par défaut ». Le cache hors connexion conserve
+la provenance du relevé ; un CSV supprimé après son import n’empêche pas la
+restauration de la sélection sur ce relevé conservé.
+
+Une autre source ne reçoit pas les exceptions de la première. Une règle en
+pourcentage définie volontairement pour toutes les sélections du widget reste
+réutilisable, sous réserve d’une base disponible et compatible.
+
+PRÉSENTATION, EXPORTS ET DÉMONSTRATION
+
+Présentation, HTML, PDF, CSV et Excel reprennent le volume, la météo, les seuils
+et la base appliqués. Un relevé incomplet ou une identité incertaine reste à
+vérifier. La couleur ne certifie pas des données dont le contrôle est incomplet.
+
+Les éditions Standard et Admin proposent ces réglages de pilotage. La démo
+conserve ses propres modifications ; quitter la démo retrouve les réglages du
+profil habituel. Les opérations d’administration gardent leurs permissions.

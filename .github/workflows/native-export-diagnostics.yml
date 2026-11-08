@@ -1,0 +1,104 @@
+name: Diagnostic Windows — export PDF natif (sans publication)
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/field-preparation-20261026]
+    paths:
+      - 'tests/WindowsStartupChecks/**'
+      - 'src/GlpiPilot/Desktop/MainForm.cs'
+      - '.github/workflows/native-export-diagnostics.yml'
+
+# This short diagnostic is independent of the complete Windows/PostgreSQL
+# qualification. Its distinct name cannot trigger the sites workflow_run.
+# It never publishes packs, a release, or sites assets.
+permissions:
+  contents: read
+
+concurrency:
+  group: native-export-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-export:
+    name: Diagnostic du pack réel et du PDF natif · aucune publication
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+    steps:
+      - name: Récupérer les sources
+        # Same immutable action versions as the complete Windows workflow.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Installer le SDK .NET 10 qualifié
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+
+      - name: Enregistrer le contexte du diagnostic
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path artifacts/native-export-diagnostics/logs -Force | Out-Null
+          dotnet --info | Tee-Object -FilePath artifacts/native-export-diagnostics/logs/dotnet-info.log
+          if ($LASTEXITCODE -ne 0) { throw '.NET information unavailable.' }
+          "Diagnostic uniquement — aucune qualification de release.`nCommit: $env:GITHUB_SHA`nRun: $env:GITHUB_RUN_ID / $env:GITHUB_RUN_ATTEMPT`nRunner: $env:RUNNER_OS / $env:RUNNER_ARCH`nOS: $([Environment]::OSVersion.VersionString)" |
+            Set-Content -LiteralPath artifacts/native-export-diagnostics/logs/build-context.log -Encoding utf8
+
+      - name: Préparer le runtime WebView2 fixe vérifié
+        id: runtime
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Start-Transcript -LiteralPath artifacts/native-export-diagnostics/logs/webview-runtime.log -Force | Out-Null
+          try {
+            $runtimePath = & ./build-tools/Get-WebView2Runtime.ps1 -CacheDirectory (Join-Path $env:RUNNER_TEMP 'GLPI-WebView2-Cache')
+            "path=$runtimePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          finally { Stop-Transcript | Out-Null }
+
+      - name: Construire les vrais packs PROD et DEV pour le diagnostic
+        timeout-minutes: 25
+        env:
+          DIAGNOSTIC_RUNTIME_PATH: ${{ steps.runtime.outputs.path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Start-Transcript -LiteralPath artifacts/native-export-diagnostics/logs/pack-build.log -Force | Out-Null
+          try {
+            $dotnetPath = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
+            # No ValidationDirectory: these packs are diagnostic inputs, not
+            # a substitute for the fully qualified release packs.
+            & ./build.ps1 -OutputDirectory artifacts/native-export-diagnostics/release -RuntimePath $env:DIAGNOSTIC_RUNTIME_PATH -DotNetPath $dotnetPath -AllowOnlineRestore
+          }
+          finally { Stop-Transcript | Out-Null }
+
+      - name: Compiler le générateur de configuration synthétique
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # PackStartup invokes this project with --no-build. The full workflow
+          # builds it during earlier suites; this diagnostic only compiles it.
+          dotnet build tests/RuntimeSessionChecks/RuntimeSessionChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 |
+            Tee-Object -FilePath artifacts/native-export-diagnostics/logs/deployment-fixture-build.log
+          if ($LASTEXITCODE -ne 0) { throw 'The deployment fixture generator did not build.' }
+
+      - name: Exécuter le vrai contrôle PackStartup et son export PDF
+        timeout-minutes: 20
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup -OutputDirectory artifacts/native-export-diagnostics
+
+      - name: Conserver les journaux et captures du diagnostic, même en échec
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: native-export-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/native-export-diagnostics/logs/

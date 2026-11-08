@@ -1,0 +1,36 @@
+.motion-control[data-motion-active=false] { border-color: color-mix(in srgb,var(--accent) 45%,var(--border)); color: var(--accent); }
+.motion-control > span { white-space: nowrap; }
+.motion-dialog { width: min(720px,calc(100vw - 28px)); }
+.motion-options { display: grid; gap: 16px; }
+.motion-options > p { margin: 0; }
+.motion-options .toolbar { gap: 8px; }
+.motion-options [data-motion-choice][aria-pressed=true] { box-shadow: 0 0 0 2px var(--surface),0 0 0 4px color-mix(in srgb,var(--accent) 65%,transparent); }
+.motion-preview { position: relative; isolation: isolate; overflow: hidden; display: flex; align-items: center; gap: 14px;
+  min-height: 168px; padding: 20px; border: 1px solid var(--border); border-radius: 14px;
+  background: color-mix(in srgb,var(--surface) 80%,transparent); }
+.motion-preview-copy { display: grid; gap: 8px; flex: 1; min-width: 0; }
+.motion-preview-copy > small { color: var(--accent); font-size: 10px; letter-spacing: .1em; font-weight: 700; }
+.motion-preview-status { font-size: 16px; line-height: 1.4; }
+.motion-preview .help { margin: 0; font-size: 12px; line-height: 1.55; }
+.motion-preview-illustration { flex: 0 0 150px; }
+.motion-preview-illustration .pilot-weather-scene { width: 150px; height: 110px; max-height: none; }
+.motion-preview .domenia-orb { opacity: .24; }
+.motion-preview .domenia-orb.a { width: 210px; height: 210px; right: -30px; }
+.motion-preview .domenia-orb.b { width: 150px; height: 150px; right: 28%; bottom: -80px; }
+.motion-preview[data-motion-active=false] .domenia-glow-ring { opacity: .35; }
+.workspace-settings-grid .motion-preview { margin-bottom: 18px; }
+@media(max-width:600px) {
+  .motion-preview { padding: 16px; gap: 8px; min-height: 148px; }
+  .motion-preview-illustration { flex-basis: 90px; }
+  .motion-preview-illustration .pilot-weather-scene { width: 90px; height: 90px; }
+  .motion-preview-status { font-size: 14px; }
+  .motion-options .toolbar > .button { flex: 1 1 auto; }
+}
+@media(forced-colors:active) {
+  .motion-preview { background: Canvas; }
+  .motion-options [data-motion-choice][aria-pressed=true] { outline: 2px solid Highlight; box-shadow: none; }
+}
+
+.motion-control-group{display:flex;align-items:center;flex-wrap:wrap;gap:6px;max-width:100%}
+.motion-control-group .motion-control-reason{flex-basis:100%;font-size:11px;color:var(--muted);white-space:normal}
+.motion-control-group [hidden]{display:none!important}

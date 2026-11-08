@@ -1,0 +1,47 @@
+/* Calm defaults: one scrolling page, one primary action, optional detail on demand. */
+.collection-workspace{max-width:1000px;margin:0 auto;display:grid;gap:16px;min-width:0}
+.collection-workspace [hidden]{display:none!important}
+.collection-workspace :is(p,h1,h2,summary){overflow-wrap:anywhere}
+.collection-header{display:flex;align-items:center;flex-wrap:wrap;gap:16px}
+.collection-header h1{font-size:24px;line-height:1.25;margin:0;letter-spacing:-.02em}
+.collection-intro{color:var(--muted);max-width:80ch;margin:0}
+.collection-errors:empty{display:none}
+.collection-status{padding:clamp(20px,4vw,32px);margin:0;border-radius:20px;display:grid;gap:16px;min-width:0}
+.collection-status-heading{display:flex;align-items:center;gap:14px;min-width:0}
+.collection-status-heading>div{min-width:0}
+.collection-eyebrow{font-size:11px;font-weight:650;letter-spacing:.11em;color:var(--muted);margin:0 0 5px}
+.collection-status h2{font-size:clamp(21px,3vw,28px);line-height:1.25;letter-spacing:-.02em;margin:0}
+.collection-state-mark{display:grid;place-items:center;flex:0 0 46px;width:46px;height:46px;border-radius:14px;background:var(--accent-soft);color:var(--accent);transition:background-color 160ms ease,color 160ms ease}
+.collection-state-mark .icon{width:23px;height:23px}
+.collection-status[data-state="paused"] .collection-state-mark,.collection-status[data-state="stopped"] .collection-state-mark{background:var(--surface-2);color:var(--muted)}
+.collection-status[data-state="attention"] .collection-state-mark,.collection-status[data-state="interrupted"] .collection-state-mark{background:var(--warning-soft);color:var(--warning)}
+.collection-phase,.collection-counters,.collection-next,.collection-reassurance{margin:0}
+.collection-phase{color:var(--text)}
+.collection-counters{font-variant-numeric:tabular-nums;color:var(--muted)}
+.collection-next{font-size:12px;color:var(--muted)}
+.collection-reassurance{font-size:12px;color:var(--muted);padding-top:14px;border-top:1px solid var(--border)}
+.collection-actions{margin:0;gap:10px;min-height:42px}
+.collection-actions .button{min-height:42px;padding-inline:18px}
+.collection-actions .primary{min-width:140px}
+.collection-status progress{display:block;width:100%;height:8px;appearance:none;border:0;border-radius:999px;overflow:hidden;background:var(--surface-2)}
+.collection-status progress::-webkit-progress-bar{background:var(--surface-2);border-radius:999px}
+.collection-status progress::-webkit-progress-value{background:var(--accent-solid);border-radius:999px;transition:width 180ms ease}
+.collection-disclosure{padding:0;margin:0;min-width:0;border-radius:16px}
+.collection-disclosure>summary{cursor:pointer;padding:18px 20px;font-weight:600;list-style-position:inside}
+.collection-disclosure>div{padding:0 20px 20px;min-width:0}
+.collection-disclosure[open]>summary{border-bottom:1px solid var(--border);margin-bottom:16px}
+.collection-disclosure summary:focus-visible{outline:2px solid var(--accent);outline-offset:-4px;border-radius:12px}
+.collection-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+.collection-fields .field{min-width:0}
+.collection-fields :is(input,select){max-width:100%;width:100%;box-sizing:border-box}
+.collection-settings-form{display:grid;gap:14px}
+.collection-settings-form>p{margin:0;color:var(--muted)}
+.collection-settings-form>.button{justify-self:start}
+.collection-tuning{border-top:1px solid var(--border);padding-top:12px}
+.collection-tuning>summary{cursor:pointer;padding:8px 0;color:var(--muted)}
+.collection-tuning[open]>summary{margin-bottom:10px}
+.collection-status:focus-within{border-color:var(--control-border)}
+@media(max-width:620px){.collection-workspace{gap:12px}.collection-fields{grid-template-columns:minmax(0,1fr)}.collection-header h1{font-size:21px}.collection-status{border-radius:16px}.collection-disclosure>summary{padding:16px}.collection-disclosure>div{padding-inline:16px}.collection-actions .button{flex:1 1 auto}.collection-status-heading{align-items:flex-start}}
+@media(prefers-reduced-motion:reduce){.collection-workspace *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+:root[data-motion="reduce"] .collection-workspace *,:root[data-motion="off"] .collection-workspace *,:root[data-domenia-motion="paused"] .collection-workspace *{transition:none!important;animation:none!important}
+@media(forced-colors:active){.collection-state-mark{border:1px solid CanvasText}.collection-status progress{appearance:auto}}

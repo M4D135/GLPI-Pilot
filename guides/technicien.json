@@ -1,0 +1,80 @@
+{
+  "source": "technicien.md",
+  "output": "GLPI-Pilot-3.13.6-Guide-technicien",
+  "product": "GLPI Pilot 3.13.6",
+  "title": "Guide technicien",
+  "subtitle": "Suivre ses tickets et préparer ses interventions au quotidien",
+  "edition": "GLPI Pilot 3.13.6",
+  "author": "GLPI Pilot",
+  "cover": "accueil",
+  "coverCaption": "Accueil de GLPI Pilot avec la carte « À faire et à prévoir »",
+  "info": [
+    [
+      "Pour qui",
+      "Techniciens de proximité et du support qui traitent des tickets GLPI et des interventions."
+    ],
+    [
+      "Ce que couvre ce guide",
+      "Accueil, lecture et pilotage d’un ticket, planification, carte et tournées, préparation du matériel, mise à jour des tickets et Pilotage."
+    ],
+    [
+      "Version décrite",
+      "GLPI Pilot 3.13.6 · Windows x64"
+    ]
+  ],
+  "tocIntro": "Cliquez sur un chapitre pour y aller. Dans Word, le volet Navigation (Affichage > Volet de navigation) donne aussi accès aux chapitres et aux sections.",
+  "figures": {
+    "accueil": {
+      "file": "images/accueil.png",
+      "width": 16
+    },
+    "menu-deplie": {
+      "file": "images/menu-deplie.png",
+      "width": 5
+    },
+    "menu-replie": {
+      "file": "images/menu-replie.png",
+      "width": 5
+    },
+    "identite": {
+      "file": "images/identite.png",
+      "width": 11
+    },
+    "palette": {
+      "file": "images/palette.png",
+      "width": 12
+    },
+    "actions-assistees": {
+      "file": "images/actions-assistees.png",
+      "width": 6
+    },
+    "precedents": {
+      "file": "images/precedents.png",
+      "width": 12
+    },
+    "planning": {
+      "file": "images/planning.png",
+      "width": 16
+    },
+    "carte": {
+      "file": "images/carte.png",
+      "width": 16
+    },
+    "preparation": {
+      "file": "images/preparation.png",
+      "width": 16
+    },
+    "pilotage-equipes": {
+      "file": "images/pilotage-equipes.png",
+      "width": 13
+    },
+    "intervention": {
+      "file": "images/intervention.png",
+      "width": 7
+    },
+    "tournee": {
+      "file": "images/tournee.png",
+      "width": 15
+    }
+  }
+}

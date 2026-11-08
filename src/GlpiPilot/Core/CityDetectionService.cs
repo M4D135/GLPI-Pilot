@@ -1,0 +1,658 @@
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace GlpiPilot.Core;
+
+/// <summary>Local, literal inference from an explicitly configured dictionary; never a geocoder.</summary>
+public static class CityDetectionService
+{
+    private sealed class TrieNode
+    {
+        public Dictionary<string, TrieNode> Children { get; } = new(StringComparer.Ordinal);
+        public List<LocationPattern> Patterns { get; } = new();
+    }
+
+    private sealed record LocationPattern(int City, string Term, CityAliasRule? Rule, SiteDefinition? Site, bool Canonical, BuildingDefinition? Building = null);
+    private sealed record Occurrence(int Start, int Length, LocationPattern Pattern, bool? Accepted, string Detail);
+    private sealed class Matcher
+    {
+        public TrieNode Trie { get; } = new();
+        public required CitySettings Settings { get; init; }
+        public required Dictionary<string, int[]> ContextColumns { get; init; }
+    }
+
+    public static CityEnrichmentResult Enrich(ExtractionResult source, CitySettings settings,
+        DashboardSettings dashboard, CancellationToken ct = default, IReadOnlyList<CityTicketOverride>? overrides = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(dashboard);
+        ArgumentNullException.ThrowIfNull(source.Headers);
+        ArgumentNullException.ThrowIfNull(source.Rows);
+        ct.ThrowIfCancellationRequested();
+        settings.Validate();
+        var configuration = settings.Copy();
+        var explicitCorrections = overrides?.Any(value => value.Explicit && value.SourceKey == CityOverrideStore.SourceKey(source)) == true;
+        if (!configuration.Enabled && !explicitCorrections)
+            return PassThrough(source, "Le repérage des villes est désactivé dans les options.");
+        if (!configuration.Enabled) configuration.SourcePriority = new() { "manual" };
+        if (configuration.Cities.Count == 0 && configuration.Sites.Count == 0 && !explicitCorrections)
+            return PassThrough(source, "Ajoutez une ville ou un site et ses variantes dans le référentiel pour activer le repérage.");
+
+        for (var index = 0; index < source.Rows.Count; index++)
+        {
+            if ((index & 255) == 0) ct.ThrowIfCancellationRequested();
+            if (source.Rows[index] is { } row && row.Length > source.Headers.Count)
+                return PassThrough(source, "Repérage des villes indisponible : certaines cellules n’ont pas d’en-tête. Le relevé source est conservé intégralement.");
+        }
+
+        var titleColumn = ResolveTitle(source.Headers, configuration, dashboard);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var header in source.Headers)
+        {
+            ct.ThrowIfCancellationRequested();
+            names.Add(string.Join(' ', CityText.Tokens(header, ct)));
+        }
+        string Unique(string name)
+        {
+            var candidate = name;
+            for (var suffix = 2; !names.Add(string.Join(' ', CityText.Tokens(candidate, ct))); suffix++)
+                candidate = $"{name} ({suffix})";
+            return candidate;
+        }
+        var cityColumnName = Unique("Ville détectée");
+        var stateColumnName = Unique("Repérage ville");
+        var headers = new List<string>(source.Headers) { cityColumnName, stateColumnName };
+        var cityColumnIndex = source.Headers.Count; var stateColumnIndex = cityColumnIndex + 1;
+        string Extra(string name, bool required) { if (!required) return ""; var unique = Unique(name); headers.Add(unique); return unique; }
+        var siteColumnName = Extra("Site détecté", configuration.Sites.Count > 0);
+        var regionColumnName = Extra("Région de la ville", configuration.Cities.Any(city => city.Region.Length > 0));
+        var departmentColumnName = Extra("Département de la ville", configuration.Cities.Any(city => city.Department.Length > 0));
+        var sectorColumnName = Extra("Secteur de la ville", configuration.Cities.Any(city => city.Sector.Length > 0));
+        var buildingColumnName = Extra("Bâtiment détecté", configuration.Buildings.Count > 0);
+        var territoryColumnName = Extra("Hiérarchie territoriale", configuration.Cities.Any(city => city.TerritoryPath.Length > 0));
+        var extraColumns = new[] { siteColumnName, regionColumnName, departmentColumnName, sectorColumnName, buildingColumnName, territoryColumnName }.Where(name => name.Length > 0).ToDictionary(name => name, headers.IndexOf, StringComparer.Ordinal);
+        var citiesById = configuration.Cities.ToDictionary(city => city.Id, StringComparer.Ordinal);
+        var data = new ExtractionResult
+        {
+            Headers = headers, Rows = new List<string[]>(source.Rows.Count),
+            SourceUrl = source.SourceUrl, Title = source.Title, ExtractedAt = source.ExtractedAt,
+            Pages = source.Pages, ExpectedTotal = source.ExpectedTotal, Scope = source.Scope,
+            Complete = source.Complete, Warnings = new List<string>(source.Warnings), Status = source.Status,
+            Provenance = source.Provenance, Quality = source.Quality
+        };
+        var matcher = BuildMatcher(configuration, source.Headers, ct);
+        var sourceKey = CityOverrideStore.SourceKey(source);
+        var idColumn = DashboardService.ResolveColumns(source.Headers, dashboard).First(column => column.Role == "id").Index;
+        string RowId(int row) => idColumn is int column && column >= 0 && source.Rows[row] is { } cells && column < cells.Length ? cells[column]?.Trim() ?? "" : "";
+        var idCounts = Enumerable.Range(0, source.Rows.Count).GroupBy(RowId, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var local = (overrides ?? Array.Empty<CityTicketOverride>()).Where(item => item.SourceKey == sourceKey && sourceKey.Length > 0)
+            .GroupBy(item => item.TicketId, StringComparer.Ordinal).Where(group => group.Count() == 1).ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+        var matches = new List<CityMatch>(source.Rows.Count);
+        var matchedCount = 0;
+        var unmatchedCount = 0;
+        var ambiguousCount = 0;
+        var noTitleCount = 0;
+        var siteOnlyCount = 0;
+        for (var rowIndex = 0; rowIndex < source.Rows.Count; rowIndex++)
+        {
+            if ((rowIndex & 255) == 0) ct.ThrowIfCancellationRequested();
+            var original = source.Rows[rowIndex];
+            var row = new string[headers.Count];
+            Array.Fill(row, "");
+            if (original is not null) Array.Copy(original, row, original.Length);
+            var title = titleColumn.Index is int column && original is not null && column < original.Length
+                ? original[column] : null;
+            var match = new CityMatch(rowIndex, null, null, CityMatchState.TitleUnavailable, Array.Empty<string>()) { Explanation = "Aucune source de localisation configurée n’a fourni de lieu." };
+            var id = RowId(rowIndex);
+            if (id.Length > 0 && idCounts[id] == 1 && local.TryGetValue(id, out var direct) && direct.Explicit)
+                match = ApplyCorrection(match, direct, configuration);
+            foreach (var sourceKind in match.IsOverride ? Enumerable.Empty<string>() : configuration.SourcePriority)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (sourceKind == "manual")
+                {
+                    if (id.Length > 0 && idCounts[id] == 1 && local.TryGetValue(id, out var correction) && (configuration.Enabled || correction.Explicit))
+                    { match = ApplyCorrection(match, correction, configuration); break; }
+                    continue;
+                }
+                var value = title;
+                if (sourceKind == "location")
+                {
+                    var positions = Enumerable.Range(0, source.Headers.Count).Where(index => source.Headers[index] == configuration.LocationColumn).ToArray();
+                    value = configuration.LocationColumn.Length > 0 && positions.Length == 1 && original != null && positions[0] < original.Length ? original[positions[0]] : null;
+                }
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                match = MatchTitle(value, original ?? Array.Empty<string>(), rowIndex, matcher, ct, sourceKind == "location" ? "combined" : sourceKind);
+                match = match with { Explanation = "Source « " + SourceLabel(sourceKind) + " » : " + match.Explanation };
+                if (match.State is CityMatchState.Matched or CityMatchState.SiteOnly or CityMatchState.Ambiguous) break;
+            }
+            switch (match.State)
+            {
+                case CityMatchState.Matched: matchedCount++; break;
+                case CityMatchState.Unmatched: unmatchedCount++; break;
+                case CityMatchState.Ambiguous: ambiguousCount++; break;
+                case CityMatchState.TitleUnavailable: noTitleCount++; break;
+                case CityMatchState.SiteOnly: siteOnlyCount++; break;
+            }
+            row[cityColumnIndex] = match.CityName ?? "";
+            row[stateColumnIndex] = StateLabel(match.State);
+            var city = match.CityId != null ? citiesById.GetValueOrDefault(match.CityId) : null;
+            void SetExtra(string name, string? value) { if (name.Length > 0) row[extraColumns[name]] = value ?? ""; }
+            SetExtra(siteColumnName, match.SiteName); SetExtra(regionColumnName, city?.Region);
+            SetExtra(departmentColumnName, city?.Department); SetExtra(sectorColumnName, city?.Sector);
+            SetExtra(buildingColumnName, match.BuildingName); SetExtra(territoryColumnName, city?.TerritoryPath);
+            data.Rows.Add(row);
+            matches.Add(match);
+        }
+        ct.ThrowIfCancellationRequested();
+        var message = configuration.SourcePriority.Contains("location", StringComparer.Ordinal) || matches.Any(match => match.IsOverride)
+            ? $"Localisation selon l’ordre configuré : {matchedCount:N0} lignes reconnues, {unmatchedCount:N0} sans correspondance, {ambiguousCount:N0} ambiguës, {noTitleCount:N0} sans source exploitable."
+            : titleColumn.Index.HasValue
+            ? $"Villes déduites des titres : {matchedCount:N0} lignes reconnues, {unmatchedCount:N0} sans correspondance, {ambiguousCount:N0} ambiguës, {noTitleCount:N0} sans titre exploitable."
+            : titleColumn.State == "ambiguous"
+                ? "Repérage des villes suspendu : plusieurs colonnes de titre sont possibles. Choisissez la colonne exacte dans les options Villes."
+                : titleColumn.State == "missing-override"
+                    ? "Repérage des villes suspendu : la colonne de titre configurée est absente. Vérifiez les options Villes et les correspondances du dashboard."
+                    : "Repérage des villes suspendu : aucune colonne de titre n’est reconnue. Choisissez la colonne exacte dans les options Villes.";
+        if (siteOnlyCount > 0) message = $"Localisation : {matchedCount:N0} lignes avec commune reconnue, {siteOnlyCount:N0} lignes avec site reconnu sans commune renseignée, {unmatchedCount:N0} sans correspondance, {ambiguousCount:N0} ambiguës, {noTitleCount:N0} sans source exploitable.";
+        return new CityEnrichmentResult
+        {
+            Source = source, Data = data, Applied = true, Matches = matches,
+            CityColumnName = cityColumnName, StateColumnName = stateColumnName,
+            TitleColumnName = titleColumn.Index.HasValue ? titleColumn.Header : "",
+            SiteColumnName = siteColumnName, RegionColumnName = regionColumnName, DepartmentColumnName = departmentColumnName,
+            SectorColumnName = sectorColumnName, BuildingColumnName = buildingColumnName, TerritoryColumnName = territoryColumnName, SiteMatchedCount = matches.Count(match => match.SiteId != null), ManualCount = matches.Count(match => match.IsOverride),
+            MatchedCount = matchedCount, UnmatchedCount = unmatchedCount, SiteOnlyCount = siteOnlyCount,
+            AmbiguousCount = ambiguousCount, TitleUnavailableCount = noTitleCount, Message = message
+        };
+    }
+
+    /// <summary>Adds local inference-quality probes for exactly the snapshot's original row indices.</summary>
+    public static void AppendDashboardProbes(DashboardSnapshot snapshot, CityEnrichmentResult report,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(report);
+        ct.ThrowIfCancellationRequested();
+        var requested = snapshot.Metric("total")?.Rows;
+        var scope = requested is null ? null : new HashSet<int>(requested);
+        var groups = new Dictionary<CityMatchState, List<int>>
+        {
+            [CityMatchState.Matched] = new(), [CityMatchState.Unmatched] = new(),
+            [CityMatchState.Ambiguous] = new(), [CityMatchState.TitleUnavailable] = new(), [CityMatchState.SiteOnly] = new()
+        };
+        var seen = new HashSet<int>();
+        var available = report.Applied && scope is not null;
+        if (available)
+            for (var index = 0; index < report.Matches.Count; index++)
+            {
+                if ((index & 255) == 0) ct.ThrowIfCancellationRequested();
+                var match = report.Matches[index];
+                if (scope!.Contains(match.RowIndex) && seen.Add(match.RowIndex)
+                    && groups.TryGetValue(match.State, out var rows)) rows.Add(match.RowIndex);
+            }
+        // A malformed report must not turn uncovered rows into convincing zeroes.
+        available &= scope is not null && groups.Sum(pair => pair.Value.Count) == scope.Count;
+        var explanation = "Ville inférée uniquement à partir des noms et variantes configurés présents dans le titre, sans validation géographique. "
+            + "Les états sont exclusifs et portent sur les lignes de ce périmètre. ";
+        var unavailable = !report.Applied ? report.Message
+            : "Le repérage des villes ne couvre pas exactement les indices de ce tableau de bord.";
+        var sample = available ? scope!.Count : (int?)null;
+        var additions = new List<DashboardMetric>();
+        var buckets = new List<DashboardBucket>();
+        foreach (var (state, key, label, detail, tone) in new[]
+        {
+            (CityMatchState.Matched, "city-matched", "Ville reconnue", "Une seule ville correspond au titre.", "normal"),
+            (CityMatchState.Unmatched, "city-unmatched", "Ville non repérée", "Le titre est présent, mais aucun nom ou alias configuré ne correspond.", "warning"),
+            (CityMatchState.Ambiguous, "city-ambiguous", "Ville ambiguë", "Plusieurs villes correspondent : aucune n’est choisie arbitrairement.", "warning"),
+            (CityMatchState.TitleUnavailable, "city-no-title", "Sans titre exploitable", "La colonne de titre est absente ou ambiguë, ou sa valeur est vide sur cette ligne.", "warning"),
+            (CityMatchState.SiteOnly, "site-without-city", "Site reconnu · commune non renseignée", "Le site est reconnu ; son rattachement communal n’est pas renseigné dans le référentiel. Aucune ville n’est attribuée.", "normal")
+        })
+        {
+            var rows = available ? groups[state].ToArray() : Array.Empty<int>();
+            additions.Add(new(key, label, available ? rows.Length : null, snapshot.Grain,
+                available ? explanation + detail : unavailable, rows, sample, tone));
+            if (available) buckets.Add(new(StateLabel(state), rows.Length, rows));
+        }
+        var confirmedRows = additions[0].Rows;
+        additions.Add(new("city-coverage", "Couverture des villes", available && sample > 0 ? 100d * confirmedRows.Length / sample.Value : null,
+            "%", available ? explanation + "Part des lignes avec une ville unique reconnue, sur toutes les lignes du périmètre, titres absents et ambiguïtés inclus."
+                : unavailable, confirmedRows, sample));
+        var scopedMatches = available ? report.Matches.Where(match => scope!.Contains(match.RowIndex)).ToArray() : Array.Empty<CityMatch>();
+        // General location quality is distinct from municipality coverage. A
+        // standalone site is usable without inventing a city or map coordinates.
+        // Multiple possible sites still require review, even in a known city.
+        var recognizedLocations = scopedMatches.Where(match => (match.State is CityMatchState.Matched or CityMatchState.SiteOnly)
+                && match.SiteState != "ambiguous" && (!string.IsNullOrEmpty(match.CityId) || !string.IsNullOrEmpty(match.SiteId)))
+            .Select(match => match.RowIndex).Distinct().Order().ToArray();
+        var locationsToReview = available ? scope!.Except(recognizedLocations).Order().ToArray() : Array.Empty<int>();
+        foreach (var (key, label, rows, definition, tone) in new[]
+        {
+            ("location-matched", "Localisation reconnue", recognizedLocations,
+                "Commune unique ou site unique reconnu par les sources configurées ou une correction locale, sans ambiguïté de site. "
+                + "Un site sans commune ni coordonnées est reconnu. Une commune seule localise la ligne, mais ne constitue pas un site précis dans le tableau par site.", "normal"),
+            ("location-review", "Localisation à vérifier", locationsToReview,
+                "Aucun lieu reconnu, source inexploitable ou localisation ambiguë, y compris plusieurs sites possibles dans une commune reconnue. "
+                + "Ces lignes complètent exactement Localisation reconnue dans ce périmètre, sans double compte.", "warning")
+        })
+            additions.Add(new(key, label, available ? rows.Length : null, snapshot.Grain,
+                available ? definition : unavailable, rows, sample, tone));
+        foreach (var (key, label, predicate) in new (string, string, Func<CityMatch, bool>)[]
+        {
+            ("site-matched", "Site précis reconnu", match => match.SiteId != null),
+            ("site-ambiguous", "Site ambigu", match => match.SiteState == "ambiguous"),
+            ("city-manual", "Lieux corrigés localement", match => match.IsOverride),
+            ("city-context", "Villes reconnues par contexte", match => match.Confidence == "contexte")
+        })
+        {
+            var rows = scopedMatches.Where(predicate).Select(match => match.RowIndex).ToArray();
+            additions.Add(new(key, label, available ? rows.Length : null, snapshot.Grain, available
+                ? "Lieu issu du référentiel explicite ou d’une correction locale par ticket. Le détail de chaque décision est disponible dans Villes · Lieux à vérifier et Simuler." : unavailable, rows, sample));
+        }
+        var locationGroups = new List<DashboardDistribution>();
+        foreach (var (key, label, header) in new[] { ("site-reference", "Sites du référentiel", report.SiteColumnName), ("region-reference", "Régions du référentiel", report.RegionColumnName),
+            ("department-reference", "Départements du référentiel", report.DepartmentColumnName), ("sector-reference", "Secteurs du référentiel", report.SectorColumnName) })
+        {
+            var column = report.Data.Headers.IndexOf(header); var usable = available && header.Length > 0 && column >= 0;
+            var grouped = usable ? scopedMatches.GroupBy(match => column < report.Data.Rows[match.RowIndex].Length
+                && report.Data.Rows[match.RowIndex][column].Trim() is { Length: > 0 } value ? value : "(Non renseigné)", StringComparer.Ordinal)
+                .Select(group => new DashboardBucket(group.Key, group.Count(), group.Select(match => match.RowIndex).ToArray())).OrderByDescending(bucket => bucket.Count).ToArray() : Array.Empty<DashboardBucket>();
+            locationGroups.Add(new(key, label, usable, sample ?? 0, usable ? "Répartition selon les références locales. Les valeurs inconnues restent visibles. Les lignes appartiennent au périmètre courant."
+                : "Ajoutez cette information au référentiel, puis appliquez les villes au relevé.", grouped));
+        }
+        ct.ThrowIfCancellationRequested();
+        var keys = new HashSet<string>(additions.Select(metric => metric.Key), StringComparer.Ordinal);
+        snapshot.Metrics.RemoveAll(metric => keys.Contains(metric.Key));
+        snapshot.Metrics.AddRange(additions);
+        snapshot.Distributions.RemoveAll(distribution => distribution.Key == "city-detection");
+        snapshot.Distributions.Add(new("city-detection", "Repérage des villes", available, sample ?? 0,
+            available ? explanation + "Cinq états disjoints, dont les sites reconnus sans commune ; les variantes sont recherchées par mots entiers, sans recherche approximative."
+                : unavailable, buckets));
+        var groupKeys = locationGroups.Select(group => group.Key).ToHashSet(StringComparer.Ordinal);
+        snapshot.Distributions.RemoveAll(group => groupKeys.Contains(group.Key)); snapshot.Distributions.AddRange(locationGroups);
+    }
+
+    private static CityEnrichmentResult PassThrough(ExtractionResult source, string message)
+        => new() { Source = source, Data = source, Message = message };
+
+    private static DashboardColumn ResolveTitle(IReadOnlyList<string> headers, CitySettings settings,
+        DashboardSettings dashboard)
+    {
+        if (settings.TitleColumn.Length > 0)
+        {
+            var columns = Enumerable.Range(0, headers.Count)
+                .Where(index => string.Equals(headers[index], settings.TitleColumn, StringComparison.Ordinal)).ToArray();
+            return new("title", "Titre", columns.Length == 1 ? columns[0] : null,
+                settings.TitleColumn, columns.Length == 1 ? "configured" : columns.Length > 1 ? "ambiguous" : "missing-override");
+        }
+        var mappings = new DashboardSettings { ColumnMappings = dashboard.ColumnMappings ?? new(StringComparer.OrdinalIgnoreCase) };
+        return DashboardService.ResolveColumns(headers, mappings).First(column => column.Role == "title");
+    }
+
+    /// <summary>Runs the exact production matcher without storing the supplied test title or context.</summary>
+    public static CityMatch ExplainTitle(string title, CitySettings settings, IReadOnlyDictionary<string, string>? context = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(title); ArgumentNullException.ThrowIfNull(settings); settings.Validate(); ct.ThrowIfCancellationRequested();
+        if (!settings.Enabled || settings.Cities.Count == 0 && settings.Sites.Count == 0)
+            return new(0, null, null, CityMatchState.Unmatched, Array.Empty<string>()) { Explanation = "Le dictionnaire est désactivé ou vide." };
+        if (string.IsNullOrWhiteSpace(title)) return new(0, null, null, CityMatchState.TitleUnavailable, Array.Empty<string>()) { Explanation = "Titre vide." };
+        var pairs = (context ?? new Dictionary<string, string>()).ToArray();
+        return MatchTitle(title, pairs.Select(pair => pair.Value).ToArray(), 0, BuildMatcher(settings, pairs.Select(pair => pair.Key).ToArray(), ct), ct);
+    }
+
+    public static IReadOnlyList<string> InspectDictionary(CitySettings settings)
+    {
+        settings.Validate(); var warnings = new List<string>();
+        var terms = settings.Cities.SelectMany(city => city.Aliases.Prepend(city.Name).Concat(city.Rules.Select(rule => rule.Term))
+            .Select(term => (City: city, Term: term, Key: string.Join(' ', CityText.Tokens(term)))));
+        foreach (var group in terms.GroupBy(item => item.Key, StringComparer.Ordinal))
+        {
+            var cities = group.Select(item => item.City).DistinctBy(city => city.Id).ToArray();
+            if (cities.Length > 1) warnings.Add("Terme partagé « " + group.First().Term + " » : " + string.Join(", ", cities.Select(city => city.Name)) + ". Vérifiez les contextes et priorités.");
+            if (group.Key.Length <= 2) warnings.Add("Terme court « " + group.First().Term + " » : un contexte explicite réduit les faux rapprochements.");
+        }
+        return warnings.Take(200).ToArray();
+    }
+
+    private static Matcher BuildMatcher(CitySettings settings, IReadOnlyList<string> headers, CancellationToken ct)
+    {
+        var matcher = new Matcher { Settings = settings, ContextColumns = headers.Select((header, index) => (header, index))
+            .GroupBy(item => item.header, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.Select(item => item.index).ToArray(), StringComparer.Ordinal) };
+        void Add(LocationPattern pattern)
+        {
+            var node = matcher.Trie;
+            foreach (var token in CityText.Tokens(pattern.Term, ct))
+            {
+                if (!node.Children.TryGetValue(token, out var next)) { next = new(); node.Children.Add(token, next); }
+                node = next;
+            }
+            node.Patterns.Add(pattern);
+        }
+        for (var index = 0; index < settings.Cities.Count; index++)
+        {
+            ct.ThrowIfCancellationRequested(); var city = settings.Cities[index];
+            var contextual = city.Rules.Select(rule => string.Join(' ', CityText.Tokens(rule.Term))).ToHashSet(StringComparer.Ordinal);
+            foreach (var term in city.Aliases.Prepend(city.Name).Distinct(StringComparer.OrdinalIgnoreCase))
+                if (!contextual.Contains(string.Join(' ', CityText.Tokens(term)))) Add(new(index, term, null, null, term == city.Name));
+            foreach (var rule in city.Rules) Add(new(index, rule.Term, rule, null, false));
+        }
+        foreach (var site in settings.Sites)
+        {
+            ct.ThrowIfCancellationRequested(); var city = settings.Cities.FindIndex(item => item.Id == site.CityId);
+            foreach (var term in site.Aliases.Prepend(site.Name).Distinct(StringComparer.OrdinalIgnoreCase)) Add(new(city, term, null, site, false));
+        }
+        foreach (var building in settings.Buildings)
+        {
+            ct.ThrowIfCancellationRequested(); var site = settings.Sites.Single(item => item.Id == building.SiteId); var city = settings.Cities.FindIndex(item => item.Id == site.CityId);
+            foreach (var term in building.Aliases.Prepend(building.Name).Distinct(StringComparer.OrdinalIgnoreCase)) Add(new(city, term, null, site, false, building));
+        }
+        return matcher;
+    }
+
+    private static CityMatch MatchTitle(string title, IReadOnlyList<string> row, int rowIndex, Matcher matcher, CancellationToken ct, string sourceKind = "combined")
+    {
+        var words = CityText.Tokens(title, ct); var occurrences = new List<Occurrence>();
+        var evidence = new Dictionary<LocationPattern, CityMatchEvidence>();
+        for (var start = 0; start < words.Count; start++)
+        {
+            if ((start & 255) == 0) ct.ThrowIfCancellationRequested(); var node = matcher.Trie;
+            for (var end = start; end < words.Count && node.Children.TryGetValue(words[end], out node); end++)
+                foreach (var pattern in node.Patterns)
+                {
+                    if (sourceKind == "title" && pattern.Site != null || sourceKind == "site" && (pattern.Site == null || pattern.Building != null) || sourceKind == "building" && pattern.Building == null) continue;
+                    var city = pattern.City >= 0 ? matcher.Settings.Cities[pattern.City] : null;
+                    if (!evidence.TryGetValue(pattern, out var proof) || proof.Explanation == "Le terme est présent hors de la position demandée dans le titre.")
+                    {
+                        var (accepted, detail) = Accept(pattern, city, words, row, matcher, ct, title);
+                        proof = new(city?.Id ?? "", city?.Name ?? "", pattern.Term, pattern.Rule?.Id ?? "", pattern.Rule?.Priority ?? 0,
+                            accepted == true ? "Retenue" : accepted == false ? "Écartée" : "Indéterminée", detail)
+                            { SiteId = pattern.Site?.Id ?? "", SiteName = pattern.Site?.Name ?? "" };
+                        evidence[pattern] = proof;
+                    }
+                    var positionMatches = pattern.Rule is not { } positioned || positioned.Position == "any" || positioned.Position == "start" && start == 0
+                        || positioned.Position == "end" && end == words.Count - 1 || positioned.Position == "token" && start + 1 == positioned.TokenPosition;
+                    if (proof.Decision != "Écartée" && positionMatches) occurrences.Add(new(start, end - start + 1, pattern, proof.Decision == "Retenue" ? true : null, proof.Explanation));
+                    else if (!positionMatches && !occurrences.Any(item => item.Pattern == pattern)) evidence[pattern] = proof with { Decision = "Écartée", Explanation = "Le terme est présent hors de la position demandée dans le titre." };
+                    if (occurrences.Count > 20_000) throw new InvalidDataException("Un titre produit trop de correspondances de lieu pour être analysé. Réduisez les termes du dictionnaire.");
+                }
+        }
+        // The longest overlapping literal wins only among eligible rules of the same kind.
+        // A refused long context cannot suppress a shorter valid city occurrence elsewhere.
+        var eligible = new List<Occurrence>();
+        foreach (var kind in occurrences.GroupBy(occurrence => occurrence.Pattern.Site != null))
+        {
+            var longest = new int[words.Count];
+            foreach (var occurrence in kind)
+                for (var i = occurrence.Start; i < occurrence.Start + occurrence.Length; i++) longest[i] = Math.Max(longest[i], occurrence.Length);
+            eligible.AddRange(kind.Where(occurrence => !Enumerable.Range(occurrence.Start, occurrence.Length).Any(i => longest[i] > occurrence.Length)));
+        }
+        var cityOccurrences = eligible.Where(item => item.Pattern.Site == null).ToArray();
+        if (cityOccurrences.Length > 0)
+        {
+            var priority = cityOccurrences.Max(item => item.Pattern.Rule?.Priority ?? 0);
+            cityOccurrences = cityOccurrences.Where(item => (item.Pattern.Rule?.Priority ?? 0) == priority).ToArray();
+        }
+        var sites = eligible.Where(item => item.Pattern.Site != null && item.Accepted == true).Select(item => item.Pattern.Site!).DistinctBy(site => site.Id).ToArray();
+        var candidates = cityOccurrences.Select(item => matcher.Settings.Cities[item.Pattern.City].Id).Concat(sites.Select(site => site.CityId))
+            .Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        var proofList = evidence.Values.OrderByDescending(item => item.Priority).ThenBy(item => item.CityName, StringComparer.Ordinal).Take(80).ToArray();
+        if (sites.Any(site => site.CityId.Length == 0))
+        {
+            // A known site does not prove its municipality. Even a city name elsewhere
+            // in the title must not create a persistent or inferred parent relationship.
+            if (sites.Length != 1)
+                return new(rowIndex, null, null, CityMatchState.Ambiguous, candidates) { Evidence = proofList, SiteState = "ambiguous",
+                    Explanation = "Plusieurs sites correspondent, dont un sans commune renseignée. Aucun site ni commune n’est choisi." };
+            var standalone = sites[0];
+            var standaloneBuildings = eligible.Where(item => item.Accepted == true && item.Pattern.Building?.SiteId == standalone.Id)
+                .Select(item => item.Pattern.Building!).DistinctBy(item => item.Id).ToArray();
+            return new(rowIndex, null, null, CityMatchState.SiteOnly, Array.Empty<string>())
+            {
+                SiteId = standalone.Id, SiteName = standalone.Name, SiteState = "matched", Confidence = "site", Evidence = proofList,
+                BuildingId = standaloneBuildings.Length == 1 ? standaloneBuildings[0].Id : null,
+                BuildingName = standaloneBuildings.Length == 1 ? standaloneBuildings[0].Name : "",
+                Explanation = "Site unique « " + standalone.Name + " » reconnu par son nom ou un alias. Commune non renseignée dans le référentiel ; aucune ville n’est déduite du titre."
+            };
+        }
+        if (candidates.Length == 0)
+            return new(rowIndex, null, null, CityMatchState.Unmatched, candidates) { Evidence = proofList,
+                Explanation = proofList.Length == 0 ? "Aucun nom, alias ou site configuré ne correspond par mots entiers." : "Les termes présents ont été écartés par leurs contextes ou exclusions." };
+        if (candidates.Length != 1 || !cityOccurrences.Any(item => item.Accepted == true) && sites.Length == 0)
+            return new(rowIndex, null, null, CityMatchState.Ambiguous, candidates) { Evidence = proofList, Explanation = candidates.Length > 1
+                ? "Plusieurs villes restent possibles après contexte, termes les plus longs et priorités explicites. Aucune ville n’est choisie." : "Le terme est présent mais son contexte est indisponible : aucune ville n’est attribuée." };
+        var selected = matcher.Settings.Cities.First(city => city.Id == candidates[0]);
+        var selectedSites = sites.Where(site => site.CityId == selected.Id).ToArray();
+        var buildings = eligible.Where(item => item.Accepted == true && item.Pattern.Building != null && selectedSites.Length == 1 && item.Pattern.Building.SiteId == selectedSites[0].Id).Select(item => item.Pattern.Building!).DistinctBy(item => item.Id).ToArray();
+        var confidence = selectedSites.Length == 1 ? "site" : cityOccurrences.Any(item => item.Pattern.Canonical) ? "nom" : cityOccurrences.Any(item => item.Pattern.Rule != null) ? "contexte" : "alias";
+        return new(rowIndex, selected.Id, selected.Name, CityMatchState.Matched, candidates)
+        {
+            SiteId = selectedSites.Length == 1 ? selectedSites[0].Id : null, SiteName = selectedSites.Length == 1 ? selectedSites[0].Name : "",
+            BuildingId = buildings.Length == 1 ? buildings[0].Id : null, BuildingName = buildings.Length == 1 ? buildings[0].Name : "",
+            SiteState = selectedSites.Length > 1 ? "ambiguous" : selectedSites.Length == 1 ? "matched" : "unmatched",
+            Confidence = confidence, Evidence = proofList,
+            Explanation = "Ville unique « " + selected.Name + " » après comparaison littérale et contextes. Origine : " + confidence + "."
+                + (selectedSites.Length > 1 ? " Plusieurs sites correspondent dans cette ville ; le site reste indéterminé." : selectedSites.Length == 1 ? " Site unique : " + selectedSites[0].Name + "." : " Aucun site précis attribué.")
+        };
+    }
+
+    private static (bool? Accepted, string Detail) Accept(LocationPattern pattern, CityDefinition? city, IReadOnlyList<string> words,
+        IReadOnlyList<string> row, Matcher matcher, CancellationToken ct, string title)
+    {
+        if (city?.ExcludedTerms.Any(term => Contains(words, CityText.Tokens(term, ct))) == true) return (false, "Une exclusion de cette ville est présente dans le titre.");
+        if (pattern.Rule is not { } rule) return (true, pattern.Site != null ? "Nom ou alias exact du site." : pattern.Canonical ? "Nom de ville exact." : "Alias par mots entiers.");
+        if (rule.TitlePattern.Length > 0)
+        {
+            try
+            {
+                if (title.Length > 20_000) return (null, "Titre trop long pour vérifier son format ; aucune attribution automatique.");
+                if (!System.Text.RegularExpressions.Regex.IsMatch(title, rule.TitlePattern, System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(30)))
+                    return (false, "Le titre ne correspond pas au format déclaré.");
+            }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { return (null, "Le format a dépassé son délai de 30 ms ; attribution suspendue."); }
+        }
+        IReadOnlyList<string> context = words;
+        if (rule.ContextColumn.Length > 0)
+        {
+            if (!matcher.ContextColumns.TryGetValue(rule.ContextColumn, out var positions) || positions.Length != 1 || positions[0] >= row.Count || string.IsNullOrWhiteSpace(row[positions[0]]))
+                return (null, "Contexte absent, vide ou ambigu : colonne « " + rule.ContextColumn + " ».");
+            context = CityText.Tokens(row[positions[0]], ct);
+        }
+        if (rule.ExcludedTerms.Any(term => Contains(context, CityText.Tokens(term, ct)))) return (false, "Un terme exclu par la règle est présent dans le contexte.");
+        var missing = rule.RequiredTerms.Where(term => !Contains(context, CityText.Tokens(term, ct))).ToArray();
+        if (missing.Length > 0) return (false, "Contexte requis absent : " + string.Join(" ; ", missing));
+        return (true, "Tous les contextes requis sont présents, aucune exclusion ; priorité " + rule.Priority + ".");
+    }
+
+    private static bool Contains(IReadOnlyList<string> words, IReadOnlyList<string> term)
+    {
+        if (term.Count == 0 || term.Count > words.Count) return false;
+        for (var start = 0; start <= words.Count - term.Count; start++)
+        {
+            var match = true;
+            for (var part = 0; part < term.Count; part++) if (words[start + part] != term[part]) { match = false; break; }
+            if (match) return true;
+        }
+        return false;
+    }
+
+    internal static CityMatch ApplyCorrection(CityMatch inferred, CityTicketOverride correction, CitySettings settings)
+    {
+        var city = settings.Cities.FirstOrDefault(item => item.Id == correction.CityId);
+        var site = correction.SiteId.Length == 0 ? null : settings.Sites.FirstOrDefault(item => item.Id == correction.SiteId && item.CityId == correction.CityId);
+        if (correction.CityId.Length > 0 && city == null || correction.SiteId.Length > 0 && site == null || city == null && site == null)
+            return inferred with { CityId = null, CityName = null, SiteId = null, SiteName = "", SiteState = "unmatched", BuildingId = null, BuildingName = "", State = CityMatchState.Ambiguous,
+                Explanation = "La correction locale fait référence à une ville ou un site retiré du dictionnaire. Revoyez cette correction.", IsOverride = true, Confidence = "manual-invalid" };
+        return inferred with { CityId = city?.Id, CityName = city?.Name, SiteId = site?.Id, SiteName = site?.Name ?? "", SiteState = site == null ? "unmatched" : "matched", BuildingId = null, BuildingName = "",
+            State = city == null ? CityMatchState.SiteOnly : CityMatchState.Matched, CandidateIds = city == null ? Array.Empty<string>() : new[] { city.Id }, IsOverride = true, Confidence = "manual",
+            Explanation = "Correction locale explicite du ticket, " + (correction.UpdatedUtc == default ? "date non renseignée"
+                : "enregistrée le " + correction.UpdatedUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))
+                + ". Motif : " + (correction.Reason.Length == 0 ? "non précisé" : correction.Reason) + ". Les cellules GLPI sont conservées." };
+    }
+
+    public static string SourceLabel(string kind) => kind switch { "manual" => "correction locale", "location" => "champ GLPI", "site" => "site dans le titre", "title" => "ville dans le titre", "building" => "bâtiment dans le titre", _ => "titre complet" };
+
+    private static string StateLabel(CityMatchState state) => state switch
+    {
+        CityMatchState.Matched => "Reconnue",
+        CityMatchState.Unmatched => "Non repérée",
+        CityMatchState.Ambiguous => "Ambiguë",
+        CityMatchState.TitleUnavailable => "Titre indisponible",
+        CityMatchState.SiteOnly => "Commune non renseignée",
+        _ => "Indisponible"
+    };
+}
+
+/// <summary>Local corrections keyed by a GLPI installation and a unique source ticket identifier.</summary>
+public sealed class CityTicketOverride
+{
+    public CityTicketOverride() { }
+    // A missing timestamp in an older document is unknown, not the time of
+    // each read. Ordinary new corrections still start with the current time;
+    // WithBatch stamps the actual commit before the store is replaced.
+    [JsonConstructor]
+    public CityTicketOverride(DateTimeOffset updatedUtc) => UpdatedUtc = updatedUtc;
+    public string SourceKey { get; set; } = "";
+    public string TicketId { get; set; } = "";
+    public string CityId { get; set; } = "";
+    public string SiteId { get; set; } = "";
+    public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public string Reason { get; set; } = "";
+    // Direct ticket corrections take precedence without changing global source priorities.
+    public bool Explicit { get; set; }
+    public CityTicketOverride Copy() => new() { SourceKey = SourceKey, TicketId = TicketId, CityId = CityId, SiteId = SiteId, UpdatedUtc = UpdatedUtc, Reason = Reason, Explicit = Explicit };
+}
+
+public sealed record CityCorrectionRemoval(string SourceKey, string TicketId, DateTimeOffset UpdatedUtc);
+
+/// <summary>Never included in portable configuration. No title, cookie or credentials are stored.</summary>
+public sealed class CityOverrideStore
+{
+    public const int MaximumOverrides = 10_000;
+    private const int MaximumBytes = 4 * 1024 * 1024;
+    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, MaxDepth = 6, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    public int Version { get; set; } = 1;
+    public List<CityTicketOverride> Overrides { get; set; } = new();
+    // A removal is retained so an old cached manual decision cannot reappear at restart.
+    public List<CityCorrectionRemoval> RemovedCorrections { get; set; } = new();
+    public static string SourceKey(ExtractionResult source) => source.Provenance.SourceKind == "file"
+        && IsFileKey(source.Provenance.ScopeFingerprint) ? source.Provenance.ScopeFingerprint : SourceKey(source.SourceUrl);
+    private static bool IsFileKey(string? key) => key is { Length: 69 } && key.StartsWith("file:", StringComparison.Ordinal)
+        && key.AsSpan(5).ToArray().All(ch => ch is >= '0' and <= '9' or >= 'a' and <= 'f');
+    public static string SourceKey(string? url)
+    {
+        if (IsFileKey(url)) return url!;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return "";
+        var path = uri.AbsolutePath; var front = path.IndexOf("/front/", StringComparison.OrdinalIgnoreCase);
+        var prefix = front < 0 ? path.TrimEnd('/') : path[..front];
+        var safe = new UriBuilder(uri) { UserName = "", Password = "", Query = "", Fragment = "" }.Uri;
+        return safe.GetLeftPart(UriPartial.Authority).ToLowerInvariant() + prefix;
+    }
+    public void Validate()
+    {
+        if (Version != 1 || Overrides is null || RemovedCorrections is null || Overrides.Count + RemovedCorrections.Count > MaximumOverrides) throw new InvalidDataException("Le fichier des corrections locales est invalide.");
+        var keys = new HashSet<(string, string)>();
+        foreach (var item in Overrides)
+            if (item == null || item.SourceKey is null || item.SourceKey.Length is 0 or > 1000 || item.SourceKey.Any(char.IsControl)
+                || SourceKey(item.SourceKey) != item.SourceKey || !CityText.ValidText(item.TicketId, false)
+                || item.CityId is null || item.CityId.Length > 0 && (!Guid.TryParse(item.CityId, out var city) || city == Guid.Empty)
+                || item.SiteId is null || item.SiteId.Length > 0 && (!Guid.TryParse(item.SiteId, out var site) || site == Guid.Empty) || item.CityId.Length == 0 && item.SiteId.Length == 0
+                || item.Reason == null || item.Reason.Length > 1000 || item.Reason.Any(char.IsControl) || !keys.Add((item.SourceKey, item.TicketId))) throw new InvalidDataException("Une correction locale contient une source, un ticket ou un lieu invalide ou dupliqué.");
+        foreach (var item in RemovedCorrections)
+            if (item is null || item.SourceKey is null || item.SourceKey.Length is 0 or > 1000 || SourceKey(item.SourceKey) != item.SourceKey
+                || !CityText.ValidText(item.TicketId, false) || !keys.Add((item.SourceKey, item.TicketId)))
+                throw new InvalidDataException("Un retrait de correction contient une source ou un ticket invalide ou dupliqué.");
+    }
+    public string Fingerprint() => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(this, Options)));
+    public CityOverrideStore With(CityTicketOverride? correction, string sourceKey, string ticketId)
+        => WithBatch(correction, sourceKey, new[] { ticketId });
+    public CityOverrideStore WithBatch(CityTicketOverride? correction, string sourceKey, IReadOnlyCollection<string> ticketIds)
+    {
+        Validate(); var ids = ticketIds.ToHashSet(StringComparer.Ordinal);
+        if (ids.Count != ticketIds.Count || ids.Count == 0) throw new InvalidDataException("La sélection des corrections est vide ou dupliquée.");
+        var copy = new CityOverrideStore
+        {
+            Overrides = Overrides.Where(item => item.SourceKey != sourceKey || !ids.Contains(item.TicketId)).Select(item => item.Copy()).ToList(),
+            RemovedCorrections = RemovedCorrections.Where(item => item.SourceKey != sourceKey || !ids.Contains(item.TicketId)).Select(item => item with { }).ToList()
+        };
+        var stamp = DateTimeOffset.UtcNow;
+        foreach (var ticketId in ids)
+            if (correction is not null)
+            {
+                var item = correction.Copy(); item.SourceKey = sourceKey; item.TicketId = ticketId; item.UpdatedUtc = stamp;
+                copy.Overrides.Add(item);
+            }
+            else copy.RemovedCorrections.Add(new(sourceKey, ticketId, stamp));
+        copy.Validate(); return copy;
+    }
+    public static CityOverrideStore Load(string path)
+    {
+        if (!File.Exists(path)) return new();
+        using var stream = File.OpenRead(path);
+        if (stream.Length > MaximumBytes) throw new InvalidDataException("Le fichier des corrections locales est trop volumineux.");
+        var store = JsonSerializer.Deserialize<CityOverrideStore>(stream, Options) ?? throw new InvalidDataException("Corrections locales vides.");
+        store.Validate(); return store;
+    }
+    public void Save(string path, string? expectedFingerprint = null)
+    {
+        Validate(); var bytes = JsonSerializer.SerializeToUtf8Bytes(this, Options);
+        if (bytes.Length > MaximumBytes) throw new InvalidDataException("Les corrections locales dépassent la taille autorisée.");
+        var full = Path.GetFullPath(path); Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        using var writeLock = new FileStream(full + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        if (expectedFingerprint is not null && Load(full).Fingerprint() != expectedFingerprint)
+            throw new InvalidOperationException("Les corrections ont changé. Rouvrez la sélection avant de les enregistrer.");
+        var temporary = full + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllBytes(temporary, bytes); File.Move(temporary, full, true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+}
+
+public sealed record CityDetectionChange(int RowIndex, string Before, string After, string StateBefore, string StateAfter, string Explanation);
+public sealed record CityDetectionPreview(int TotalRows, int ChangedRows, IReadOnlyList<CityDetectionChange> Changes);
+public sealed record CityHighlight(int Start, int Length);
+
+public static class CityDetectionReview
+{
+    public static CityDetectionPreview Compare(CityEnrichmentResult before, CityEnrichmentResult after, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!ReferenceEquals(before.Source, after.Source)) throw new InvalidDataException("La simulation doit porter sur le même relevé source.");
+        var original = before.Matches.ToDictionary(match => match.RowIndex); var updated = after.Matches.ToDictionary(match => match.RowIndex); var changes = new List<CityDetectionChange>(); var count = 0;
+        foreach (var rowIndex in original.Keys.Concat(updated.Keys).Distinct().Order())
+        {
+            ct.ThrowIfCancellationRequested(); original.TryGetValue(rowIndex, out var old); updated.TryGetValue(rowIndex, out var match);
+            if (old?.CityId == match?.CityId && old?.SiteId == match?.SiteId && old?.BuildingId == match?.BuildingId && old?.State == match?.State) continue;
+            count++;
+            if (changes.Count < 1000) changes.Add(new(rowIndex, Place(old), Place(match), old?.State.ToString() ?? "Désactivé", match?.State.ToString() ?? "Désactivé", match?.Explanation ?? "Détection désactivée dans le brouillon."));
+        }
+        return new(after.Source.Rows.Count, count, changes);
+    }
+    private static string Place(CityMatch? match) => match == null ? "—" : string.Join(" / ", new[] { match.CityName, match.SiteName, match.BuildingName }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    public static IReadOnlyList<CityHighlight> Highlights(string title, IEnumerable<CityMatchEvidence> evidence)
+    {
+        if (title.Length > 20_000) return Array.Empty<CityHighlight>();
+        var words = System.Text.RegularExpressions.Regex.Matches(title, @"[\p{L}\p{N}\p{M}]+", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(30));
+        var normalized = words.Select(match => string.Join("", CityText.Tokens(match.Value))).ToArray(); var ranges = new List<CityHighlight>();
+        foreach (var proof in evidence.Where(proof => proof.Decision == "Retenue"))
+        {
+            var term = CityText.Tokens(proof.Term);
+            for (var start = 0; term.Count > 0 && start <= words.Count - term.Count; start++)
+                if (Enumerable.Range(0, term.Count).All(offset => normalized[start + offset] == term[offset]))
+                    ranges.Add(new(words[start].Index, words[start + term.Count - 1].Index + words[start + term.Count - 1].Length - words[start].Index));
+        }
+        var result = new List<CityHighlight>();
+        foreach (var range in ranges.OrderBy(range => range.Start).ThenByDescending(range => range.Length))
+        {
+            if (result.Count == 0 || range.Start > result[^1].Start + result[^1].Length) result.Add(range);
+            else { var last = result[^1]; result[^1] = last with { Length = Math.Max(last.Start + last.Length, range.Start + range.Length) - last.Start }; }
+        }
+        return result;
+    }
+    public static CitySettings Promote(CitySettings settings, string cityId, string term, string requiredContext = "", string contextColumn = "")
+    {
+        settings.Validate(); var result = settings.Copy(); var city = result.Cities.SingleOrDefault(city => city.Id == cityId) ?? throw new InvalidDataException("La ville sélectionnée n’existe plus.");
+        var rule = new CityAliasRule { Term = term.Trim(), ContextColumn = contextColumn.Trim(), RequiredTerms = requiredContext.Length == 0 ? new() : new() { requiredContext.Trim() } };
+        city.Rules.Add(rule); result.Validate(); return result;
+    }
+}

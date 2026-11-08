@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PlaywrightPlatform>linux</PlaywrightPlatform>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <Compile Include="../../src/GlpiPilot/Core/AppPaths.cs" Link="Core/AppPaths.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/BrowserChannels.cs" Link="Core/BrowserChannels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/PackComponents.cs" Link="Core/PackComponents.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/AppSettings.cs" Link="Core/AppSettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CitySettings.cs" Link="Core/CitySettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/CityDetectionService.cs" Link="Core/CityDetectionService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/Query*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/BrowserModels.cs" Link="Core/BrowserModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TargetUrlPolicy.cs" Link="Core/TargetUrlPolicy.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketDetailModels.cs" Link="Core/TicketDetailModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/TicketReferenceResolver.cs" Link="Core/TicketReferenceResolver.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardSettings.cs" Link="Core/DashboardSettings.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardLayout*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/ConfigurationTransferService.cs" Link="Core/ConfigurationTransferService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DiagnosticReport.cs" Link="Core/DiagnosticReport.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardService.cs" Link="Core/DashboardService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardModels.cs" Link="Core/DashboardModels.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ExportService.cs" Link="Core/ExportService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/SnapshotStore.cs" Link="Core/SnapshotStore.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/AnalyticsPopulationStore.cs" Link="Core/AnalyticsPopulationStore.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DashboardGeography.cs" Link="Core/DashboardGeography.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/DataQualityService.cs" Link="Core/DataQualityService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/XlsxImportService.cs" Link="Core/XlsxImportService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ConfigurationReview*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/GlpiPilot/Core/OperationJournal.cs" Link="Core/OperationJournal.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/PreviewQueryService.cs" Link="Core/PreviewQueryService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/PreviewViewPreferences.cs" Link="Core/PreviewViewPreferences.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/NamedPreviewStore.cs" Link="Core/NamedPreviewStore.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/AlertService.cs" Link="Core/AlertService.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardParticipation.cs" Link="Core/DashboardParticipation.cs" />
+      <Compile Include="../../src/GlpiPilot/Core/DashboardOldestGroups.cs" Link="Core/DashboardOldestGroups.cs" />
+  </ItemGroup>
+</Project>

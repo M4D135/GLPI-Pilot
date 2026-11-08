@@ -1,0 +1,242 @@
+{
+  "PortalUrl": "https://glpi.example.test/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12\u0026criteria%5B0%5D%5Bvalue%5D=notold",
+  "BrowserChannel": "chrome",
+  "Theme": "light",
+  "InterfaceZoomPercent": 115,
+  "AutoMode": "native",
+  "AutoSaveXlsx": false,
+  "ReadySelector": "#fixture-ready",
+  "NextSelector": "a.fixture-next",
+  "SelectorOrigin": "https://glpi.example.test",
+  "TimeoutSeconds": 240,
+  "DownloadTimeoutSeconds": 480,
+  "MaxPages": 300,
+  "MaxRows": 80000,
+  "ExportFolder": "C:\\GLPI-Fixture\\Exports",
+  "ExpectedTotal": 42,
+  "TableSelector": "table.fixture-tickets",
+  "TableHeaderFingerprint": "fixture-header-v2",
+  "TableFrameOrigin": "https://glpi.example.test",
+  "TableFrameName": "fixture-frame",
+  "TableTargetUrl": "https://glpi.example.test/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12\u0026criteria%5B0%5D%5Bvalue%5D=notold",
+  "NativeSelectorOrigin": "https://glpi.example.test",
+  "NativeMenuSelector": "button.fixture-export",
+  "NativeFormatSelector": "select.fixture-format",
+  "NativeFormatValue": "csv",
+  "NativeScopeSelector": "select.fixture-scope",
+  "NativeScopeValue": "all",
+  "NativeSubmitSelector": "button.fixture-download",
+  "TicketDetails": {
+    "AutoLoadOnSelection": true,
+    "IdColumn": "",
+    "UrlTemplate": "",
+    "IncludeAutoDetected": true,
+    "AutoReadTreatment": true,
+    "MaxRowsPerSection": 5000,
+    "Sections": []
+  },
+  "Dashboard": {
+    "ColumnMappings": {},
+    "StaleDays": 19,
+    "OldDays": 30,
+    "DueSoonHours": 24,
+    "DateCulture": "fr-FR",
+    "Layout": {
+      "Version": 1,
+      "ActiveBoardId": "9d4d2ec260824fe4998bae37f8b1c616",
+      "Boards": [
+        {
+          "Id": "9d4d2ec260824fe4998bae37f8b1c616",
+          "Name": "Pilotage",
+          "Widgets": [
+            {
+              "Id": "b156e9787c744b2ba0e573583d386984",
+              "Kind": "weather",
+              "SourceKey": "",
+              "Title": "",
+              "Span": 12,
+              "Height": 280,
+              "AutoHeight": true,
+              "Style": "surface",
+              "Accent": "blue",
+              "Presentation": "bars",
+              "TopCount": 8,
+              "ShowDescription": true,
+              "Hidden": false,
+              "Locked": false,
+              "Note": "",
+              "TargetValue": null,
+              "WarningValue": null,
+              "CriticalValue": null,
+              "LowerIsBetter": true,
+              "Section": "",
+              "Filters": [],
+              "HistogramBreaks": [
+                1,
+                7,
+                14,
+                30,
+                90
+              ]
+            }
+          ],
+          "Filters": [],
+          "CrossFilterOnClick": false,
+          "ComparisonEnabled": false,
+          "ComparisonFilters": [],
+          "CollapsedSections": []
+        }
+      ],
+      "CatalogFavorites": [],
+      "FilterPresets": []
+    },
+    "PersonalLayout": {
+      "Version": 1,
+      "ActiveBoardId": "9d4d2ec260824fe4998bae37f8b1c616",
+      "Boards": [
+        {
+          "Id": "9d4d2ec260824fe4998bae37f8b1c616",
+          "Name": "Pilotage",
+          "Widgets": [
+            {
+              "Id": "b156e9787c744b2ba0e573583d386984",
+              "Kind": "weather",
+              "SourceKey": "",
+              "Title": "",
+              "Span": 12,
+              "Height": 280,
+              "AutoHeight": true,
+              "Style": "surface",
+              "Accent": "blue",
+              "Presentation": "bars",
+              "TopCount": 8,
+              "ShowDescription": true,
+              "Hidden": false,
+              "Locked": false,
+              "Note": "",
+              "TargetValue": null,
+              "WarningValue": null,
+              "CriticalValue": null,
+              "LowerIsBetter": true,
+              "Section": "",
+              "Filters": [],
+              "HistogramBreaks": [
+                1,
+                7,
+                14,
+                30,
+                90
+              ]
+            }
+          ],
+          "Filters": [],
+          "CrossFilterOnClick": false,
+          "ComparisonEnabled": false,
+          "ComparisonFilters": [],
+          "CollapsedSections": []
+        }
+      ],
+      "CatalogFavorites": [],
+      "FilterPresets": []
+    },
+    "PersonalTechnician": "Technicien fictif",
+    "OpenPersonalAfterExtraction": false,
+    "Weather": {
+      "Version": 1,
+      "OverdueWeight": 35,
+      "PriorityWeight": 25,
+      "AssignmentWeight": 15,
+      "StaleWeight": 15,
+      "OldWeight": 10,
+      "WatchThreshold": 10,
+      "RainThreshold": 25,
+      "StormThreshold": 45,
+      "MinimumCoveragePercent": 80,
+      "MinimumWeightPercent": 60
+    },
+    "AssignmentCountingMode": "participation",
+    "PriorityRules": {}
+  },
+  "Cities": {
+    "Enabled": true,
+    "TitleColumn": "",
+    "Cities": [],
+    "Sites": []
+  },
+  "Queries": {
+    "Queries": [
+      {
+        "Id": "86dd67daa044f60f5f83c0b555ce5d5e",
+        "Name": "Relev\u00E9 par ville",
+        "Description": "Champ Ville configur\u00E9, natif ou d\u00E9duit du titre. Dans ce dernier cas, il s\u2019agit d\u2019une inf\u00E9rence, sans g\u00E9ocodage. Les valeurs absentes restent dans un groupe explicite.",
+        "Category": "Villes",
+        "BaseProbe": "total",
+        "Match": "all",
+        "Aggregate": "count",
+        "AggregateField": "",
+        "GroupBy": "role:city",
+        "Favorite": false,
+        "ConditionExpression": "",
+        "Parameters": [],
+        "ComputedFields": [],
+        "GroupBySecondary": "",
+        "GroupByTertiary": "",
+        "GroupDateBucket": "none",
+        "SecondaryDateBucket": "none",
+        "TertiaryDateBucket": "none",
+        "Percentile": 90,
+        "Conditions": []
+      }
+    ]
+  },
+  "Sources": [
+    {
+      "Id": "11111111111111111111111111111111",
+      "Name": "Tickets actifs v2",
+      "Url": "https://glpi.example.test/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12\u0026criteria%5B0%5D%5Bvalue%5D=notold",
+      "Browser": "chrome",
+      "Mode": "native",
+      "IncludedInCampaign": true
+    },
+    {
+      "Id": "22222222222222222222222222222222",
+      "Name": "Autre recherche v2",
+      "Url": "https://glpi.example.test/front/ticket.php?criteria%5B0%5D%5Bvalue%5D=waiting",
+      "Browser": "msedge",
+      "Mode": "pagination",
+      "IncludedInCampaign": false
+    }
+  ],
+  "ActiveSourceId": "11111111111111111111111111111111",
+  "History": {
+    "Enabled": true,
+    "RestoreLastOnStartup": false,
+    "RetentionDays": 180,
+    "MaximumSnapshots": 500,
+    "StorageBudgetMb": 1024
+  },
+  "Automation": {
+    "ScheduledExtraction": false,
+    "IntervalMinutes": 60,
+    "RunCampaign": false,
+    "FreshnessHours": 24,
+    "QuietStartHour": 20,
+    "QuietEndHour": 8,
+    "QuietHours": true,
+    "AutomaticPaginationFallback": true
+  },
+  "Interface": {
+    "Density": "compact",
+    "FollowWindowsTheme": false,
+    "Accent": "violet",
+    "HighContrast": false,
+    "ReduceMotion": false,
+    "FocusMode": false,
+    "FrozenColumns": 2,
+    "WindowWidth": 0,
+    "WindowHeight": 0,
+    "WindowLeft": null,
+    "WindowTop": null,
+    "WindowMaximized": false
+  }
+}

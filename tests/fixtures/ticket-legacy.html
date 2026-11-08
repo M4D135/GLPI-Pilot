@@ -1,0 +1,32 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>GLPI — Ticket</title><style>body{font:16px sans-serif}table{border-collapse:collapse}th,td{padding:6px;border:1px solid #ddd}.ui-tabs-nav{display:flex;gap:20px}.select2-offscreen{display:none}</style></head><body>
+<a href="/glpi/front/logout.php">Déconnexion</a>
+<ul class="ui-tabs-nav" role="tablist">
+ <li role="tab" class="ui-tabs-active"><a id="main-tab" class="ui-tabs-anchor" href="#ticket-main" aria-selected="true">Ticket</a></li>
+ <li role="tab"><a id="legacy-history-tab" class="ui-tabs-anchor" href="/glpi/ajax/common.tabs.php?_target=%2Fglpi%2Ffront%2Fticket.form.php&_itemtype=Ticket&_glpi_tab=Log%241&id=42">Historique</a></li>
+ <li role="tab"><button id="bad-submit-tab" type="submit" role="tab" form="ticket-form">Supprimer</button></li>
+ <li role="tab"><a id="bad-action-tab" class="ui-tabs-anchor" href="/glpi/front/ticket.form.php?id=42&amp;purge=1">Purger</a></li>
+ <li role="tab"><a id="bad-cross-tab" class="ui-tabs-anchor" href="https://outside.test/glpi/ajax/common.tabs.php?_itemtype=Ticket&amp;_glpi_tab=Log$1&amp;id=42">Autre</a></li>
+</ul>
+<section id="ticket-main" role="tabpanel">
+<form id="ticket-form" name="form" method="post" action="/glpi/front/ticket.form.php?id=42"><div id="tabsbody">
+<table id="mainformtable" class="tab_cadre_fixe">
+ <tr><th colspan="4">Ticket - 42 <table class="tab_format"><tr><td>Entité Démo</td></tr></table></th></tr>
+ <tr><th>Titre</th><td><input name="name" value="Ticket privé de fixture"></td><th>Statut</th><td><select name="status"><option value="1">Nouveau</option><option value="2" selected>En cours (attribué)</option><option value="6">Clos NON CHOISI</option></select></td></tr>
+ <tr><th>Urgent</th><td><input name="urgent" type="checkbox" checked></td><th>Archivé</th><td><input name="archived" type="checkbox"></td></tr>
+ <tr><th>Description</th><td colspan="3"><textarea name="content">Première ligne privée
+Deuxième ligne &amp; caractères &lt;intacts&gt;</textarea></td></tr>
+ <tr><th>Mot de passe</th><td><input type="password" name="password" value="NEVER_PASSWORD_831"></td><th>Jeton API</th><td><input name="api_token" value="NEVER_TOKEN_831"></td></tr>
+ <tr><th>Technicien</th><td><select id="technician" name="technician" class="select2-offscreen"><option>Aucun</option><option selected>Équipe choisie</option><option>Équipe NON CHOISIE</option></select><span id="s2id_technician" class="select2-container">Équipe choisie</span></td><th>Texte</th><td>Valeur visible<br>Suite visible</td></tr>
+ <tr><td colspan="4"><button type="submit" name="update">Enregistrer</button><button type="submit" name="purge">Supprimer</button></td></tr>
+</table>
+<input type="hidden" name="id" value="42"><input type="hidden" name="_glpi_csrf_token" value="NEVER_CSRF_831">
+<h2>Suivis visibles</h2><table id="followups" class="tab_cadre_fixehov"><thead><tr><th>Date</th><th>Description</th><th>Jeton</th></tr></thead><tbody><tr><td>21/10/2026</td><td>Suivi un<br>ligne deux<table id="nested-data"><thead><tr><th>Clé</th><th>Valeur</th></tr></thead><tbody><tr><td>N1</td><td>Imbriqué distinct</td></tr></tbody></table></td><td>NEVER_TABLE_TOKEN_831</td></tr><tr><td>22/10/2026</td><td>Suivi deux</td><td>NEVER_TABLE_TOKEN_832</td></tr></tbody><tfoot><tr><th>Date</th><th>Description</th><th>Jeton</th></tr></tfoot></table>
+</div></form></section>
+<section id="history-panel" role="tabpanel" hidden></section>
+<div id="notes">Texte de consultation<br>Deuxième ligne de note.</div>
+<script>
+window.businessClicks=0;window.tabClicks=0;window.formSubmissions=0;
+document.addEventListener('submit',e=>{e.preventDefault();window.formSubmissions++});
+document.querySelectorAll('#bad-submit-tab,#bad-action-tab,#bad-cross-tab').forEach(el=>el.addEventListener('click',()=>window.businessClicks++));
+document.querySelector('#legacy-history-tab').addEventListener('click',async e=>{e.preventDefault();window.tabClicks++;const link=e.currentTarget;const panel=document.querySelector('#history-panel');panel.hidden=false;panel.setAttribute('aria-busy','true');panel.innerHTML=await(await fetch(link.href,{method:'POST'})).text();panel.removeAttribute('aria-busy');link.setAttribute('aria-selected','true')});
+</script></body></html>

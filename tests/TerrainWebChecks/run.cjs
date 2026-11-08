@@ -1,0 +1,233 @@
+'use strict';
+
+// Browser UI exercises are wired to the real C# terrain dispatcher over an isolated stdio fixture.
+// The fixture refuses every network request and every installer launch.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const http = require('node:http');
+const { spawn } = require('node:child_process');
+const readline = require('node:readline');
+const project = path.resolve(__dirname, '../..');
+const { chromium } = require(process.env.GLPI_TEST_PLAYWRIGHT_MODULE || require.resolve('playwright', { paths: [path.join(project, 'tests/DomChecks')] }));
+const dll = process.env.GLPI_TERRAIN_FIXTURE || path.join(project, 'tests/TerrainBridgeChecks/bin/Release/net10.0/TerrainBridgeChecks.dll');
+const sdk = process.env.GLPI_TEST_DOTNET || 'dotnet';
+const child = spawn(sdk, [dll, '--serve'], { cwd: project, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+const pending = new Map(); let nextId = 1, browser, server, checks = 0, exitCode = 0;
+const calls = [], consoleErrors = []; let readyResolve, readyReject;
+const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+child.on('error', readyReject);
+child.on('exit', code => { for (const item of pending.values()) item.reject(new Error(`C# fixture exited with ${code}`)); pending.clear(); if (code) readyReject(new Error(`C# fixture exited with ${code}`)); });
+child.stderr.on('data', data => process.stderr.write(data));
+const lines = readline.createInterface({ input: child.stdout });
+lines.on('line', line => {
+  let response; try { response = JSON.parse(line); } catch { process.stderr.write(line + '\n'); return; }
+  if (response.ready) readyResolve(response);
+  const request = pending.get(response.id); if (!request) return;
+  pending.delete(response.id); if (response.error) request.reject(new Error(response.error.message)); else request.resolve(response.result);
+});
+function call(op, args = {}) { calls.push(op); return new Promise((resolve, reject) => { const id = nextId++; pending.set(id, { resolve, reject }); child.stdin.write(JSON.stringify({ id, op, args }) + '\n'); }); }
+function ok(condition, label) { assert.ok(condition, label); console.log(`PASS ${++checks} ${label}`); }
+function timeout(promise, milliseconds, label) { let timer; return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label)), milliseconds); })]).finally(() => clearTimeout(timer)); }
+
+(async () => {
+  try {
+    const fixture = await timeout(ready, 15000, 'C# fixture startup timed out');
+    server = http.createServer((request, response) => {
+      const pathname = new URL(request.url, 'http://localhost').pathname;
+      if (pathname === '/') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end('<!doctype html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="/web/css/app.css"><link rel="stylesheet" href="/web/css/terrain.css"><link rel="stylesheet" href="/web/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/web/css/maps.css"><script src="/web/vendor/leaflet/leaflet.js"></script></head><body><main id="root"></main></body></html>'); return; }
+      const file = path.resolve(project, '.' + pathname);
+      if (!file.startsWith(path.join(project, 'web') + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { response.statusCode = 404; response.end(); return; }
+      response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8'); response.end(fs.readFileSync(file));
+    });
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    browser = await chromium.launch({ headless: true, executablePath: process.env.GLPI_TEST_CHROMIUM || undefined, args: process.platform === 'linux' ? ['--no-sandbox', '--disable-gpu'] : ['--disable-gpu'] });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : route.abort());
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    await page.exposeFunction('terrainCall', call);
+    await page.goto(origin);
+    await page.evaluate(async revision => {
+      // Exercise the reusable editors directly: the application presents these
+      // controls inside Terrain/Settings panels, not as legacy navigation pages.
+      const [{ renderReference }, { renderReview }, { renderTours }, { renderUpdates }, { renderTicketMap }] = await Promise.all([
+        import('/web/js/pages/terrain-reference.js'), import('/web/js/pages/terrain-review.js'),
+        import('/web/js/pages/terrain-tours.js'), import('/web/js/pages/terrain-update.js'), import('/web/js/pages/terrain-map.js')
+      ]);
+      const renderers = { 'terrain-reference': renderReference, 'terrain-review': renderReview, tours: renderTours, updates: renderUpdates, 'terrain-map': renderTicketMap };
+      let controller, cleanup;
+      window.renderTerrain = async (id, params = {}) => {
+        controller?.abort(); cleanup?.(); controller = new AbortController(); document.querySelector('#root').replaceChildren();
+        const current = await window.terrainCall('terrain.reference.state', {});
+        const state = { session: { loaded: true, revision: current.revision }, settings: {}, version: 'fixture' };
+        const ctx = { root: document.querySelector('#root'), state, signal: controller.signal, params,
+          api: { call: (op, args = {}) => window.terrainCall(op, args), on: () => () => {} },
+          navigate: (next, args) => { window.lastNavigation = { id: next, params: args }; }, notify: () => {}, refresh: () => window.renderTerrain(id, params) };
+        cleanup = await renderers[id](ctx); window.currentTerrain = id;
+      };
+    }, fixture.revision);
+    const render = id => page.evaluate(id => window.renderTerrain(id), id);
+    const lastDialog = () => page.getByRole('dialog').last();
+    const capture = async name => { if (process.env.GLPI_TEST_SCREENSHOTS) { fs.mkdirSync(process.env.GLPI_TEST_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, name + '.png'), fullPage: true }); } };
+
+    await render('terrain-reference');
+    ok(await page.getByRole('heading', { name: 'Référentiel géographique', exact: true }).count() === 1, 'reference page renders through the real C# API');
+    await page.getByRole('button', { name: 'Ajouter une référence', exact: true }).click();
+    await lastDialog().getByLabel('Nom', { exact: true }).fill('Gamma');
+    await lastDialog().getByRole('button', { name: 'Ajouter au brouillon', exact: true }).click();
+    await page.getByText('Gamma', { exact: true }).waitFor();
+    ok(await page.getByText('Brouillon modifié', { exact: true }).count() === 1, 'city form creates a server-side draft without JSON editing');
+    await page.getByRole('button', { name: 'Simuler et enregistrer le référentiel', exact: true }).click();
+    await lastDialog().getByRole('button', { name: 'Enregistrer et appliquer', exact: true }).click();
+    await page.getByText('Référentiel enregistré et relevé recalculé.', { exact: true }).waitFor();
+    ok(calls.includes('terrain.reference.preview') && calls.includes('terrain.reference.apply'), 'saving the form goes through full preview and explicit apply');
+    await page.getByRole('textbox', { name: 'Titre à tester', exact: true }).fill('Incident Gamma');
+    await page.getByRole('button', { name: 'Tester le brouillon', exact: true }).click();
+    await page.locator('mark').filter({ hasText: 'Gamma' }).waitFor();
+    ok(await page.locator('mark').filter({ hasText: 'Gamma' }).count() === 1, 'matched terms are highlighted using detector offsets');
+    await page.getByRole('button', { name: 'Importer un CSV…', exact: true }).click();
+    await lastDialog().getByRole('button', { name: 'Fusionner dans le brouillon', exact: true }).click();
+    await page.getByText('Import fusionné dans le brouillon. Simulez maintenant le référentiel avant de l’enregistrer.', { exact: true }).waitFor();
+    ok(calls.includes('terrain.reference.importApply'), 'CSV compare dialog invokes the real merge operation');
+
+    // A new render receives the updated source revision just as the shell does after session.changed.
+    await render('terrain-review');
+    await page.getByRole('button', { name: 'Examiner', exact: true }).first().click();
+    await lastDialog().getByRole('heading', { name: 'Correction locale', exact: true }).waitFor();
+    ok(await lastDialog().getByRole('heading', { name: 'Correction locale', exact: true }).count() === 1, 'review dialog exposes real correction and promotion controls');
+    await lastDialog().getByRole('button', { name: 'Fermer', exact: true }).first().click();
+
+    await render('tours');
+    await page.getByRole('button', { name: 'Ajouter la page au panier', exact: true }).click();
+    await page.getByText('3 tickets dans le panier', { exact: true }).waitFor();
+    ok(true, 'basket page selection updates the C# selection');
+    await page.getByLabel('Nom de la tournée', { exact: true }).fill('Tournée interface');
+    await page.getByLabel('Premier jour', { exact: true }).fill('2030-01-07');
+    await page.getByRole('button', { name: 'Créer une tournée avec ce panier', exact: true }).click();
+    await page.getByRole('heading', { name: 'Tournée interface', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Planning calculé', exact: true }).waitFor();
+    ok(calls.includes('terrain.tours.calculate') && calls.includes('terrain.tours.stops'), 'dated planning renders computed schedule and stage records');
+    await page.getByRole('button', { name: 'Modifier', exact: true }).first().click();
+    await lastDialog().getByLabel('Verrouiller l’étape contre les réorganisations', { exact: true }).check();
+    await lastDialog().getByRole('button', { name: 'Appliquer à la tournée', exact: true }).click();
+    await page.getByRole('button', { name: 'Verrouillée · modifier', exact: true }).waitFor();
+    ok(true, 'stage form persists a real lock and displays it');
+    await page.getByRole('button', { name: 'Enregistrer la tournée', exact: true }).click();
+    await page.getByText('Tournée enregistrée localement.', { exact: true }).waitFor();
+    ok(calls.includes('terrain.tours.save'), 'local tour save is wired through the store');
+    await page.getByRole('button', { name: 'Routes et météo', exact: true }).click();
+    const beforeNetwork = calls.filter(value => value === 'terrain.tours.route').length;
+    await page.getByRole('button', { name: 'Calculer les routes de la tournée', exact: true }).click();
+    await page.getByText('Autorisez l’envoi des coordonnées et dates avant ce calcul.', { exact: true }).waitFor();
+    ok(calls.filter(value => value === 'terrain.tours.route').length === beforeNetwork, 'unchecked provider consent blocks the request in the UI');
+
+    await render('updates');
+    ok(await page.getByRole('heading', { name: 'Mise à jour et retour arrière', exact: true }).count() === 1, 'update assistant renders without network access');
+    ok(await page.getByRole('button', { name: 'Télécharger et vérifier le pack officiel', exact: true }).isDisabled(), 'official download stays disabled until a verified release exists');
+    ok(await page.getByRole('button', { name: 'Fermer GLPI Pilot et installer la version vérifiée', exact: true }).isDisabled(), 'installation stays disabled without a prepared pack');
+    await page.getByRole('textbox', { name: /SHA-256 du certificat/ }).fill('A'.repeat(64));
+    await page.getByLabel('Exiger une signature Authenticode de l’éditeur approuvé', { exact: true }).check();
+    await page.getByRole('button', { name: 'Enregistrer la politique de confiance', exact: true }).click();
+    await page.getByText('Politique enregistrée. Vérifiez de nouveau le pack avant de l’installer.', { exact: true }).waitFor();
+    ok((await call('update.state')).policy.requireSignature, 'signature policy form persists through the real C# validator');
+    await page.setViewportSize({ width: 640, height: 900 });
+    ok(await page.evaluate(() => document.querySelector('.terrain-page').getBoundingClientRect().width <= innerWidth + 1), 'terrain page remains inside a compact viewport');
+
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await render('terrain-reference');
+    await page.getByLabel('Type', { exact: true }).selectOption('site');
+    await page.getByRole('button', { name: 'Ajouter une référence', exact: true }).click();
+    await lastDialog().getByText('Commune non renseignée', { exact: true }).waitFor();
+    await lastDialog().getByLabel('Nom', { exact: true }).fill('Atelier indépendant');
+    await lastDialog().getByLabel('Alias et variantes', { exact: true }).fill('AI');
+    const siteNameHelp = await lastDialog().getByText('Le nom du site est reconnu automatiquement. Ajoutez ici ses autres termes de détection : une variante par ligne ou séparée par un point-virgule ; 12 au maximum.', { exact: true }).isVisible();
+    await lastDialog().getByRole('button', { name: 'Ajouter au brouillon', exact: true }).click();
+    await page.getByText('Atelier indépendant', { exact: true }).waitFor();
+    const independent = (await call('terrain.reference.list', { kind: 'site', search: 'Atelier indépendant' })).items[0];
+    ok(independent.parent === 'Commune non renseignée' && siteNameHelp
+      && await page.getByRole('columnheader', { name: 'Termes de détection', exact: true }).count() === 1
+      && await page.getByRole('cell', { name: 'Atelier indépendant ; AI', exact: true }).count() === 1,
+      'site form keeps an optional commune and displays its canonical name plus aliases as detection terms');
+    await page.getByRole('textbox', { name: 'Titre à tester', exact: true }).fill('AI imprimante');
+    await page.getByRole('button', { name: 'Tester le brouillon', exact: true }).click();
+    await page.locator('mark').filter({ hasText: 'AI' }).waitFor();
+    ok(await page.getByText(/Site unique « Atelier indépendant »/).count() > 0, 'standalone simulation presents the recognized site and honest missing-commune explanation');
+    await page.getByRole('row').filter({ hasText: 'Atelier indépendant' }).getByRole('button', { name: 'Modifier', exact: true }).click();
+    await lastDialog().getByRole('button', { name: 'Choisir…', exact: true }).click();
+    await lastDialog().getByRole('row').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Choisir', exact: true }).click();
+    await lastDialog().getByRole('button', { name: 'Ajouter au brouillon', exact: true }).click();
+    await page.getByRole('row').filter({ hasText: 'Atelier indépendant' }).getByText('Alpha', { exact: true }).waitFor();
+    const attached = (await call('terrain.reference.list', { kind: 'site', search: 'Atelier indépendant' })).items[0];
+    ok(attached.id === independent.id && attached.parent === 'Alpha', 'site editor attaches a commune later while preserving the original site identity');
+
+    await render('terrain-map');
+    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.getByText('Fond détaillé indisponible · le plan local reste affiché', { exact: true }).waitFor();
+    ok(await page.locator('.maps-inline-host .maps-marker').count() === 2
+      && await page.locator('.maps-ticket-rows tbody tr').count() === 3,
+      'central Terrain retains every active ticket and uses the local map automatically when its default detailed tiles are unavailable');
+    await capture('terrain-central-map');
+    ok(!await page.locator('.maps-place[data-located="true"]').first().isVisible(),
+      'central Terrain starts with its optional place list collapsed while markers and all ticket rows remain available');
+    await page.getByRole('button', { name: 'Afficher la liste', exact: true }).click();
+    await page.locator('.maps-workspace[data-map-list="true"] .maps-place[data-located="true"]').first().waitFor({ state: 'visible' });
+    await page.locator('.maps-place[data-located="true"]').first().click();
+    await page.locator('.maps-ticket-rows[data-total="1"]').waitFor();
+    ok(await page.locator('.maps-popup').count() === 1 && await page.getByRole('button', { name: 'Sélectionner les tickets de ce lieu', exact: true }).isEnabled(),
+      'selecting a real marker synchronizes its popup, ticket list and whole-place selection action');
+    await page.getByRole('button', { name: 'Sélectionner les tickets de ce lieu', exact: true }).click();
+    await page.getByText('1 ticket sélectionné', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Préparer une tournée', exact: true }).click();
+    await lastDialog().getByLabel('Nom de la tournée', { exact: true }).fill('Intervention depuis Terrain');
+    await lastDialog().getByRole('button', { name: 'Voir l’aperçu', exact: true }).click();
+    await lastDialog().getByRole('heading', { name: 'Vérifier le brouillon de tournée', exact: true }).waitFor();
+    ok((await call('terrain.tours.state')).draft.name === 'Tournée interface', 'map preview preserves the existing draft until the explicit create action');
+    await lastDialog().getByRole('button', { name: 'Créer le brouillon', exact: true }).click();
+    const panel = page.locator('dialog.terrain-workspace-panel');
+    await panel.locator('.terrain-function-panel[data-terrain-panel="planning"][data-ready="true"]').waitFor();
+    ok(await panel.locator('.terrain-tabs button').count() === 0 && (await call('terrain.tours.state')).draft.name === 'Intervention depuis Terrain',
+      'map confirmation opens a real local planning editor inside Terrain with no legacy tabs');
+    await capture('terrain-planning-panel');
+    await panel.locator('summary').filter({ hasText: 'Nom, horaires, départ, retour et consignes' }).click();
+    await panel.getByLabel('Nom', { exact: true }).fill('');
+    await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
+    await panel.locator('.terrain-panel-errors .notice.danger').waitFor();
+    ok(await panel.isVisible() && (await call('terrain.tours.state')).draft.name === 'Intervention depuis Terrain',
+      'an invalid planning header keeps the panel open with its error visible and preserves the previous draft');
+    await panel.getByLabel('Nom', { exact: true }).fill('Intervention renommée');
+    await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
+    await panel.waitFor({ state: 'hidden' });
+    await page.locator('.maps-inline-host .maps-canvas').waitFor();
+    await page.locator('.maps-ticket-rows[data-total="1"]').waitFor();
+    await page.locator('.terrain-map-page:not([aria-busy="true"])').waitFor();
+    ok((await call('terrain.tours.state')).draft.name === 'Intervention renommée' && await page.locator('.maps-inline-host .maps-canvas').count() === 1
+      && await page.getByRole('button', { name: 'Tous les lieux', exact: true }).isEnabled()
+      && await page.locator('.maps-ticket-rows tbody tr').count() === 1,
+      'closing a planning panel applies its pending header edits and preserves the selected place on the central map');
+    await page.getByRole('button', { name: 'Tous les lieux', exact: true }).click();
+    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.getByRole('button', { name: 'Gérer le référentiel', exact: true }).click();
+    await panel.locator('.terrain-function-panel[data-terrain-panel="reference"][data-ready="true"]').waitFor();
+    ok(await panel.getByRole('button', { name: 'Ajouter une référence', exact: true }).isEnabled(), 'the complete reference editor remains functional inside the new Terrain panel');
+    await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
+    await panel.waitFor({ state: 'hidden' });
+    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.locator('.maps-ticket-rows').getByRole('button', { name: 'Ouvrir', exact: true }).first().click();
+    ok(await page.evaluate(() => window.lastNavigation.id === 'tickets' && Number.isInteger(window.lastNavigation.params.rowIndex)
+      && Number.isInteger(window.lastNavigation.params.revision)), 'a map ticket opens the shared ticket reader with its original row and revision');
+    await page.evaluate(() => window.renderTerrain('terrain-map', { technicianKeys: ['ALICE'] }));
+    await page.locator('.maps-ticket-rows[data-total="2"]').waitFor();
+    ok((await page.locator('.maps-scope-summary').innerText()).includes('Alice') && await page.locator('.maps-ticket-rows tbody tr').count() === 2,
+      'opening Terrain from another workspace preserves the explicitly supplied technician scope instead of returning to everyone');
+    ok(consoleErrors.length === 0, `no unhandled JavaScript errors: ${consoleErrors.join('; ')}`);
+    ok(!calls.some(value => ['update.findOfficial', 'update.downloadOfficial', 'update.install', 'terrain.tours.route', 'terrain.tours.weather'].includes(value)), 'all UI tests completed offline without provider or installer execution');
+    console.log(`${checks}/${checks} terrain WebView page checks passed.`);
+  } catch (error) { exitCode = 1; console.error(error.stack || error); }
+  finally {
+    await browser?.close(); await new Promise(resolve => server ? server.close(resolve) : resolve());
+    const childExit = child.exitCode !== null ? Promise.resolve() : new Promise(resolve => child.once('exit', resolve));
+    child.stdin.end(); await timeout(childExit, 10000, 'Fixture cleanup timed out').catch(() => child.kill('SIGTERM'));
+    lines.close(); process.exitCode = exitCode;
+  }
+})();

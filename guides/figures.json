@@ -1,0 +1,10 @@
+{
+  "accueil": { "source": "navigation-preview/workspace-home-light.png", "pixels": [1600, 900] },
+  "admin-cache-local": { "source": "source-cache-preview/source-cache.png", "pixels": [1440, 905] },
+  "admin-csv-provenance": { "source": "light/--data-source-workflow-only/data-csv-provenance-dark.png", "pixels": [1440, 905] },
+  "admin-donnees-demonstration": { "source": "navigation-preview/workspace-data-light.png", "pixels": [1600, 900] },
+  "admin-donnees-glpi": { "source": "light/--data-source-workflow-only/data-glpi-first-light.png", "pixels": [1440, 905] },
+  "admin-vue-personnalisee": { "source": "light/--workspace-grid-only/workspace-grid-edition.png", "pixels": [1440, 905] },
+  "carte": { "source": "workspace-refresh-standard-preview/refresh-map-filters-selection.png", "pixels": [1440, 900] },
+  "planning": { "source": "calendar-preview/calendar-week-light.png", "pixels": [1440, 895] }
+}

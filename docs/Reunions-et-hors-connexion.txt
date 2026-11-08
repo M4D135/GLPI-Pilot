@@ -1,0 +1,60 @@
+GLPI PILOT 3.10 — PRÉPARER UNE RÉUNION
+
+1. Importez votre CSV/Excel ou réalisez une collecte GLPI. Le dernier relevé
+   réel réussi est conservé sur ce poste, même sans le fichier original.
+
+2. Dans Pilotage, choisissez le tableau et le périmètre utile : équipes,
+   techniciens, filtres et période. Vérifiez la source, la date et les réserves.
+
+3. Cliquez Présenter pour ouvrir l'éditeur de diapos 16:9. Une première page
+   regroupe plusieurs widgets. Ajoutez des pages, donnez-leur un titre,
+   dupliquez-les et réordonnez-les depuis les miniatures de gauche.
+
+4. Ajoutez les widgets par clic ou glisser-déposer depuis la liste de droite.
+   Déplacez-les par leur en-tête ; les poignées changent leur taille. La grille
+   est facultative. Position et taille se règlent aussi en pourcentage.
+   Annuler/Rétablir permet de reprendre une modification. Répartir les widgets
+   propose un agencement ; Premier plan/Arrière-plan règle les superpositions.
+
+5. Enregistrer mémorise la composition avec le tableau. Présenter enregistre
+   et ouvre la projection : Précédent/Suivant, liste des pages ou flèches.
+   Échap revient à la préparation. Les détails de provenance sont repliables.
+   Une page vide ou un widget supprimé doit être corrigé avant projection.
+
+6. Exporter la présentation propose : PDF 16:9 (une page par diapo, placements
+   et tailles conservés), HTML (pages et tableaux détaillés), Excel et CSV
+   (tableaux complets des widgets sélectionnés). Les aperçus des tableaux
+   dans les diapos peuvent être partiels : utilisez leurs données détaillées
+   pour consulter l'ensemble des lignes. Aucun widget non choisi n'est ajouté.
+
+7. La composition revient au redémarrage, y compris hors connexion, et suit
+   l'export/import de configuration ainsi que la configuration par défaut.
+   Chaque tableau possède sa présentation. La démonstration reste isolée.
+   Le guide Presentation.md décrit les commandes, limites et exports.
+
+LE JOUR DE LA RÉUNION, SANS CONNEXION
+
+Ouvrez GLPI Pilot normalement : il retrouve le dernier relevé réel conservé.
+Accueil et Données signalent Cache local et la date d’observation. Le pilotage,
+les filtres et les exports utilisent cette copie. Il ne s’agit pas d’une lecture
+GLPI en direct. Pour obtenir des chiffres plus récents, déclenchez explicitement
+une nouvelle collecte ou importez une nouvelle liste.
+
+Les lectures et actions nécessitant GLPI ne sont pas disponibles sur ce relevé
+hors connexion. Les contenus déjà conservés dans la bibliothèque gardent leurs
+propres règles de consultation. Le calendrier et les notes restent locaux.
+
+Une génération précédente sert de secours si la plus récente est endommagée.
+La date et un avertissement identifient cette reprise. Données permet d’effacer
+la copie hors ligne après confirmation ; fichiers originaux, notes, calendrier,
+bibliothèque et archives sont conservés. Le prochain import réussi peut recréer
+un cache. La copie ne transporte pas les mots de passe ni profils navigateur.
+
+ANIMATIONS
+
+Les effets se règlent uniquement dans Réglages > Confort et présentation.
+Expressives active les animations ; Suivre Windows respecte la préférence
+système ; Réduites conserve une présentation stable. Un reflet discret sur
+le bord et un léger relief au survol remplacent les anneaux des widgets.
+Les scènes météo restent animées selon la préférence globale. Les exports
+PDF restent fixes, adaptés à l'impression.

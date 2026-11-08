@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr"><meta charset="utf-8"><title>Fixture export natif GLPI 10</title>
+<style>.dropdown-menu{display:none}.dropdown-menu.show{display:block}button,a,select{margin:4px}td,th{padding:6px}body{font-family:Arial}</style>
+<table id="layout"><tr><td>En-tête de navigation sans données</td></tr></table>
+<div class="ajax-container search-display-data">
+  <form id="massformTicket" method="get" action="/glpi/front/massiveaction.php" data-search-itemtype="Ticket" data-start="0" data-count="1234" data-limit="20">
+    <div class="card search-card" id="ticket-card">
+      <div class="card-header search-header">
+        <div class="d-inline-flex search-controls">
+          <button class="dropdown-toggle btn" type="button" id="dropdown-export" data-bs-toggle="dropdown" aria-expanded="false"><span title="Exporter"><i id="export_dropdown_icon" class="ti ti-file-download"></i></span></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdown-export" id="export-menu">
+            <li><a id="current-csv" class="dropdown-item" href="/glpi/front/report.dynamic.php?item_type=Ticket&amp;start=0&amp;display_type=4">Page courante en CSV</a></li>
+            <li><a id="all-pdf" class="dropdown-item" href="/glpi/front/report.dynamic.php?item_type=Ticket&amp;start=0&amp;display_type=-2">Toutes les pages en PDF</a></li>
+            <li><a id="all-csv" class="dropdown-item" href="/glpi/front/report.dynamic.php?item_type=Ticket&amp;start=0&amp;display_type=-4">Toutes les pages en CSV</a></li>
+            <li id="copy_names_to_clipboard">Copier les noms dans le presse-papiers</li>
+          </ul>
+        </div>
+      </div>
+      <div class="table-responsive-lg">
+        <table class="search-results table" id="search_tickets">
+          <thead><tr><th>Tout cocher comme</th><th>ID</th><th>Titre</th></tr></thead>
+          <tbody><tr><td><input type="checkbox" name="item[Ticket][42]"></td><td>42</td><td>Un incident affiché</td></tr></tbody>
+        </table>
+      </div>
+      <div class="card-footer search-footer"><span>De 1 à 20 sur 1 234</span></div>
+    </div>
+  </form>
+</div>
+<script>
+window.menuClicks=0;window.businessSubmits=0;
+document.querySelector('#dropdown-export').addEventListener('click',e=>{window.menuClicks++;const m=document.querySelector('#export-menu');m.classList.toggle('show');e.currentTarget.setAttribute('aria-expanded',m.classList.contains('show'));});
+document.querySelector('#massformTicket').addEventListener('submit',e=>{e.preventDefault();window.businessSubmits++;});
+</script></html>

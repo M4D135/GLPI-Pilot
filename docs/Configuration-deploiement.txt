@@ -1,0 +1,128 @@
+GLPI PILOT 3.11.0 — CONFIGURATION COMPLÈTE À DIFFUSER
+
+DÉFINIR LA CONFIGURATION PAR DÉFAUT DU PACK
+
+Sur le poste de préparation, régler les sources GLPI, sites, tableaux de bord,
+interface, automatismes, partage et chemin de mise à jour réseau. Enregistrer
+les formulaires ouverts. Dans Réglages, « Configuration complète et déploiement »,
+choisir « Définir comme configuration par défaut ». Le logiciel écrit
+wad/GLPI-Pilot.deployment.json : ce dossier PROD est
+prêt à être diffusé avec les options courantes. Si un fichier de défaut existe
+déjà dans wad, il est sauvegardé avant remplacement et son chemin est indiqué. Le profil
+courant n’est pas réimporté. Le bouton est également disponible dans la Standard ;
+il ne donne aucun droit de maintenance de base.
+
+« Exporter la configuration complète » permet toujours de choisir une autre
+destination, et « Examiner un fichier complet » de réaliser un import manuel.
+
+Le fichier proposé est GLPI-Pilot.deployment.json. Il contient toutes les
+options de l’application : sources et acquisition, interprétation des colonnes,
+référentiel de villes/sites/bâtiments, tableaux de bord, requêtes, apparence,
+identité configurée, automatisations, historique, dossiers d’export ; partage
+et connexions publiques de bibliothèque ; assistant ; mises à jour réseau et
+politique de confiance ; fournisseurs météo/itinéraires, adaptateurs de
+formulaires GLPI, préférences de lecture/rappels, modèles de listes, alertes,
+vues/colonnes des tableaux, préférences des techniciens et ordre des tournées.
+
+L’adresse des publications GitHub officielles est inscrite au document ; cette
+version n’autorise pas un dépôt GitHub arbitraire. Le chemin du partage réseau
+est, lui, configurable et transféré. Les dossiers locaux par défaut sont adaptés
+au poste destinataire ; les chemins personnalisés restent tels qu’exportés.
+Vérifier leur pertinence, ainsi que l’identité personnelle éventuellement copiée.
+
+Les mots de passe et clés protégés ne sont pas exportés. Un secret déjà présent
+sur le destinataire est conservé seulement si sa destination reste compatible ;
+sinon le renseigner localement. Les bases, tickets, notes personnelles, sessions
+SSO, cookies, interventions et tournées enregistrées ne font pas partie de cette
+configuration. Les options associées sont transférées, les données restent locales.
+
+DISPOSITIONS ET DONNÉES PRIVÉES
+
+Le défaut complet contient les positions à deux dimensions, tailles et hauteurs
+indépendantes des widgets, sections, filtres, seuils et présentations préparées.
+Les communes, sites, bâtiments, alias, adresses et champs personnalisés enregistrés
+font également partie du JSON local. Il ne faut pas publier ce fichier privé,
+ni sites.csv, dans le dépôt ou les packs GitHub. Les exemples de test sont fictifs.
+Les formulaires non enregistrés restent des brouillons : les appliquer avant
+« Définir comme configuration par défaut ». Les tickets, sessions et secrets ne
+sont pas des paramétrages transportables.
+
+SITES ET DERNIER RELEVÉ CONSERVÉ
+
+Depuis 3.8.1, les sites peuvent être importés et enregistrés dans le référentiel
+de travail même si le dernier relevé hors connexion ou une archive est affiché.
+Dans Données → Sites et détection : importer le CSV, fusionner dans le brouillon,
+puis enregistrer le référentiel et confirmer son aperçu. Cette opération ne
+recalcule pas un relevé conservé ; ses données et son interprétation restent
+figées. Sur un relevé courant, la simulation permet de vérifier le recalcul.
+Définir ensuite la configuration par défaut pour y inclure les sites enregistrés.
+
+FOURNIR AVEC LE PACK
+
+Extraire le ZIP PROD officiel, régler le logiciel puis définir sa configuration
+par défaut. Le dossier prêt à diffuser contient :
+  GLPI-Pilot.exe
+  GLPI-Pilot-Admin.exe           (retirer pour une diffusion Standard)
+  wad/
+  wad/GLPI-Pilot.deployment.json
+
+Le fichier appartient au dossier de diffusion extrait, dans wad. Ne pas modifier
+le ZIP officiel utilisé par l’assistant de mise à jour : son SHA-256 et le contrat
+des packs doivent rester valides. Diffuser le dossier préparé, ou copier le JSON
+dans wad après extraction. Le bouton crée ce dossier si nécessaire.
+
+Au démarrage, wad/GLPI-Pilot.deployment.json est prioritaire. Si ce fichier est
+absent, l’ancien GLPI-Pilot.deployment.json placé à côté des EXE est encore lu.
+Les deux fichiers peuvent coexister ; l’ancien n’est ni déplacé ni effacé
+automatiquement. Un fichier présent mais invalide ou illisible dans wad est
+signalé : le logiciel ne le remplace pas silencieusement par l’ancienne copie.
+
+L’assistant de mise à jour et de retour arrière de 3.10.1 préserve le défaut local même
+quand wad est remplacé. Il vérifie que le fichier n’a pas changé depuis la
+préparation et ne remplace pas une configuration locale par un défaut différent
+provenant d’un autre pack. Le ZIP officiel et ses empreintes restent intacts.
+Les exécutables 3.8.0 à 3.10.0 lisent seulement le fichier à côté des EXE.
+Après un retour à cette ancienne version, fournir ce chemin historique pour
+préparer un profil neuf ; les réglages déjà appliqués au profil restent présents.
+Pour un remplacement manuel du dossier par extraction d’un nouveau pack,
+conserver le JSON voulu ou le générer de nouveau depuis les réglages du profil.
+
+PREMIER DÉMARRAGE ET NOUVELLES VERSIONS
+
+Profil AppData neuf : le fichier valide est appliqué automatiquement avant le
+chargement des réglages, dans %LOCALAPPDATA%\GLPI-Pilot. Aucun fichier fourni :
+les réglages habituels sont créés. Un fichier invalide n’écrase pas le profil ;
+son problème est signalé et le logiciel reste accessible.
+
+Profil existant : au premier démarrage avec une nouvelle version ou un nouveau
+fichier, une proposition permet d’examiner la configuration du pack ou de garder
+ses réglages. L’aperçu donne toutes les valeurs avant/après, avec recherche,
+filtre par section et pagination. « Sauvegarder et remplacer » demande une
+confirmation explicite. « Garder mes réglages » mémorise le refus. Le choix est
+lié à la version de l’application et à l’empreinte SHA-256 exacte du JSON ; il
+n’est pas redemandé à chaque démarrage identique. Une autre version ou un JSON
+modifié provoque une nouvelle proposition. Fermer simplement la fenêtre reporte
+le choix et ne constitue ni un refus ni une acceptation.
+
+Un import n’ajoute jamais les pouvoirs Admin au lanceur Standard.
+La démonstration ne peut ni exporter ni remplacer la configuration réelle.
+
+IMPORT MANUEL ET RETOUR ARRIÈRE
+
+Le même écran propose « Examiner un fichier complet » à tout moment. Enregistrer
+ou abandonner les formulaires en cours avant l’aperçu. Si le JSON ou les options
+locales changent ensuite, l’application refuse cet aperçu périmé : le recréer.
+
+Avant remplacement, une sauvegarde complète réimportable est créée dans :
+  %LOCALAPPDATA%\GLPI-Pilot\DeploymentBackups\<identifiant>\
+Son chemin est affiché après application. Pour revenir aux options précédentes,
+examiner le GLPI-Pilot.deployment.json de cette sauvegarde et confirmer l’import.
+Les fichiers locaux d’origine sont également conservés dans ce dossier pour la
+reprise automatique d’une écriture interrompue. Ne pas supprimer une sauvegarde
+pendant un import ou sa reprise. Les notes, tickets, incidents historiques et
+calendriers existants ne sont pas remplacés par les données du poste exportateur.
+Une règle d’alerte retirée ou modifiée clôt les incidents actifs correspondants,
+sans effacer leur historique.
+
+L’ancien export de configuration d’équipe reste disponible pour un transfert
+partiel. Utiliser l’export complet décrit ici pour préparer un pack de diffusion.

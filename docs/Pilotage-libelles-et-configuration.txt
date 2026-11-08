@@ -1,0 +1,15 @@
+GLPI Pilot : noms des tableaux et configuration par défaut
+
+Pilotage reste le nom de l'espace dans le menu de gauche.
+Le champ « Tableau affiché » distingue désormais :
+- « Vue d’ensemble du service » : le tableau intégré, relié aux réglages Seuils et équipes ;
+- « Tableau personnalisé » : le tableau générique précédemment affiché sous le nom Pilotage ;
+- « Personnalisé · <nom> » : les autres tableaux, avec leur nom conservé.
+
+Ces libellés concernent uniquement la présentation à l'écran. Les identifiants service et business-workspace, les identifiants des tableaux et widgets, les noms enregistrés, les groupes, les filtres et les seuils restent inchangés. Le changement de tableau utilise toujours le même relevé, avec son éventuel périmètre enregistré.
+
+Le format glpi-pilot.deployment, SchemaVersion 1, n'est pas modifié. Une configuration complète récente exportée avant ce changement reste compatible : aucun nouvel export n'est nécessaire pour bénéficier des nouveaux libellés ou du sélecteur de groupes des widgets. Conserver le fichier privé dans wad/GLPI-Pilot.deployment.json ; ne pas le publier sur GitHub.
+
+Un ancien export est une photographie des réglages au moment de son enregistrement. Après avoir ajouté des groupes, changé les seuils ou déplacé des cartes, utiliser de nouveau « Définir comme configuration par défaut » pour inclure ces changements dans les futurs déploiements. Cela n'est pas nécessaire pour un simple changement de libellé de l'interface.
+
+Le contrôle local des nouveaux libellés est limité à leur fonction de présentation et à l'absence de mutation des paramètres fournis. Il ne remplace ni les essais Windows/WebView2 ni un essai avec le fichier privé de l'utilisateur, qui n'a pas été fourni.

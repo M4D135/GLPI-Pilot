@@ -1,0 +1,12 @@
+/* Ticket piloting uses the existing action dialog and one contextual section. */
+.ticket-control-hub{border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;min-width:0}
+.ticket-control-hub h3{margin:0 0 10px;overflow-wrap:anywhere}
+.ticket-control-hub .toolbar{flex-wrap:wrap;min-width:0}
+.ticket-control-hub .button{white-space:normal;text-align:left;max-width:100%}
+.ticket-control-hub [aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.ticket-control-local,.ticket-action-settings{margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:9px}
+.ticket-control-local>summary,.ticket-action-settings>summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere}
+.ticket-control-local[open]>summary,.ticket-action-settings[open]>summary{margin-bottom:10px}
+.tickets-tool-content :is(select,textarea,input){max-width:100%;min-width:0}
+.work-write-plan .work-text{overflow-wrap:anywhere;white-space:pre-wrap;max-height:none;overflow:visible}
+@media(max-width:600px){.ticket-control-hub .toolbar{display:grid;grid-template-columns:1fr}.ticket-control-hub{padding:10px}}

@@ -1,0 +1,90 @@
+/* Operational preparation: fixed counters, wrapping controls and one modal scroll region. */
+.field-workspace-content{min-width:0;width:100%}
+.field-workspace-switch{margin-bottom:16px;flex-wrap:wrap}
+.field-workspace-switch [aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.field-workspace{display:grid;gap:16px;min-width:0}
+.field-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.field-heading h2{margin:0 0 4px}
+.field-workspace .toolbar,.field-modal .toolbar{align-items:flex-end;flex-wrap:wrap;gap:10px}
+.field-workspace .field,.field-modal .field{display:flex;flex-direction:column;gap:5px;flex:1 1 170px;min-width:0;max-width:100%}
+.field-workspace input:not([type=checkbox]),.field-workspace select,.field-modal input:not([type=checkbox]),.field-modal select,.field-modal textarea{min-width:0;max-width:100%;width:100%;box-sizing:border-box}
+.field-check{display:flex;align-items:center;gap:8px;min-height:36px;max-width:100%;font-size:13px}
+.field-workspace input[type=checkbox],.field-modal input[type=checkbox]{width:18px!important;height:18px!important;min-width:18px!important;flex:0 0 18px;padding:0}
+.field-status,.field-plan-badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.field-help{font-size:12px;color:var(--muted);line-height:1.5;margin:5px 0;overflow-wrap:anywhere}
+.field-errors:empty{display:none}
+.field-errors{display:grid;gap:8px;min-width:0}
+.field-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:12px}
+.field-metric{display:flex;flex-direction:column;gap:4px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);min-width:0}
+.field-metric strong{font-variant-numeric:tabular-nums;font-size:28px;line-height:1.2}
+.field-metric span{font-size:12px;color:var(--muted)}
+.field-plan-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr));align-items:start;gap:12px;min-width:0}
+.field-plan-card{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:start;gap:10px;padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);min-width:0}
+.field-plan-card>input{margin-top:5px}
+.field-plan-card h3{margin:0;font-size:15px;overflow-wrap:anywhere}
+.field-plan-card p{margin:5px 0;overflow-wrap:anywhere}
+.field-plan-copy,.field-plan-actions{min-width:0}
+.field-plan-actions{display:flex;flex-direction:column;gap:8px}
+.field-selection-label{align-self:center;font-variant-numeric:tabular-nums}
+.field-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.field-pagination span{font-size:12px;color:var(--muted)}
+.field-material-summary{padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);min-width:0}
+.field-material-summary h2{font-size:16px;margin:0 0 6px}
+.field-table-scroll{overflow:auto;max-width:100%}
+.field-material-summary table{border-collapse:collapse;min-width:460px;width:100%;font-size:13px}
+.field-material-summary th,.field-material-summary td{text-align:left;padding:10px;border-bottom:1px solid var(--border);vertical-align:top;font-variant-numeric:tabular-nums}
+.field-material-summary th:first-child{max-width:320px;overflow-wrap:anywhere}
+.field-material-summary small{display:block;color:var(--muted);font-weight:normal}
+.field-modal{width:min(1100px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);margin:auto;padding:0;border:1px solid var(--border);border-radius:16px;color:var(--text);background:var(--bg);box-shadow:var(--shadow-raised);overflow:hidden}
+.field-modal[open]{display:flex;flex-direction:column}
+.field-modal::backdrop{background:#0008}
+.field-modal-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);flex:0 0 auto;min-width:0}
+.field-modal-heading h2{margin:0;font-size:18px;overflow-wrap:anywhere;min-width:0}
+.field-modal-heading .button{flex:0 0 auto}
+.field-modal>.field-errors:not(:empty){padding:12px 20px 0;flex:0 0 auto;max-height:25dvh;overflow:auto}
+.field-modal-body{padding:20px;overflow:auto;min-height:0;min-width:0;overscroll-behavior:contain}
+.field-material-editor,.field-catalogue-editor{display:grid;gap:14px;min-width:0}
+.field-material-editor>h3{font-size:17px;margin:0;overflow-wrap:anywhere}
+.field-line-list,.field-catalogue-list{display:grid;gap:12px;min-width:0}
+.field-material-line,.field-catalogue-reference{display:grid;gap:10px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;min-width:0}
+.field-material-line h3{margin:0;font-size:15px;overflow-wrap:anywhere}
+.field-material-line>.button{justify-self:start}
+.field-remaining{align-self:center;font-size:12px;font-variant-numeric:tabular-nums;white-space:normal}
+.field-add-material{padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);display:grid;gap:10px;min-width:0}
+.field-add-material h3{margin:0;font-size:15px}
+.field-new-reference,.field-category-editor{border-top:1px solid var(--border);padding-top:10px;min-width:0}
+.field-new-reference>summary,.field-category-editor>summary{cursor:pointer;padding:8px 0;font-weight:600}
+.field-category-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:10px}
+.field-category-row{display:flex;align-items:flex-end;gap:10px;min-width:0;padding:8px 0}
+.field-source-list{display:grid;gap:10px;margin-top:16px;min-width:0}
+.field-source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--border);border-radius:10px;min-width:0}
+.field-source-row strong{overflow-wrap:anywhere}
+.field-version-data{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:var(--surface);padding:12px;max-width:100%}
+.field-report{font-family:var(--font);font-size:13px;line-height:1.5;background:var(--surface);color:var(--text);border:1px solid var(--border);padding:20px;max-width:850px;margin:16px auto;overflow-wrap:anywhere}
+.field-report h1{font-size:24px}.field-report h2{font-size:18px}.field-report h3{font-size:15px}
+.field-report table{width:100%;border-collapse:collapse;table-layout:fixed;margin:12px 0}
+.field-report th,.field-report td{text-align:left;vertical-align:top;border:1px solid var(--border);padding:7px;overflow-wrap:anywhere}
+.field-report .meta{white-space:pre-line}.field-report .muted{color:var(--muted)}
+.field-report .note,.field-report pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.field-report .sheet{border-top:2px solid var(--border);padding-top:16px;margin-top:24px}
+.field-print-document{display:none}
+@media(max-width:680px){.field-plan-card{grid-template-columns:24px minmax(0,1fr)}.field-plan-actions{grid-column:2;flex-direction:row;flex-wrap:wrap}.field-modal-body{padding:12px}.field-modal-heading{padding:12px}.field-source-row{grid-template-columns:minmax(0,1fr)}.field-source-row>.button{justify-self:start}.field-report{padding:12px}.field-workspace-switch .button{flex:1 1 180px}}
+@media(prefers-reduced-motion:reduce){.field-workspace *,.field-modal *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+@page field-intervention{size:A4;margin:12mm}
+@media print{
+ body.field-printing{background:white!important;color:#111!important}
+ body.field-printing>*:not(.field-print-document){display:none!important}
+ body.field-printing dialog,body.field-printing dialog::backdrop{display:none!important}
+ body.field-printing>.field-print-document{display:block!important;page:field-intervention}
+ .field-print-document .field-report{display:block!important;margin:0;padding:0;max-width:none;width:auto;border:0;background:white;color:#111;font-size:10pt;--border:#c8c8c8;--muted:#444}
+ .field-print-document .sheet{break-before:page;border:0;margin:0;padding:0}
+ .field-print-document h1,.field-print-document h2,.field-print-document h3{break-after:avoid}
+ .field-print-document tr{break-inside:avoid}
+}
+
+/* Preserve the printable engine's safe text and handwritten-report areas. */
+.field-report .text{white-space:pre-wrap;overflow-wrap:anywhere}
+.field-report .notes{min-height:72px;border:1px solid var(--border);border-radius:6px;margin:8px 0 14px;padding:8px}
+.field-report .ticket{padding:12px 0;border-top:1px solid var(--border)}
+.field-report .check-col{width:34px;text-align:center}
+@media print{.field-print-document .notes{min-height:22mm;break-inside:avoid}.field-print-document .text{white-space:pre-wrap}}

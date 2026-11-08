@@ -1,0 +1,79 @@
+name: Publier le pack PROD-LIGHT inspecté d'une qualification complète
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Run Windows complet réussi sur le commit main courant (sur main, ou sur sa branche poussée en avance rapide)
+        required: true
+        type: string
+      source_attempt:
+        description: Tentative qualifiée
+        required: true
+        default: '1'
+        type: string
+      light_sha256:
+        description: SHA-256 du ZIP PROD-LIGHT (sans runtime WebView2) téléchargé et inspecté
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: verified-release-main
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QUALIFIED_RUN_ID: ${{ inputs.source_run }}
+      QUALIFIED_RUN_ATTEMPT: ${{ inputs.source_attempt }}
+      EXPECTED_LIGHT_SHA256: ${{ inputs.light_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Vérifier le run complet et l'original inspecté
+        id: qualify
+        run: |
+          set -euo pipefail
+          [[ "$QUALIFIED_RUN_ID" =~ ^[0-9]+$ && "$QUALIFIED_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          python3 -m unittest discover -s tests/ReleasePackChecks -p "test_*.py"
+          mkdir -p artifacts/published-verification
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFIED_RUN_ID" > artifacts/published-verification/run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFIED_RUN_ID/attempts/$QUALIFIED_RUN_ATTEMPT/jobs?per_page=100" > artifacts/published-verification/jobs.json
+          job=$(jq -er '[.jobs[] | select(.name == "Windows x64 · contrôles réels et packs")] | select(length==1) | .[0].id' artifacts/published-verification/jobs.json)
+          # The job log holds ANSI colours, which recent gh refuses to write out; curl keeps its bytes untouched.
+          curl -fsSL --proto '=https' -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            -o artifacts/published-verification/windows-job.log "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs"
+          version=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("src/GlpiPilot/GlpiPilot.csproj").findtext("PropertyGroup/Version"))')
+          python3 build-tools/select-verified-release.py --stored artifacts/published-verification "$GITHUB_SHA" "$QUALIFIED_RUN_ID" "$QUALIFIED_RUN_ATTEMPT" "$version" "$EXPECTED_LIGHT_SHA256"
+      - name: Récupérer l'original PROD-LIGHT joint au run qualifié
+        # Le job Windows hébergé est effacé après le run : l'original est son artefact non compressé. Il n'est
+        # placé dans le magasin attendu par publish-release.sh que si son nom, son run, son commit et son empreinte
+        # correspondent à la qualification et à l'empreinte inspectée.
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("src/GlpiPilot/GlpiPilot.csproj").findtext("PropertyGroup/Version"))')
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFIED_RUN_ID/artifacts?per_page=100" > artifacts/published-verification/artifacts.json
+          artifact=$(python3 build-tools/select-verified-release.py artifacts/published-verification "$GITHUB_SHA" "$QUALIFIED_RUN_ID" "$QUALIFIED_RUN_ATTEMPT" "$version" "$EXPECTED_LIGHT_SHA256" | sed -n 's/^prod-light-artifact-id=\([0-9][0-9]*\)$/\1/p')
+          [[ "$artifact" =~ ^[0-9]+$ ]] || { echo 'No qualified PROD-LIGHT artifact'; exit 1; }
+          store="${GLPI_CI_EVIDENCE_ROOT:-$HOME/GLPI-Pilot-Evidence}/$QUALIFIED_RUN_ID/$QUALIFIED_RUN_ATTEMPT/$GITHUB_SHA"
+          mkdir -p "$store"
+          # curl follows the temporary artifact redirect without sending the token to the storage host and keeps
+          # the bytes without another ZIP wrapper (recent gh refuses binary output holding escape bytes).
+          curl -fsSL --proto '=https' -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            -o "$store/GLPI-Pilot_${version}_PROD-LIGHT_Windows-x64.zip" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip"
+          echo "$EXPECTED_LIGHT_SHA256  $store/GLPI-Pilot_${version}_PROD-LIGHT_Windows-x64.zip" | sha256sum -c -
+      - name: Publier le même ZIP puis retélécharger les fichiers publics
+        run: bash build-tools/publish-release.sh
+      - name: Conserver les preuves
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: published-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/published-verification/

@@ -1,0 +1,68 @@
+/* The six destinations and their local customization share the same keyboard order. */
+.nav-space-list { display:grid;gap:7px;padding-block:5px; }
+.nav-space-list .nav-item { min-height:76px;height:auto;margin:0;padding:12px 10px;gap:11px;align-items:center; }
+.nav-space-copy { display:grid;flex:1;min-width:0;gap:3px; }
+.nav-space-copy .nav-label { display:block;font-size:14px;line-height:1.35; }
+.nav-space-description { display:block;color:var(--muted);font-size:12px;line-height:1.4;font-weight:400;white-space:normal;overflow-wrap:anywhere; }
+.nav-space-pin { flex:none;color:var(--accent);font-size:11px;align-self:flex-start; }
+.shell.nav-collapsed .nav-space-copy,.shell.nav-collapsed .nav-space-pin { display:none; }
+.shell.nav-collapsed .nav-space-list { gap:8px; }
+.shell.nav-collapsed .nav-space-list .nav-item { min-height:46px;height:46px;padding:0; }
+.nav-customize { flex:none;justify-content:flex-start;margin:8px 3px;min-width:0; }
+.nav-customize > span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.shell.nav-collapsed .nav-customize { justify-content:center;padding-inline:0; }
+.shell.nav-collapsed .nav-customize > span { display:none; }
+/* Fold control shared with Domenia, Pesto and FILPRO (29/10/2026): unfolded, a normal menu row at the very bottom of the
+   rail with its visible label and a Ctrl B hint on hover; folded, the icon alone, centred and flipped, with a tooltip.
+   On a wide window the top-bar Navigation button only returns from focus mode; it stays the drawer launcher when narrow. */
+.nav-fold { display:flex;align-items:center;gap:10px;flex:none;align-self:stretch;height:var(--nav-row);min-width:0;padding:0 10px;margin:0 3px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:550;text-align:left;cursor:pointer; }
+.nav-fold:hover { background:var(--surface-hover);color:var(--text); }
+.nav-fold:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.nav-fold .icon { flex:none;width:18px;height:18px; }
+.nav-fold-label { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.nav-fold-kbd { opacity:0;transform:translateX(-4px); }
+:root[data-motion=normal] .nav-fold-kbd { transition:opacity 120ms ease-out,transform 160ms ease-out; }
+.nav-fold:hover .nav-fold-kbd, .nav-fold:focus-visible .nav-fold-kbd { opacity:1;transform:none; }
+:root[data-motion=normal] .nav-fold .icon { transition:transform 520ms cubic-bezier(.34,1.56,.64,1); }
+.shell.nav-collapsed .nav-fold { align-self:center;width:32px;height:32px;padding:0;margin:0 0 10px;justify-content:center; }
+.shell.nav-collapsed .nav-fold-label, .shell.nav-collapsed .nav-fold-kbd { display:none; }
+.shell.nav-collapsed .nav-fold .icon { transform:scaleX(-1); }
+body:not(.focus-mode) .topbar .nav-toggle { display:none; }
+.rail-tip { position:fixed;left:0;top:0;z-index:60;padding:5px 9px;border-radius:7px;white-space:nowrap;font-size:12px;font-weight:600;background:var(--text);color:var(--bg);box-shadow:var(--shadow-raised);opacity:0;pointer-events:none;transform:translate(4px,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out; }
+.rail-tip.visible { opacity:1;transform:translate(0,-50%);transition-delay:250ms; }
+:root[data-motion=reduce] .rail-tip { transition:none; }
+@media (forced-colors: active) { .rail-tip { background:Canvas;color:CanvasText;border:1px solid CanvasText; } }
+@media (max-width: 800px) {
+  .nav-fold { display:none; }
+  body:not(.focus-mode) .topbar .nav-toggle { display:inline-flex; }
+}
+.navigation-modal { width:min(880px,calc(100vw - 32px)); }
+.navigation-editor { display:grid;gap:14px;min-width:0; }
+.navigation-editor-intro { margin:0;max-width:85ch;line-height:1.6; }
+.navigation-editor-tools { display:flex;flex-wrap:wrap;gap:8px; }
+.navigation-editor-status { margin:0;color:var(--accent);font-size:13px;min-height:1.4em; }
+.navigation-space-list { display:grid;gap:5px;min-width:0; }
+.navigation-space-row { display:grid;grid-template-columns:34px minmax(0,1fr) 36px 68px;align-items:center;gap:9px;padding:12px 7px;border:1px solid transparent;border-radius:8px; }
+.navigation-space-row + .navigation-space-row { border-top-color:var(--border); }
+.navigation-space-row.is-hidden .navigation-page-name { color:var(--muted); }
+.navigation-page-visibility { min-width:0;display:flex;align-items:center;gap:9px;cursor:pointer; }
+.navigation-page-visibility input { width:16px;height:16px;flex:none;accent-color:var(--accent); }
+.navigation-page-visibility .icon { flex:none;width:17px;height:17px;color:var(--muted); }
+.navigation-page-name { display:grid;min-width:0;gap:3px; }
+.navigation-page-name strong { font-size:13px;font-weight:600;overflow-wrap:anywhere; }
+.navigation-page-name small { color:var(--muted);font-size:12px;line-height:1.4;overflow-wrap:anywhere; }
+.navigation-handle { width:32px;height:32px;min-width:32px;padding:6px;cursor:grab;touch-action:pan-y; }
+.navigation-handle:active { cursor:grabbing; }
+.navigation-handle .icon { width:16px;height:16px; }
+.navigation-space-row > .button { min-width:32px;padding:6px; }
+.navigation-steps { display:flex;gap:4px; }
+.navigation-steps > .button { width:30px;min-width:30px;height:30px;padding:0;font-size:15px; }
+.navigation-drop-target { outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft); }
+.navigation-dragging { opacity:.55; }
+@media(max-width:650px) {
+ .navigation-space-row { grid-template-columns:32px minmax(0,1fr) 34px;gap:8px;padding:10px 3px; }
+ .navigation-space-row > .navigation-steps { grid-column:2 / 4;justify-content:flex-end; }
+ .navigation-page-visibility { gap:7px; }
+ .navigation-page-visibility > .icon { display:none; }
+ .navigation-editor-tools .button { flex:1 1 180px; }
+}

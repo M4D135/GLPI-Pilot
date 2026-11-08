@@ -1,0 +1,46 @@
+Cartes intégrées — GLPI Pilot 3.3.4
+
+Leaflet 1.9.4 (version stable), licence BSD-2-Clause
+Site et empreintes officielles : https://leafletjs.com/download.html
+Source : https://github.com/Leaflet/Leaflet/tree/v1.9.4
+Texte intégral de la licence : Leaflet-LICENSE.txt
+
+Distribution téléchargée : https://unpkg.com/leaflet@1.9.4/dist/
+Les fichiers JS/CSS sont conservés sans modification. Les empreintes ont
+été vérifiées avant inclusion, avec les SRI publiés sur le site officiel.
+Les attributs Git préservent les octets du dossier vendor au checkout
+Windows. La CI vérifie à nouveau leurs SHA-256 dans les packs PROD et DEV :
+leaflet.js
+  db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a
+leaflet.css
+  a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6
+
+Les cinq images officielles de dist/images sont incluses à côté de la
+feuille de style. Le manifeste du pack couvre toutes ces ressources.
+Aucun script, style ni bibliothèque de cartographie n’est téléchargé
+au lancement ou à l’ouverture d’une carte.
+
+Fond hors ligne Natural Earth : terres mondiales à l’échelle 1:110m,
+domaine public. Source exacte, empreintes et transformation reproductible
+dans NaturalEarth-PUBLIC-DOMAIN.txt. Ce fond donne un repère géographique
+général ; il ne contient ni rues, ni trajet routier.
+
+Fond détaillé OpenStreetMap : images servies à la demande depuis
+https://tile.openstreetmap.org/{z}/{x}/{y}.png
+Attribution visible : © OpenStreetMap contributors
+Données sous Open Database License (ODbL).
+https://www.openstreetmap.org/copyright
+Politique du serveur : https://operations.osmfoundation.org/policies/tiles/
+
+Les tuiles OpenStreetMap ne sont pas redistribuées dans le pack. Leur
+chargement est limité à la vue affichée, sans téléchargement de région,
+préchargement de zooms ni fonction d’archive hors ligne. Le cache HTTP
+normal de WebView2 est conservé. Les requêtes incluent l’origine de
+l’interface et un User-Agent identifiant GLPI-Pilot et son dépôt public.
+La disponibilité du fond détaillé dépend de la connexion et du fournisseur.
+En simulation le fond local est actif par défaut ; Afficher les rues
+active explicitement les images en ligne dans la même carte.
+
+Les marqueurs, noms et adresses restent des éléments locaux. Le serveur
+de tuiles ne reçoit que les coordonnées z/x/y des images visibles, avec
+les métadonnées HTTP ordinaires ; il ne reçoit ni ticket ni nom d’agent.

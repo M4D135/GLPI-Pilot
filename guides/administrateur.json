@@ -1,0 +1,116 @@
+{
+  "source": "administrateur.md",
+  "output": "GLPI-Pilot-3.13.6-Guide-administrateur",
+  "product": "GLPI Pilot 3.13.6",
+  "title": "Guide administrateur",
+  "subtitle": "Installer, configurer, partager et maintenir GLPI Pilot",
+  "edition": "GLPI Pilot 3.13.6",
+  "author": "GLPI Pilot",
+  "cover": "admin-partage-connexion",
+  "coverCaption": "Configuration du partage entre postes",
+  "info": [
+    [
+      "Pour qui",
+      "Administrateurs et responsables de la mise en service de GLPI Pilot."
+    ],
+    [
+      "Ce que couvre ce guide",
+      "Architecture, installation, configuration d’équipe, collecte, bibliothèque, partage, interventions, sécurité, mises à jour et diagnostic."
+    ],
+    [
+      "Version décrite",
+      "GLPI Pilot 3.13.6 · Windows x64 · éditions Standard et Admin"
+    ],
+    [
+      "Captures",
+      "Vraie interface de GLPI Pilot 3.13.6 avec son moteur C#, données fictives ou de démonstration ; certaines captures viennent des EXE Windows réels."
+    ]
+  ],
+  "tocIntro": "Cliquez sur un chapitre pour y aller. Dans Word, le volet Navigation (Affichage > Volet de navigation) donne aussi accès aux chapitres et aux sections.",
+  "figures": {
+    "admin-premier-demarrage": {
+      "file": "images/admin-premier-demarrage.png",
+      "width": 13
+    },
+    "admin-configuration-revue": {
+      "file": "images/admin-configuration-revue.png",
+      "width": 16
+    },
+    "admin-administration": {
+      "file": "images/admin-administration.png",
+      "width": 16
+    },
+    "admin-donnees-glpi": {
+      "file": "images/admin-donnees-glpi.png",
+      "width": 16
+    },
+    "admin-recherches-groupees": {
+      "file": "images/admin-recherches-groupees.png",
+      "width": 16
+    },
+    "admin-collecte-native": {
+      "file": "images/admin-collecte-native.png",
+      "width": 13
+    },
+    "admin-partage-connexion": {
+      "file": "images/admin-partage-connexion.png",
+      "width": 16
+    },
+    "admin-partage-dossier": {
+      "file": "images/admin-partage-dossier.png",
+      "width": 16
+    },
+    "admin-partage-conflit": {
+      "file": "images/admin-partage-conflit.png",
+      "width": 16
+    },
+    "admin-comparaison-versions": {
+      "file": "images/admin-comparaison-versions.png",
+      "width": 8
+    },
+    "admin-csv-provenance": {
+      "file": "images/admin-csv-provenance.png",
+      "width": 16
+    },
+    "admin-profil-classeur": {
+      "file": "images/admin-profil-classeur.png",
+      "width": 16
+    },
+    "admin-seuils": {
+      "file": "images/admin-seuils.png",
+      "width": 16
+    },
+    "admin-presentation": {
+      "file": "images/admin-presentation.png",
+      "width": 16
+    },
+    "admin-vue-personnalisee": {
+      "file": "images/admin-vue-personnalisee.png",
+      "width": 16
+    },
+    "admin-correction-site": {
+      "file": "images/admin-correction-site.png",
+      "width": 16
+    },
+    "admin-cache-local": {
+      "file": "images/admin-cache-local.png",
+      "width": 16
+    },
+    "admin-equipe": {
+      "file": "images/admin-equipe.png",
+      "width": 16
+    },
+    "admin-donnees-demonstration": {
+      "file": "images/admin-donnees-demonstration.png",
+      "width": 16
+    },
+    "admin-fiche-terrain-native": {
+      "file": "images/admin-fiche-terrain-native.png",
+      "width": 14
+    },
+    "admin-mise-a-jour": {
+      "file": "images/admin-mise-a-jour.png",
+      "width": 16
+    }
+  }
+}

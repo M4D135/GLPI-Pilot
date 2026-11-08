@@ -1,0 +1,30 @@
+/* Each section is an independent 12-column canvas, never a stretched CSS row. */
+.pilot-grid-viewport{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:2px 2px 8px}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]{display:block;position:relative;min-width:0;isolation:isolate;align-items:start;gap:16px}
+.pilot-workspace[data-layout-editing="true"] .pilot-widget-grid[data-workspace-grid]{min-width:960px;background-image:linear-gradient(to right,color-mix(in srgb,var(--border) 50%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in srgb,var(--border) 35%,transparent) 1px,transparent 1px);background-size:calc((100% + 16px)/12) 20px;border-radius:12px}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget{position:absolute;box-sizing:border-box;grid-column:auto!important;margin:0;min-width:0;min-height:0;max-height:var(--widget-height,320px);height:auto;align-self:start;overflow:hidden;transform:none!important;transition:box-shadow .15s,border-color .15s}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget[data-auto-height="false"]{height:var(--widget-height,320px)}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading{flex:0 0 auto;min-height:0;flex-wrap:wrap;align-items:flex-start}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading>h3{overflow-wrap:anywhere}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.workspace-weather-placeholder{min-height:0;overflow:auto}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget .analytics-chart{max-width:100%}
+.pilot-workspace[data-layout-editing="true"] .pilot-widget-grid[data-workspace-grid]>.pilot-widget{padding-bottom:30px}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero{padding:18px!important}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero .analytics-volume-weather-summary{min-height:80px;padding:0;gap:10px}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero .analytics-metric-value{font-size:clamp(34px,4vw,62px)}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero .pilot-weather-scene{width:150px;height:100px;max-width:38%}
+.pilot-workspace .workspace-grid-handle{cursor:grab;touch-action:none;user-select:none}
+.pilot-workspace .workspace-grid-handle:active{cursor:grabbing}
+.pilot-workspace .workspace-grid-size{font-size:11px;width:106px;max-width:100%;min-height:27px;height:29px;padding:2px 6px;margin:0}
+.pilot-workspace .workspace-grid-resize{position:absolute;right:5px;bottom:4px;width:25px;height:24px;min-height:24px;z-index:3;padding:0;border-color:transparent;background:var(--surface);color:var(--muted);cursor:nwse-resize;touch-action:none;font-size:18px}
+.pilot-workspace :is(.workspace-grid-resize,.workspace-grid-handle):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pilot-workspace :is(.workspace-grid-resize,.workspace-grid-handle):disabled{cursor:not-allowed;opacity:.35}
+.pilot-workspace .pilot-widget.is-grid-moving{opacity:.55;outline:2px solid var(--accent);outline-offset:-2px}
+.workspace-grid-preview{position:absolute;box-sizing:border-box;z-index:8;pointer-events:none;border:2px dashed var(--accent);border-radius:16px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--text);padding:10px;font-size:12px;font-weight:650}
+.workspace-grid-preview[data-valid="false"]{border-color:var(--danger,#b42432);background:color-mix(in srgb,var(--danger,#b42432) 12%,transparent)}
+.workspace-grid-ghost{position:fixed;z-index:30000;pointer-events:none;padding:8px 13px;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid var(--accent);border-radius:9px;background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-size:12px}
+.workspace-grid-help{margin:0;padding:10px 14px;border-left:3px solid var(--accent);font-size:12px}
+.workspace-grid-status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.pilot-composition[aria-busy="true"] :is([data-grid-move],[data-grid-size],[data-grid-resize]){pointer-events:none;opacity:.5}
+@media print{.pilot-grid-viewport{overflow:visible;padding:0}.pilot-workspace .pilot-widget-grid[data-workspace-grid]{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));height:auto!important;min-width:0!important;background:none!important;gap:12px;align-items:start}.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget{position:relative;left:auto!important;top:auto!important;width:auto!important;grid-column:span var(--span,6)!important;height:auto!important;max-height:none;break-inside:avoid}.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{overflow:visible}.workspace-grid-help,.workspace-grid-status,.workspace-grid-preview,.workspace-grid-ghost,[data-grid-move],[data-grid-size],[data-grid-resize]{display:none!important}}

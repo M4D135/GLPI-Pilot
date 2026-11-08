@@ -1,0 +1,119 @@
+GLPI Pilot 3.2.0 — SQLite / Npgsql : provenance des licences NuGet
+
+Les versions, expressions SPDX et copyrights ci-dessous proviennent des .nuspec des
+archives NuGet utilisées. Leur SHA-512 a été comparé au cache NuGet ; le SHA-256
+permet de retrouver exactement chaque archive. La source NuGet est indiquée lorsque
+le cache la conserve. Les dépendances listées sont celles résolues pour .NET 10.
+
+Les paquets utilisent une expression de licence ; leurs archives ne contiennent pas
+tous un fichier LICENSE. Les textes complets correspondants sont fournis séparément
+depuis les sources officielles indiquées en fin de document. Les notices Microsoft
+Extensions, identiques dans les deux archives, ont été copiées sans modification.
+
+Microsoft.Data.Sqlite 10.0.13
+Licence déclarée : MIT
+Texte de référence : https://licenses.nuget.org/MIT
+Copyright du paquet : © Microsoft Corporation. All rights reserved.
+Archive SHA-256 : 15c57bde54275ed30d1273ac9691bc6d9b7e47cfbd61278cea575121ff7acd3a
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/dotnet/dotnet
+Commit déclaré : 4099f83977f4d29604a9aeb971fb0a7bc1d5f699
+
+Microsoft.Data.Sqlite.Core 10.0.13
+Licence déclarée : MIT
+Texte de référence : https://licenses.nuget.org/MIT
+Copyright du paquet : © Microsoft Corporation. All rights reserved.
+Archive SHA-256 : 661e6696b35e88a5cdceb1ac223dafa303a5af27c7df8bee22156c0ddc5ee0d7
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/dotnet/dotnet
+Commit déclaré : 4099f83977f4d29604a9aeb971fb0a7bc1d5f699
+
+Microsoft.Extensions.DependencyInjection.Abstractions 10.0.0
+Licence déclarée : MIT
+Texte de référence : https://licenses.nuget.org/MIT
+Copyright du paquet : © Microsoft Corporation. All rights reserved.
+Archive SHA-256 : f62a1d5cfdfd62a831a269ce3cec5dfe6cdb1b425f3925f3168354de8993d8fb
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/dotnet/dotnet
+Commit déclaré : b0f34d51fccc69fd334253924abd8d6853fad7aa
+
+Microsoft.Extensions.Logging.Abstractions 10.0.0
+Licence déclarée : MIT
+Texte de référence : https://licenses.nuget.org/MIT
+Copyright du paquet : © Microsoft Corporation. All rights reserved.
+Archive SHA-256 : 067860199734d47c134b1a206afabb51eab857b88c037c0f9db7d1c10e118469
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/dotnet/dotnet
+Commit déclaré : b0f34d51fccc69fd334253924abd8d6853fad7aa
+
+Npgsql 10.0.3
+Licence déclarée : PostgreSQL
+Texte de référence : https://licenses.nuget.org/PostgreSQL
+Copyright du paquet : Copyright 2025 © The Npgsql Development Team
+Archive SHA-256 : 75d0970923a8c9fcbbd37e4ebe72fee0b10362a1e36723e86777df1b6728316d
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/npgsql/npgsql
+Commit déclaré : d3768398c17877b3a916c3c4d87e8e11698991fc
+
+SQLitePCLRaw.bundle_e_sqlite3 2.1.13
+Licence déclarée : Apache-2.0
+Texte de référence : https://licenses.nuget.org/Apache-2.0
+Copyright du paquet : Copyright 2014-2024 SourceGear, LLC
+Archive SHA-256 : 89a216f8059d09cabcb45ab75ac2f180b733323c27d41cf9a981dc5f5b5c6c0f
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/ericsink/SQLitePCL.raw
+Commit déclaré : non fourni dans le paquet
+
+SQLitePCLRaw.core 2.1.13
+Licence déclarée : Apache-2.0
+Texte de référence : https://licenses.nuget.org/Apache-2.0
+Copyright du paquet : Copyright 2014-2024 SourceGear, LLC
+Archive SHA-256 : d93d5f7ab3f864c47722a2d90048c31a1aac743e153d87b9f4a07589ee2f9daf
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/ericsink/SQLitePCL.raw
+Commit déclaré : non fourni dans le paquet
+
+SQLitePCLRaw.lib.e_sqlite3 2.1.13
+Licence déclarée : Apache-2.0
+Texte de référence : https://licenses.nuget.org/Apache-2.0
+Copyright du paquet : Copyright 2014-2024 SourceGear, LLC
+Archive SHA-256 : d07d13b4779123cfa56b3348b504d57a2ab6fc10c764fb6e2c9d787987e39201
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/ericsink/SQLitePCL.raw
+Commit déclaré : non fourni dans le paquet
+
+SQLitePCLRaw.provider.e_sqlite3 2.1.13
+Licence déclarée : Apache-2.0
+Texte de référence : https://licenses.nuget.org/Apache-2.0
+Copyright du paquet : Copyright 2014-2024 SourceGear, LLC
+Archive SHA-256 : 513ef2ba5d01c14d1e8032d9d2ca2c8985df7ec7d351f0e40917476114ac1f9c
+Source cache NuGet : https://api.nuget.org/v3/index.json
+Dépôt du paquet : https://github.com/ericsink/SQLitePCL.raw
+Commit déclaré : non fourni dans le paquet
+
+Textes redistribués :
+
+Microsoft-Data-Sqlite-MIT.txt : MIT commun à Microsoft.Data.Sqlite/Core et aux
+abstractions Microsoft.Extensions. Texte officiel .NET Foundation and Contributors.
+https://github.com/dotnet/dotnet/blob/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/src/efcore/LICENSE.txt
+Même blob a616ed188dfce68ee308f674350ad242d8588c2b au commit b0f34d51fccc69fd334253924abd8d6853fad7aa.
+
+Microsoft-Extensions-ThirdPartyNotices.txt : entrée THIRD-PARTY-NOTICES.TXT extraite
+de Microsoft.Extensions.DependencyInjection.Abstractions 10.0.0 ; octets identiques
+à ceux de Microsoft.Extensions.Logging.Abstractions 10.0.0.
+
+Npgsql-PostgreSQL.txt : texte du dépôt au commit déclaré par Npgsql 10.0.3.
+https://github.com/npgsql/npgsql/blob/d3768398c17877b3a916c3c4d87e8e11698991fc/LICENSE
+
+SQLitePCLRaw-Apache-2.0.txt : texte Apache 2.0 déclaré par les quatre paquets 2.1.13.
+Le .nuspec ne fournit pas de commit source pour ces paquets. Le texte complet
+Apache 2.0 est celui du dépôt officiel, blob d645695673349e3947e8e5ae42332d0ac3164cd7,
+identique à la copie au commit public ci-dessous. Il ne constitue pas une preuve
+que le code binaire 2.1.13 a été construit depuis ce commit.
+https://github.com/ericsink/SQLitePCL.raw/blob/ca835d21508bff43121c65081035840ac5006c4c/LICENSE.TXT
+
+Empreintes des textes redistribués :
+ae48df11a335dc1a615f4f938b69cba73bcf4485c4f97af49b38efb0f216353b  Microsoft-Data-Sqlite-MIT.txt
+6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21  Microsoft-Extensions-ThirdPartyNotices.txt
+2e1d9cc6ed4eb7fe6fa82091846c06b4f58571a2c3b54777db6baeca10dd2d74  Npgsql-PostgreSQL.txt
+cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  SQLitePCLRaw-Apache-2.0.txt

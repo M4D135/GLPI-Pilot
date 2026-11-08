@@ -1,0 +1,30 @@
+.library-ticket-modal .modal-heading h2 { flex: 1; min-width: 0; }
+.library-ticket-modal .modal-heading > .button { flex: none; }
+.library-ticket-id, .library-resolution-ticket-id { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.library-resolution { display: grid; gap: 18px; }
+.library-resolution-intro { display: flex; align-items: flex-start; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: linear-gradient(120deg, var(--accent-soft), var(--surface)); }
+.library-resolution-intro > .icon { flex: none; width: 25px; height: 25px; color: var(--accent); margin-top: 2px; }
+.library-resolution-intro h3 { margin: 0 0 5px; font-size: 17px; }
+.library-resolution-intro p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.library-resolution-search { display: grid; gap: 10px; }
+.library-resolution-search-actions, .library-resolution-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.library-resolution-feedback { font-size: 13px; line-height: 1.5; }
+.library-resolution-feedback p { margin: 0 0 8px; }
+.library-resolution-source-warning { padding: 10px 12px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 9%, var(--surface)); border-radius: 6px; }
+.library-resolution-limits { color: var(--muted); font-size: 12px; }
+.library-resolution-results { display: grid; gap: 14px; }
+.library-resolution-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 12px; background: var(--surface); padding: 18px; box-shadow: var(--shadow-soft); }
+.library-resolution-card-heading { display: flex; flex-wrap: wrap; align-items: start; gap: 10px; justify-content: space-between; }
+.library-resolution-card-heading h3 { flex: 1; min-width: 180px; margin: 0; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.library-resolution-reasons { padding-left: 19px; margin: 10px 0; font-size: 13px; line-height: 1.6; }
+.library-resolution-reasons li::marker { color: var(--accent); }
+.library-resolution-observation, .library-resolution-citation { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.library-resolution-evidence { border-top: 1px solid var(--border); padding: 10px 0; }
+.library-resolution-evidence summary { color: var(--text); font-weight: 600; font-size: 13px; cursor: pointer; }
+.library-resolution-evidence blockquote { margin: 12px 0 8px; padding: 12px 14px; background: var(--surface-2); border-left: 2px solid var(--accent); border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 230px; overflow: auto; line-height: 1.6; font-size: 14px; }
+.library-resolution-card-actions { margin-top: 12px; }
+@media (max-width: 600px) {
+  .library-ticket-modal .modal-heading { flex-wrap: wrap; }
+  .library-ticket-modal .modal-heading h2 { flex-basis: 100%; }
+  .library-resolution-intro, .library-resolution-card { padding: 13px; }
+}

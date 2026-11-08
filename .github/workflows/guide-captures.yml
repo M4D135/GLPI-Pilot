@@ -1,0 +1,65 @@
+name: Guides - captures en thème clair
+# Produces the light-theme figures of the guides (guides/LIRE.md) from the existing suites, with GLPI_GUIDE_CAPTURES set.
+# Manual only, on any branch. It builds no pack and publishes nothing; the suites keep all their assertions.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  captures:
+    name: Captures des guides · Admin=${{ matrix.admin }}
+    runs-on: windows-2025
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        admin: ['false', 'true']
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Suites WebView avec copies claires pour les guides
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'No Chromium browser on the runner.' }
+          $env:GLPI_TEST_CHROMIUM = $browser
+          New-Item -ItemType Directory -Path artifacts/guide-captures -Force | Out-Null
+          foreach ($suite in @('--library-only', '--library-workflows-only', '--data-source-workflow-only', '--offline-import-only', '--workspace-grid-only')) {
+            $env:GLPI_GUIDE_CAPTURES = Join-Path $PWD "artifacts/guide-captures/light/$suite"
+            dotnet run --project tests/WebViewChecks/WebViewChecks.csproj -c Release -p:PlaywrightPlatform=win -p:PilotAdmin=${{ matrix.admin }} -- $suite --screenshots "artifacts/guide-captures/tested/$suite" 2>&1 | Tee-Object "artifacts/guide-captures/$suite.log"
+            if ($LASTEXITCODE -ne 0) { throw "Guide capture suite failed: $suite" }
+          }
+      - name: Modules de production (préparation, actions assistées)
+        if: matrix.admin == 'false'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build tests/WorkplaceBridgeChecks/WorkplaceBridgeChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/guide-captures/bridge-build.log
+          if ($LASTEXITCODE -ne 0) { throw 'Playwright driver build failed.' }
+          $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $env:GLPI_TEST_CHROMIUM = $browser
+          $driver = Join-Path $PWD 'tests/WorkplaceBridgeChecks/bin/Release/net10.0/.playwright'
+          $node = Join-Path $driver 'node/win32_x64/node.exe'
+          $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+          $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/guide-captures/tested/ergonomics'
+          $env:GLPI_GUIDE_CAPTURES = Join-Path $PWD 'artifacts/guide-captures/light/ergonomics'
+          & $node tests/ErgonomicsChecks/run.cjs 2>&1 | Tee-Object artifacts/guide-captures/ergonomics.log
+          if ($LASTEXITCODE -ne 0) { throw 'Ergonomics checks failed.' }
+      - name: Recadrer les figures des guides déclarées dans guides/figures.json
+        # Top-left crops at the declared sizes; captures that only the complete qualification produces are listed as absent.
+        run: node guides/crop_figures.js --captures artifacts/guide-captures/light --out artifacts/guide-captures/figures
+      - name: Conserver les captures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: guide-captures-${{ matrix.admin }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/guide-captures/
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,0 +1,1484 @@
+GLPI Pilot 3.10.2 — Actualisation, aperçu du référentiel et données privées
+Contrôles du 26 octobre 2026 avant qualification des archives Windows
+
+CHANGEMENTS
+- Actualiser dans Interventions recharge la vue active sans rejouer un lien
+  d’ouverture du référentiel. L’onglet, la date et les filtres sont conservés.
+  La carte garde recherche, lieu, cadrage et sélection compatible avec la
+  révision courante ; un changement de relevé invalide les anciennes cases.
+- Le brouillon d’intervention reste ouvert. Tournées conserve sa confirmation
+  avant de recharger les champs non appliqués. Les lectures annulées et les
+  anciens montages ne doivent pas remplacer la nouvelle vue affichée.
+- L’aperçu du référentiel accepte les anciennes corrections sans date et les
+  observations sans disposition de dashboard. Une date absente reste inconnue.
+  Son empreinte utilise les correspondances et corrections réellement lues
+  avant le calcul. Token, révision, brouillon et référentiel restent contrôlés.
+- Le catalogue propre à l’organisation et ses sources sont retirés du dépôt
+  courant ; sa publication automatique est arrêtée. Les importateurs, la
+  fusion conservatrice, les patchs et les fichiers locaux restent disponibles.
+  Les exemples et notices du nouveau pack utilisent des données génériques.
+
+PREUVES LOCALES ACQUISES
+- Reproduction du mauvais rafraîchissement sur les sources web 3.10.1, puis
+  parcours corrigé WebView : Standard 17/17 et Admin 17/17, avec moteur C# réel.
+  CSV, cache sans fichier d’origine, recherche, filtres, sélection, cadrage,
+  brouillons, réponses retardées pendant navigation et démo isolée contrôlés.
+  Aucun appel de collecte ni requête externe dans ces fixtures synthétiques.
+- Calendrier existant : 32/32. Corrections de sites après anonymisation des
+  fixtures : 15/15. Référentiel cache/archive/relevé courant : 18/18.
+- Deux causes de l’aperçu périmé reproduites avant correction ; 54/54 contrôles
+  ciblés réussis. Ils font partie des 245/245 de TerrainBridge. Détection et
+  import/fusion génériques : 113/113. Les vrais changements de contexte sont
+  refusés sans appliquer un ancien résultat ni perdre le brouillon.
+- Compilation croisée de l’application Windows : zéro avertissement et erreur.
+  Cette compilation ne remplace pas l’exécution native Windows du pack publié.
+- Revue des appels, annulations, durées de vie des enfants et entrées utilisées
+  pour l’empreinte. Dates anciennes non inventées ; nouvelles corrections
+  horodatées au moment réel de leur enregistrement.
+
+RETRAIT DES COMPLÉMENTS PERSONNELS
+Le commit 581e145ab4d4046a4311368aebc40e5474ebbc5e et le workflow 40294222847
+ont retiré 27 pièces jointes de 9 releases. Chaque suppression a été suivie
+d’un HTTP 404. Une nouvelle lecture des 25 releases confirme leur absence et
+la conservation exacte des 75 autres pièces jointes. Les 176 artefacts Actions
+inventoriés ne contenaient aucun des trois noms ciblés. Les notes historiques
+à assainir font l’objet d’un plan distinct, limité à six corps de texte avec
+empreintes avant/après et contrôle des autres champs et fichiers.
+Ce retrait ne purge pas les anciens commits, tags ou notices déjà embarquées
+dans d’anciens packs. Aucun ancien exécutable n’est remplacé sous son numéro.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. La livraison 3.10.2
+exige les suites Windows et PostgreSQL de son commit, les parcours Actualiser
+Standard/Admin, les démarrages natifs, le PDF 16:9, les mises à jour et retours
+arrière, ainsi que la reconstruction DEV. Les fichiers réellement publiés sont
+retéléchargés et vérifiés : deux ZIP Windows et SHA256SUMS.txt, sans complément
+de données Sites. Le commit dans wad/version.json et les journaux CI sont la
+preuve finale. Aucun portail GLPI privé ni SSO réel n’est utilisé dans les tests.
+
+HISTORIQUE DES LOTS PRÉCÉDENTS (NON PREUVE DE LA VERSION 3.10.2)
+Les anciennes mentions de publication Sites ci-dessous décrivent l’historique.
+Ces compléments ne sont plus fournis sur GitHub depuis leur retrait explicite.
+===================================================================
+
+GLPI Pilot 3.10.1 — Collecte GLPI prioritaire et configuration par défaut dans wad
+Contrôles du 26 octobre 2026 avant qualification des archives Windows
+
+CHANGEMENTS
+- Données ouvre en premier la collecte GLPI, avec une action principale visible.
+  L’import CSV / Excel reste accessible ; la provenance et la date du relevé
+  affiché restent explicites, y compris pour un fichier ou une copie hors ligne.
+- « Collecter plusieurs recherches » prépare les recherches mémorisées avant
+  le lancement. Aucune sélection vide n’est envoyée au moteur. Le choix est
+  enregistré sans remplacer les autres préférences et sert aussi à la collecte
+  groupée programmée. Une révision périmée est refusée.
+- Le bilan présente les réussites, les résultats à vérifier et les échecs.
+  Les recherches ne sont pas fusionnées. Après annulation ou fermeture, la vue
+  est actualisée avant de préparer une nouvelle collecte. En démonstration,
+  les recherches sont réellement parcourues dans le seul espace fictif.
+- Le défaut du pack est généré dans wad/GLPI-Pilot.deployment.json. Ce chemin
+  est prioritaire au démarrage ; l’ancien fichier racine reste reconnu si le
+  nouveau est absent, sans déplacer ni modifier le fichier historique.
+- Contrôle des révisions et des octets avant application ou remplacement ;
+  sauvegarde du défaut existant dans wad, refus des conflits et conservation
+  des droits Standard/Admin et de l’isolation de la démonstration.
+- L’assistant de mise à jour 3.10.1 préserve le défaut local pendant le
+  remplacement de wad et le retour arrière. Les archives et leurs manifestes
+  officiels restent intacts. Un changement concurrent bloque la préparation.
+- Les données géographiques restent identiques à 3.10.0 : 26 sites, 13 communes,
+  codes postaux, alias et source v3.4 conservés. Les notices suivent le nouveau
+  chemin de configuration, contrôlé avec l’importateur C# réel.
+
+PREUVES LOCALES ACQUISES
+- Parcours Données WebView : Standard 29/29 et Admin 29/29. Moteur C# réel
+  pour les recherches enregistrées, les conflits, l’import CSV, la copie hors
+  ligne et l’exécution groupée en simulation. Les cas d’échec total et de délai
+  d’annulation de l’interface utilisent des réponses contrôlées explicites.
+  Annulation après mutation réelle de la révision, nouvelle préparation et
+  reprise réussie ; réglages du profil réel conservés octet pour octet.
+  Captures claires et sombres examinées, aucune erreur JavaScript ni requête
+  externe dans ces parcours isolés. Un CSV réel simulé reste identifié comme tel.
+- Mises à jour : 46/46, dont conservation du défaut dans wad, changement
+  concurrent, conflit avec un défaut du pack et retour arrière conservateur.
+- Déploiement WebView : 24/24 ; référentiel et relevé conservé : 18/18.
+  Les captures de génération, d’aperçu et de reprise ont été examinées.
+- Complément distribué : 20/20 avec le véritable importateur C#, 11/11 Python.
+  Le CSV et la source v3.4 conservent leurs empreintes de la version précédente.
+- Compilation croisée de l’application Windows : zéro erreur et avertissement.
+  Elle ne remplace pas l’exécution native Windows.
+- Revue croisée de la sélection, de ses révisions, de la simulation, des chemins
+  de déploiement et de la préservation du défaut lors des mises à jour.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. Le résultat final du
+commit inscrit dans wad/version.json, les journaux Windows/PostgreSQL et les
+empreintes des fichiers réellement publiés constituent la preuve de livraison.
+La CI exige tous les contrôles moteurs et WebView, dont le nouveau parcours
+Données Standard/Admin, les fonctions de météo, de présentation et de sites,
+la reconstruction DEV hors Git, les démarrages natifs, le vrai PDF WebView2
+16:9 et les mises à jour avec un JSON de défaut réellement importable dans wad.
+La release est publiée après réussite Windows et PostgreSQL ; le complément
+des sites attend cette release du même commit et vérifie ses téléchargements.
+Aucun ancien exécutable publié n’est remplacé. Les essais utilisent des sources
+synthétiques et une démonstration isolée, sans connexion SSO privée réelle.
+
+HISTORIQUE DES LOTS PRÉCÉDENTS (NON PREUVE DE LA VERSION 3.10.1)
+===================================================================
+
+GLPI Pilot 3.10.0 — Diapos libres, corrections de sites et animations discrètes
+Contrôles du 25 octobre 2026 avant qualification des archives Windows
+
+CHANGEMENTS
+- Éditeur de diapos 16:9 : plusieurs widgets par page, placement libre,
+  redimensionnement, réglages numériques, duplication, ordre et annuler/rétablir.
+  Composition enregistrée avec le tableau et conservée en configuration,
+  export/import, défaut, espace personnel, cache et démonstration isolée.
+- Projection et PDF reprennent le même calcul et la même géométrie. Source,
+  date, recherche, filtres et réserves restent visibles ; un contexte long
+  reçoit des pages dédiées après les diapos. HTML/CSV/Excel gardent les données
+  détaillées des seuls widgets sélectionnés.
+- Corrections individuelles et groupées directement dans la carte et ses
+  tableaux de localisation : choix d’un site enregistré, modification et retrait.
+  Identifiants uniques et source vérifiés ; lot atomique, révision et référentiel
+  revérifiés avant écriture. Carte, tableau, requêtes et exports cohérents.
+- Corrections persistantes sans CSV d’origine et après nouveau processus.
+  Vue dérivée du cache sans réécrire le relevé capturé ni recalculer les autres
+  tickets avec les nouveaux alias. Archives explicites en lecture seule.
+  Retrait mémorisé, références capturées conservées, partage et démo isolée.
+- Animations uniquement dans Réglages : anneaux décoratifs remplacés par un
+  reflet de bord discret et un relief au survol. Météo utile conservée ; pause
+  hors écran, réduction des mouvements et contraste renforcé respectés.
+- Tous les codes postaux des 13 communes présents dans le CSV des sites,
+  recoupés avec l’API géographique officielle ; fusion des champs vides sans
+  effacer les personnalisations. Noms, alias, parents et source v3.4 conservés.
+
+PREUVES LOCALES ACQUISES
+- AnalyticsBridge C# complet : 285/285, dont 36 contrôles de composition.
+- Configuration : 66/66 ; DashboardLayout : 46/46.
+- TerrainBridge complet : 191/191, dont 46 nouveaux contrôles de correction,
+  consommateurs réels, cache sans fichier original et reprise dans un nouveau
+  processus OS. Cellules source et octets du cache/archive restent identiques.
+- CityDetection : 113/113 ; SharedBusiness : 23/23 ; RuntimeSession : 149/149.
+- WebView météo : Standard 27/27 et Admin 27/27, avec moteur C# réel,
+  cache après suppression du CSV, export PDF/HTML et démo isolée.
+- WebView correction : Standard 15/15 et Admin 15/15, dont reconnaissance par alias,
+  lot sélectionné, changement/retrait, cache, conservation de la recherche et
+  des filtres, refus d’une préparation périmée sans écriture partielle.
+- WebView présentation : 29/29 ; déplacement et redimensionnement réels,
+  sauvegarde, concurrence, reprise hors ligne et exports effectifs.
+  PDF ordinaire : deux pages 320 x 180 mm pour deux diapos. Rendu Poppler
+  examiné ; source, filtres et réserves extraits de chaque page. Les 300 marqueurs
+  du contexte long sont tous présents dans le texte du PDF réellement produit.
+- WebView animations : 34/34 ; aucune commande répétée sur Accueil/Pilotage/
+  présentation. Captures claires et sombres examinées. Aucune erreur JavaScript
+  ni requête externe dans les parcours synthétiques vérifiés.
+- Complément distribué : 20/20 avec le véritable importateur C#, 11/11 Python.
+  Les listes de codes postaux restent présentes après import et réimport.
+- Compilation de l’application Windows : zéro erreur et zéro avertissement.
+  Cette compilation croisée ne remplace pas l’exécution native Windows.
+- Source v3.4 inchangée, SHA-256 :
+  ae997c37e5ddce92cd7bec8b5616930c2f128f598d68894d9f78c9cd58ebd4b4
+- Revue croisée du backend, de l’interface, des packs et de la publication.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. Le résultat final du
+commit inscrit dans wad/version.json, les journaux Windows/PostgreSQL et les
+empreintes des fichiers réellement publiés constituent la preuve de livraison.
+La CI exécute les moteurs, les parcours WebView Standard/Admin, la reconstruction
+DEV hors Git, les démarrages natifs, l’import CSV et le vrai PDF WebView2 16:9,
+les mises à jour et le retour arrière. Les contrôles natifs utilisent uniquement
+les dialogues du processus isolé ; aucun contournement de production n’est ajouté.
+La release est publiée après réussite Windows et PostgreSQL ; les sites du
+même commit attendent cette release et vérifient leurs fichiers retéléchargés.
+Les anciennes releases publiques et leurs exécutables ne sont pas remplacés.
+Aucune session SSO privée ni donnée de ticket réelle n’est utilisée dans les
+fixtures. La précision des sites reste documentée dans SOURCES-SITES.md ; les
+horaires publics ne décrivent pas l’accès technique. Les packs ne sont pas
+signés sans certificat.
+
+HISTORIQUE DES LOTS PRÉCÉDENTS (NON PREUVE DE LA VERSION 3.10)
+===================================================================
+
+GLPI Pilot 3.9.0 — Seuils par sélection, pourcentages et sites vérifiés
+Contrôles du 25 octobre 2026 avant qualification des archives Windows
+
+CHANGEMENTS
+- Seuils météo dans chaque carte compatible, en valeur absolue ou pourcentage.
+  Exception d’une sélection exacte prioritaire sur une règle % réutilisable.
+- Identité du périmètre calculée en C# : source, recherche, groupes, dates,
+  filtres communs et widget, exclusions, sous-catégories, technicien, requêtes
+  et interprétation. Ordre des ensembles indifférent ; autre portée distincte.
+- Bases proposées depuis les colonnes disponibles, avant filtres du widget ;
+  numérateur, dénominateur et ratio explicites. Zéro, absence et incompatibilité
+  restent inconnus ; pas de transformation d’une durée ni de double division.
+- Sélection et seuils mémorisés dans la configuration, cache restauré sans CSV,
+  import/export/default, présentation et exports, Standard/Admin et démo isolée.
+- Prise en charge d’un complément géographique vérifié. Les données propres
+  à l’organisation sont désormais retirées du dépôt courant et restent locales.
+- Fusion=Completer préserve identités, parents, champs locaux et alias.
+  Adresse et coordonnées ne sont pas combinées si leur correspondance manque.
+  Export historique à 21 colonnes et patchs sites v1 conservés.
+- Source v3.4 identique ; archive sites autonome avec les deux sources et notices.
+  Publication sites après les packs Windows du même commit, données immuables
+  sous un numéro donné. Aucun ancien exécutable remplacé.
+
+PREUVES LOCALES ACQUISES
+- Configuration : 66/66 ; Foundation : 37/37 ; DashboardLayout : 46/46.
+- AnalyticsBridge C# complet : 249/249 après les derniers correctifs.
+- Météo C# ciblée : 49/49, dont ordre des filtres, opérateurs, sources,
+  modification de requêtes et de référentiel, bases avant filtres du widget,
+  source partielle, base vide, export/import, défaut et isolation démo.
+- WebView Standard : 27/27 en 30,24 s ; Admin : 27/27 en 25,39 s.
+  Vrai moteur C#, Chromium, redémarrage du runtime, nouveau profil navigateur
+  sans stockage local, suppression du CSV d’origine, exports HTML/PDF réels,
+  présentation et sortie de démo. Captures du panneau et du cache examinées.
+- Référentiel villes/sites : 112/112, dont rapprochement, idempotence, ambiguïtés,
+  conservation des champs, paire de coordonnées et compatibilité des patchs.
+- Complément distribué : 20/20 contrôles avec NativeCsvImportService,
+  CityReferenceService, initialiseur v3.4, export et application du défaut sur
+  profil neuf ; 11/11 tests Python, ZIP reproductible et contenu vérifié.
+- Empreinte inchangée de la source v3.4 :
+  ae997c37e5ddce92cd7bec8b5616930c2f128f598d68894d9f78c9cd58ebd4b4
+- Revue croisée des portées, dénominateurs, mini-historiques, exports, démo,
+  fusion des sites et coordination des workflows. Les défauts concrets de
+  signature géographique et de paire adresse/coordonnées ont été corrigés.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. Le résultat final du
+commit inscrit dans wad/version.json, les journaux Windows/PostgreSQL et les
+empreintes des fichiers réellement publiés constituent la preuve de livraison.
+La CI exige les moteurs, les parcours WebView Standard/Admin, la reconstruction
+DEV hors Git, les démarrages natifs, les mises à jour et le retour arrière.
+Les essais portables locaux ne prouvent pas l’exécution native Windows.
+Le workflow des sites relit le CSV avec l’importateur C# puis télécharge et
+vérifie les trois pièces jointes après publication. Les deux packs Windows,
+leurs notes et leurs empreintes sont conservés.
+Aucune session SSO privée, donnée de ticket réelle ou base utilisateur n’a été
+utilisée dans les contrôles synthétiques. La précision des points de sites
+est détaillée dans SOURCES-SITES.md ; les horaires techniques ne sont pas déduits
+des horaires publics. Les packs ne sont pas signés sans certificat.
+
+HISTORIQUE DES LOTS PRÉCÉDENTS (NON PREUVE DE LA VERSION 3.9)
+===================================================================
+
+GLPI Pilot 3.8.0 — Configuration par défaut et diffusion des postes
+Contrôles du 25 octobre 2026 avant qualification finale des archives Windows
+
+CHANGEMENTS
+- Définir comme configuration par défaut depuis le logiciel du dossier PROD :
+  toutes les options écrites à côté des EXE, ancien défaut sauvegardé dans AppData.
+- Profil neuf initialisé avant chargement ; profil existant conservé avec
+  proposition et comparaison complète avant remplacement, choix mémorisé
+  pour la version et le SHA-256 du fichier fourni.
+- Import/export manuels complets, sauvegarde réimportable et transaction avec
+  reprise contrôlée après interruption. Les données locales restent distinctes.
+- Préférences secondaires couvertes : connexion publique, confiance des mises
+  à jour, assistant, météo/itinéraires, formulaires, lecture, règles d’alerte,
+  tableaux, techniciens et ordre des tournées. Secrets protégés non exportés.
+- L’import invalide les brouillons anciens et connexions en mémoire. Le
+  référentiel explicite ne reçoit plus le CSV d’initialisation implicite du pack.
+- Droits Standard/Admin inchangés ; diffusion des données fictives bloquée.
+- Les fonctions 3.7 de réunion/PDF, cache et animations sont reprises intégralement.
+
+PREUVES LOCALES ACQUISES
+- Configuration complète : 19/19 scénarios moteur finaux, dont 165 mutations
+  de valeurs nulles au premier lancement sans exception non gérée.
+- Runtime complet avec Chromium : 147/147 avant les derniers scénarios de refus
+  des anciens brouillons et de JSON malformé ; 149 scénarios présents dans la suite finale CI.
+- Interface complète de déploiement : 24/24, dont bouton défaut, sauvegarde,
+  aperçu de 3 848 options, dernier site de 65 entrées recherchable, refus d’un
+  fichier/contexte modifié, restauration et choix Garder après relancement.
+- WebView général : 131/131 ; animations : 31/31 après intégration de l’écran.
+- Configuration partielle : 66/66, compatibilité 3.8 et refus futur 3.9.
+- Harness natif étendu pour profil neuf, application avant bootstrap, maintien
+  des choix sur relancement et refus Standard. Compilation seule sur Mac ;
+  l’exécution native et les packs finaux restent qualifiés par la CI Windows.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. Le résultat final du
+commit inscrit dans wad/version.json et les empreintes exactes des archives
+figurent dans les preuves de livraison. La publication exige tous les moteurs,
+parcours WebView, PostgreSQL, reconstruction DEV, démarrage Standard/Admin,
+application initiale de configuration, mise à jour et retour arrière Windows.
+Aucune base réelle de l’utilisateur n’a été remise à zéro pendant ces tests.
+SSO privé, droits SMB d’entreprise et matériel physique restent à vérifier
+sur l’environnement concerné. Les packs ne sont pas signés sans certificat.
+
+HISTORIQUE DES LOTS PRÉCÉDENTS (NON PREUVE DE LA VERSION 3.8)
+===================================================================
+
+GLPI Pilot 3.7.0 — Réunions, exports sélectionnés et dernières données hors connexion
+Contrôles du 25 octobre 2026 avant qualification des archives Windows
+
+CHANGEMENTS
+- Choix et ordre des chiffres clés, graphiques et tableaux en présentation.
+- Exports HTML autonome, PDF A4 paysage, CSV/Excel limités à cette sélection ;
+  tableaux complets, filtres et provenance, aucune annexe cachée des blocs omis.
+- Dernier import/relevé réel restauré au redémarrage sans fichier ni connexion ;
+  contexte d’interprétation, localisations, qualité et historique conservés.
+- Deux générations locales contrôlées, secours préservé après corruption,
+  démonstration isolée et effacement ciblé confirmé.
+- Présentation : références SVG propres aux clones, météo animée même si la
+  carte d’origine est hors écran, chiffres et commandes stables.
+- Activation globale explicite des animations Domenia lorsque Windows les
+  suspend ; le choix Réduites reste respecté et les préférences sont conservées.
+
+PREUVES LOCALES ACQUISES
+- RuntimeSessionChecks : 130/130 ; cache ciblé final : 11/11.
+- FoundationChecks : 37/37 ; AnalyticsChecks : 39/39.
+- AnalyticsBridge complet final : 296/296 ;
+  exports de réunion ciblés finaux : 32/32, dont véritable HTML/PDF Chromium,
+  75 lignes, 16 types de blocs, données absentes et cache sans original.
+- WebView général : 131/131 ; vues métier : 69/69 ; animations : 31/31.
+- Présentation finale : 23/23 avec activation globale mémorisée ;
+  cache UI : 11/11. La CI exécute les suites finales présentes dans le DEV.
+- Configuration : 66/66 ; compilation Windows du changement PDF sans avertissement.
+- Capture animée issue de 40 captures réelles, mouvement soleil/nuages/pluie
+  mesuré entre deux instants, nombres et zones cliquables stables.
+
+QUALIFICATION DES PACKS
+Les résultats locaux ne remplacent pas le workflow du commit inscrit dans
+wad/version.json. Ce workflow doit réussir les moteurs, l’interface finale,
+PostgreSQL, les packs, la reconstruction DEV, le démarrage Standard/Admin,
+le remplacement réel et le retour arrière Windows avant publication.
+Ce rapport est embarqué avant le workflow ; son résultat final et les SHA-256
+exacts figurent dans la livraison et les preuves de CI associées au commit.
+Aucune base réelle de l’utilisateur n’a été remise à zéro pendant ces tests.
+SSO privé, droits SMB d’entreprise et matériel physique restent à vérifier
+sur l’environnement concerné. Les packs ne sont pas signés sans certificat.
+
+HISTORIQUE DES LOTS PRÉCÉDENTS (NON PREUVE DE LA VERSION 3.7)
+===================================================================
+
+GLPI Pilot 3.6.0 — Sources, administration et diffusion réseau
+Contrôles du 25 octobre 2026 avant qualification des archives Windows
+
+CHANGEMENTS
+- Source CSV/Excel réelle, détails absents bloqués aussi dans le moteur.
+- Démonstration isolée : 60 tickets complets, 6 techniciens, calendrier et tournées.
+- Deux lanceurs compilés Standard/Admin, ressources communes ; retrait Admin
+  conservé par la mise à jour et le retour arrière.
+- Partage réseau de diffusion : sélection PROD, copie locale et SHA-256,
+  contrôle de provenance, installation transactionnelle existante.
+- Patch indépendant de sites : Id stables, comparaison paginée avant/après,
+  sauvegarde restaurable, contexte et octets revérifiés avant application.
+- Maintenance SQLite avec sauvegarde cohérente et confirmation liée au bilan ;
+  préparation PostgreSQL réservée Admin, compte technique sans pouvoirs DDL.
+- Surfaces contenant des boutons/liens stabilisées pendant les animations :
+  correction du clic perdu constaté en démarrage natif de la tentative 3.5.1.
+
+PREUVES LOCALES ACQUISES
+- RuntimeSessionChecks : 116/116 avec navigateur Chromium réel et fixtures isolées.
+- UpdateChecks : 40/40, dont partage réseau simulé par dossier local et deux EXE.
+- Patchs sites : 11/11 ciblés, dont sauvegarde restaurée, rejeu et encodage
+  réversible des textes (+33, formules littérales, apostrophes) et listes
+  dont un alias contient un séparateur | ou ;.
+- Interface partage et patchs : 17/17 avec pont C# réel, hors réseau externe.
+- AdministrationChecks : 8/8 locaux, SQLite réellement remise à zéro sur fixtures.
+- Interface Standard : 6/6 ; interface Admin : 8/8 avec sauvegarde relue.
+- Mouvement : 31/31, dont clic sur formulaire et navigation Home durant l’entrée.
+- Deux harness Windows compilés ; deux EXE publiés par compilation croisée.
+  Ce dernier contrôle ne prouve pas leur exécution native.
+- Les suites locales déjà obtenues sur les changements source fichier/démo
+  incluent le parcours WebView complet 131/131, import84/84, calendrier32/32.
+
+QUALIFICATION DES PACKS
+Le workflow Windows/PostgreSQL du commit inscrit dans wad/version.json est
+la preuve finale : moteur, UI, préparation PostgreSQL réelle, deux packs,
+reconstruction DEV hors Git, démarrage natif Standard/Admin et update/rollback.
+Les archives ne sont publiées qu’après tous ces contrôles. Ce rapport embarqué
+est rédigé avant leur exécution ; consulter le run et le rapport de livraison
+pour le résultat final et les SHA-256 des archives effectivement diffusées.
+La tentative 3.5.1 caca95de a construit les packs mais échoué au clic natif
+Charger des données ; elle n’a pas publié de Release. La version3.6 inclut
+la correction et soumet de nouveau le parcours Windows complet à la CI.
+
+LIMITES
+Aucune base ni partage réel de l’utilisateur modifié. Données fictives uniquement.
+Les essais SMB/droits d’entreprise, SSO réel et matériel physique restent propres
+à cet environnement. Authenticode requiert un certificat fourni ; sans certificat,
+les packs indiquent NotConfigured. Une empreinte seule ne certifie pas l’éditeur.
+Premier passage depuis <3.6 : extraction manuelle dans un nouveau dossier car
+l’ancien vérificateur refuse le nouveau contrat à deux EXE.
+
+HISTORIQUE DES QUALIFICATIONS ANTÉRIEURES (NON PREUVE DE LA VERSION 3.6)
+===================================================================
+
+GLPI Pilot 3.5.1 — Identité simple et animations Domenia
+Contrôles locaux du 25 octobre 2026, avant qualification du pack Windows
+
+PORTÉE DU PATCH
+- Bouton d’identité commun aux écrans et carte visible sur l’Accueil.
+  Recherche dans les identités des données et du planning ; sélection
+  explicite « C’est moi » ou saisie d’un nom dans un seul champ.
+- Choix personnel persistant, modifiable ou retirable sans suppression
+  des interventions et des participants. Simulation séparée du profil.
+- Conservation de l’écran courant et de la date du planning ; le choix
+  demandé par « Mes tickets » est suivi de son filtre personnel.
+- Les valeurs non appliquées des réglages sont signalées avant le
+  changement d’identité. Refuser conserve la saisie ; les valeurs
+  déjà appliquées ne provoquent pas d’avertissement supplémentaire.
+- Réutilisation des clés exactes et des correspondances univoques ;
+  normalisation de la casse et des espaces pour les nouvelles saisies.
+  Les anciennes identités manuelles ne sont pas fusionnées implicitement.
+- Aucun nouveau compte, rôle, mot de passe ou accès à un annuaire.
+- Commande Animations sur l’Accueil, avec aperçu réel et choix immédiat
+  Expressives / Suivre Windows / Réduire, conservé après redémarrage.
+- Orbes, anneau et parallaxe raccordés au véritable en-tête d’Accueil ;
+  apparitions en cascade avec déplacement, reflets et halo au pointeur,
+  tracé initial des courbes. Les décors reviennent après remplacement
+  du contenu sans rejouer les entrées ni multiplier les éléments.
+- Les valeurs métier, tableaux, cartes et contrôles de déplacement
+  gardent leur géométrie ; les modes réduits, contrastes, saisies et
+  pauses hors écran restent pris en compte. L’aperçu des Réglages
+  montre le mode appliqué, même si le formulaire contient un brouillon.
+
+VALIDATIONS LOCALES 3.5.1
+- CalendarBridgeChecks : 51/51 réussis, dont les contrôles d’identité,
+  persistance, correspondances, participants existants et simulation.
+- Identité WebView : 19/19, code de sortie 0, quatre captures. Choix,
+  ajout, retrait, persistance, simulation et contexte conservé contrôlés.
+  Dans Réglages, refuser le changement conserve le zoom non appliqué ;
+  accepter abandonne ce brouillon. Appliquer les valeurs retire ensuite
+  l’avertissement de saisie non enregistrée.
+- Calendrier WebView : 32/32, code de sortie 0, avec captures ; le choix
+  d’identité conserve les scénarios et la date du planning.
+- Navigation WebView : 24/24, code de sortie 0, avec captures.
+- Parcours WebView complet : 129/129, code de sortie 0, avec captures.
+- Palette : 15/15, code de sortie 0, avec captures. Le catalogue
+  comporte huit actions, dont une seule commande de choix d’identité.
+- Compilation du harnais WebView : 0 avertissement et 0 erreur.
+
+REQUALIFICATION APRÈS AJOUT DU MOUVEMENT VISIBLE
+- Mouvement WebView : 29/29, code de sortie 0, 25 captures, dont
+  14 scénarios nouveaux et les 15 contrôles continus déjà présents.
+  Horloges, matrices, pixels et états de pause réels sont mesurés.
+  Le profil neuf, la réduction demandée par Windows, le choix explicite
+  Expressives, sa persistance, l’aperçu appliqué et la restauration des
+  décors après recalcul sont contrôlés sans changer les valeurs métier.
+  Le tracé Pareto utilise les vrais 24 tickets synthétiques et garde
+  ses volumes 12/8/4 ainsi que ses seuils 6/4 pendant l’animation.
+- Identité WebView : 19/19, code de sortie 0, quatre captures, rejoués
+  sur l’interface animée ; contexte, brouillons et simulation conservés.
+- Navigation WebView : 24/24, code de sortie 0, quatre captures.
+- Parcours WebView complet : 129/129, code de sortie 0, rejoué sur ce
+  même build avec captures ; imports, formulaires, cartes, notes en
+  attente d’enregistrement et transitions de contexte conservés.
+- Compilation du même harnais : 0 avertissement et 0 erreur.
+- Syntaxe des 58 modules JavaScript et git diff --check : réussis.
+
+PREMIÈRE QUALIFICATION WINDOWS ET CORRECTION DU HARNAIS
+Le premier workflow du commit e8301cd2e89b93b16839058dac7db6572befbeef
+a été arrêté pendant la préparation d’une capture de navigation : une
+notification avait expiré entre son repérage et le clic sur Fermer.
+Les validations métier déjà exécutées, dont Identité 19/19, le parcours
+complet 129/129 et les deux contrôles PostgreSQL réels, étaient réussies.
+Cette tentative n’a construit ni publié de pack 3.5.1.
+La préparation des captures ferme maintenant les notifications encore
+présentes dans une seule opération DOM, par leur vrai gestionnaire
+Fermer, et exige leur disparition. Aucun élément n’est supprimé de
+force et aucune exception du parcours n’est ignorée. Les scénarios
+de navigation et de mouvement ont ensuite terminé avec code 0.
+La nouvelle livraison doit encore franchir le workflow entier.
+
+DEUXIÈME QUALIFICATION WINDOWS ET CORRECTION PRODUIT
+Le workflow 40170300126 du commit d883a563 a réussi les contrôles
+métier, PostgreSQL, WebView, la construction et l'intégrité des deux
+packs ainsi que les 5/5 contrôles de reconstruction DEV. Il a échoué
+pendant le démarrage natif du pack PROD : le clic sur Lectures ciblées
+n'a pas changé la case. Aucun pack 3.5.1 n'a été publié par ce run.
+La cause a été reproduite dans Chromium avec le formulaire et les
+styles réels : arrêter l'entrée sur pointerdown déplaçait la case
+de 18,25 pixels avant le clic. Les surfaces contenant des formulaires
+ou contrôles de saisie conservent maintenant leur géométrie pendant
+l'entrée ; les effets décoratifs restent présents. Le même clic
+réussit après correction avec un déplacement mesuré nul.
+Un nouveau scénario WebView immobilise l'horloge de l'entrée à son
+premier instant et clique réellement sur la case des Réglages ; il
+exige aussi une géométrie inchangée et un choix encore non appliqué.
+Le workflow exige désormais 30 contrôles de mouvement. Le test natif
+de démarrage reste inchangé ; sa réussite et celle du workflow complet
+restent nécessaires avant publication.
+
+QUALIFICATION DE LA LIVRAISON
+Ce rapport consigne les contrôles locaux avant construction. La
+qualification native du pack est fournie par le workflow du commit
+indiqué dans wad/version.json.
+La publication exige les jobs Windows et PostgreSQL, les parcours WebView,
+le démarrage du pack extrait, la mise à jour et le retour arrière,
+l’intégrité PROD/DEV et la reconstruction depuis les sources DEV.
+Les résultats de 3.5.0 ci-dessous restent ceux de cette version ; ils
+ne constituent pas une validation automatique des changements de 3.5.1.
+Les données des contrôles sont synthétiques. Aucun compte GLPI réel,
+annuaire d’entreprise ou serveur SMB privé n’est qualifié par ces tests.
+
+ARCHIVE — VÉRIFICATIONS 3.5.0
+GLPI Pilot 3.5.0 — Calendrier commun et partage entre postes
+Contrôles locaux des 24 et 25 octobre 2026, avant publication du pack Windows
+
+PORTÉE
+- Interface commune : Accueil, Tickets, Interventions et Pilotage ;
+  Données et Réglages dans les accès utilitaires. L’identité déclarée
+  sert aux filtres personnels ; elle ne crée pas un rôle ni un compte.
+- Calendrier durable : interventions libres ou liées à plusieurs
+  tickets, participants, vues jour/semaine/ressources/mois/agenda,
+  récurrences et exceptions, fuseaux, déplacements, annulation,
+  contraintes, créneaux proposés, rappels locaux, carte et exports.
+- Partage facultatif local/dossier/PostgreSQL. Copies et index SQLite
+  strictement locaux, journal commun fermé, file durable, reprise,
+  révisions et comparaison explicite des modifications concurrentes.
+- Configuration métier, sites et détection, tournées, ressources,
+  répartition, corrections, relevés avec leurs 19 colonnes source et
+  bibliothèque recueillie. Identités et données privées restent locales.
+- Les périmètres GLPI vérifiés restent distincts derrière une même URL.
+  Le suivi d’un relevé partagé respecte une autre source choisie ensuite.
+  Les seuils reçus recalculent le relevé ouvert sans publier ses colonnes
+  cartographiques dérivées comme des colonnes de la source originale.
+- Simulation isolée : les répliques simulées ne contactent pas le dossier
+  réseau réel ni le serveur configuré et ne notifient pas le système.
+
+VALIDATIONS LOCALES 3.5.0
+- CalendarChecks : 52/52, dont récurrences, exceptions, identité stable,
+  changements d’heure, contraintes et sélection de créneaux compatibles.
+- CalendarBridgeChecks : 41/41, opérations réelles du runtime, partage,
+  références persistantes, arbitrages, isolation et rappels au vrai tick.
+- Calendrier WebView : 32/32, vrais handlers C#, création et édition,
+  récurrences, déplacement, lot, annulation, conflit et garde de brouillon.
+- SharedFolderChecks : 22/22, concurrence entre processus, reçus rejoués,
+  lots indivisibles, interruption et corruption. Index local reconstruit
+  après suppression, corruption ou interruption journal/index ; anciens
+  journaux et changement d’identité du partage contrôlés.
+- Le contrôle mémoire du transport conserve 160 versions volumineuses
+  sur disque et exige moins de 24 Mio de hausse de mémoire managée
+  retenue après collecte. Il ne mesure pas toute la mémoire du logiciel.
+- SharedBusinessChecks : 22/22, trois profils, fichiers métier et vrai
+  dossier partagé. Reprise hors connexion, comparaison périmée, édition
+  locale non synchronisée, application interrompue, choix d’un relevé
+  concurrent, suppressions et empreintes JSON équivalentes contrôlés.
+- SharedWorkspaceChecks : 25/25 en local/mémoire ; les 19 scénarios
+  PostgreSQL supplémentaires sont réservés à la validation du serveur CI.
+- ConfigurationChecks : 66/66, compatibilité des versions 3.4/3.5,
+  imports, conservation des champs personnels et référentiel facultatif.
+- PreviewQueryChecks : 48/48 ; FoundationChecks : 37/37.
+- RuntimeSessionChecks : 98/98, isolation et arrêt, import des 19 champs,
+  périmètres de l’Accueil, détail exact des compteurs et vues périmées.
+- Requalification du partage en simulation : suite complète 98/98,
+  puis 13/13 scénarios avec le contrôle final des conflits. Le premier
+  échange attend les quatre documents réellement prévus en 3.5 : note
+  publiée, connaissance, configuration commune et relevé. Identités,
+  contenus, révisions centrales et accusés sont contrôlés ; aucun conflit,
+  aucune réémission au second échange, profil habituel inchangé.
+- Bibliothèque et partage WebView : 21/21, dossier réellement partagé,
+  comparaison des versions, export, décision et mise à jour des outils.
+- Navigation WebView : 24/24, quatre espaces et deux accès utilitaires,
+  anciens liens, clavier, affichage compact et entrée dans la simulation.
+- Pilotage/Terrain WebView : 69/69 ; météo du périmètre conservée,
+  équipes cumulées, résultats exacts, anciennes clés et géométrie.
+- Import et simulation WebView : 82/82, parcours CSV réel, annotations,
+  départ et retour de simulation, cartes et tournées. Le choix du fond
+  de carte résiste à un chargement asynchrone, au repli réseau et aux
+  navigations ; le fond hors ligne choisi explicitement reste conservé.
+- Mouvement WebView : 15/15 après renforcement des scènes SVG météo.
+  Les horloges, matrices et pixels du soleil, des nuages et de la pluie
+  changent réellement dans les thèmes clair et sombre, y compris dans
+  les petites cartes. Les chiffres, dimensions et commandes restent
+  stables. Réduction, reprise, préférence Windows, choix Expressives,
+  contraste renforcé, couleurs forcées et pause hors écran sont vérifiés.
+  Un vrai indicateur de l’Accueil anime son emblème sans animer sa valeur.
+- Requalification du mouvement avec captures : 15/15. La pause CSS est
+  asynchrone : l’attribut de visibilité et l’état « paused » peuvent
+  précéder le gel effectif d’une image. Le harnais attend maintenant
+  l’état CSS attendu et la fin de cette transition, avec une limite de
+  20 secondes, avant les trois mesures strictes sur 900 ms. Horloge et
+  géométrie doivent rester exactement fixes hors écran, puis reprendre
+  au retour. Aucun effet ni critère de mesure n’est assoupli.
+- Calendrier 32/32 et navigation 24/24 rejoués après la finition visuelle.
+  Captures d’Accueil, météo et planning examinées en clair/sombre/compact.
+- Revalidation des parcours suivants après la refonte : AnalyticsBridge
+  264/264, WorkplaceBridge 61/61, TerrainBridge 91/91 et TerrainWeb 30/30.
+  Fermer le planning applique son en-tête et conserve le lieu choisi sur
+  la carte ; revenir à tous les lieux demeure une action explicite.
+- Finition de l’Accueil : état de réception et avertissement de portée
+  restaurés dans la nouvelle présentation. Les contrôles existants de
+  réception complète/partielle, ancienneté, concordance indisponible et
+  changement de recherche restent exigés, sans modifier leurs critères.
+- Parcours complet WebView : 129/129 en local, puis 129/129 sous Windows
+  avec les captures pendant la qualification. Le parcours complet reste
+  exigé par la CI du commit livré avant publication des packs.
+- Opérations partagées WebView : 8/8, avec ouverture du brouillon de
+  tournée reçu dans Interventions et conservation de la tournée locale.
+- Parcours de démarrage adaptés aux six espaces et aux outils intégrés.
+  Le contrôle natif attend la fin du chargement de la carte des tickets.
+  Compilation du harnais WindowsStartupChecks : 0 avertissement/0 erreur ;
+  son exécution native reste obligatoire dans le workflow de publication.
+- Compilation Windows x64 Release : 0 avertissement et 0 erreur.
+- Syntaxe des 56 modules JavaScript, parseur PowerShell de la CI,
+  workflow YAML et git diff --check : réussis.
+
+LIMITES ET VALIDATION DU PACK
+Ces contrôles locaux ne remplacent pas le démarrage natif sous Windows
+et ne qualifient pas un serveur SMB particulier. Les tests utilisent
+des profils et données synthétiques ; aucun compte GLPI réel n’est lu.
+La publication exige les jobs Windows et PostgreSQL réussis : serveur
+réel, parcours WebView complets, démarrage du pack, mise à jour et retour
+arrière, intégrité PROD/DEV et reconstruction depuis le pack DEV.
+Les index locaux, identifiants et états privés ne doivent pas entrer
+dans les archives. Le workflow associé au commit publié porte la preuve
+des validations natives et les journaux de cette livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+ARCHIVE — VÉRIFICATIONS 3.4.1
+GLPI Pilot 3.4.1 — Équipes sans doublons et météo du périmètre
+Contrôles locaux du 24 octobre 2026, avant publication du pack Windows
+
+CORRECTIONS
+- Catalogue partagé Pilotage/Terrain : un choix par ensemble de groupes,
+  anciennes clés conservées, regroupements et homonymes explicités.
+- Météo principale d'une équipe exacte : seuils de cette équipe, carte
+  identique non répétée, équipes hors périmètre non évaluées comme zéro.
+- Cumul et sous-ensembles : volumes exacts, aucun seuil global ou objectif
+  non applicable ; priorité entre équipes expliquée par ses vrais volumes.
+- La comparaison utilise les indices source, pas l'égalité des nombres.
+- Disposition brute conservée ; seuils, cible et contexte de lecture sont
+  projetés sans réécriture des paramètres. Un mini-historique propre à
+  une équipe reste sur sa carte ; une météo désactivée conserve sa cible.
+- Compositions personnalisées : neutralisation des filtres transitoires,
+  conservation des seuils liés aux seuls filtres enregistrés.
+- Exports CSV, XLSX et HTML cohérents avec la météo de stock affichée.
+
+VALIDATIONS LOCALES 3.4.1
+- DashboardChecks : 155/155, dont 10 scénarios supplémentaires de météo.
+- AnalyticsBridgeChecks backend : 171/171, dont 25 assertions de portée,
+  indices, export et vraie importation CSV suivie du retour de simulation.
+- Pilotage/Terrain WebView : 69/69, dont les parcours 84 tickets d'équipe,
+  union 96 sans doublon, priorité 18/12, sous-périmètres 42, anciens alias,
+  clés disparues, conservation du profil et vérification géométrique.
+- Captures synthétiques clair/sombre : météo exacte, cumul neutre,
+  sélection Terrain, seuils accessibles dans une carte de hauteur 240 px.
+- Compilation Windows x64 Release : 0 avertissement et 0 erreur.
+- Syntaxe des modules JavaScript et git diff --check : réussis.
+
+Ces résultats locaux ne remplacent pas le démarrage réel du pack Windows.
+La publication exige aussi les gates Windows, PostgreSQL, démarrage EXE,
+mise à jour/retour arrière, intégrité du pack et reconstruction DEV.
+Le workflow du commit publié est la preuve de ces validations natives :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+ARCHIVE — VÉRIFICATIONS DE LA REFONTE 3.4.0
+GLPI Pilot 3.4.0 — Refonte des six espaces et carte centrale des tickets
+Contrôles locaux du 24 octobre 2026, avant validation native du pack
+Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
+
+PORTÉE DE LA REFONTE
+Six destinations principales : Accueil, Pilotage, Tickets, Terrain,
+Données, Réglages. Les anciennes routes sont des liens de compatibilité
+vers un espace et son action contextuelle ; elles ne créent pas un
+second menu ni une barre de vues historiques.
+
+Pilotage exécute une composition commune : météo, stock, points
+à traiter, équipes, demandes, contributions, notes. Les règles météo,
+leurs seuils stricts, catégories descendantes, ordre exclusif des équipes,
+visibilité et géométrie personnalisée sont conservés. La composition
+intégrée accepte 120 cartes ; les tableaux personnalisés gardent leur
+limite de 60. Les 48 règles météo maximales restent présentes avec les
+analyses opérationnelles. Les filtres d’équipes sont cumulés sans
+multiplier une même ligne. Les filtres persistés restent visibles et
+réinitialisables ; les comparaisons et historiques utilisent le moteur.
+
+Tickets réunit la liste et le dossier ; recherche, sélection, position
+et brouillons de lecture sont conservés. Les notes personnelles ont une
+action d’enregistrement explicite. Les écritures en attente du suivi
+se terminent dans l’ancien contexte avant une bascule de simulation.
+La sélection d’un fichier est préparée avant le remplacement de la
+session ; l’annulation du sélecteur ne détruit pas la page courante.
+
+Terrain réunit carte, tickets et visites prévues. Équipes et techniciens
+se cumulent, le statut et le type bornent le stock. Une position de site,
+un repère approximatif de commune et une absence de coordonnées restent
+distincts. Les affectations observées et visites datées ne sont jamais
+présentées comme une position GPS réelle d’un agent. Une sélection est
+prévisualisée avant la création explicite d’un brouillon de tournée.
+La limite de 2 000 tickets est refusée avant toute troncature.
+
+À l’ouverture explicite d’une carte, les rues sont demandées aussi en
+simulation. Seules les images GET HTTPS OpenStreetMap validées par la
+permission native sont admises ; les données métier et marqueurs sont
+locaux. Si le fond distant échoue, le fond vectoriel Natural Earth garde
+les repères et les listes. Le fond local ne contient pas de rues ; les
+pointillés ne calculent pas un trajet routier.
+
+Les animations s’appuient sur la référence Domenia v2 réellement examinée.
+Soleil, rayons, plans de nuages, pluie, reflets et entrées sont distincts.
+Trois politiques : Expressives, Suivre Windows, Réduites. Les surfaces
+hors écran sont suspendues ; tableaux et valeurs ne changent pas sous
+l’effet décoratif. Le contraste renforcé supprime ces effets.
+
+VALIDATIONS LOCALES ÉTABLIES
+- DashboardChecks : 145/145 ; règles, seuils, composition intégrée,
+  conservation des 48 règles, visibilité et géométrie, sauvegarde.
+- DashboardLayoutChecks : 46/46 ; capacité intégrée et limites conservées.
+- FoundationChecks : 36/36 ; migration des six espaces et réglages.
+- AnalyticsBridgeChecks : 146/146 ; dont 27 nouveaux contrôles Terrain.
+  Périmètres, identités, pagination de 2 001 lignes, révisions, aperçus,
+  brouillon protégé et isolation du CSV réel sont vérifiés. L'import
+  d'une composition de 120 cartes reste prévisualisable si l'ajout est
+  impossible ; son remplacement explicite conserve toutes les cartes.
+- TerrainWebChecks : 30/30 ; Chromium et runtime C# réels, carte/liste,
+  panneaux, préconisations, erreurs dans le dialogue et filtre transmis
+  depuis Pilotage. Les 21 contrôles métier précédents sont conservés.
+- Navigation WebView : 24/24 ; six espaces, menus lisibles, préférences,
+  mobile/clavier, alias métier, ancrages et simulation depuis Données.
+- Mouvement WebView : 10/10 ; horloges et matrices SVG réellement
+  différentes, pixels clair/sombre, chiffres et dimensions stables,
+  arrêt/reprise, Windows réduit, mode expressif et pause hors écran.
+- Palette WebView : 15/15 ; commandes, cache, identités, retours de focus,
+  réponses tardives et conservation des saisies.
+- Pilotage WebView : 42/42 ; météo complète, seuils, filtres cumulés,
+  56 lignes exactes sans doublons, détails bornés, contextes enregistrés,
+  comparaison, édition transactionnelle, export CSV, aperçu d'import
+  et ajout de composition, section personnalisée et fenêtre de 1 280 px.
+- Workplace WebView : 61/61 ; liste et dossier, notes explicites,
+  brouillon conservé après un refus de fermeture et nouvelle tentative,
+  panneaux contextuels et nettoyage unique dans le contexte d'origine.
+- Recherche de résolutions WebView : 17/17 ; recherche, filtres et
+  précédents locaux dans le nouvel espace Tickets.
+- Bibliothèque WebView : 14/14 ; lecture, versions, notes, conflits et
+  connexions dans les panneaux de Données.
+- Parcours Bibliothèque WebView : 13/13 ; contributions, échanges,
+  corpus et intégration des outils d'équipe.
+- Opérations partagées WebView : 8/8 ; parcours avec le runtime réel,
+  carte intégrée et requêtes externes strictement bornées.
+- RuntimeSessionChecks : 94/94 ; acquisition, navigateur et session.
+- Simulation et import WebView : 81/81 ; fichier à 19 champs, six espaces
+  et outils contextuels, actions simulées, carte de rues et repli local,
+  tournées, bibliothèque, partage et mise à jour virtuels. Annuler le
+  sélecteur conserve le DOM et la saisie ; import refusé, import confirmé,
+  démonstration et sortie attendent l'écriture déjà engagée. La note du
+  profil habituel reste identique octet pour octet.
+- Intégration WebView complète : 128/128 ; les 47 contrôles du pont,
+  des tableaux et de la qualité passent avec les 81 contrôles de
+  simulation dans la même exécution finale.
+- Syntaxe JavaScript : 49/49 modules ; aucun échec de syntaxe.
+- Compilation croisée de l'application 3.4.0 : 0 avertissement,
+  0 erreur, y compris le correctif final d'import de compositions.
+
+Ces résultats sont issus des sources finales de la refonte. Ce rapport
+ne vaut pas validation native Windows avant réussite du workflow du
+commit publié.
+
+LIMITES DES ESSAIS
+Les parcours Chromium utilisent les modules réels et le backend C# avec
+des données synthétiques. Les tuiles de test sont interceptées localement :
+le comportement des couches et des permissions est vérifié, sans tester
+la disponibilité d’OpenStreetMap sur le réseau de l’utilisateur. Aucun
+portail métier ou SSO privé n’est utilisé. Les copies du classeur et les
+captures contenant des informations métier ne sont pas publiées.
+
+PUBLICATION
+Les packs PROD et DEV sont publiés après les contrôles Windows et
+PostgreSQL de leur commit : démarrage natif, mise à jour, retour arrière,
+reconstruction DEV et intégrité. La compilation croisée ne remplace pas
+ces étapes. Le SHA source et les empreintes de wad identifient la livraison.
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.4 — Cartes intégrées, Mon espace, animations et météo
+Contrôles locaux du 24 octobre 2026, avant validation native du pack
+Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
+
+PORTÉE
+Les cartes des sites et des tournées sont rendues dans le dialogue DOM de
+l’interface principale, avec Leaflet 1.9.4 fourni localement. Il n’y a plus
+ni réglage de clé Google, ni opération d’ouverture de carte externe,
+ni fenêtre native dédiée. Les anciens fichiers de clé ne sont plus lus.
+
+Les repères du référentiel, leur liste et l’ordre des visites sont locaux.
+Chaque journée et affectation garde son parcours ; aucun nom d’agent ou
+contenu de ticket n’est présent dans le modèle cartographique. Les étapes
+sans coordonnées restent listées et interrompent les liaisons, sans
+substitution par une position de commune. Les traits sont explicitement
+l’ordre des visites à vol d’oiseau, pas un trajet routier.
+
+Le fond terrestre Natural Earth fonctionne hors ligne. Son pane dédié
+reste sous les images de rues : les polygones opaques ne les masquent pas.
+Un site seul est cadré régionalement sur le fond local, puis en détail
+avec les rues. Les repères et la liste se synchronisent aussi au clavier.
+
+En simulation, aucune tuile distante n’est demandée avant Afficher les
+rues. En usage normal, le clic carte autorise ce fond dans la même vue.
+Le garde natif accepte uniquement des requêtes Image GET de tuiles OSM
+HTTPS aux indices validés, sans paramètre, fragment ni port alternatif.
+Les scripts, cadres et documents distants restent interdits. Le User-Agent
+identifie l’application ; le cache HTTP et l’attribution restent présents.
+Les cartes actives sont révoquées à la fermeture, au changement de contexte
+ou de brouillon. Une activation achevée après fermeture est révoquée.
+L’erreur de tuile retire la couche distante sans laisser un écouteur
+Leaflet sur une instance détruite ; le plan local reste utilisable.
+
+Mon espace remplace le titre du groupe principal sans modifier sa clé ni
+les préférences de menu. Les animations Domenia ajoutent des apparitions
+d’opacité et des retours de chargement, sans déplacer les surfaces de
+tableau ou réécrire les compteurs. Le contrôle de réduction en cours de
+session couvre aussi les animations relancées par les captures Chromium.
+
+La météo de stock sans règles explicites utilise des seuils de départ :
+100/200 global, 50/100 incidents et demandes, 10/20 catégories et équipes.
+Le dépassement reste strict. Les profils importés/personnalisés, zéros et
+cases vides explicites restent conservés. Remplir les seuils vides est une
+action du formulaire : les cases saisies restent intactes, les paires
+incompatibles restent à régler manuellement, et Enregistrer reste nécessaire.
+
+VALIDATIONS LOCALES ÉTABLIES
+- DashboardChecks : 142/142, seuils par défaut, frontières strictes,
+  règles existantes, seuils vides ou zéro et personnalisation préservés.
+- RuntimeSessionChecks complet avec Chromium : 94/94, dont 7/7 cartes
+  intégrées. Couverture des sélections exactes, coordonnées manquantes,
+  13 étapes conservées sans découpage, parcours séparés, révocation et
+  isolation entre simulation CSV et profil ordinaire.
+- Import CSV et interface : 83/83. Les 35 écrans sont parcourus après
+  l’import réel du CSV à 19 champs. Carte locale, liste/repères, 26 sites
+  géocodés, site sans coordonnées, activation/retrait des rues, erreur
+  réseau simulée, attribution et fenêtre compacte sont contrôlés.
+- Navigation et mouvement avec captures : 23/23. Renommage, préférences,
+  replis, clavier, déplacement et arrêt des animations en cours sont
+  vérifiés sans modification des dimensions ni des valeurs.
+- Seuils et aperçu métier WebView : 27/27, dont remplissage compatible,
+  zéros préservés, conflit explicite et sauvegarde réelle des réglages.
+- Suite WebView complète : 159/159, exécution en 39,899 secondes après
+  un build de 8,731 secondes. Le délai CI de 240 secondes est conservé.
+- Compilation croisée du desktop Windows 3.3.4 : aucune erreur,
+  aucun avertissement.
+- Syntaxe JavaScript : 42/42 fichiers valides ; git diff --check valide.
+- Leaflet JS/CSS : octets comparés aux SRI officiels de 1.9.4 ; les
+  attributs Git empêchent leur conversion de fins de ligne sous Windows.
+  La CI compare à nouveau les SHA-256 des deux fichiers dans les packs.
+- Fond Natural Earth : 127 polygones, 126 045 octets ; géométrie source
+  inchangée, bornes et anneaux vérifiés, reproduction et empreinte
+  documentées dans la licence du pack.
+
+LIMITES ET PUBLICATION
+Les parcours d’interface utilisent les modules réels et le backend C#,
+avec données fictives. Les images OSM de test sont interceptées localement :
+ces contrôles établissent le rendu, les couches et le comportement réseau,
+mais pas la disponibilité du serveur de tuiles sur le réseau de l’utilisateur.
+Les rues demandent une connexion Internet ; le fond local ne contient pas
+les rues et ne calcule pas de tracé routier. Aucun portail métier ni SSO
+réel n’est utilisé pour ces essais.
+
+Les packs PROD et DEV sont publiés seulement après réussite du workflow
+Windows et PostgreSQL de leur commit : démarrage natif, mise à jour,
+retour arrière, reconstruction DEV et intégrité du pack. La compilation
+croisée locale ne remplace pas ces étapes. Le SHA source et les empreintes
+incluses dans wad identifient exactement la livraison.
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.3 — Simulation, sites et tournées
+Contrôles locaux du 24 octobre 2026, avant la validation native de livraison
+Cible : Windows x64, hôte WinForms/WebView2 et moteurs C#
+
+PORTÉE
+Le mode simulation reprend le CSV d’incidents et les réglages du profil
+initial dans un espace isolé. Les 35 écrans restent accessibles ; les
+rubriques masquées par défaut peuvent être ouvertes depuis la palette.
+Les effectifs des sites sont éditables et datés en simulation. Leurs ratios
+sont recalculés sans modifier la provenance du fichier ni les archives
+historiques déjà enregistrées. Quitter restitue le profil habituel.
+
+Les groupes du menu sont repliables. Assistant et Lectures ciblées sont
+masqués par défaut, puis réactivables. Effectifs devient Effectifs des sites,
+masqué du menu et accessible depuis les outils de Sites. Le focus clavier
+reste utilisable en mode compact, y compris si le groupe courant est replié
+ou si la page courante est masquée dans le menu.
+
+Les aperçus disposent de colonnes dimensionnées selon leur contenu,
+d’un défilement horizontal et de textes limités à trois lignes. Un clic
+ouvre la valeur complète ; les exports conservent le contenu complet.
+
+Localisation reconnue comprend une commune unique ou un site unique,
+avec ou sans commune/coordonnées. Une ambiguïté de site reste à vérifier,
+même si les sites partagent une commune. Localisation à vérifier complète
+exactement le stock actif retenu, titres absents et lieux inconnus compris.
+Le tableau de planification exige un site précis : une commune seule peut
+être reconnue et rester dans la ligne des sites non renseignés.
+
+Le filtre Équipes et groupes cumule jusqu’à 64 choix réunis par OU, sans
+compter deux fois une ligne commune. Cartes, tableaux, préconisations,
+détails et exports partagent le périmètre. Les cinq rubriques concernées
+conservent des sélections de session distinctes en normal et en simulation.
+Les règles de détection des titres restent fondées sur les noms et variantes
+explicites, avec normalisation des accents et de la ponctuation.
+
+Le fichier facultatif wad/sites.csv accepte les communes, adresses et deux
+paires de coordonnées distinctes. La première initialisation ajoute les
+références. Une nouvelle édition géographique complète les champs vides
+des sites et communes présents, conserve les identités et valeurs locales,
+et ne recrée pas les sites supprimés ni les variantes retirées.
+Une sauvegarde complète précède l’enregistrement atomique et son empreinte.
+
+Google Maps propose des liens sans clé et une carte intégrée facultative
+avec une clé Maps Embed API locale. Les aperçus ne contactent aucun service.
+L’ouverture explicite conserve l’ordre des étapes et découpe les parcours
+longs sans perdre de trajet. Seuls les lieux ou coordonnées sont transmis.
+La fenêtre dédiée n’expose pas le pont de l’application ; la politique
+hors ligne de l’interface principale est conservée. La clé est séparée des
+exports et protégée pour le compte Windows ; en simulation, elle est en
+mémoire. Une clé locale corrompue ne bloque pas les liens sans clé.
+
+VALIDATIONS LOCALES ÉTABLIES
+- FoundationChecks : 36/36, dont migration unique des valeurs de navigation
+  et conservation des choix explicites de réaffichage.
+- ConfigurationChecks : 66/66, dont 18/18 pour l’initialisation et
+  l’enrichissement géographique, leurs sauvegardes et leur non-réapplication.
+- AnalyticsBridgeChecks : 115/115 pour les opérations métier, compteurs,
+  filtres multiples, exports et géographie utilisée depuis un import local.
+- AnalyticsChecks : 39/39. Le cumul de groupes accepte 33 à 2 048 choix
+  dans la matrice des statuts de groupe et rejette le dépassement ; les
+  autres types de filtres restent limités à 32 choix.
+- CityDetectionChecks : 105/105 ; DashboardChecks : 140/140 ;
+  DashboardLayoutChecks : 45/45.
+- Navigation WebView : 23/23 avec Chromium et le vrai backend C#.
+- Vues métier et filtre multiple WebView : 23/23, dont 800 × 600,
+  recherche, annulation, deux équipes cumulées et groupe commun.
+- Aperçus de résultats : 36/36 contrôles ciblés sur 22 colonnes,
+  631 lignes paginées, texte long ouvert en entier et fenêtre compacte
+  à zoom 125 %. Hauteur maximale observée corrigée : environ 83 pixels.
+- Simulation runtime : 13/13, avec éditions d’effectifs, ratios, archive,
+  suppression et restauration du profil habituel.
+- Parcours d’import et de simulation WebView : 75/75. La reprise XLSM
+  est conservée puis un CSV à 19 champs est importé par le véritable
+  bouton. Les 35 écrans, les effectifs, les éditions, les tournées et
+  les cartes sont alors contrôlés sur ce CSV.
+- Google Maps runtime : 7/7, dont découpage sans perte d’étape, plafond
+  des URL, clé locale corrompue récupérable, rejet d’un séparateur ambigu,
+  aperçu obsolète et ouverture à la demande en normal et en simulation.
+- Suite WebView complète : 151/151, compilation incluse en environ
+  44,8 secondes dans l’environnement local ; aucun besoin observé
+  d’élargir le délai de 240 secondes du contrôle correspondant en CI.
+- Compilation croisée finale du desktop Windows x64 : aucune erreur,
+  aucun avertissement. Syntaxe JavaScript : 41/41 ; git diff --check valide.
+- Complément géographique réel : 30/30 contrôles distincts, hors tests
+  publics. Installation et migration 26 sites / 13 communes, conservation
+  des termes et identifiants, détection des 26 noms et 36 alias, puis CSV
+  fictif de 26 incidents reconnu à 26/26 et tournée de 26 visites.
+  Aucun appel HTTP, DNS ou socket détecté dans ce parcours simulé.
+
+LIMITES DE VALIDATION
+Les essais d’interface utilisent Chromium, les vrais modules de l’application
+et le backend C#. Les fichiers de test sont synthétiques. Ils ne certifient
+ni un portail d’entreprise, ni le SSO réel, ni la couverture de l’extrait
+métier aperçu dans les captures de l’utilisateur.
+
+Le contrat de la carte intégrée, l’iframe, les adresses et les actions sont
+vérifiés avec une réponse locale interceptée, sans contacter Google. Le
+rendu réel du service Google avec une clé utilisateur reste à vérifier
+avec cette clé et une connexion Internet. Les liens ne demandent pas de clé.
+
+VALIDATION NATIVE ET PUBLICATION
+Les packs PROD et DEV sont publiés seulement après réussite des contrôles
+Windows et PostgreSQL du commit livré. Les parcours du véritable hôte
+Windows, le démarrage, la mise à jour, la reconstruction DEV et l’intégrité
+des archives sont des étapes de ce workflow. Une compilation croisée locale
+ne remplace pas ces contrôles natifs. Le commit inscrit dans wad/version.json,
+les journaux correspondants et les inventaires SHA-256 identifient la livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+Le complément de sites est validé et publié séparément après disponibilité
+de cette version, avec ses propres empreintes et ses sources géographiques.
+
+HISTORIQUE — GLPI Pilot 3.3.2 — Lieux, sites et termes de détection
+État local établi le 24 octobre 2026 avant le pipeline final
+Cible : Windows x64, avec initialisation native facultative du référentiel
+
+PORTÉE
+La colonne des sites « Termes de détection » affiche le nom canonique
+et les alias. Le formulaire précise que le nom est reconnu automatiquement.
+Après import d’un profil, un brouillon non modifié reprend le référentiel
+enregistré ; un brouillon modifié est conservé avec son conflit signalé.
+
+Le fichier facultatif wad/sites.csv contient un tableau UTF-8
+Site / Termes de détection. Au premier démarrage concerné, l’application
+fusionne nativement Cities.Sites dans le profil AppData et enregistre
+le repère d’initialisation avec les sites. Aucun sous-processus PowerShell
+n’est lancé. Les identités, propriétés et sites existants sont conservés,
+les alias sont complétés et les termes équivalents sont dédoublonnés.
+Une sauvegarde complète précède le remplacement des réglages.
+
+L’import ne se rejoue pas sur un profil déjà initialisé ; les modifications
+et suppressions de l’utilisateur sont conservées, même si le CSV change.
+L’absence du fichier laisse le démarrage normal et ne consomme pas cette
+initialisation. Une lecture refusée garde le profil intact et produit
+un diagnostic discret sans noms de sites ; le démarrage se poursuit.
+
+Le pack public et le logiciel restent génériques. Le CSV d’une organisation
+est un fichier de données ajouté séparément à sa distribution privée,
+hors du dépôt public. Aucun import Excel supplémentaire n’est ajouté
+à l’écran du référentiel ; son import CSV et son aperçu sont conservés.
+
+VALIDATIONS LOCALES EXÉCUTÉES
+- TerrainWebChecks : 21/21 contrôles réussis avec Chromium et le vrai
+  backend C#. Le contrôle existant du site autonome vérifie aussi
+  le titre de colonne, le nom et l’alias affichés, et l’aide du formulaire.
+- Rafraîchissement du brouillon du référentiel : 10/10 contrôles ciblés
+  réussis, avec conservation des brouillons modifiés.
+- ConfigurationChecks : 62/62 contrôles locaux réussis, dont 14/14 pour
+  l’initialiseur natif du fichier de sites.
+- Compilation TerrainBridgeChecks utilisée par le parcours UI :
+  aucune erreur, aucun avertissement.
+- Compilation croisée du parcours WindowsStartup : aucune erreur,
+  aucun avertissement ; 27 contrôles préparés pour le véritable hôte Windows.
+- Syntaxe JavaScript et git diff --check : valides.
+
+VALIDATION DE LIVRAISON — ÉTAT AVANT LE PIPELINE
+Les contrôles locaux de l’initialiseur natif et de configuration sont
+établis. L’exécution native des 27 contrôles WindowsStartup et la CI
+Windows du commit final 3.3.2 restent à établir à la date de cet état local.
+La compilation croisée ne prouve pas leur exécution sous Windows.
+Les résultats ci-dessus ne constituent pas une preuve de publication.
+Les packs sont publiés après réussite des contrôles Windows et PostgreSQL
+du commit inscrit dans wad/version.json ; les journaux de ce même commit
+et les inventaires SHA-256 identifient la livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.1 — Mon espace
+Date : 24 octobre 2026
+
+La rubrique personnelle est renommée dans les libellés de navigation,
+les titres, raccourcis, rappels et guides. Son identifiant interne reste
+inchangé pour conserver les préférences et les données personnelles.
+Les attentes des contrôles de navigation existants suivent le nouveau nom.
+
+VALIDATION DE LIVRAISON
+Les packs 3.3.1 sont publiés uniquement après réussite du workflow Windows
+et PostgreSQL du commit indiqué dans wad/version.json. Le workflow associé
+à ce commit est la preuve d’exécution des contrôles de cette livraison :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+
+HISTORIQUE — GLPI Pilot 3.3.0 — pilotage natif et simulation globale
+État local établi le 24 octobre 2026 avant exécution du pipeline final
+Cible de livraison : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10
+
+VALIDATIONS LOCALES EXÉCUTÉES
+- Parcours WebView de simulation et de profil : 62/62 contrôles réussis dans Chromium,
+  avec les pages de production et le véritable dispatcher C#.
+- Reprise du profil de classeur : 21/21 contrôles réussis.
+- Compilation du projet WebViewChecks : aucune erreur, aucun avertissement.
+
+Le parcours d’interface ouvre les 35 routes, dont les neuf rubriques natives :
+Météo, Pilotage, Groupes, Catégories, Plus anciens, Suivi agents,
+Agents actifs, Sites et Paramètres du pilotage.
+Il vérifie les suggestions feuille/en-têtes, l’aperçu Paramétrage,
+les dix-neuf champs, l’annulation avant import et la qualité non certifiée
+comme extraction GLPI réelle. Une modification de statut est prévisualisée
+sans effet puis confirmée ; la ligne, la fiche et le stock météo changent.
+Le détail météo ouvre le ticket actif restant. Un site est édité, soumis
+à l’aperçu d’impact puis appliqué dans la simulation.
+La bibliothèque, la synchronisation locale, la palette Ctrl+K, la collecte
+connecter/inspecter/choisir/extraire et l’installation virtuelle produisent
+des résultats consultables. La sortie restaure le même relevé d’origine,
+ses sites et sa bibliothèque. Dans cet espace habituel restauré, l’aperçu
+du profil laisse les réglages intacts. Son application explicite persiste
+la météo et les sites, puis recalcule le stock sur les quatre lignes
+d’origine. Aucun appel externe de la WebView ni aucune
+erreur JavaScript n’est observé dans ce parcours. L’hôte de test refuse
+les demandes de navigation externe ; les adaptateurs du runtime assurent
+séparément le confinement des services et des processus réels.
+
+PORTÉE DE LA CORRECTION
+La simulation dispose de ses propres réglages, SQLite, archives, travail
+personnel, géographie, requêtes et tableaux. Les actions modifient les
+copies locales. Collecte, central partagé, routage, météo, assistant et
+mise à jour sont représentés par des opérations locales signalées comme
+simulées. La démonstration utilise le même mécanisme. Le profil de classeur
+est proposé avec son aperçu et une option active par défaut ; ses anciens
+chiffres ne remplacent jamais les calculs sur le relevé courant.
+Les modèles et fixtures publiés sont fictifs. Aucun classeur, capture,
+nom de personne ou correspondance interne privé n’est inclus au dépôt.
+La collecte normale conserve son comportement discret et le passage
+visible pour une validation SSO nécessitant l’intervention de l’utilisateur.
+
+VALIDATION DE LIVRAISON 3.3.0 — TERMINÉE
+Le workflow du commit 1c258028b1181b62b95d87c71fb6fb4cf616e4cf a réussi :
+contrôles Windows, PostgreSQL 17, packs extraits, démarrage, mise à jour
+et retour arrière, puis publication des deux éditions.
+https://github.com/M4D135/GLPI-Pilot/actions/runs/40075617962
+
+HISTORIQUE — PROTOCOLES ET RÉSULTATS DES VERSIONS PRÉCÉDENTES
+Les restrictions de l’ancien mode test décrites dans la section 3.2.2
+ci-dessous correspondent à cette version historique. La 3.3.0 utilise
+la simulation globale isolée décrite en tête de ce rapport.
+
+GLPI Pilot 3.2.2 — protocole et preuves de vérification
+Date : 23 octobre 2026
+Cible : Windows x64, hôte WinForms/WebView2, moteurs C# .NET 10 autonomes
+
+IDENTIFIER LA LIVRAISON
+Le commit exact est inscrit dans wad/version.json avec la version, l’édition,
+le SHA-256 de l’exécutable et la version du runtime WebView2 fixe fourni.
+wad/SHA256SUMS.txt couvre chaque fichier livré. Le workflow du même commit
+constitue la preuve de validation Windows :
+https://github.com/M4D135/GLPI-Pilot/actions/workflows/windows.yml
+Une version déjà publiée pour un autre commit ne peut pas être remplacée.
+La présence des tests ou leur compilation ne constitue pas leur exécution.
+
+PERIMETRE DES VERIFICATIONS 3.2.2
+Reprise des champs de rapports métier : rôles distincts, valeurs sources
+préservées, séries numériques bornées et absence de durée ou d’activité
+déduite d’un libellé ambigu. Les matrices actives contrôlent les quatre
+statuts, les zéros connus, les participations par groupe et les totaux.
+Les filtres OU de groupes dédoublonnent les tickets ; les exclusions et
+le périmètre commun restent reproductibles, y compris dans le détail.
+Les filtres de catégorie peuvent inclure les descendants séparés par > ;
+les frontières de branches excluent les simples préfixes de mots.
+La météo de volume contrôle les frontières strictes, les seuils manquants,
+la réception, les identités et statuts du relevé avant tout filtrage.
+Les différences de représentation seules ne dégradent pas les volumes.
+Le rappel de fraîcheur est configurable par tableau, à 48 heures dans
+le modèle de service ; il ne modifie ni les volumes ni les couleurs et
+ne s’applique pas aux archives consultées.
+Les plus anciens présentent cinq tickets par groupe ou les dix plus anciens
+du périmètre, sans répéter la même ligne multigroupe dans cette seconde vue.
+L’ouverture, l’ID numérique puis l’index source départagent les tickets.
+Les dates absentes, illisibles ou futures restent dans le stock mais hors
+classement, avec des comptes distincts ; une ouverture du jour a un âge nul.
+Les identifiants source répétés ne sont pas fusionnés silencieusement.
+Les participations distinguent suivis, tâches, intersection et union par
+identité, puis comparent cette union à l’attribution. Les colonnes ne sont
+pas additives. Les listes dynamiques et les alias explicites conservent les
+identités distinctes et rendent visibles les champs absents et non renseignés.
+Les historiques personnels et filtrés rejouent leur périmètre dans chaque
+archive comparable, avec sa date de référence ; les incompatibilités et
+limites de calcul produisent des ruptures plutôt que des valeurs inventées.
+L’import cumulatif conserve exactement les tableaux existants, renomme
+les collisions, refuse les aperçus périmés et limites dépassées, puis
+permet annuler/rétablir. L’import partiel conserve les réglages absents.
+Les sites sans commune sont vérifiés dans la détection, le référentiel,
+les archives, les statistiques, les tournées et le vrai parcours WebView :
+création, simulation, puis rattachement ultérieur sans changement d’ID.
+Le stock par site conserve les sites à zéro et les tickets sans site reconnu,
+respecte le périmètre filtré et propose tous les ID du site à la copie.
+Le seuil d’intervention vaut quatre par défaut et peut être réglé ; les
+sites inconnus demandent une vérification dès le premier ticket.
+L’import de test vérifie CSV/TSV et Excel XLSX/XLSM, choix de feuille et
+ligne d’en-têtes, annulation, fichier changé depuis l’aperçu, cellules
+seulement formatées, durées et formules sans résultat enregistré.
+Les lectures partielles restent signalées jusque dans la météo. La sortie
+du test restaure le relevé et son interprétation ; les requêtes volontairement
+modifiées restent disponibles sans réécrire les contextes d’archives.
+Les opérations réelles sont suspendues, y compris la recherche bibliothèque
+de la palette, tandis que les écrans d’analyse restent accessibles.
+Les transitions SSO vérifient les formulaires visibles, iframes et popups
+liés au portail suivi, les redirections passives, le retour discret,
+l’annulation et le respect des choix manuels d’affichage.
+La fermeture des onglets temporaires couvre une annulation pendant la
+navigation et un premier appel de fermeture volontairement bloqué. Le
+recours doit fermer uniquement la cible possédée, préserver la recherche
+et la fiche conservée, puis permettre une reprise depuis le bilan durable.
+Le dialogue de résolution restitue le focus au contrôle d’ouverture, y
+compris depuis la fiche de travail, et conserve la saisie et le contexte
+pendant le retour d’un précédent vers la liste ou le ticket source.
+Les fixtures du dépôt sont synthétiques. Les captures et configurations
+métier privées ne font pas partie des sources ni des packs publics.
+Les résultats définitifs, nombres de contrôles et SHA-256 sont ceux du
+workflow associé au commit de wad/version.json. Les résultats des versions
+précédentes ci-dessous ne valident pas par avance la version 3.2.2.
+
+RESULTATS LOCAUX CONFIRMES A CETTE ETAPE
+DashboardChecks : 131/131 contrôles réussis.
+DashboardLayoutChecks : 43/43 contrôles réussis.
+ConfigurationChecks : 46/46 contrôles réussis.
+Ces exécutions locales ne constituent pas une nouvelle validation CI,
+un parcours natif Windows ou une preuve de publication des packs 3.2.2.
+Les contrôles ajoutés et leurs résultats définitifs seront rapprochés du
+workflow du commit exact ; les preuves des versions précédentes restent
+identifiées séparément ci-dessous.
+
+COUVERTURE CONSERVEE DE 3.2.1
+La palette de recherche utilise le cache réel et le pont C# : numéro exact
+avant pagination, installations distinctes, commandes clavier, conservation
+de la saisie, focus de retour, annulation et réponses devenues anciennes.
+TicketResolutionChecks contrôle les termes et codes distinctifs, l’exclusion
+du ticket source, des autres installations et des contenus non confirmés,
+les extraits exacts y compris C1, le bornage et l’absence de mutation.
+Le parcours WebView de résolution conserve la fiche source et le contexte
+de travail pendant la recherche, la lecture d’un précédent et le retour.
+Le parcours --library-workflows-only couvre les bilans SQLite persistants,
+la pagination, le filtre des tickets à reprendre et les conflits structurés.
+Les nouvelles preuves de confirmation sont liées à une tentative et à son
+contenu ; les tests vérifient les arrêts avant contrôle final, les rejeux
+de confirmations anciennes et le maintien des conflits historiques.
+Le serveur PostgreSQL réel vérifie la propagation d’une confirmation sans
+changement de corps, ainsi que la reprise après mise à jour d’une mutation
+3.2.0 dont l’accusé avait été perdu, sans accepter un autre contenu sous
+la même identité de requête.
+Les lectures partielles sont comptées selon la tentative réelle, même si
+une ancienne copie complète est conservée par les règles de fusion.
+La comparaison des contributions couvre champs absents, null, texte vide,
+contenu littéral, longues valeurs, annulation, export des deux documents
+et absence de mutation de l’espace d’équipe pendant leur consultation.
+Les résultats définitifs et nombres de contrôles de cette version sont ceux
+du workflow associé au commit de wad/version.json. Les résultats 3.2.0
+ci-dessous ne constituent pas une validation anticipée de la 3.2.1.
+
+PREUVES DE LA LIVRAISON PRECEDENTE 3.2.0
+Commit : af4bcd708a5175a7fe3d0a9297d425a0e58564a1
+Run : https://github.com/M4D135/GLPI-Pilot/actions/runs/39867111330
+Windows : 1 781/1 781 contrôles, 39 suites canoniques, dont 24/24
+démarrages/parcours natifs, 4/4 mise à jour et 5/5 reconstruction DEV.
+PostgreSQL 17.11 réel : bibliothèque 37/37 et espace partagé 20/20.
+Ces 57 exécutions comprennent 40 cas portables rejoués ; les 17 scénarios
+PostgreSQL sont supplémentaires et ne sont pas additionnés en double.
+Les deux jobs et la publication ont réussi. Tag v3.2.0 sur le commit exact.
+Archive Windows de preuve (artefact 12465548355), SHA-256 :
+635681068e260e01136a813fa5b2a5d947d714a45420eb38d8cc6c5a830cc388
+Archive PostgreSQL de preuve (artefact 12463329827), SHA-256 :
+1e25980dbf10b0dc9ec28ebf217c8e30dd0868555d71dfb430080c6ae7b51328
+
+COUVERTURE CONSERVEE DE 3.2.0
+Nouvelles portes : TicketLibraryChecks (SQLite, ordre date_mod, cache,
+recherche avant pagination, fragments RAG et reprise de flux),
+SharedWorkspaceChecks (deux caches, mutations idempotentes, conflits,
+retraits et interruption), TicketLibraryAcquisitionChecks (Chromium,
+critère Tous réellement observé, pages et onglets consultables), et
+WebViewChecks --library-only (interface reliée aux vrais handlers).
+La navigation personnalisable et le thème adapté de Domenia disposent
+d’un parcours WebView dédié : groupes, visibilité, ordre, sauvegarde,
+annulation, accessibilité des pages masquées et réduction des animations.
+Le parcours --shared-operations-only relie les publications et réceptions
+de notes, tournées, répartitions et capacités aux vrais handlers C#.
+Les tests RuntimeSession couvrent aussi le déplacement cohérent de la
+base, le choix d’une base existante, le secret local, les dates ambiguës,
+les exports protégés, la séparation des installations GLPI et l’ouverture
+des contenus en cache depuis le lecteur sans nouvelle lecture GLPI.
+Les réceptions partagées vérifient les contextes, les documents modifiés
+depuis l’aperçu, les copies brouillons et la préservation du travail privé.
+Une porte PostgreSQL 17 exécute les échanges contre un vrai serveur
+temporaire distinct de GLPI, avec schémas synthétiques isolés et journaux.
+La publication dépend des deux jobs Windows et PostgreSQL. Leurs succès
+et les totaux exacts sont établis par les journaux du commit livré ;
+aucun serveur central privé ni portail d’entreprise n’est présumé testé.
+Voir docs/RELEASE-3.2.0.md et docs/Bibliotheque-et-partage.md.
+
+VERIFICATIONS CONSERVEES DEPUIS 3.1.1
+Les tests contrôlent le masquage automatique des widgets indisponibles,
+la visibilité des zéros valides, le retour en édition, la sauvegarde du choix,
+l’annulation et le transfert de la configuration. Les libellés de colonnes
+et la météo séparent les champs disponibles de la réception des lignes.
+Les avertissements de présentation sont consultables sans bandeau répété ;
+les contradictions de réception, de périmètre ou d’identité restent visibles.
+Le rapport local des cellules divergentes est borné, relisible et exportable.
+Ses valeurs ne transitent pas dans le journal général ni dans SessionState.
+Les tests utilisent des valeurs synthétiques et vérifient la liaison au bon
+relevé, les limites de lecture et le refus des chemins étrangers.
+Les résultats définitifs Windows sont ceux du workflow du commit livré :
+voir docs/RELEASE-3.1.1.md, sans assimiler les fixtures au portail privé.
+
+COUVERTURE CONSERVEE DE 3.1.0
+La refonte du shell couvre navigation dépliable/rail/tiroir, focus clavier,
+thèmes clair/sombre et réduction des animations. Les contrôles des tickets
+vérifient les identifiants entiers sur une ligne, la pagination, l’onglet actif
+visible et l’absence de null parasite ; le texte utilisateur littéral reste
+conservé. Les pages sont exercées avec leurs styles et modules réels.
+
+Le dashboard couvre les sections persistantes et vides, titre/description/
+accent/visibilité, ordre et reprise des anciennes dispositions au format 1.
+Les opérations de déplacement et de redimensionnement doivent conserver
+les verrouillages, la sauvegarde/relecture et l’annulation/rétablissement.
+
+Les observations de réception, d’identifiants et de valeurs sont distinctes.
+Une équivalence HTML/CSV de texte riche doit provenir de la cellule exacte ;
+un mot changé, une preuve étrangère ou un contrôle C1 divergent reste un écart.
+Le CSV reçu ne change pas. Les fixtures ne prouvent ni la cause ni la résolution
+des écarts d’un portail privé. Les résultats Windows et les nombres exacts
+sont ceux des journaux du commit livré ; aucun succès Windows n’est déduit
+des contrôles locaux. Voir docs/RELEASE-3.1.0.md.
+
+REGRESSION D’IMPORT CORRIGEE EN 3.0.2
+Par rapport au parcours 2.0, la comparaison ajoutée en version 3 pouvait
+interrompre le traitement après la lecture réussie d’un CSV valide, avant
+sa mise à disposition dans le relevé, Excel et l’enrichissement des villes.
+Une fixture synthétique de 788 lignes, 20 identifiants visibles concordants
+et 32 écarts sur 260 valeurs comparées a reproduit cet échec avant correction.
+La fixture ne contient aucune donnée du portail privé et ne prouve pas
+l’origine des écarts observés dans ce portail.
+
+Le parcours corrigé a ensuite réussi localement sur cette fixture : 788
+lignes chargées et enrichies pour les villes, CSV natif inchangé, classeur
+disponible avec a-verifier dans son nom, Complete=false, réserve de concordance
+et contrôle final maintenus. Les contrôles C1 du fichier sont conservés.
+La validation Windows est à lire dans les journaux du commit livré ;
+aucun total de tests ni succès Windows n’est déduit de ce test local.
+Un mauvais échantillon d’identifiants au contrôle initial et un CSV corrompu
+restent refusés. Le contrôle final reste actif : une variation du contexte,
+du total ou de l’échantillon, ou un contrôle indisponible, maintient le relevé
+à vérifier. Aucune conversion C1 et aucune réécriture du CSV natif.
+
+VALIDATION LOCALE AVANT LA CHAINE WINDOWS
+Les suites métier utilisent des données et profils temporaires synthétiques.
+Les contrôles de navigateur interceptent les routes de test : aucun portail
+privé ni fournisseur d’assistance, de routage ou de météo n’est contacté.
+Les contrôles WebView portables chargent les vrais modules HTML/CSS/JS et
+appellent les vrais moteurs C# à travers WebBridge. Ils vérifient notamment
+la CSP stricte, les opérations autorisées et les résultats périmés refusés.
+Les projets Windows peuvent être compilés depuis Linux pour vérifier leurs
+références ; cela ne prouve ni le rendu WebView2 Windows ni le démarrage EXE.
+NuGetAudit=false peut être utilisé localement lorsque le service d’audit
+est inaccessible. Ce résultat ne constitue pas un audit de dépendances.
+Les nombres définitifs figurent dans les résumés des processus du workflow
+et doivent être lus sur le commit exact de la livraison.
+
+SUITES METIER OBLIGATOIRES (BclChecks)
+20 projets : StartupDiagnosticsChecks, StartupResilienceChecks,
+FoundationChecks, WorkplaceChecks, ConfigurationChecks, DashboardChecks,
+DashboardLayoutChecks, PreviewQueryChecks, TechnicianWorkloadChecks,
+CityDetectionChecks, TourPlanningChecks, QueryChecks, AnalyticsChecks,
+CompletionChecks, UpdateChecks, LanguageAssistantChecks, NativeImportChecks
+ExportChecks, TicketLibraryChecks et SharedWorkspaceChecks.
+
+Couverture complémentaire :
+- profils et identités isolés, correspondances locales et archives protégées ;
+- checkpoints, ordonnancement, horaires fixes, recettes et santé des sources ;
+- variations d’alertes, contributeurs, résolution et conflits d’import ;
+- calendriers, capacités, contraintes de sites et étapes de tournées verrouillées ;
+- événements du traitement, relations, documents et brouillons ;
+- cohortes, anomalies, durées incertaines, index et effectifs datés ;
+- reconstruction des filtres et de l’identité personnelle dans les archives ;
+- DSL et citations de l’assistant, sans appel réel à un fournisseur ;
+- inventaires, archives de mise à jour, signature et restauration ;
+- sauvegarde des paramètres avant migration de version et reprise des repères
+  du seul profil actif v2 dont le contexte correspond au JSON hérité.
+SourceProvenanceChecks ajoute les contrôles PowerShell du commit/arbre Git,
+de l’inventaire exporté, des sources altérées ou absentes et du dépôt parent.
+
+NAVIGATEUR GLPI ET DOM (BrowserChecks)
+BrowserChecks, AutomationChecks, TicketDetailChecks,
+TicketLibraryAcquisitionChecks et NativeDomChecks.
+Les processus, codes de sortie et résumés sont contrôlés par le script CI.
+Les tests incluent portée modifiée après SSO, réseau temporaire/durable,
+reprise valide/incompatible, export corrompu, annulation et divergence de
+cellules malgré des identifiants identiques. Les formulaires Select2 et
+éditeurs de texte sont testés sans écrire dans un portail réel.
+Le diagnostic des divergences est agrégé par positions et rôles de colonne,
+sans recopier valeurs, identifiants ou en-têtes libres. Les contrôles C1 ne sont
+pas convertis. Les ellipses, dates, cellules absentes, en-têtes ambigus et perte
+du rapprochement au contrôle final possèdent des régressions dédiées.
+L’adaptateur DOM 1.1.2 lit les popups multivalués statiques GLPI 9.5/10
+correctement associés, y compris les demandeurs dont les fiches d’information
+imbriquées contiennent leurs propres sauts de ligne. Les aperçus (...), leurs
+clones dans un popup extérieur et les séparateurs HR disposent de fixtures.
+La commande de lecture supplémentaire est exclue uniquement dans son wrapper
+GLPI reconnu. Un élément ultérieur divergent reste une divergence ; il ne
+devient pas une correspondance pour permettre l’import avec réserve.
+La représentation des guillemets par csv_clean est reconnue dans le seul
+sens liste vers CSV. Les variations de présentation RichText ne justifient
+pas de suppression générale de ponctuation, de casse ou de contrôles C1.
+Les règles de texte riche exigent une version reconnue par le marqueur
+officiel de l’application, en dehors des cellules. Des tests négatifs
+vérifient qu’une version ancienne, future, absente ou contradictoire ne peut
+autoriser les transformations propres au convertisseur GLPI 10 étudié.
+
+INTERFACE LOCALE ET PONT C# (WebViewChecks)
+WebViewChecks : shell complet, 26 espaces, thèmes, navigation, tableaux,
+filtres, tri, colonnes, petite fenêtre et absence d’erreurs JavaScript/CSP.
+RuntimeSessionChecks : contexte des sources/imports/archives, formulaires
+périmés, sélection de page/table, annulation active et en attente, fermeture
+avec sauvegarde du dernier brouillon et récupération après échec d’écriture.
+AnalyticsBridgeChecks : dashboards éditables, historique global/personnel/
+filtré avec ruptures explicites, requêtes, populations, assistant et exports.
+WorkplaceBridgeChecks : tickets, notes, lecture, brouillons, soumission
+synthétique unique, reçus durables, techniciens, calendriers et répartition.
+TerrainBridgeChecks et TerrainWebChecks : villes/sites, synonymes, règles,
+priorités, tournées, verrous, consentements externes et assistant de mise à jour.
+Les captures de cette étape proviennent de Chromium avec le vrai pont C# ;
+elles ne sont pas présentées comme des captures de l’hôte Windows natif.
+
+CONSTRUCTION (BuildPack)
+Deux ZIP : PROD et DEV, exactement GLPI-Pilot.exe + wad à la racine.
+Sources, tests et outils uniquement dans wad/sources du pack DEV.
+Même EXE dans les deux packs, pilote Playwright Windows complet, interface
+locale wad/web, runtime WebView2 fixe intégral, guides, support et licences.
+Le CAB Microsoft et les 257 fichiers du runtime sont vérifiés par empreinte ;
+14 contrôles hors ligne vérifient aussi la validation du paquet de runtime.
+Le build utilise un cache NuGet explicitement fourni ou une restauration
+en ligne explicitement autorisée. Aucun repli réseau implicite en mode hors ligne.
+SHA-256 de tous les fichiers et commit source contrôlés. Aucun profil SSO,
+relevé, clé, réglage personnel ou cache de navigation n’est inclus.
+Les sources DEV sont extraites hors dépôt avec leur manifeste de provenance,
+puis réellement reconstruites avec le même SDK et runtime, un cache NuGet
+initialement vide et les seuls paquets locaux du premier build. Les deux
+nouveaux packs doivent garder la version et le commit et partager leur EXE ;
+le PROD reconstruit passe le vérificateur réel de mise à jour. Ces packs de
+test sont supprimés ; seuls les packs initiaux poursuivent la publication.
+La signature Authenticode est vérifiée lorsqu’un certificat est configuré.
+Sans certificat fourni, le journal indique NotConfigured et l’EXE est non signé.
+
+DEMARRAGE DU PACK WINDOWS (PackStartup)
+Extraction et lancement réel du pack PROD dans un espace temporaire marqué.
+Le profil GLPI Pilot de test est explicitement isolé ; refus d’une instance
+préexistante. Le harnais peut être exécuté sur un bureau Windows interactif
+autorisé, sur le runner ou dans la VM de laboratoire.
+Vérifications : fenêtre visible, runtime fixe du pack, interface locale prête,
+fermeture normale, réglages inchangés sans interaction, démonstration,
+26 espaces, thèmes, petite fenêtre, instance unique et restauration minimisée.
+Zoom natif à 125 %, retour clavier à 100 % et reprise à 110 % après redémarrage.
+Deux scénarios provoquent réellement un crash du processus de rendu puis du
+navigateur WebView2 isolé : écran natif de récupération visible, fermeture
+Windows bornée sans réponse de la page et réglages enregistrés préservés.
+Le point de contrôle navigateur est uniquement accessible sur la boucle locale,
+avec une option de test et un profil temporaire vérifié ; il n’est pas activé
+au démarrage normal du produit. Les captures concernent des données fictives.
+Limite interne de cinq minutes et limite externe de six minutes ; nettoyage
+limité aux processus et dossiers détenus par le harnais.
+
+MISE A JOUR REELLE (UpdateStartup)
+Quatre scénarios sur copies du pack PROD, sans téléchargement externe :
+1. Refus d’une transaction tant que le processus de l’installation existe.
+2. EXE verrouillé : remplacement refusé ; restauration bloquée conserve
+   sauvegardes et diagnostic plutôt que de détruire la copie récupérable.
+3. Remplacement réel, nouveau processus et acquittement de l’interface prête.
+4. Echec de démarrage provoqué : arrêt des processus détenus et restauration
+   des fichiers précédents avec contrôle de leurs empreintes.
+Le démarrage actualisé dispose de 210 secondes pour produire son acquittement.
+Le harnais a une limite interne de quinze minutes, externe de seize minutes.
+Les copies sont nettoyées entre scénarios ; l’archive initiale et les octets des
+réglages sont contrôlés. Aucun profil utilisateur existant n’est modifié.
+Les scénarios utilisent des copies du même binaire et des métadonnées de version
+synthétiques ; ils ne démontrent pas toutes les migrations depuis une ancienne EXE.
+
+PUBLICATION
+Le job Release dépend de la réussite des jobs Windows et PostgreSQL.
+Il promeut les ZIP exacts de ses artefacts, contrôle version, commit, empreinte
+EXE et identité des deux exécutables, puis joint les notes du commit testé.
+Aucun autre binaire local n’est substitué après la validation.
+
+PREUVES A CONSULTER
+Artefact windows-checks-<run_id>-<tentative> :
+- journaux des 20 suites métier et des suites navigateur/DOM ;
+- webviewchecks.log, runtimesessionchecks.log, analyticsbridgechecks.log,
+  workplacebridgechecks.log, terrainbridgechecks.log, terrain-webview-checks.log ;
+- web-preview/*.png, interface portable avec pont C# réel ;
+- source-provenance-checks.log et dev-rebuild-checks.log ;
+- runtime-packaging-checks.log, pack-build.log, pack-sha256.txt,
+  executable-sha256.txt et état de signature ;
+- windows-startup-build.log, windows-startup-checks.log et native-webview/*,
+  preuves issues du vrai pack Windows avec le runtime WebView2 fourni ;
+- windows-update-build.log, windows-update-checks.log et windows-update/*.
+Artefact postgres-checks-<run_id>-<tentative> : version réelle du serveur,
+contexte du commit et journaux TicketLibraryChecks/SharedWorkspaceChecks
+exécutés avec le mode --postgres contre le service PostgreSQL 17.
+Les journaux sont conservés 14 jours, les artefacts de packs 30 jours.
+Les ZIP promus restent disponibles dans la Release de la version.
+
+INFRASTRUCTURE DOMENIA
+Le document v2/REPRISE.md de Domenia est la référence du laboratoire :
+VM DOMENIA-FIRSTRUN-20261020, Windows 11, 4 vCPU et 8 Gio, session interactive
+conservée. Le SDK et le cache hors ligne sont dans C:\DomeniaDev\dotnet et
+C:\DomeniaDev\cache\nuget. Les commandes dédiées figurent dans
+GitHub-et-compilation.txt. La connexion SSH privée et les essais dans cette VM
+ne sont pas attestés par une réussite sur le runner hébergé GitHub.
+
+LIMITES RESTANTES
+Le point 197 du registre exige encore le portail/SSO privé, les extensions,
+les droits et les essais veille/multi-écrans physiques du poste utilisateur.
+Le point 198 exige un certificat de signature de confiance fourni à la chaîne.
+Une réussite sur données synthétiques n’atteste pas ces deux prérequis externes.
+Les inconnues, trous d’observation, limites et hypothèses restent visibles.
+Une absence de ticket n’est jamais comptée comme une résolution.

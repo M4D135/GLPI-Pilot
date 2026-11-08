@@ -1,0 +1,273 @@
+GLPI Pilot 3.1.1 — tableaux de bord WebView et atelier de requêtes
+
+OUVRIR LE BON ESPACE
+La navigation Analyser contient Dashboard, Atelier de requêtes,
+Historique et analyses, Effectifs datés et Assistant de langage.
+Dans Dashboard, Disposition choisit le tableau de bord ; Périmètre personnel
+choisit Équipe entière ou un technicien effectivement reconnu dans le relevé.
+Les dispositions globale et personnelle sont indépendantes. Les personnes
+consultées partagent le modèle personnel, calculé sur leurs propres lignes.
+Un ticket attribué à plusieurs personnes peut appartenir à plusieurs vues :
+ne pas additionner ces volumes comme des tickets tous distincts.
+
+LIRE LE CONTEXTE AVANT LES CHIFFRES
+Le bandeau résume la disposition, la personne éventuelle, le nombre de lignes,
+la date du relevé et la complétude. Archive et Démonstration restent indiqués.
+Déplier ce bandeau affiche la provenance, la date du calcul, le total annoncé,
+les filtres communs et ceux des widgets. Détails des contrôles donne accès
+aux observations du relevé. Une source incomplète ne devient pas complète lorsque
+le bandeau est replié.
+Voir les lignes du périmètre ouvre le détail paginé du calcul courant.
+Cliquer une cellule permet d’examiner sa valeur brute et son interprétation.
+Le lien d’un ticket conserve l’identité de sa ligne et la révision du relevé.
+
+Depuis 3.1.0, la réception des lignes et la concordance des valeurs sont
+présentées séparément lorsqu’elles sont documentées. Réception complète
+signifie que le fichier toutes-pages a été reçu au total annoncé, sans
+contradiction du total final ; cela ne certifie pas toutes ses valeurs.
+Les contrôles d’identifiants et de valeurs portent sur un échantillon.
+Une ancienne archive sans ces observations ne reçoit pas de nouvelle
+preuve à partir de ses avertissements.
+
+RELEVE NATIF A VERIFIER
+Depuis 3.0.2, un CSV valide dont les identifiants concordent reste disponible
+même si certaines valeurs diffèrent de l’affichage GLPI. Les dashboards,
+requêtes, villes et exports utilisent ses lignes avec la réserve affichée.
+Complete=false signifie que la concordance ou l’exhaustivité n’est pas
+certifiée ; le nombre de lignes peut pourtant correspondre au total annoncé.
+Le contrôle final reste actif. Une alerte exigeant un relevé complet ne peut
+pas considérer cette réserve comme résolue. Le CSV natif et ses contrôles C1
+restent intacts ; aucune conversion de ponctuation n’est appliquée aux données.
+
+DISPONIBILITE DES WIDGETS ET DIAGNOSTIC 3.1.1
+Les widgets sans données calculables sont automatiquement masqués en lecture.
+Le mode Modifier le dashboard les réaffiche avec leur motif. Afficher les
+widgets indisponibles mémorise le choix par tableau. Un zéro calculé reste
+visible ; le masquage automatique ne supprime ni widget ni réglage.
+Le widget Qualité présente un résumé ; correspondances et champs absents
+sont repliés. Les champs facultatifs manquants ne font pas échouer l’import.
+Qualité du relevé permet de voir et d’exporter le diagnostic des cellules
+divergentes, enregistré à la prochaine collecte. Ce fichier local contient
+les valeurs comparées et les codes des caractères ; il n’est pas transmis.
+Le journal ordinaire et les archives de configuration n’incluent pas ce
+contenu. Le CSV original et les contrôles historiques restent inchangés.
+
+COMMANDES DU DASHBOARD
+La barre principale propose Modifier le dashboard, Filtres et comparaison
+et Exporter. Autres actions regroupe Actualiser, + Tableau de bord,
+Annuler la modification et Rétablir la modification.
+Actualiser recalcule localement ; une nouvelle collecte GLPI se lance depuis
+la page de collecte. Les vingt derniers changements de disposition peuvent
+être annulés ou rétablis pendant la session, séparément pour global/personnel.
+Les sauvegardes de disposition sont automatiques après validation ; une erreur
+est affichée. Changer de source invalide les anciens détails et préparations.
+
+ZOOM, HAUTEUR ET DEFILEMENT
+Les boutons − / pourcentage / + de la barre d’état règlent le zoom de 75 à
+150 %, par pas de 5 %. Ctrl+Plus, Ctrl+Moins, Ctrl+0 et Ctrl+molette donnent
+les mêmes commandes. Cliquer le pourcentage rétablit 100 %.
+Le zoom est mémorisé localement. La grille adapte ses colonnes à la fenêtre.
+Dans Régler, Hauteur automatique laisse le widget suivre son contenu ; sinon
+la hauteur choisie s’applique et le contenu peut défiler dans le widget.
+Les valeurs détaillées sont accessibles dans les tableaux paginés.
+
+AJOUTER ET REGLER DES WIDGETS
+Modifier le dashboard ouvre le mode édition ; Quitter l’édition le referme.
++ Widget ouvre le catalogue : recherche, famille, Disponibles seulement,
+favoris et éléments récents. Les sources indisponibles restent explicites.
+Ajouter insère le widget ; Enregistrer les favoris conserve les choix.
+Chaque carte propose Régler, une poignée de déplacement et une case de
+sélection. Glisser la poignée déplace le widget avant ou après une cible,
+ou vers la zone de dépôt d’une section. Cliquer la poignée ouvre le choix
+de la section et de la position. Au clavier, les flèches haut/bas changent
+l’ordre dans la section et gauche/droite changent de section.
+
+La poignée en bas à droite règle visuellement les dimensions. Au clavier,
+gauche/droite changent la largeur et haut/bas la hauteur ; Maj augmente
+le pas vertical. Échap annule le redimensionnement en cours. Une modification
+enregistrée entre dans l’historique Annuler/Rétablir de la disposition.
+
+Régler permet de choisir type, source, titre, section, largeur sur 12 colonnes,
+hauteur, style, accent, présentation et nombre de catégories de 3 à 30.
+Le même formulaire contient les définitions, la note, les filtres propres,
+les objectifs/seuils, le mini-historique, les bornes d’histogramme et le verrou.
+Enregistrer applique la définition ; Dupliquer crée une copie indépendante.
+Supprimer retire la carte ; un widget verrouillé doit être déverrouillé avant
+suppression. Le verrou protège les déplacements et les actions groupées.
+Les notes sont du texte, sans exécution de HTML ni de code.
+
+SECTIONS ET MODIFICATIONS GROUPEES
+En édition, + Section crée un bloc indépendant, conservé même sans widget.
+Régler la section choisit son titre, sa description, sa couleur d’accent,
+sa visibilité et sa position. Le titre peut changer sans modifier l’identité
+de la section ni les liens de ses widgets. L’état replié est mémorisé.
+La poignée de section déplace le bloc à la souris ou avec les flèches.
+Une section masquée reste accessible en édition. La supprimer déplace ses
+widgets vers une autre section ; cette action exige de déverrouiller les
+widgets concernés. Au moins une section est conservée.
+Sélectionner plusieurs cartes expose largeur, hauteur, section, style commun
+et accent commun. Aligner la sélection applique ces valeurs et organise les
+retours à la ligne. Masquer la sélection conserve les définitions.
+Widgets masqués permet de les Réafficher. Les widgets verrouillés sont exclus
+des changements groupés.
+
+ORGANISER ET ECHANGER LES DISPOSITIONS
+Autres actions > + Tableau de bord propose neuf modèles : Vide, Pilotage,
+Opérations, Personnel, Équipe, Échéances, Qualité, Géographie et Analyse.
+Chaque espace accepte au plus 12 tableaux de bord de 60 widgets chacun.
+En édition, Disposition > Nom et organisation permet de changer le nom,
+la description et la densité, de Dupliquer ou de Supprimer le tableau ;
+au moins un tableau de bord est conservé.
+Exporter la disposition écrit ses définitions JSON. Importer une disposition
+ouvre un fichier puis un aperçu ; Remplacer cette disposition est une action
+explicite sur l’espace global ou personnel concerné. Les définitions importées
+sont validées avant écriture, sans exécution de script ni de requête externe.
+Le format de disposition reste 1. Les anciennes sections déduites des widgets
+sont reprises en sections explicites sans perdre l’ordre, les widgets masqués
+ou l’état replié. Les sections vides et leurs propriétés sont désormais
+enregistrées et échangées avec la disposition.
+
+PERIMETRES ET COMPARAISON
+Filtres et comparaison règle les filtres communs A et le périmètre B.
+Les conditions se combinent par ET : population d’indicateur, catégorie de
+répartition ou période datée, avec exclusion possible. Les filtres propres
+au widget s’ajoutent aux conditions communes.
+B est indépendant des filtres A mais reste dans la source de la vue : sur
+une personne, il ne récupère pas les tickets extérieurs à cette personne.
+Un contexte peut être nommé et mémorisé ; Charger ce contexte l’applique.
+Le nombre de contextes est limité à 30, avec 12 filtres par liste.
+
+Cliquer une catégorie pour filtrer les widgets active les filtres croisés.
+Un clic sur un chiffre, une catégorie ou un lieu ajoute alors sa condition.
+Sinon le clic ouvre les lignes contributrices. Effacer les filtres réinitialise
+les conditions communes et croisées ; les filtres propres aux widgets restent
+visibles dans leurs réglages. Aucune sélection ne modifie le CSV natif.
+Un champ devenu indisponible n’est jamais ignoré pour élargir le périmètre.
+
+GRAPHIQUES ET DENOMINATEURS
+Barres, listes, colonnes, anneau, jauge et Pareto gardent les valeurs exactes,
+unités et effectifs. Le Pareto classe les catégories par valeur décroissante ;
+son cumul utilise toutes les catégories du calcul, même si seul un Top est
+affiché. Seuil de Pareto (%) mémorise le repère choisi.
+Les moyennes, quantiles et taux ne sont pas additionnés pour fabriquer des
+parts d’un total ; ces agrégats restent présentés avec leurs vraies valeurs.
+
+Les matrices affichent leurs deux axes et ouvrent les lignes d’une cellule.
+La présentation stacked utilise Empilage : Pourcentage ou Volume. Le total
+complet de chaque ligne sert au pourcentage ; le volume conserve une échelle
+commune. Les cellules hors affichage ne sont pas redistribuées dans les parts.
+Le détail paginé permet de consulter toute la matrice. Histogrammes, boîtes
+à moustaches et nuages de points montrent leur méthode et les échantillons.
+Les objectifs et seuils d’une jauge sont des repères locaux, pas des SLA déduits.
+La météo synthétise les signaux observés, avec couverture et données manquantes.
+
+MINI-HISTORIQUES GLOBAUX, FILTRES ET PERSONNELS — POINT 77
+Mini-historique sur l’indicateur active la courbe ; Fenêtre historique (jours)
+règle les deux périodes comparées. Le calcul relit les archives comparables
+à la date du relevé courant, avec les mêmes filtres communs et propres.
+Dans une vue personnelle, l’identité est recherchée dans chaque archive :
+les anciens numéros de ligne ne servent jamais à retrouver les anciens tickets.
+Un périmètre réellement observé et vide donne zéro ; un périmètre incertain,
+un filtre disparu ou une archive incompatible donne un point inconnu.
+Les trous de collecte restent des ruptures, sans interpolation trompeuse.
+La comparaison affiche les moyennes des observations disponibles, les effectifs
+et les ruptures ; elle n’est pas une moyenne pondérée sur toute la période.
+
+La relecture est annulable : 120 archives, 64 périmètres, deux millions de
+lignes de calcul cumulées et 250 000 valeurs d’indicateur au maximum par lot.
+L’atteinte d’une limite laisse une réserve explicite. Recalculer l’historique
+et Réessayer l’historique permettent de relancer sans refaire la collecte GLPI.
+
+CARTE LOCALE ET EFFECTIFS DATES
+La carte emploie les coordonnées déclarées des sites, sinon celles des villes.
+Zoom, recentrage, liste et sélection sont locaux ; aucun fournisseur de cartes
+ne reçoit les données. Une coordonnée manquante n’est pas une position inventée.
+Les points des tickets actifs ne comptent que les lignes actives reconnues.
+La sélection peut filtrer les autres widgets comme une catégorie ordinaire.
+
+Effectifs datés gère les personnes ou postes par site et contexte GLPI.
++ Période d’effectif ouvre le formulaire : site, unité, nombre positif,
+dates de validité et référence. Les périodes de même site/unité/contexte ne
+peuvent pas se chevaucher. L’import JSON présente ajouts et remplacements avant
+confirmation. Un document de version inconnue est signalé indisponible.
+Le taux pour 100 utilise l’effectif valide à la date d’extraction, avec sa
+couverture. Un filtre de tickets ne réduit pas l’effectif du site.
+Une archive conserve ses propres preuves et dénominateurs ; modifier l’inventaire
+courant ne réécrit pas les archives.
+
+ATELIER DE REQUETES
++ Requête prépare un brouillon. La bibliothèque se recherche par nom,
+description, catégorie ou favoris. Packs métier et Importer un pack présentent
+les définitions avant confirmation. Les conflits sont affichés, avec copies
+renommées et identifiants distincts ; aucune définition n’est exécutée à l’import.
+Exporter la bibliothèque écrit un pack JSON. Limite : 128 définitions.
+
+Le formulaire choisit Population de départ, Agrégat et Champ de l’agrégat.
+Il propose comptage, pourcentage, distincts, somme, moyenne, minimum, maximum,
+médiane et percentile. Une mesure numérique exige des valeurs exploitables.
+Jusqu’à 20 conditions peuvent être combinées par ET/OU, ou par une expression
+avec parenthèses et NON. Paramètres nommés et champs calculés autorisés sont
+éditables dans leurs volets ; les cycles et fonctions inconnues sont rejetés.
+Les trois niveaux de regroupement peuvent utiliser une période de date.
+Chaque sous-total est recalculé sur ses contributeurs uniques, y compris les
+moyennes et percentiles. Il ne résulte pas de l’addition de sous-groupes.
+
+Prévisualiser calcule localement sans enregistrer. Le résultat expose valeur,
+échantillon, décisions inconnues, hiérarchie et lignes contributrices.
+Expliquer montre pourquoi une ligne est retenue, exclue ou indéterminée.
+Enregistrer mémorise explicitement la définition. Ajouter un widget réutilise
+cette définition dans le dashboard choisi. Une définition supprimée laisse
+ses anciens widgets indisponibles, sans substituer une autre requête.
+L’export CSV/Excel porte sur toutes les lignes retenues ou tous les sous-totaux,
+indépendamment de la page affichée.
+
+HISTORIQUE ET ANALYSES
+Le catalogue donne accès aux relevés archivés, à leur protection, ouverture
+et export. Comparer confronte deux relevés chronologiques comparables.
+Une absence du nouveau relevé n’est pas une résolution. La vérification des
+absents prépare une file de lectures datées, sans modifier l’état historique ;
+la personne choisit ensuite la limite et lance la file.
+
+Analyses historiques affiche mouvements, calendrier des collectes, transferts,
+cohortes J+1/J+7/J+30, temps en statut, variations, anomalies et scénarios de stock.
+Les dates de transition exactes inconnues ne sont pas inventées. Les scénarios
+sont conditionnels, avec hypothèses et fourchettes. L’historique d’un ticket
+utilise l’index local du contexte choisi. Les archives restent la source de vérité.
+
+EXPORTER ET PARTAGER
+Exporter ouvre le choix : Rapport HTML autonome, Bilan Excel, Bilan CSV,
+PDF visuel de la page ou PNG de la zone visible. Choisir le fichier et exporter
+est l’action finale. Le dialogue est fermé avant toute capture visuelle.
+Le cartouche contient dates, source, périmètre, filtres et complétude.
+Le PNG capture la zone visible, pas les widgets hors écran. Le PDF imprime
+la disposition affichée et la pagine ; déplier les sections à inclure.
+Le PDF utilise WebView2 fourni avec l’application, sans imprimante virtuelle.
+Le rapport HTML autonome rassemble graphiques, qualité, critères, provenance
+et toutes les lignes du périmètre, dans une limite de 256 Mio. Il ne charge
+aucune ressource externe et n’exécute aucun script.
+Les écritures utilisent un fichier temporaire ; une erreur ou une révision
+périmée ne remplace pas un document existant par un export partiel.
+
+L’export de configuration partage dispositions, notes, objectifs, règles de
+villes et définitions de requêtes. Les critères saisis font partie du fichier.
+Les relevés et cookies n’y sont pas inclus ; une clé d’assistant mémorisée
+reste séparée de la configuration portable.
+
+ASSISTANT DE LANGAGE FACULTATIF
+Ouvrir Assistant de langage depuis la navigation, l’atelier ou Assistant sur
+ce périmètre dans le dashboard. Choisir le moteur local ou un endpoint explicite.
+Préparer et voir le contenu exact affiche destination et données sélectionnées.
+Générer depuis cette préparation demande ensuite une action distincte.
+Pour un fournisseur externe, l’activation et le consentement à cet envoi précis
+sont nécessaires. L’ouverture de la page n’envoie rien.
+
+Le moteur local est déterministe et borné. Une requête proposée est validée ;
+Prévisualiser les résultats lance son calcul local. Ouvrir le brouillon dans
+l’atelier prépare une définition non enregistrée, que l’on peut relire et modifier.
+Une synthèse cite les seuls tickets fournis, avec champs et extraits contrôlés.
+Les références inconnues sont rejetées ; la conclusion doit néanmoins être relue.
+Le profil reste local. Une clé mémorisée est protégée par le compte Windows ;
+l’autorisation d’envoi externe reste désactivée à la prochaine ouverture.
+
+Pour les méthodes, les formats et les limites détaillés :
+Dashboards-et-extraction.md et Requetes-villes-tournees.md.

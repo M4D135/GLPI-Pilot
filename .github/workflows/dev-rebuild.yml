@@ -1,0 +1,68 @@
+name: Reconstruction DEV depuis les sources exportées (manuelle)
+
+# Sortie de la qualification à partir de 3.14.1 : cette preuve (environ 10 min et 9 Go écrits) montre
+# que les sources exportées dans le pack DEV se reconstruisent hors Git, avec un cache NuGet vide et un flux local,
+# et que le PROD reconstruit passe le vrai vérificateur de mise à jour. Elle ne conditionne pas la publication du
+# pack PROD-LIGHT : on la lance à la main avant une version qui touche build.ps1,
+# build-tools/SourceProvenance.ps1, build-tools/Test-DevRebuild.ps1 ou les dépendances NuGet.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-rebuild-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dev-rebuild:
+    name: Windows x64 · reconstruction DEV
+    runs-on: windows-2025
+    # BuildPack -IncludeDevRebuild : pack-build 15 min et Test-DevRebuild 20 min au plus, plus la préparation.
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+    steps:
+      - name: Récupérer les sources
+        # Official release v7.0.1; immutable commit verified through the GitHub API.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Installer le SDK .NET 10 qualifié
+        id: dotnet
+        # Official release v6.0.0.
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+
+      - name: Sélectionner le SDK et préparer les journaux
+        env:
+          CI_DOTNET_SDK: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          if (-not (Test-Path -LiteralPath global.json)) {
+            @{ sdk = @{ version = $env:CI_DOTNET_SDK; rollForward = 'latestPatch'; allowPrerelease = $false } } |
+              ConvertTo-Json -Depth 3 | Set-Content -LiteralPath global.json -Encoding utf8
+          }
+          New-Item -ItemType Directory -Path artifacts/windows-ci/logs -Force | Out-Null
+          dotnet --info | Tee-Object -FilePath artifacts/windows-ci/logs/dotnet-info.log
+          if ($LASTEXITCODE -ne 0) { throw '.NET information unavailable.' }
+
+      - name: Construire les packs avec le DEV puis le reconstruire depuis ses sources
+        timeout-minutes: 40
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack -IncludeDevRebuild
+
+      - name: Conserver les journaux, même en cas d’échec
+        if: always()
+        uses: ./.github/actions/retain-evidence
+        with:
+          name: dev-rebuild-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/windows-ci/logs/

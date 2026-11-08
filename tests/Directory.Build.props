@@ -1,0 +1,11 @@
+<Project>
+  <!-- The test hosts compile the application sources directly, so AppPaths.ApplicationVersion reads the test
+       assembly version. Follow the version declared in GlpiPilot.csproj: the interface tested by Playwright, its
+       captures and the guide figures then show the real version instead of a fixed test number. -->
+  <Target Name="FollowApplicationVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)../src/GlpiPilot/GlpiPilot.csproj" Query="/Project/PropertyGroup/Version/text()">
+      <Output TaskParameter="Result" PropertyName="Version" />
+    </XmlPeek>
+    <Error Condition="'$(Version)' == ''" Text="The application version is missing from src/GlpiPilot/GlpiPilot.csproj." />
+  </Target>
+</Project>

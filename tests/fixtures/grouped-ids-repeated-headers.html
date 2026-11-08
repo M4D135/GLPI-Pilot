@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr"><meta charset="utf-8"><title>Identifiants GLPI groupés et en-tête répété</title>
+<style>td,th{padding:5px}body{font-family:Arial}</style>
+<form id="massform" data-search-itemtype="Ticket" data-count="123456">
+  <div class="search-card">
+    <table class="search-results" id="grouped">
+      <thead><tr><th>ID</th><th>Titre</th><th>Type</th><th>Urgence</th><th>Statut</th></tr></thead>
+      <tbody>
+        <tr><td>6 071 016</td><td>Valeur avec espaces</td><td>Incident</td><td>Normale</td><td>Nouveau</td></tr>
+        <tr><td>6&nbsp;071&nbsp;017</td><td>Valeur avec espaces insécables</td><td>Incident</td><td>Normale</td><td>Nouveau</td></tr>
+        <tr><td>6&#8239;071&#8239;018</td><td>Valeur avec espaces fines</td><td>Incident</td><td>Normale</td><td>Nouveau</td></tr>
+        <tr id="data-like-headers"><td>ID</td><td>Titre</td><td>Type</td><td>Urgence</td><td>Statut</td></tr>
+        <tr id="repeated-headers"><th>ID</th><th>Titre</th><th>Type</th><th>Urgence</th><th>Statut</th></tr>
+        <tr id="row-heading-data"><th scope="row">ID</th><th>Titre</th><th>Type</th><th>Urgence</th><th>Statut</th></tr>
+        <tr id="different-th-data"><th>Autre ID</th><th>Autre titre</th><th>Incident</th><th>Normale</th><th>Nouveau</th></tr>
+      </tbody>
+    </table>
+    <nav class="pagination"><span>De 1 à 20 sur 999</span><button type="button" disabled>Suivant</button></nav>
+  </div>
+</form></html>

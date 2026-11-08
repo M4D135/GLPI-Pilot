@@ -1,0 +1,11 @@
+# GLPI Pilot 3.8.0 — Configuration des postes à la diffusion
+
+Le bouton **Définir comme configuration par défaut**, dans Réglages, enregistre toutes les options du poste dans `GLPI-Pilot.deployment.json` à côté des exécutables. Le responsable règle le logiciel du dossier PROD, définit ce défaut, puis diffuse ce dossier. L’export vers un autre emplacement et l’import manuel restent disponibles. Les sources, sites, tableaux de bord, automatismes, interface, connexions publiques et chemin du partage de mise à jour sont transférés, ainsi que les préférences conservées dans les fichiers secondaires. Les chemins locaux par défaut sont adaptés au destinataire.
+
+Un profil neuf applique automatiquement le fichier valide au premier lancement. Un profil existant propose de garder ses réglages ou d’examiner toutes les valeurs avant/après avant de les remplacer. Le choix est mémorisé pour l’empreinte du fichier et la version du logiciel. Un import manuel reste disponible. Une sauvegarde réimportable précède l’écriture ; une transaction interrompue reprend les fichiers d’origine.
+
+Les bases et données personnelles restent sur chaque poste. Les secrets ne sont pas exportés ; la démonstration ne remplace pas les réglages réels et le fichier ne donne pas les pouvoirs du lanceur Admin. Voir le [guide de configuration et déploiement](Configuration-deploiement.txt) pour préparer le dossier, importer et restaurer.
+
+Cette version reprend les réunions et exports PDF/HTML/CSV/Excel sélectionnés, le dernier relevé hors connexion et les animations de [3.7.0](RELEASE-3.7.0.md), ainsi que les sources Excel/CSV, la démonstration complète, les mises à jour réseau, les patchs de sites et les deux lanceurs de [3.6.0](RELEASE-3.6.0.md).
+
+Le ZIP officiel conserve deux exécutables et `wad` à sa racine. Le JSON de déploiement s’ajoute après extraction, sans modifier les octets du ZIP officiel utilisé pour les mises à jour. Depuis une version antérieure à 3.6, le premier passage demande une extraction dans un nouveau dossier local. La CI qualifie les moteurs, PostgreSQL, les parcours de déploiement, les packs, la reconstruction DEV et les démarrages/mises à jour/retours arrière Windows avant publication.

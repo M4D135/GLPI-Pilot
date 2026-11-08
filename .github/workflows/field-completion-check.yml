@@ -1,0 +1,171 @@
+name: Terrain 3.12 - qualification historique sans publication
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/field-preparation-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: field-completion-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    name: Terrain engines and real interface bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+      - name: Actual field, SQLite, calendar and folder transport suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/field-completion
+          git rev-parse HEAD > artifacts/field-completion/commit.txt
+          git diff --check
+          for file in web/js/pages/field-preparation*.js web/js/pages/terrain-common.js web/js/pages/terrain-map.js web/js/terrain-activity.js; do node --check "$file"; done
+          node --test tests/WorkspaceGridChecks/run.mjs 2>&1 | tee artifacts/field-completion/layout-and-panel-lifecycle.log
+          for suite in FieldPreparationChecks FieldPreparationWorkspaceChecks FieldPreparationBridgeChecks FieldPreparationGuardChecks FieldCompletionChecks FieldTourChecks CalendarBridgeChecks SharedWorkspaceChecks SharedFolderChecks; do
+            dotnet run --project "tests/$suite/$suite.csproj" -c Release 2>&1 | tee "artifacts/field-completion/$suite.log"
+          done
+      - name: Build interface contract suite
+        run: dotnet build tests/FieldPreparationUiChecks/FieldPreparationUiChecks.csproj -c Release
+      - name: Install pinned isolated Chromium runtime
+        shell: pwsh
+        run: ./tests/FieldPreparationUiChecks/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+      - name: Real modules, safe print layout and retained draft controls
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/FieldPreparationUiChecks/FieldPreparationUiChecks.csproj -c Release --no-build 2>&1 | tee artifacts/field-completion/browser.log
+          grep -Eq '^20/20 field browser checks passed\.$' artifacts/field-completion/browser.log
+      - name: Closing real terrain panels during delayed imports and reads
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/TerrainPanelCloseUiChecks/TerrainPanelCloseUiChecks.csproj -c Release 2>&1 | tee artifacts/field-completion/terrain-panel-close.log
+          grep -Eq '^7/7 terrain panel close browser checks passed\.$' artifacts/field-completion/terrain-panel-close.log
+      - name: Interface through production WebBridge and SQLite in both editions
+        run: |
+          set -euo pipefail
+          for edition in false true; do
+            dotnet run --project tests/FieldIntegratedUiChecks/FieldIntegratedUiChecks.csproj -c Release "-p:PilotAdmin=$edition" 2>&1 | tee "artifacts/field-completion/integrated-$edition.log"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: field-completion-${{ github.run_id }}
+          path: |
+            artifacts/field-completion/
+            artifacts/field-preparation-ui/
+            artifacts/field-integrated/
+            artifacts/terrain-panel-close/
+          retention-days: 14
+          if-no-files-found: warn
+  postgres:
+    name: Real PostgreSQL 17 synchronization
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+        env:
+          POSTGRES_USER: field_test
+          POSTGRES_PASSWORD: field_test_ephemeral
+          POSTGRES_DB: field_test
+        ports: ['127.0.0.1:5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U field_test -d field_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      GLPI_FIELD_POSTGRES: Host=127.0.0.1;Port=5432;Database=field_test;Username=field_test;Password=field_test_ephemeral;SSL Mode=Disable;GSS Encryption Mode=Disable
+      GLPI_PILOT_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=field_test;Username=field_test;Password=field_test_ephemeral;SSL Mode=Disable;GSS Encryption Mode=Disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+      - name: Real field resolution propagation and existing shared-data regressions
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/field-postgres
+          git rev-parse HEAD > artifacts/field-postgres/commit.txt
+          for suite in FieldCompletionChecks TicketLibraryChecks SharedWorkspaceChecks AdministrationChecks; do
+            timeout 300s dotnet run --project "tests/$suite/$suite.csproj" -c Release -- --postgres 2>&1 | tee "artifacts/field-postgres/$suite.log"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: field-postgres-${{ github.run_id }}
+          path: artifacts/field-postgres/
+          retention-days: 14
+          if-no-files-found: warn
+  windows:
+    name: Complete Windows pack qualification
+    runs-on: windows-2025
+    timeout-minutes: 95
+    outputs:
+      prod-artifact-id: ${{ steps.prod.outputs.artifact-id }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Record exact Windows source context
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts/windows-ci/logs -Force | Out-Null
+          git rev-parse HEAD | Set-Content artifacts/windows-ci/logs/commit.txt
+          dotnet --info | Set-Content artifacts/windows-ci/logs/dotnet-info.log
+      - name: Full C# engines including terrain lifecycle and tours
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
+      - name: Synthetic browser collection regressions
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
+      - name: Synthetic library ticket reading
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage LibraryAcquisitionChecks
+      - name: Real UI and C# handlers, including both field editions
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage WebViewChecks
+      - name: Build production packs and check the isolated source rebuild
+        id: pack
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BuildPack
+      - name: Start both actual packaged Windows hosts and native field workflows
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage PackStartup
+      - name: Check actual Windows update and rollback on disposable copies
+        shell: pwsh
+        run: ./build-tools/Invoke-WindowsCi.ps1 -Stage UpdateStartup
+      - name: Retain validated PROD archive without another ZIP wrapper
+        id: prod
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: GLPI-Pilot_3.12.0_PROD_Windows-x64.zip
+          path: ${{ steps.pack.outputs.prod-pack-path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain Windows evidence even if qualification fails
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: field-windows-checks-${{ github.run_id }}
+          path: |
+            artifacts/windows-ci/logs/
+            artifacts/field-integrated/
+          retention-days: 14
+          if-no-files-found: warn
