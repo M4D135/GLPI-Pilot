@@ -326,8 +326,8 @@ internal static class SimulationChecks
     private static async Task Updates(SessionFixture f)
     {
         await Import(f); var first = await f.Call("update.state"); var original = first.GetProperty("version").GetString();
-        var release = await f.Call("update.findOfficial", new { consent = true, edition = "PROD" });
-        var plan = await f.Call("update.downloadOfficial", new { consent = true, token = release.GetProperty("token").GetString() });
+        var archive = await f.Call("update.selectArchive");
+        var plan = await f.Call("update.prepareLocal", new { sha256 = archive.GetProperty("sha256").GetString(), commit = archive.GetProperty("commit").GetString() });
         var installed = await f.Call("update.install", new { token = plan.GetProperty("token").GetString(), version = plan.GetProperty("version").GetString(), confirmed = true });
         Check(!installed.GetProperty("closing").GetBoolean() && (await f.Call("update.state")).GetProperty("version").GetString() != original);
         var rollback = await f.Call("update.prepareRollback", new { confirmed = true });

@@ -24,9 +24,10 @@ politique de confiance ; fournisseurs météo/itinéraires, adaptateurs de
 formulaires GLPI, préférences de lecture/rappels, modèles de listes, alertes,
 vues/colonnes des tableaux, préférences des techniciens et ordre des tournées.
 
-L’adresse des publications GitHub officielles est inscrite au document ; cette
-version n’autorise pas un dépôt GitHub arbitraire. Le chemin du partage réseau
-est, lui, configurable et transféré. Les dossiers locaux par défaut sont adaptés
+Depuis 3.14.1, les mises à jour ne passent plus par GitHub : le chemin du
+partage réseau est configurable et transféré. Un fichier exporté par une version
+antérieure, qui inscrivait l’adresse des publications GitHub, reste importable ;
+cette adresse est ignorée. Les dossiers locaux par défaut sont adaptés
 au poste destinataire ; les chemins personnalisés restent tels qu’exportés.
 Vérifier leur pertinence, ainsi que l’identité personnelle éventuellement copiée.
 

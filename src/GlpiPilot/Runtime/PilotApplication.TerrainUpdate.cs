@@ -8,8 +8,6 @@ namespace GlpiPilot.Runtime;
 public sealed partial class PilotApplication
 {
     private string? _terrainUpdateArchive;
-    private OfficialUpdate? _terrainOfficialUpdate;
-    private string _terrainOfficialToken = "";
     private PreparedUpdate? _terrainPreparedUpdate;
     private string _terrainPreparedPolicy = "";
     private static string TerrainUpdatesRoot => Path.Combine(AppPaths.DataRoot, "Updates");
@@ -27,18 +25,14 @@ public sealed partial class PilotApplication
         });
         Register("update.selectArchive", TerrainSelectUpdateAsync);
         Register("update.prepareLocal", TerrainPrepareLocalUpdateAsync);
-        Register("update.findOfficial", TerrainFindUpdateAsync);
-        Register("update.downloadOfficial", TerrainDownloadUpdateAsync);
         Register("update.prepareRollback", TerrainPrepareRollbackAsync);
         Register("update.install", TerrainInstallUpdateAsync);
-        Register("update.openReleases", async (a, ct) => { ct.ThrowIfCancellationRequested(); await Host.OpenExternalAsync(UpdateReleaseClient.ReleasesPage); return new { opened = true }; });
     }
     private object TerrainUpdateState()
     {
         var policy = UpdatePolicy.Load(DataPath("update-policy.json"));
         return new { version = AppPaths.ApplicationVersion, installRoot = TerrainInstallRoot, installedEdition = UpdateService.InstalledEdition(TerrainInstallRoot), policy, sharedFolder = SharedUpdateFolder(), administration = AdministrationCapabilities.Enabled, windows = OperatingSystem.IsWindows(),
             archive = _terrainUpdateArchive is null ? null : new { name = Path.GetFileName(_terrainUpdateArchive) },
-            official = _terrainOfficialUpdate is null ? null : TerrainOfficialReview(_terrainOfficialUpdate, _terrainOfficialToken),
             prepared = _terrainPreparedUpdate is null ? null : TerrainPreparedReview(_terrainPreparedUpdate),
             outcome = UpdateService.ReadLastOutcome(TerrainUpdatesRoot), automatic = false };
     }
@@ -48,11 +42,6 @@ public sealed partial class PilotApplication
         archiveSha256 = value.ArchiveSha256, files = value.Files.Count, value.IsRollback,
         signature = new { value.Signature.Status, value.Signature.Publisher, value.Signature.CertificateSha256, value.Signature.Description },
         backup = value.BackupRoot
-    };
-    private static object TerrainOfficialReview(OfficialUpdate value, string token) => new
-    {
-        token, value.Version, value.Tag, value.Commit, value.Edition, value.ArchiveName, value.ArchiveSha256, value.Bytes, value.PublishedAt,
-        newer = Version.TryParse(value.Version, out var next) && Version.TryParse(AppPaths.ApplicationVersion, out var current) && next > current
     };
     private async Task<object?> TerrainSelectUpdateAsync(JsonElement args, CancellationToken ct)
     {
@@ -69,32 +58,6 @@ public sealed partial class PilotApplication
         var prepared = await UpdateService.PrepareAsync(path, hash, commit, TerrainInstallRoot, TerrainUpdatesRoot, AppPaths.ApplicationVersion, policy, ct: ct);
         ct.ThrowIfCancellationRequested(); _terrainPreparedUpdate = prepared; _terrainPreparedPolicy = TerrainDigest(policy);
         return TerrainPreparedReview(prepared);
-    }
-    private async Task<object?> TerrainFindUpdateAsync(JsonElement args, CancellationToken ct)
-    {
-        if (!Flag(args, "consent")) throw new InvalidDataException("Lancez explicitement la recherche de publication sur GitHub.");
-        var edition = Text(args, "edition", 10, "PROD"); if (edition is not ("PROD" or "PROD-LIGHT")) throw new InvalidDataException("Édition attendue : PROD ou PROD-LIGHT.");
-        Publish("update.progress", new { message = "Lecture de la dernière publication du dépôt officiel, de son commit et de ses empreintes…" });
-        using var client = new UpdateReleaseClient(); var value = await client.FindLatestAsync(edition, ct); ct.ThrowIfCancellationRequested();
-        _terrainOfficialUpdate = value; _terrainOfficialToken = Guid.NewGuid().ToString("N"); return TerrainOfficialReview(value, _terrainOfficialToken);
-    }
-    private async Task<object?> TerrainDownloadUpdateAsync(JsonElement args, CancellationToken ct)
-    {
-        if (!Flag(args, "consent")) throw new InvalidDataException("Confirmez le téléchargement du pack officiel affiché.");
-        var release = _terrainOfficialUpdate ?? throw new InvalidOperationException("Vérifiez d’abord la dernière publication officielle.");
-        if (Text(args, "token", 40) != _terrainOfficialToken) throw new InvalidOperationException("La publication affichée a changé. Rechargez ses informations avant le téléchargement.");
-        if (!Version.TryParse(release.Version, out var next) || !Version.TryParse(AppPaths.ApplicationVersion, out var current) || next <= current)
-            throw new InvalidOperationException("La publication officielle ne dépasse pas la version installée. Utilisez la sauvegarde vérifiée pour un retour arrière.");
-        var policy = UpdatePolicy.Load(DataPath("update-policy.json")); _terrainPreparedUpdate = null;
-        using var client = new UpdateReleaseClient(); var progress = new Progress<long>(bytes => Publish("update.progress", new { message = "Téléchargement du pack officiel…", bytes, total = release.Bytes }));
-        var archive = await client.DownloadAsync(release, Path.Combine(TerrainUpdatesRoot, "downloads"), progress, ct);
-        try
-        {
-            Publish("update.progress", new { message = "Vérification de l’archive, du manifeste et de la signature de l’exécutable…" });
-            var prepared = await UpdateService.PrepareAsync(archive, release.ArchiveSha256, release.Commit, TerrainInstallRoot, TerrainUpdatesRoot, AppPaths.ApplicationVersion, policy, ct: ct);
-            ct.ThrowIfCancellationRequested(); _terrainPreparedUpdate = prepared; _terrainPreparedPolicy = TerrainDigest(policy); return TerrainPreparedReview(prepared);
-        }
-        finally { if (File.Exists(archive)) File.Delete(archive); }
     }
     private Task<object?> TerrainPrepareRollbackAsync(JsonElement args, CancellationToken ct)
     {

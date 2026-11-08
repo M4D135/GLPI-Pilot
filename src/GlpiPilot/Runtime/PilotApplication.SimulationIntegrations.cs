@@ -10,12 +10,10 @@ public sealed partial class PilotApplication
     private string _simulationInstalledVersion = AppPaths.ApplicationVersion;
     private string? _simulationPreviousVersion;
     private string? _simulationSelectedArchive;
-    private SimulationRelease? _simulationRelease;
     private SimulationUpdatePlan? _simulationUpdatePlan;
     private object? _simulationUpdateOutcome;
     private const string SimulationArchiveHash = "1111111111111111111111111111111111111111111111111111111111111111";
     private const string SimulationCommit = "2222222222222222222222222222222222222222";
-    private sealed record SimulationRelease(string Token, string Version, string Edition, DateTimeOffset PublishedAt);
     private sealed record SimulationUpdatePlan(string Token, string Version, string Edition, bool IsRollback, string Policy);
 
     partial void RegisterSimulationIntegrations()
@@ -54,16 +52,6 @@ public sealed partial class PilotApplication
             policy.Save(DataPath("update-policy.json")); _simulationUpdatePlan = null;
             return Task.FromResult<object?>(SimulationUpdateState());
         });
-        ReplaceSimulationOperation("update.findOfficial", (args, ct) =>
-        {
-            ct.ThrowIfCancellationRequested();
-            if (!Flag(args, "consent")) throw new InvalidDataException("Lancez explicitement le scénario de recherche de publication.");
-            var edition = Text(args, "edition", 10, "PROD");
-            if (edition is not ("PROD" or "PROD-LIGHT")) throw new InvalidDataException("Choisissez PROD ou PROD-LIGHT.");
-            _simulationRelease = new(Guid.NewGuid().ToString("N"), SimulationNextVersion(), edition, DateTimeOffset.Now);
-            Publish("update.progress", new { message = "Simulation · une publication d’exemple est disponible localement, sans contact GitHub." });
-            return Task.FromResult<object?>(SimulationOfficialReview(_simulationRelease));
-        });
         ReplaceSimulationOperation("update.selectArchive", (args, ct) =>
         {
             ct.ThrowIfCancellationRequested();
@@ -77,14 +65,6 @@ public sealed partial class PilotApplication
             if (Text(args, "sha256", 64) != SimulationArchiveHash || Text(args, "commit", 40) != SimulationCommit)
                 throw new InvalidDataException("Les références saisies ne correspondent pas au pack de simulation. Reprenez les références affichées à sa sélection.");
             return Task.FromResult<object?>(PrepareSimulationUpdate(SimulationNextVersion(), "PROD", false));
-        });
-        ReplaceSimulationOperation("update.downloadOfficial", (args, ct) =>
-        {
-            ct.ThrowIfCancellationRequested(); var release = _simulationRelease;
-            if (!Flag(args, "consent") || release is null || Text(args, "token", 40) != release.Token)
-                throw new InvalidOperationException("Vérifiez puis confirmez la publication de simulation affichée.");
-            Publish("update.progress", new { message = "Simulation · préparation du pack d’exemple, sans téléchargement ni modification de fichiers." });
-            return Task.FromResult<object?>(PrepareSimulationUpdate(release.Version, release.Edition, false));
         });
         ReplaceSimulationOperation("update.prepareRollback", (args, ct) =>
         {
@@ -111,12 +91,6 @@ public sealed partial class PilotApplication
             Publish("update.progress", new { message = "Simulation · scénario terminé. L’application reste ouverte et aucun binaire réel n’a été remplacé." });
             return Task.FromResult<object?>(new { closing = false, version = plan.Version, simulation = true, state = SimulationUpdateState() });
         });
-        ReplaceSimulationOperation("update.openReleases", (args, ct) =>
-        {
-            ct.ThrowIfCancellationRequested();
-            _simulationRelease ??= new(Guid.NewGuid().ToString("N"), SimulationNextVersion(), "PROD", DateTimeOffset.Now);
-            return Task.FromResult<object?>(new { opened = false, simulation = true, official = SimulationOfficialReview(_simulationRelease), note = "Publication d’exemple chargée dans la simulation, sans ouvrir de navigateur." });
-        });
     }
 
     private object SimulationUpdateState() => new
@@ -124,16 +98,8 @@ public sealed partial class PilotApplication
         version = _simulationInstalledVersion, actualVersion = AppPaths.ApplicationVersion,
         installRoot = "Installation virtuelle · simulation", policy = UpdatePolicy.Load(DataPath("update-policy.json")), windows = true,
         archive = _simulationSelectedArchive is null ? null : new { name = _simulationSelectedArchive },
-        official = _simulationRelease is null ? null : SimulationOfficialReview(_simulationRelease),
         prepared = _simulationUpdatePlan is null ? null : SimulationPreparedReview(_simulationUpdatePlan),
         outcome = _simulationUpdateOutcome, automatic = false, simulation = true
-    };
-    private object SimulationOfficialReview(SimulationRelease release) => new
-    {
-        release.Token, release.Version, tag = "simulation-v" + release.Version, commit = SimulationCommit,
-        release.Edition, archiveName = "GLPI-Pilot_" + release.Version + "_" + release.Edition + "_SIMULATION.zip",
-        archiveSha256 = SimulationArchiveHash, bytes = 4096, release.PublishedAt,
-        newer = Version.Parse(release.Version) > Version.Parse(_simulationInstalledVersion), simulation = true
     };
     private object PrepareSimulationUpdate(string version, string edition, bool rollback)
     {

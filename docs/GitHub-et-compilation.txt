@@ -334,8 +334,8 @@ La signature et son horodatage se préparent sur un poste disposant de ces
 prérequis ; le build hors ligne ne les invente pas. Sans certificat configuré,
 le pack est non signé. Aucun certificat de confiance n’a été fourni au chantier.
 
-L’assistant WebView consulte GitHub seulement après une action utilisateur,
-ou accepte un ZIP sélectionné par le dialogue natif. SHA-256, commit,
+L’assistant WebView prend un pack dans le dossier réseau partagé ou un ZIP
+sélectionné par le dialogue natif ; depuis 3.14.1, il ne consulte plus GitHub. SHA-256, commit,
 inventaire, plateforme, fichiers de l’interface et runtime sont contrôlés
 avant préparation. La politique locale peut exiger une signature et une
 empreinte d’éditeur approuvée. L’installation attend une confirmation séparée.

@@ -87,9 +87,9 @@ public sealed partial class PilotApplication
             sections.Add(new { key, title, before = old, after = next, changed = old.GetRawText() != next.GetRawText() });
         }
         Add("Settings", "Options de l’application : sources, sites, interface, automatisation et historique", current.Settings, read.Configuration.Settings);
-        Add("Updates", "Mises à jour : dépôt officiel, partage réseau et confiance",
-            new Dictionary<string, object> { ["UpdateRepository"] = current.UpdateRepository, ["SharedUpdateFolder"] = current.SharedUpdateFolder, ["UpdatePolicy"] = current.UpdatePolicy },
-            new Dictionary<string, object> { ["UpdateRepository"] = read.Configuration.UpdateRepository, ["SharedUpdateFolder"] = read.Configuration.SharedUpdateFolder, ["UpdatePolicy"] = read.Configuration.UpdatePolicy });
+        Add("Updates", "Mises à jour : partage réseau et confiance",
+            new Dictionary<string, object> { ["SharedUpdateFolder"] = current.SharedUpdateFolder, ["UpdatePolicy"] = current.UpdatePolicy },
+            new Dictionary<string, object> { ["SharedUpdateFolder"] = read.Configuration.SharedUpdateFolder, ["UpdatePolicy"] = read.Configuration.UpdatePolicy });
         Add("Library", "Bibliothèque et PostgreSQL : options publiques", current.Library, read.Configuration.Library);
         Add("Assistant", "Assistant : fournisseur et options publiques", current.Assistant, read.Configuration.Assistant);
         foreach (var pair in read.Configuration.Options) Add(pair.Key, pair.Key switch
@@ -105,7 +105,7 @@ public sealed partial class PilotApplication
             cancelled = false, token = _deploymentDraft.Token, fileName = Path.GetFileName(path), read.Sha256, sections,
             warnings = new[] { "Toutes les options présentées seront remplacées après sauvegarde réimportable. Les chemins personnalisés doivent convenir à ce poste.",
                 "Les bases, tickets, notes, interventions, cookies et sessions SSO ne sont pas transportés. Les secrets existants restent locaux et ne sont réutilisés que pour la même destination.",
-                "Les droits Administration dépendent de l’exécutable, jamais du fichier de configuration. Le dépôt GitHub officiel reste fixe." }
+                "Les droits Administration dépendent de l’exécutable, jamais du fichier de configuration." }
         };
     }
 }

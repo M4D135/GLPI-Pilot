@@ -52,7 +52,7 @@ export function sharedUpdatePanels(p, options) {
     p.message('Le patch exporté contient le référentiel enregistré. Déposez ses deux fichiers dans le dossier de diffusion après validation.');
   }), disabled) : null;
   const network = card('Dossier réseau partagé',
-    el('p', { text: 'Alternative à GitHub : déposez le ZIP de l’édition du poste (PROD ou PROD-LIGHT) et SHA256SUMS.txt dans ce dossier. Le logiciel copie le pack localement avant de le vérifier.' }),
+    el('p', { text: 'Déposez le ZIP de l’édition du poste (PROD ou PROD-LIGHT) et SHA256SUMS.txt dans ce dossier. Le logiciel copie le pack localement avant de le vérifier.' }),
     simulation ? el('p', { class: 'terrain-warning', text: 'Démonstration : aucun dossier réseau réel n’est consulté. Quittez la démonstration pour utiliser une publication réelle.' }) : null,
     field('Dossier de diffusion', folder, 'Chemin Windows UNC ou dossier local accessible avec les droits de votre session.'), toolbar(choose, save, find, copy), sharedReview);
   const sites = card('Patch des sites',

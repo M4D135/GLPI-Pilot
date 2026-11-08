@@ -124,7 +124,7 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
 
     await render('updates');
     ok(await page.getByRole('heading', { name: 'Mise à jour et retour arrière', exact: true }).count() === 1, 'update assistant renders without network access');
-    ok(await page.getByRole('button', { name: 'Télécharger et vérifier le pack officiel', exact: true }).isDisabled(), 'official download stays disabled until a verified release exists');
+    ok(await page.getByRole('button', { name: /GitHub|pack officiel|Ouvrir les publications/ }).count() === 0 && await page.getByText(/GitHub/).count() === 0, 'updates come only from a network folder or a local ZIP');
     ok(await page.getByRole('button', { name: 'Fermer GLPI Pilot et installer la version vérifiée', exact: true }).isDisabled(), 'installation stays disabled without a prepared pack');
     await page.getByRole('textbox', { name: /SHA-256 du certificat/ }).fill('A'.repeat(64));
     await page.getByLabel('Exiger une signature Authenticode de l’éditeur approuvé', { exact: true }).check();
@@ -221,7 +221,7 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     ok((await page.locator('.maps-scope-summary').innerText()).includes('Alice') && await page.locator('.maps-ticket-rows tbody tr').count() === 2,
       'opening Terrain from another workspace preserves the explicitly supplied technician scope instead of returning to everyone');
     ok(consoleErrors.length === 0, `no unhandled JavaScript errors: ${consoleErrors.join('; ')}`);
-    ok(!calls.some(value => ['update.findOfficial', 'update.downloadOfficial', 'update.install', 'terrain.tours.route', 'terrain.tours.weather'].includes(value)), 'all UI tests completed offline without provider or installer execution');
+    ok(!calls.some(value => ['update.install', 'terrain.tours.route', 'terrain.tours.weather'].includes(value)), 'all UI tests completed offline without provider or installer execution');
     console.log(`${checks}/${checks} terrain WebView page checks passed.`);
   } catch (error) { exitCode = 1; console.error(error.stack || error); }
   finally {

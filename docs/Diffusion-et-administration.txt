@@ -72,7 +72,8 @@ Dans Réglages, ouvrir Mise à jour et retour arrière. Renseigner et enregistre
 le dossier partagé, rechercher le pack, contrôler le bilan, puis demander sa
 copie et sa vérification. La copie est locale : la taille, le SHA-256 et les
 métadonnées sont contrôlés avant la préparation. L’installation reste une
-action séparée et explicite. GitHub et le choix d’un ZIP local restent disponibles.
+action séparée et explicite. Le choix d’un ZIP local reste disponible ;
+depuis 3.14.1, l’application ne consulte plus GitHub.
 Aucune recherche réseau automatique ni bascule silencieuse de source.
 
 Si le dossier est inaccessible ou le fichier incomplet/modifié, la préparation

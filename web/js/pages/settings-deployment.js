@@ -139,7 +139,7 @@ export async function createDeploymentConfiguration(ctx) {
     state.seedAppliedAt ? el('p', { class: 'help', text: `Application initiale : ${formatDate(state.seedAppliedAt)}` }) : null);
   const result = ctx.params?.deploymentResult;
   const element = card('Configuration complète et déploiement',
-    el('p', { text: 'Transférez les options du logiciel : sources, sites et communes, règles, interface, automatisations, connexions publiques, assistant et mises à jour GitHub ou dossier réseau.' }),
+    el('p', { text: 'Transférez les options du logiciel : sources, sites et communes, règles, interface, automatisations, connexions publiques, assistant et mises à jour par dossier réseau.' }),
     el('p', { class: 'help', text: 'Les bases, tickets, calendriers enregistrés, sessions SSO et secrets restent sur chaque poste. Un import ne donne aucun pouvoir supplémentaire au lanceur Standard.' }),
     simulation ? el('p', { class: 'notice warning', text: 'Quittez la démonstration pour importer ou exporter la configuration complète du profil réel.' }) : null,
     toolbar(button('Définir comme configuration par défaut', () => {

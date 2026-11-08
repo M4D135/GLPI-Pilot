@@ -495,13 +495,13 @@ La mise à jour remplace le pack sans toucher aux données de travail. L'assista
 ## Avec l'assistant
 
 1. **Ouvrir.** « Réglages », « Mettre à jour » ouvre « Mise à jour et retour arrière ».
-2. **Choisir le pack.** « Vérifier GitHub » consulte la dernière publication ; ou « Choisir le ZIP… » pour un pack local, ou un dossier de diffusion réseau contenant le ZIP PROD et SHA256SUMS.txt.
-3. **Vérifier.** « Télécharger et vérifier » ou « Vérifier le ZIP local » contrôle l'archive, son commit et chaque fichier. Renseignez si besoin le « SHA-256 attendu de l’archive » et le « Commit attendu ».
+2. **Choisir le pack.** « Rechercher le pack réseau » dans un dossier de diffusion contenant le ZIP de l'édition du poste et SHA256SUMS.txt, ou « Choisir le ZIP… » pour un pack local. L'application ne contacte aucun dépôt en ligne.
+3. **Vérifier.** « Copier et vérifier le pack réseau » ou « Vérifier le ZIP local » contrôle l'archive, son commit et chaque fichier. Renseignez si besoin le « SHA-256 attendu de l’archive » et le « Commit attendu ».
 4. **Installer.** « Fermer GLPI Pilot et installer la version vérifiée ». La version en cours reste inchangée jusqu'à ce clic.
 
 > [!RESULTAT] « Tous les fichiers du pack ont été contrôlés. L’installation reste à votre initiative. » précède l'installation. Après un échec, l'ancien pack est restauré ; si un fichier reste verrouillé, la sauvegarde est conservée et la récupération est signalée.
 
-![« Mise à jour et retour arrière » : la publication officielle sur GitHub, ou un dossier de diffusion réseau.](fig:admin-mise-a-jour)
+![« Mise à jour et retour arrière » : un dossier de diffusion réseau ou un ZIP local.](fig:admin-mise-a-jour)
 
 ## Retour arrière
 

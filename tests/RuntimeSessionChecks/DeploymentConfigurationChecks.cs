@@ -46,6 +46,10 @@ public static class DeploymentConfigurationChecks
                 && copy.Settings.Sources[0].Interpretation!.PersonalTechnician == "Camille" && copy.Settings.Sources[0].ExportFolder.EndsWith("source-exports")
                 && copy.SharedUpdateFolder.EndsWith("shared-production") && copy.Library.GetProperty("DisplayName").GetString() == "Responsable"
                 && copy.Assistant.GetProperty("Model").GetString() == "chosen-model" && copy.Options.Count == 8);
+            // Exports up to 3.14.0 also named the GitHub releases page; such a file still imports.
+            Check(!bytes.Contains("UpdateRepository") && copy.UpdateRepository is null);
+            Change(path, node => node["UpdateRepository"] = "https://github.com/M4D135/GLPI-Pilot/releases");
+            Check(DeploymentConfigurationService.Read(path, f.Root).Configuration.UpdateRepository is null);
         });
         Add("manual import requires confirmation, replaces settings and produces an importable prior configuration", async f =>
         {
@@ -162,7 +166,7 @@ public static class DeploymentConfigurationChecks
                 node => node["Settings"]!.AsObject().Remove("Sources"), node => node["Assistant"]!["ProtectedApiKey"] = "cannot-import-key",
                 node => node.Remove("SharedUpdateFolder"), node => node["UpdatePolicy"]!.AsObject().Remove("RequireSignature"),
                 node => node["Library"]!.AsObject().Remove("Host"), node => node["Assistant"]!.AsObject().Remove("Endpoint"),
-                node => node["Settings"]!["Interface"]!["FrozenColumns"] = 999 })
+                node => node["Settings"]!["Interface"]!["FrozenColumns"] = 999, node => node["UpdateRepository"] = "https://example.test/releases" })
             {
                 File.WriteAllText(path, valid); Change(path, mutate); await Reject(() => Task.Run(() => DeploymentConfigurationService.Read(path, f.Root)));
             }

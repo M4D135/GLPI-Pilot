@@ -1,4 +1,4 @@
-# GLPI Pilot 3.14.0 · Windows x64
+# GLPI Pilot 3.14.1 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -27,6 +27,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 3.14.1 : mises à jour sans GitHub
+
+L’assistant de mise à jour ne contacte plus GitHub : un pack s’installe depuis le dossier réseau partagé ou depuis un ZIP local, avec les mêmes contrôles, la même sauvegarde et le même retour arrière. Une configuration complète exportée par une version antérieure reste importable. Voir les [notes 3.14.1](docs/RELEASE-3.14.1.md).
 
 ## 3.14.0 : un seul pack publié, le runtime WebView2 dans le Socle
 

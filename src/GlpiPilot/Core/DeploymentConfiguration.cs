@@ -10,7 +10,9 @@ public sealed class DeploymentConfiguration
     public int SchemaVersion { get; set; } = 1;
     public string AppVersion { get; set; } = AppPaths.ApplicationVersion;
     public AppSettings Settings { get; set; } = new();
-    public string UpdateRepository { get; set; } = UpdateReleaseClient.ReleasesPage;
+    /// <summary>Files exported up to 3.14.0 name the GitHub releases page, then an update source. Accepted on read, never written.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? UpdateRepository { get; set; }
+    internal const string LegacyUpdateRepository = "https://github.com/M4D135/GLPI-Pilot/releases";
     public string SharedUpdateFolder { get; set; } = "";
     public UpdatePolicy UpdatePolicy { get; set; } = new();
     public JsonElement Library { get; set; }
@@ -73,11 +75,13 @@ public static partial class DeploymentConfigurationService
         try
         {
             using var parsed = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 32 }); ValidateKeys(parsed.RootElement);
-            RequireComplete<DeploymentConfiguration>(parsed.RootElement);
+            var legacy = parsed.RootElement.EnumerateObject().Any(p => p.Name.Equals(nameof(DeploymentConfiguration.UpdateRepository), StringComparison.OrdinalIgnoreCase));
+            RequireComplete<DeploymentConfiguration>(parsed.RootElement, legacy ? null : [nameof(DeploymentConfiguration.UpdateRepository)]);
             var value = parsed.RootElement.Deserialize<DeploymentConfiguration>(Json) ?? throw new InvalidDataException("Configuration complète absente.");
             if (value.Schema != "glpi-pilot.deployment" || value.SchemaVersion != 1 || !Version.TryParse(value.AppVersion, out _)
-                || value.UpdateRepository != UpdateReleaseClient.ReleasesPage || value.Settings is null || value.UpdatePolicy is null || value.Options is null)
+                || value.UpdateRepository is not (null or DeploymentConfiguration.LegacyUpdateRepository) || value.Settings is null || value.UpdatePolicy is null || value.Options is null)
                 throw new InvalidDataException("Le format de configuration complète n’est pas reconnu.");
+            value.UpdateRepository = null;
             var rawSettings = parsed.RootElement.EnumerateObject().SingleOrDefault(p => p.Name.Equals("Settings", StringComparison.OrdinalIgnoreCase)).Value;
             RequireComplete<AppSettings>(rawSettings);
             RequireComplete<UpdatePolicy>(parsed.RootElement.EnumerateObject().Single(p => p.Name.Equals("UpdatePolicy", StringComparison.OrdinalIgnoreCase)).Value);

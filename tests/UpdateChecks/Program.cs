@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,8 +8,6 @@ using Microsoft.Win32.SafeHandles;
 
 var root = Path.Combine(Path.GetTempPath(), "GLPI-UpdateChecks-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 const string Commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const string Api = "https://api.github.com/repos/M4D135/GLPI-Pilot/";
-const string Download = "https://github.com/M4D135/GLPI-Pilot/releases/download/v2.0.0/";
 var tests = new List<(string Name, Action Run)>();
 void Test(string name, Action action) => tests.Add((name, action));
 void Check(bool value, string reason = "Assertion failed") { if (!value) throw new InvalidOperationException(reason); }
@@ -67,21 +64,6 @@ PreparedUpdate Prepare(string? zip = null, string? installation = null, string? 
 {
     zip ??= Zip(); installation ??= Install(); return UpdateService.PrepareArchive(zip, expectedHash ?? UpdateService.HashFile(zip), commit, installation, NewDirectory("updates"), "1.0.0", false, ct);
 }
-HttpResponseMessage Json(string json, HttpStatusCode status = HttpStatusCode.OK) => new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
-string Release(byte[] zip, string archiveUrl = Download + "GLPI-Pilot_2.0.0_PROD_Windows-x64.zip", bool draft = false) => JsonSerializer.Serialize(new
-{
-    draft, prerelease = false, tag_name = "v2.0.0", published_at = "2026-10-26T10:00:00Z",
-    assets = new[] { new { name = "GLPI-Pilot_2.0.0_PROD_Windows-x64.zip", size = (long)zip.Length, browser_download_url = archiveUrl }, new { name = "SHA256SUMS.txt", size = 150L, browser_download_url = Download + "SHA256SUMS.txt" } }
-});
-FixtureHandler OfficialHandler(byte[] bytes, bool annotated = false) => new((request, _) => Task.FromResult(request.RequestUri!.AbsoluteUri switch
-{
-    Api + "releases/latest" => Json(Release(bytes)),
-    Download + "SHA256SUMS.txt" => Json(Hash(bytes) + "  GLPI-Pilot_2.0.0_PROD_Windows-x64.zip\n"),
-    Api + "git/ref/tags/v2.0.0" => Json("{\"object\":{\"type\":\"" + (annotated ? "tag" : "commit") + "\",\"sha\":\"" + Commit + "\"}}"),
-    Api + "git/tags/" + Commit => Json("{\"object\":{\"type\":\"commit\",\"sha\":\"" + Commit + "\"}}"),
-    Download + "GLPI-Pilot_2.0.0_PROD_Windows-x64.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) },
-    _ => Json("{}", HttpStatusCode.NotFound)
-}));
 
 Test("Complete package stages separately and preserves running binaries and unrelated root files", () =>
 {
@@ -96,7 +78,7 @@ Dictionary<string, byte[]> WithAdmin(string version)
     // These fixtures exercise the real public verifier, including WinTrust.
     // Use our unsigned managed PE with a harmless overlay, never text masquerading
     // as an EXE. No fixture executable is launched by the transaction callbacks.
-    var pe = File.ReadAllBytes(typeof(FixtureHandler).Assembly.Location);
+    var pe = File.ReadAllBytes(typeof(WindowsDirectoryLock).Assembly.Location);
     files["GLPI-Pilot.exe"] = pe.Concat(Encoding.UTF8.GetBytes("Standard fixture " + version)).ToArray();
     files[UpdateService.AdminExecutable] = pe.Concat(Encoding.UTF8.GetBytes("Admin fixture " + version)).ToArray();
     var metadata = JsonSerializer.Deserialize<UpdatePackageMetadata>(files["wad/version.json"])!;
@@ -449,35 +431,6 @@ Test("A corrupted backup cannot become a rollback package", () =>
     var installed = Prepare(); UpdateService.ApplyPrepared(installed, _ => true); File.AppendAllText(Path.Combine(installed.BackupRoot, "GLPI-Pilot.exe"), "changed");
     Reject<InvalidDataException>(() => UpdateService.PrepareRollback(installed, Path.GetDirectoryName(installed.WorkRoot)!));
 });
-Test("Official release lookup resolves tag commit and checksum without credentials", () =>
-{
-    var bytes = File.ReadAllBytes(Zip()); using var handler = OfficialHandler(bytes); using var client = new UpdateReleaseClient(handler); var release = client.FindLatestAsync("PROD").GetAwaiter().GetResult();
-    Check(release.Commit == Commit && release.ArchiveSha256 == Hash(bytes) && release.Version == "2.0.0" && handler.Requests.Count == 3 && handler.NoCredentials);
-});
-Test("Annotated official tags resolve to a concrete commit within a bounded traversal", () =>
-{
-    var bytes = File.ReadAllBytes(Zip()); using var handler = OfficialHandler(bytes, true); using var client = new UpdateReleaseClient(handler); Check(client.FindLatestAsync("PROD").GetAwaiter().GetResult().Commit == Commit && handler.Requests.Count == 4);
-});
-Test("Official archive downloads are verified before exposure and removed on mismatch", () =>
-{
-    var bytes = File.ReadAllBytes(Zip()); using var handler = OfficialHandler(bytes); using var client = new UpdateReleaseClient(handler); var release = client.FindLatestAsync("PROD").GetAwaiter().GetResult();
-    var folder = NewDirectory("downloads"); var path = client.DownloadAsync(release, folder).GetAwaiter().GetResult(); Check(File.ReadAllBytes(path).SequenceEqual(bytes));
-    var before = Directory.GetFiles(folder).Length; Reject<InvalidDataException>(() => client.DownloadAsync(release with { ArchiveSha256 = new string('0', 64) }, folder).GetAwaiter().GetResult()); Check(Directory.GetFiles(folder).Length == before);
-});
-Test("Foreign repository assets unpublished releases and cross host redirects are rejected", () =>
-{
-    var bytes = File.ReadAllBytes(Zip()); foreach (var body in new[] { Release(bytes, "https://example.invalid/fake.zip"), Release(bytes, draft: true) })
-    { using var client = new UpdateReleaseClient(new FixtureHandler((_, _) => Task.FromResult(Json(body)))); Reject<InvalidDataException>(() => client.FindLatestAsync("PROD").GetAwaiter().GetResult()); }
-    using var handler = new FixtureHandler((_, _) => { var response = new HttpResponseMessage(HttpStatusCode.Found); response.Headers.Location = new Uri("https://evil.example.invalid/steal"); return Task.FromResult(response); });
-    using var redirect = new UpdateReleaseClient(handler); var release = new OfficialUpdate("2.0.0", "v2.0.0", Commit, "PROD", "GLPI-Pilot_2.0.0_PROD_Windows-x64.zip", Download + "GLPI-Pilot_2.0.0_PROD_Windows-x64.zip", Hash(bytes), bytes.Length, DateTimeOffset.UtcNow, UpdateReleaseClient.ReleasesPage);
-    Reject<InvalidDataException>(() => redirect.DownloadAsync(release, NewDirectory("redirect")).GetAwaiter().GetResult()); Check(handler.Requests.Count == 1);
-});
-Test("Explicit network cancellation issues no request and creates no downloaded file", () =>
-{
-    var bytes = File.ReadAllBytes(Zip()); using var handler = OfficialHandler(bytes); using var client = new UpdateReleaseClient(handler); using var cts = new CancellationTokenSource(); cts.Cancel();
-    Reject<OperationCanceledException>(() => client.FindLatestAsync("PROD", cts.Token).GetAwaiter().GetResult()); Check(handler.Requests.Count == 0);
-});
-
 Test("Shared diffusion selects numeric latest PROD and ignores DEV or temporary files", () =>
 {
     var folder = NewDirectory("shared"); var hashes = new List<string>();
@@ -557,14 +510,6 @@ try
     Console.WriteLine($"{passed}/{tests.Count} update checks passed."); Environment.ExitCode = passed == tests.Count ? 0 : 1;
 }
 finally { Directory.Delete(root, true); }
-
-sealed class FixtureHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
-{
-    public List<string> Requests { get; } = new();
-    public bool NoCredentials { get; private set; } = true;
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    { cancellationToken.ThrowIfCancellationRequested(); Requests.Add(request.RequestUri!.AbsoluteUri); NoCredentials &= request.Headers.Authorization == null && !request.Headers.Contains("Cookie"); return respond(request, cancellationToken); }
-}
 
 static class WindowsDirectoryLock
 {

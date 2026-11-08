@@ -185,16 +185,15 @@ try
 
     var update = await Call("update.state");
     Check(!update.GetProperty("automatic").GetBoolean() && !update.GetProperty("policy").GetProperty("requireSignature").GetBoolean(), "update state performs no automatic network or signature claims");
-    await Reject(() => Call("update.findOfficial", new { consent = false }), "GitHub release lookup requires an explicit action");
-    await Reject(() => Call("update.downloadOfficial", new { consent = true, token = "invented" }), "download cannot use a fabricated release token");
+    foreach (var removed in new[] { "update.findOfficial", "update.downloadOfficial", "update.openReleases" })
+        await Reject(() => Call(removed), "updates no longer contact GitHub");
     await Reject(() => Call("update.prepareLocal", new { path = "/arbitrary/file.zip", sha256 = new string('A', 64), commit = new string('B', 40) }), "ZIP path cannot be injected through web arguments");
     await Reject(() => Call("update.install", new { confirmed = true, token = "invented", version = "99.0.0" }), "installation requires a prepared verified pack");
     await Reject(() => Call("update.policy", new { policy = new UpdatePolicy { RequireSignature = true, TrustedPublisherSha256 = "invalid" } }), "signature policy requires a complete certificate digest");
     update = await Call("update.policy", new { policy = new UpdatePolicy { RequireSignature = true, TrustedPublisherSha256 = new string('A', 64) } });
     Check(update.GetProperty("policy").GetProperty("requireSignature").GetBoolean(), "configured publisher policy is persisted");
     await Reject(() => Call("update.prepareRollback", new { confirmed = true }), "rollback without a verified previous installation is refused");
-    await Call("update.openReleases");
-    Check(host.ExternalUrls.SequenceEqual(new[] { UpdateReleaseClient.ReleasesPage }) && host.Closures == 0, "only fixed official release navigation is offered; no install launched");
+    Check(host.ExternalUrls.Count == 0 && host.Closures == 0, "update checks open no page and launch no install");
     using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
     await Reject(() => Call("terrain.reference.upsert", new { }, cancelled.Token), "cancelled bridge request stops before mutation");
     Check(AppPaths.DataRoot == root && events.Contains("session.changed"), "all fixture persistence stays in explicitly isolated test profile");
