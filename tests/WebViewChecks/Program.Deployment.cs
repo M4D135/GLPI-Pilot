@@ -73,7 +73,7 @@ internal static partial class Program
         }
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await ReadyAsync(page); await SettingsPage();
         Require(await page.Locator(".deployment-settings").IsVisibleAsync()
-            && (await page.Locator(".deployment-settings").InnerTextAsync()).Contains("GitHub ou dossier réseau", StringComparison.Ordinal),
+            && (await page.Locator(".deployment-settings").InnerTextAsync()).Contains("mises à jour par dossier réseau", StringComparison.Ordinal),
             "Normal Settings exposes the complete deployment configuration separately from the limited team configuration.");
         await page.Locator(".deployment-pack-location summary").ClickAsync();
         Require((await page.Locator(".deployment-pack-location").InnerTextAsync()).Contains(DeploymentConfigurationService.FileName, StringComparison.Ordinal)
