@@ -501,7 +501,7 @@ La mise à jour remplace le pack sans toucher aux données de travail. L'assista
 
 > [!RESULTAT] « Tous les fichiers du pack ont été contrôlés. L’installation reste à votre initiative. » précède l'installation. Après un échec, l'ancien pack est restauré ; si un fichier reste verrouillé, la sauvegarde est conservée et la récupération est signalée.
 
-![« Mise à jour et retour arrière » : un dossier de diffusion réseau ou un ZIP local.](fig:admin-mise-a-jour)
+![Deux extraits de « Mise à jour et retour arrière » : un dossier de diffusion réseau ou un ZIP local.](fig:admin-mise-a-jour)
 
 ## Retour arrière
 

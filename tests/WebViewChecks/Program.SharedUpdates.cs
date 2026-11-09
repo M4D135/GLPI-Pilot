@@ -78,6 +78,7 @@ internal static partial class Program
         Require(!operations.Any(op => op.StartsWith("update.shared.") || op.StartsWith("update.sites.")) && await Button("Copier et vérifier le pack réseau").IsDisabledAsync(),
             "Opening Updates never discovers a share or patch automatically and cannot prepare an unreviewed network pack.");
         Require(await Button("Exporter un patch de sites").CountAsync() == 0, "The Standard interface does not expose the Admin reference export command.");
+        await CaptureSharedUpdateGuideAsync(page);
         await Button("Choisir le dossier…").ClickAsync(); await Idle();
         await Button("Rechercher le pack réseau").ClickAsync(); await Idle();
         Require(await page.GetByText("Enregistrez le dossier modifié avant de consulter sa publication.", new() { Exact = true }).IsVisibleAsync()
@@ -133,5 +134,46 @@ internal static partial class Program
             "The demonstration explicitly disables real share and site-patch access.");
         Require(errors.IsEmpty && externalRequests == 0, "The complete network and reference journey has no JavaScript errors or external web requests.");
         await actualBridge.DisposeAsync(); await delivery;
+    }
+
+    private static async Task CaptureSharedUpdateGuideAsync(IPage page)
+    {
+        var directory = Environment.GetEnvironmentVariable("GLPI_GUIDE_CAPTURES");
+        if (string.IsNullOrEmpty(directory)) return;
+        await GuideCaptureAsync(page, "shared-updates-initial");
+        // Two unchanged cards from the real interface, before any share lookup or local ZIP selection.
+        // The guide places these excerpts side by side; the intervening site-patch card is documented separately.
+        ILocator Card(string heading) => page.Locator("section.card").Filter(new()
+            { Has = page.GetByRole(AriaRole.Heading, new() { Name = heading, Exact = true }) });
+        try
+        {
+            var viewportWidth = 875;
+            foreach (var (heading, file) in new[] { ("Dossier réseau partagé", "shared-update-network"), ("Préparer un pack ZIP local", "shared-update-local") })
+            {
+                var captured = false;
+                for (var attempt = 0; attempt < 4; attempt++)
+                {
+                    if (viewportWidth < 480 || viewportWidth > 1200)
+                        throw new InvalidOperationException("The guide capture would leave the supported viewport range.");
+                    await page.SetViewportSizeAsync(viewportWidth, 1000);
+                    var png = await Card(heading).ScreenshotAsync(new() { Animations = ScreenshotAnimations.Disabled });
+                    // Measure the actual PNG: the screenshot can differ from a preceding CSS bounding box.
+                    var width = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4));
+                    Console.WriteLine($"Guide capture {file}: viewport {viewportWidth}, PNG width {width}.");
+                    if (width == 600)
+                    {
+                        await File.WriteAllBytesAsync(Path.Combine(directory, file + ".png"), png);
+                        captured = true; break;
+                    }
+                    viewportWidth += 600 - width;
+                }
+                if (!captured) throw new InvalidOperationException("The guide card did not settle at 600 pixels.");
+            }
+        }
+        finally
+        {
+            await page.SetViewportSizeAsync(1440, 1000);
+            await page.Locator(".workspace").EvaluateAsync("element => element.scrollTop = 0");
+        }
     }
 }
