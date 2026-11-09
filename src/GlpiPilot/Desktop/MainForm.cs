@@ -77,15 +77,15 @@ internal sealed class MainForm : Form, IPilotHost
             string? runtime = File.Exists(Path.Combine(bundled, "msedgewebview2.exe")) ? bundled : null;
             if (runtime is null)
             {
-                if (Directory.Exists(bundled)) throw new FileNotFoundException("Le runtime WebView2 fourni dans wad\\runtime\\webview2 est incomplet. Extrayez à nouveau le ZIP WebView2 du Socle (" + PackComponents.SocleReleases + ").");
+                if (Directory.Exists(bundled)) throw new FileNotFoundException("Le runtime WebView2 fourni dans wad\\runtime\\webview2 est incomplet. " + PackComponents.SocleSourceInstructions + ", puis extrayez-le à nouveau.");
                 try { StartupDiagnostics.Step("Runtime WebView2 installé sur Windows : " + CoreWebView2Environment.GetAvailableBrowserVersionString()); }
                 catch (Exception error) when (error is WebView2RuntimeNotFoundException or FileNotFoundException or DllNotFoundException)
                 {
                     // Without any engine the WebView settings page cannot open: offer the Socle ZIP from a plain Windows dialog.
                     runtime = AppPaths.TestDataRoot is null ? InstallSocleWebView2() : null;
                     if (runtime is null)
-                        throw new FileNotFoundException("Aucun moteur WebView2 sur ce poste. Installez le runtime WebView2 Evergreen de Microsoft, ou téléchargez le ZIP WebView2 du Socle ("
-                            + PackComponents.SocleReleases + ") et choisissez-le au prochain démarrage de GLPI Pilot.", error);
+                        throw new FileNotFoundException("Aucun moteur WebView2 sur ce poste. Installez le runtime WebView2 Evergreen de Microsoft ou utilisez le Socle. "
+                            + PackComponents.SocleSourceInstructions + ", puis choisissez-le au prochain démarrage de GLPI Pilot.", error);
                 }
             }
             foreach (var name in new[] { "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_USER_DATA_FOLDER", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER" })
@@ -151,8 +151,8 @@ internal sealed class MainForm : Form, IPilotHost
     // Installs the Socle WebView2 ZIP as the webview2-fixed component (kept outside wad, so updates never remove it).
     private string? InstallSocleWebView2()
     {
-        if (MessageBox.Show(this, "Aucun moteur WebView2 n’est installé sur ce poste.\n\nGLPI Pilot peut utiliser le ZIP WebView2 du Socle, téléchargé depuis "
-                + PackComponents.SocleReleases + ". Choisir ce ZIP maintenant ?", "GLPI Pilot · moteur WebView2", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        if (MessageBox.Show(this, "Aucun moteur WebView2 n’est installé sur ce poste.\n\n"
+                + PackComponents.SocleSourceInstructions + ". Choisir ce ZIP maintenant ?", "GLPI Pilot · moteur WebView2", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
             return null;
         using var dialog = new OpenFileDialog { Title = "ZIP WebView2 du Socle", Filter = "ZIP WebView2 du Socle|Socle_WebView2-*_Windows-x64.zip|ZIP|*.zip" };
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;

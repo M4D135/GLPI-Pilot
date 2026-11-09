@@ -31,7 +31,7 @@ public static class PackComponents
     };
 
     public static string MissingMessage(string id) => DisplayName(id) + " n’est pas installé sur ce poste. "
-        + (id == WebView2Fixed ? "Téléchargez le ZIP WebView2 du Socle (" + SocleReleases + "), puis installez-le dans Réglages · Composants."
+        + (id == WebView2Fixed ? SocleSourceInstructions + ", puis installez-le dans Réglages · Composants."
             : "Déposez le ZIP de dépendance correspondant, puis installez-le dans Réglages · Composants.");
 
     private static string ComponentsRoot => Path.Combine(AppPaths.DataRoot, "Components");
@@ -85,7 +85,7 @@ public static class PackComponents
     // Le runtime WebView2 fixe est publié une seule fois pour tous les outils, dans le dépôt Socle Windows. Son ZIP
     // n’a ni component.json ni inventaire : il est reconnu à sa forme (runtime/webview2/ seul) et n’est accepté que si
     // son empreinte est l’une de celles épinglées ici, publiées dans le SHA256SUMS.txt de la release du Socle.
-    public const string SocleReleases = "https://github.com/M4D135/socle-windows/releases";
+    public const string SocleSourceInstructions = "Obtenez le ZIP WebView2 du Socle auprès de votre administrateur ou dans le dossier de diffusion";
     private static readonly Dictionary<string, string> SoclePins = new(StringComparer.Ordinal)
     {
         ["156.0.4314.42"] = "42dc4b13d8a79e7296692d684908c27e32863db432a103e2042b587fb64571b2"
@@ -172,7 +172,7 @@ public static class PackComponents
             .Select(name => name[..^".manifest".Length]).Where(name => Version.TryParse(name, out var parsed) && parsed.Revision >= 0).ToList();
         if (versions.Count != 1) throw new InvalidDataException("Le ZIP WebView2 du Socle ne déclare pas une version unique.");
         if (!SocleWebView2.TryGetValue(versions[0], out var pinned) || !string.Equals(pinned, archiveHash, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Ce ZIP WebView2 n’est pas une release reconnue du Socle (version " + versions[0] + "). Rien n’a été installé. Releases : " + SocleReleases);
+            throw new InvalidDataException("Ce ZIP WebView2 n’est pas une version reconnue du Socle (version " + versions[0] + "). Rien n’a été installé. " + SocleSourceInstructions + ".");
         return new PackManifest(WebView2Fixed, versions[0], "", archive.Entries.Sum(entry => entry.Length), DateTimeOffset.MinValue);
     }
 

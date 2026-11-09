@@ -253,8 +253,8 @@ public static partial class UpdateService
         if (string.IsNullOrEmpty(installed?.WebView2Loader) || string.IsNullOrEmpty(next.WebView2Loader) || installed.WebView2Loader == next.WebView2Loader) return;
         if (next.WebView2Loader == EvergreenLoader && RuntimeOutsidePack()) return;
         throw new InvalidDataException(next.WebView2Loader == EvergreenLoader
-            ? "Ce poste utilise le pack complet avec son runtime intégré, que le pack allégé n’emporte pas. Installez d’abord le ZIP WebView2 du Socle ("
-                + PackComponents.SocleReleases + ") dans Réglages · Composants, ou WebView2 Evergreen, puis relancez la mise à jour."
+            ? "Ce poste utilise le pack complet avec son runtime intégré, que le pack allégé n’emporte pas. "
+                + PackComponents.SocleSourceInstructions + ", puis installez-le dans Réglages · Composants. Vous pouvez aussi installer WebView2 Evergreen. Relancez ensuite la mise à jour."
             : "Ce poste utilise le pack allégé ; le pack complet ne le remplace pas. Installez le pack allégé de la nouvelle version.");
     }
     public static string ValidRelativePath(string name)
