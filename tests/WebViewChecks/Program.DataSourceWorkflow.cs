@@ -295,7 +295,11 @@ internal static partial class Program
         singleCollectionStopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
         await page.Locator(".page-heading button[aria-label=Actualiser]").ClickAsync();
         await singleCollectionEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        await DataPage();
+        // The collection is deliberately pending: await the destination DOM,
+        // not the usual navigation helper's all-requests-idle condition.
+        await ClickNavigationAsync(page, "data");
+        await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
+        await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='data'&&!document.querySelector('#content').hasAttribute('aria-busy')");
         const string draftUrl = "https://simulation.glpi.local/front/ticket.php?draft=retained";
         await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).FillAsync(draftUrl);
         await page.Locator(".page-content").EvaluateAsync("node=>node.dataset.navigatedDuringCollection='true'");
