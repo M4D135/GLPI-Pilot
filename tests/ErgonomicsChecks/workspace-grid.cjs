@@ -82,6 +82,41 @@ module.exports = async ({ page, reset, ok, capture }) => {
   await page.evaluate(() => document.querySelector('[data-late-content]').remove());
   await page.waitForFunction(height => document.querySelector('[data-widget-id=card-0]').getBoundingClientRect().height === height, natural);
   ok(await page.evaluate(() => gridWrites === 0), 'Removing late content restores the automatic height without saving');
+  await page.evaluate(async () => {
+    fixtureGrid.dispose();
+    const { bindWorkspaceGrid } = await window.importProduction('/web/js/pages/workspace-grid-ui.js');
+    const { widgetContent } = await window.importProduction('/web/js/pages/analytics-charts.js');
+    const { el, button, toolbar } = await window.importProduction('/web/js/pages/analytics-ui.js');
+    const root = document.querySelector('#root'); root.replaceChildren(); root.dataset.layoutEditing = 'false';
+    const setting = { id: 'weather', kind: 'metric', sourceKey: 'active', span: 12, height: 240, autoHeight: false,
+      presentation: 'weather-volume', showDescription: true, warningValue: 10, criticalValue: 20, section: 'weather' };
+    const body = widgetContent({}, { id: 'weather', settings: setting, rowCount: 84,
+      weatherContext: { reason: 'Seuils de l’équipe Support ; les mêmes tickets actifs composent le périmètre et cette règle.' },
+      content: { key: 'active', value: 84, count: 84, sample: 84, unit: 'tickets', explanation: 'Périmètre synthétique du contrôle.',
+        volumeWeather: { state: 'rain', title: 'Sous tension', explanation: 'Les seuils sont ceux de l’équipe choisie.' } } }, () => {}, () => {});
+    const article = el('article', { class: 'analytics-widget pilot-widget business-weather-hero', dataset: { widgetId: 'weather', autoHeight: 'false' } },
+      el('div', { class: 'analytics-widget-heading' }, el('h3', { text: 'Support · tickets en cours' }), toolbar(button('Détail', () => {}))), body);
+    const grid = el('div', { class: 'pilot-widget-grid' }, article);
+    const host = el('div', { class: 'pilot-composition' }, el('section', { dataset: { sectionKey: 'weather' } }, el('div', { class: 'pilot-grid-viewport' }, grid)));
+    root.append(host);
+    window.fixtureGrid = bindWorkspaceGrid({ host, getBoard: () => ({ widgets: [setting] }), canEdit: () => false,
+      persist: () => { throw Error('Unexpected save'); }, notify: () => {}, signal: controller.signal });
+  });
+  await settle();
+  ok(await page.locator('[data-widget-id=weather]').evaluate(node => node.getBoundingClientRect().height === 244
+    && (node.querySelector('.analytics-widget-body').scrollHeight <= node.querySelector('.analytics-widget-body').clientHeight + 1
+      || node.dataset.readingLimited === 'true' && node.querySelector('.workspace-reading-caption').textContent.includes('Aperçu'))),
+  'A saved small weather card keeps its exact lattice height and explicitly identifies a limited preview');
+  await page.locator('[data-widget-expand=weather]').click();
+  const track = page.locator('dialog .pilot-weather-thresholds'); await track.scrollIntoViewIfNeeded();
+  ok(await track.evaluate(node => {
+    const r = node.getBoundingClientRect(), viewport = node.closest('.modal-body').getBoundingClientRect(), body = node.closest('.analytics-widget-body');
+    return node.textContent.includes('Vigilance > 10') && node.textContent.includes('Tension > 20')
+      && r.top >= viewport.top - 1 && r.bottom <= viewport.bottom + 1
+      && body.scrollHeight <= body.clientHeight + 1 && getComputedStyle(body).overflowY === 'visible';
+  }), 'Enlargement exposes the exact weather thresholds completely without a nested scrollbar');
+  await page.keyboard.press('Escape');
+  ok(await page.locator('[data-widget-id=weather]').evaluate(node => node.getBoundingClientRect().height === 244), 'Closing full weather reading restores the same chosen card height');
   await page.evaluate(() => drawGridFixture(true)); await settle(); await capture('workspace-grid-aligned-editing');
   await page.evaluate(() => drawGridFixture(false)); await settle(); await capture('workspace-grid-aligned-reading');
   await page.evaluate(() => controller.abort());

@@ -117,28 +117,21 @@ internal static partial class Program
             var argument = Array.IndexOf(args, "--screenshots");
             var path = argument >= 0 && argument + 1 < args.Length ? args[argument + 1] : null;
             if (path is not null) await hero.ScreenshotAsync(new() { Path = Path.Combine(path, name + "-card.png") });
-            var detail = hero.Locator(thresholds ? ".pilot-weather-thresholds" : ".analytics-weather-context");
-            await detail.ScrollIntoViewIfNeededAsync();
-            var readable = await detail.EvaluateAsync<bool>("""
-                node=>{const rect=node.getBoundingClientRect(),card=node.closest('.business-weather-hero').getBoundingClientRect();
-                  return rect.top>=card.top-1&&rect.bottom<=card.bottom+1&&rect.left>=card.left-1&&rect.right<=card.right+1;}
-                """);
             if (path is not null) await File.WriteAllTextAsync(Path.Combine(path, name + "-geometry.json"), geometry.GetRawText());
-            // Reading mode deliberately uses natural height since the ergonomics
-            // change. The saved 240px belongs to Composer; no inner scroll or
-            // clipping may hide the threshold labels in the reading summary.
-            Require(geometry.GetProperty("savedHeight").GetString() == "240px" && geometry.GetProperty("bounded").GetBoolean()
-                && geometry.GetProperty("horizontal").GetBoolean() && geometry.GetProperty("complete").GetBoolean() && readable
+            // The saved 240px is painted on the same 244px lattice in both modes.
+            // A bounded preview must say when content needs its full reading view.
+            var honestPreview = geometry.GetProperty("complete").GetBoolean()
+                || await hero.GetAttributeAsync("data-reading-limited") == "true"
+                    && (await hero.Locator(".workspace-reading-caption").InnerTextAsync()).Contains("Aperçu", StringComparison.Ordinal);
+            Require(Hero(Pilot()).GetProperty("settings").GetProperty("height").GetInt32() == 240
+                && geometry.GetProperty("savedHeight").GetString() == "244px" && Math.Abs(geometry.GetProperty("height").GetDouble() - 244) < 1
+                && geometry.GetProperty("bounded").GetBoolean() && geometry.GetProperty("horizontal").GetBoolean() && honestPreview
                 && !string.IsNullOrWhiteSpace(geometry.GetProperty("reason").GetString())
                 && (thresholds ? geometry.GetProperty("thresholds").GetString()!.Contains("Vigilance > 10", StringComparison.Ordinal)
                     && geometry.GetProperty("thresholds").GetString()!.Contains("Tension > 20", StringComparison.Ordinal)
                     : geometry.GetProperty("thresholds").GetString() == ""),
-                thresholds ? "At 1280 pixels, reading mode preserves the saved 240-pixel setting and shows the exact 10/20 labels completely without inner scrolling or overlapping the next section."
-                    : "The cumulative reading summary preserves its 240-pixel setting and readable neutral explanation, without an irrelevant threshold track, inner scrolling or neighbouring-section overflow.");
-            if (path is not null)
-            {
-                await hero.ScreenshotAsync(new() { Path = Path.Combine(path, name + "-detail.png") });
-            }
+                thresholds ? "Scoped weather preserves the saved height and exact 10/20 labels, with bounded geometry and an explicit notice when enlargement is needed."
+                    : "Cumulative weather preserves the same bounded height and neutral explanation without an irrelevant threshold track.");
             var layoutBefore = JsonSerializer.Serialize(app.Settings.Dashboard, PilotApplication.Json);
             var bodyHandle = await hero.Locator(":scope > .analytics-widget-body").EvaluateHandleAsync("node=>node");
             var expand = hero.GetByRole(AriaRole.Button, new() { Name = "Agrandir", Exact = true });
@@ -147,9 +140,18 @@ internal static partial class Program
             Require(await page.EvaluateAsync<bool>("node=>document.querySelector('dialog.workspace-widget-focus .analytics-widget-body')===node", bodyHandle)
                 && await enlarged.Locator(thresholds ? ".pilot-weather-thresholds" : ".analytics-weather-context").IsVisibleAsync(),
                 "Enlarging scoped weather reuses its real content and keeps the thresholds or neutral explanation available.");
+            var detail = enlarged.Locator(thresholds ? ".pilot-weather-thresholds" : ".analytics-weather-context");
+            await detail.ScrollIntoViewIfNeededAsync();
+            Require(await detail.EvaluateAsync<bool>("""
+                node=>{const rect=node.getBoundingClientRect(),viewport=node.closest('.modal-body').getBoundingClientRect(),body=node.closest('.analytics-widget-body');
+                  return rect.top>=viewport.top-1&&rect.bottom<=viewport.bottom+1&&rect.left>=viewport.left-1&&rect.right<=viewport.right+1
+                    && body.scrollHeight<=body.clientHeight+1 && getComputedStyle(body).overflowY==='visible';}
+                """), "The full weather view shows the complete threshold track or neutral explanation without clipped labels or nested scrolling.");
+            if (path is not null) await enlarged.ScreenshotAsync(new() { Path = Path.Combine(path, name + "-detail.png") });
             await page.Keyboard.PressAsync("Escape"); await enlarged.WaitForAsync(new() { State = WaitForSelectorState.Detached });
             Require(await hero.Locator(":scope > .analytics-widget-body").EvaluateAsync<bool>("(node,original)=>node===original", bodyHandle)
                 && await expand.EvaluateAsync<bool>("node=>node===document.activeElement")
+                && await hero.EvaluateAsync<bool>("node=>Math.abs(node.getBoundingClientRect().height-244)<1")
                 && JsonSerializer.Serialize(app.Settings.Dashboard, PilotApplication.Json) == layoutBefore,
                 "Escape returns the same weather content and focus without rewriting saved geometry, thresholds or filters.");
             await bodyHandle.DisposeAsync();
