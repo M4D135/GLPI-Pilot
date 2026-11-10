@@ -21,7 +21,7 @@ public sealed partial class PilotApplication
         foreach (var value in values.EnumerateArray())
         {
             if (value.ValueKind != JsonValueKind.String || value.GetString() is not { Length: > 0 and <= 96 } id
-                || !seen.Add(id) || !visible.TryGetValue(id, out var widget) || !run.Widgets.ContainsKey(id))
+                || !seen.Add(id) || !visible.TryGetValue(id, out var widget) || !run.Widgets.ContainsKey(id) && !run.UnavailableWidgets.ContainsKey(id))
                 throw new InvalidDataException("La sélection contient un bloc absent, masqué ou répété. Reprenez la sélection sur le tableau actif.");
             result.Add(widget);
         }
@@ -90,6 +90,14 @@ public sealed partial class PilotApplication
         var sections = new List<DashboardReportSection>();
         foreach (var widget in selection)
         {
+            if (run.UnavailableWidgets.TryGetValue(widget.Id, out var reason))
+            {
+                ct.ThrowIfCancellationRequested();
+                sections.Add(new() { Id = widget.Id, Title = string.IsNullOrWhiteSpace(widget.Title) ? widget.SourceKey : widget.Title,
+                    Kind = widget.Kind, Scope = "Périmètre indisponible", Filters = AnalyticsDescribe(run.Common.Concat(widget.Filters)),
+                    Notes = { "Indisponible : " + reason } });
+                continue;
+            }
             ct.ThrowIfCancellationRequested(); var snapshot = run.Widgets[widget.Id];
             var filters = AnalyticsDescribe(run.Common.Concat(widget.Filters));
             var section = new DashboardReportSection { Id = widget.Id, Title = string.IsNullOrWhiteSpace(widget.Title) ? widget.SourceKey : widget.Title,

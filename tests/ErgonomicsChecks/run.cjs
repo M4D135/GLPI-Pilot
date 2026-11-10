@@ -51,6 +51,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       ok(errors.length === 0 && external === 0, 'Source navigation uses production modules without JavaScript errors or external requests');
       console.log(`${checks}/${checks} source navigation checks passed.`); return;
     }
+    if (process.env.GLPI_TEST_GRID_ONLY !== '1') await require('./unavailable-filters.cjs')({ page, reset, ok });
     await require('./workspace-grid.cjs')({ page, reset, ok, capture });
     if (process.env.GLPI_TEST_GRID_ONLY === '1') {
       ok(errors.length === 0 && external === 0, 'Grid checks use production modules without JavaScript errors or external requests');

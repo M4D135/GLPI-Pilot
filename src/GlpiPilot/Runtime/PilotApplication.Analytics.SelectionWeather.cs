@@ -193,7 +193,7 @@ public sealed partial class PilotApplication
     }
     private static void AnalyticsApplySelectionWeather(AnalyticsRun run, CancellationToken ct)
     {
-        foreach (var raw in run.StoredBoard.Widgets.Where(widget => !widget.Hidden && widget.Kind == "metric" && widget.Presentation == "weather-volume"))
+        foreach (var raw in run.StoredBoard.Widgets.Where(widget => !widget.Hidden && widget.Kind == "metric" && widget.Presentation == "weather-volume" && run.Widgets.ContainsKey(widget.Id)))
         {
             ct.ThrowIfCancellationRequested(); var widget = run.Board.Widgets.Single(item => item.Id == raw.Id);
             var scope = AnalyticsSelectionScope(run, raw); var key = scope.Key(); var canonical = scope.Canonical();

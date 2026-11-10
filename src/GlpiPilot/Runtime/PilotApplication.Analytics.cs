@@ -26,6 +26,7 @@ public sealed partial class PilotApplication
         public Dictionary<string, DashboardVolumeWeather> WeatherOverrides { get; } = new(StringComparer.Ordinal);
         public required List<DashboardScopeFilter> Common { get; init; }
         public required Dictionary<string, DashboardSnapshot> Widgets { get; init; }
+        public required Dictionary<string, string> UnavailableWidgets { get; init; }
         public required SnapshotScopedHistory History { get; init; }
         public required string TechnicianKey { get; init; }
         public required bool SourceTicketIdentityReliable { get; init; }
@@ -156,6 +157,7 @@ public sealed partial class PilotApplication
             var scope = DashboardService.ResolveScope(baseline, common, token);
             var current = common.Count == 0 ? baseline : Calculate(scope, AnalyticsDescribe(common));
             var widgets = new Dictionary<string, DashboardSnapshot>(StringComparer.Ordinal);
+            var unavailableWidgets = new Dictionary<string, string>(StringComparer.Ordinal);
             var cache = new Dictionary<string, DashboardSnapshot>(StringComparer.Ordinal);
             foreach (var widget in board.Widgets.Where(w => !w.Hidden))
             {
@@ -164,7 +166,28 @@ public sealed partial class PilotApplication
                 var signature = JsonSerializer.Serialize(widget.Filters, Json);
                 if (!cache.TryGetValue(signature, out var filtered))
                 {
-                    var rows = DashboardService.ResolveScope(baseline, widget.Filters, token).Intersect(scope).Order().ToArray();
+                    int[] rows;
+                    try { rows = DashboardService.ResolveScope(baseline, widget.Filters, token).Intersect(scope).Order().ToArray(); }
+                    catch (InvalidDataException error)
+                    {
+                        // Keep the filter and its unknown population. Neither the
+                        // baseline nor an empty subset is a valid replacement.
+                        var reason = error.Message;
+                        foreach (var filter in widget.Filters)
+                        {
+                            var label = filter.Kind switch
+                            {
+                                "matrix-row" => baseline.Matrices.FirstOrDefault(item => item.Key == filter.SourceKey)?.Title,
+                                "distribution" => baseline.Distributions.FirstOrDefault(item => item.Key == filter.SourceKey)?.Title,
+                                "metric" => baseline.Metric(filter.SourceKey)?.Label,
+                                "date" => baseline.Column(filter.SourceKey)?.Label,
+                                _ => null
+                            };
+                            if (label is not null) reason = reason.Replace(filter.SourceKey, "« " + label + " »", StringComparison.Ordinal);
+                        }
+                        unavailableWidgets[widget.Id] = reason.TrimEnd('.') + ". Vérifiez les correspondances de colonnes ou modifiez le filtre de ce widget.";
+                        continue;
+                    }
                     filtered = Calculate(rows, AnalyticsDescribe(common.Concat(widget.Filters))); cache[signature] = filtered;
                 }
                 widgets[widget.Id] = filtered;
@@ -174,7 +197,7 @@ public sealed partial class PilotApplication
             var stockWeather = weatherRules is null ? null : BusinessWeatherProjection.Create(board, weatherRules, weatherBoard!, weatherSource,
                 current, widgets, focus.Keys, focus.Groups, otherScope, token);
             var run = new AnalyticsRun { Revision = revision, Source = source, Settings = settings, Rules = SnapshotStore.RulesFingerprint(settings),
-                Baseline = baseline, Current = current, Comparison = comparison, Board = stockWeather?.Board ?? board, Common = common, Widgets = widgets, StockWeather = stockWeather,
+                Baseline = baseline, Current = current, Comparison = comparison, Board = stockWeather?.Board ?? board, Common = common, Widgets = widgets, UnavailableWidgets = unavailableWidgets, StockWeather = stockWeather,
                 StoredBoard = board.Copy(), Unfiltered = weatherSource, BusinessView = businessView,
                 Selection = new() { FocusKeys = focus.Keys.ToList(), TechnicianKey = technician, CrossFilters = DashboardScopeFilter.CopyList(cross) },
                 TechnicianKey = technician, History = new(Snapshots, historySource, settings, baseline, technician, token, historical?.Metadata.SourceKey),
@@ -204,13 +227,13 @@ public sealed partial class PilotApplication
         if (!run.HistoryLoaded)
         {
             var requests = new List<DashboardHistoryScope> { new("current", run.Common, Array.Empty<DashboardScopeFilter>()) };
-            foreach (var widget in run.Board.Widgets.Where(w => !w.Hidden && w.Filters.Count > 0)) requests.Add(new("widget:" + widget.Id, run.Common, widget.Filters));
+            foreach (var widget in run.Board.Widgets.Where(w => !w.Hidden && w.Filters.Count > 0 && run.Widgets.ContainsKey(w.Id))) requests.Add(new("widget:" + widget.Id, run.Common, widget.Filters));
             if (run.Comparison is not null) requests.Add(new("comparison", run.Board.ComparisonFilters, Array.Empty<DashboardScopeFilter>()));
             var histories = await Jobs.RunAsync("analytics-mini-history", true, token => run.History.Calculate(requests, token), ct);
             RequireAnalyticsRun(args); ct.ThrowIfCancellationRequested();
             void Set(DashboardSnapshot snapshot, string key) { snapshot.History.Clear(); snapshot.History.AddRange(histories[key]); }
             Set(run.Current, "current");
-            foreach (var widget in run.Board.Widgets.Where(w => !w.Hidden && w.Filters.Count > 0)) Set(run.Widgets[widget.Id], "widget:" + widget.Id);
+            foreach (var widget in run.Board.Widgets.Where(w => !w.Hidden && w.Filters.Count > 0 && run.Widgets.ContainsKey(w.Id))) Set(run.Widgets[widget.Id], "widget:" + widget.Id);
             if (run.Comparison is not null && !ReferenceEquals(run.Comparison, run.Current)) Set(run.Comparison, "comparison");
             run.HistoryLoaded = true;
         }
@@ -221,6 +244,7 @@ public sealed partial class PilotApplication
 
     private static object AnalyticsHistoryWidget(AnalyticsRun run, DashboardWidgetSettings widget)
     {
+        if (run.UnavailableWidgets.ContainsKey(widget.Id)) return new { id = widget.Id, history = (object?)null, comparison = (object?)null };
         var history = run.Widgets[widget.Id].History.FirstOrDefault(h => h.Key == widget.SourceKey);
         if (history is null || history.Points.Count == 0) return new { id = widget.Id, history, comparison = (object?)null };
         var end = history.Points.Max(p => p.CapturedAt); var middle = end.AddDays(-widget.HistoryPeriodDays); var start = middle.AddDays(-widget.HistoryPeriodDays);
@@ -301,6 +325,10 @@ public sealed partial class PilotApplication
     }
     private static object AnalyticsWidget(AnalyticsRun run, DashboardWidgetSettings widget)
     {
+        if (run.UnavailableWidgets.TryGetValue(widget.Id, out var reason))
+            return new { id = widget.Id, settings = widget, content = (object?)null, rowCount = (int?)null,
+                scopeLabel = "Périmètre indisponible", available = false, unavailableReason = reason,
+                weatherContext = (object?)null, weatherSelection = (object?)null };
         var s = run.Widgets[widget.Id]; object? content = widget.Kind switch
         {
             "metric" => s.Metric(widget.SourceKey) is { } metric ? AnalyticsMetric(metric, widget, AnalyticsVolumeWeatherReliable(run, s, widget), run.IsLocalFileTest,
@@ -451,6 +479,7 @@ public sealed partial class PilotApplication
     private static DashboardSnapshot AnalyticsSnapshot(AnalyticsRun run, JsonElement args)
     {
         var id = Text(args, "widgetId", 96);
+        if (run.UnavailableWidgets.TryGetValue(id, out var reason)) throw new InvalidDataException(reason);
         return id.Length == 0 ? run.Current : run.Widgets.GetValueOrDefault(id) ?? throw new InvalidDataException("Widget introuvable.");
     }
     private object AnalyticsRows(JsonElement args, CancellationToken ct)

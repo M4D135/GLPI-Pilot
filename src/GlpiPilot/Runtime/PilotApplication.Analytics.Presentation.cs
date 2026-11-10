@@ -61,7 +61,7 @@ public sealed partial class PilotApplication
 
     private static IEnumerable<string> AnalyticsVisiblePresentationWidgets(AnalyticsRun run)
         => run.Board.Widgets.Where(widget => !widget.Hidden && !run.Board.Sections.Any(section => section.Hidden && section.Key == widget.Section)
-            && run.Widgets.ContainsKey(widget.Id)).Select(widget => widget.Id);
+            && (run.Widgets.ContainsKey(widget.Id) || run.UnavailableWidgets.ContainsKey(widget.Id))).Select(widget => widget.Id);
 
     private static DashboardPresentationSettings? AnalyticsReportPresentation(AnalyticsRun run, IReadOnlyList<DashboardWidgetSettings> selection, JsonElement args)
     {

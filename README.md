@@ -1,4 +1,4 @@
-# GLPI Pilot 3.14.2 · Windows x64
+# GLPI Pilot 3.14.3 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -27,6 +27,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 3.14.3 : pilotage, disposition et actualisation
+
+Actualiser GLPI conserve la page courante, y compris l’Accueil. Les widgets gardent leur taille et leur alignement après validation de la disposition ; les cartes par défaut sont rangées sur une grille régulière. Un filtre de widget devenu incalculable affiche son indisponibilité sans bloquer les autres cartes ni inventer un zéro. Voir les [notes 3.14.3](docs/RELEASE-3.14.3.md).
 
 ## 3.14.2 : accès au Socle sans lien GitHub dans l’application
 

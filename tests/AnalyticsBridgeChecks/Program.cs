@@ -73,8 +73,14 @@ internal static partial class Program
                 Console.WriteLine($"{_passed}/{_passed} meeting export checks passed.");
                 return;
             }
+            if (args.Contains("--unavailable-filters-only"))
+            {
+                await CheckUnavailableWidgetFilters();
+                Console.WriteLine($"{_passed}/{_passed} unavailable widget filter checks passed."); return;
+            }
             await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); await CheckWeatherScopeRuntime(); await CheckSelectionWeatherRuntime(); CheckScopedHistory();
             await CheckStockViewsRuntime();
+            await CheckUnavailableWidgetFilters();
             await CheckSiteLocationSummaryRuntime();
             await CheckSiteGeographySimulationRuntime();
             await CheckMapWorkspaceRuntime();

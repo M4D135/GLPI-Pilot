@@ -23,6 +23,12 @@ public sealed partial class PilotApplication
         foreach (var widget in run.Board.Widgets.Where(widget => !widget.Hidden && widget.Kind == "metric" && widget.Presentation == "weather-volume"
             && !run.Board.Sections.Any(section => section.Key == widget.Section && section.Hidden)))
         {
+            if (run.UnavailableWidgets.TryGetValue(widget.Id, out var reason))
+            {
+                entries.Add(new(widget.Title, null, run.Baseline.Metric(widget.SourceKey)?.Unit ?? "", "unknown", "Donnée indisponible", null, null,
+                    widget.LowerIsBetter, "Périmètre indisponible", reason));
+                continue;
+            }
             var context = projection?.Contexts.GetValueOrDefault(widget.Id);
             if (context is { Applicable: false } or { RepresentedByHero: true }) continue;
             var snapshot = run.Widgets[widget.Id]; var metric = snapshot.Metric(widget.SourceKey);

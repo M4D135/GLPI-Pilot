@@ -378,7 +378,7 @@ export async function renderDashboard(ctx) {
         const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}${widget.available === false ? ' is-unavailable' : ''}${setting.kind === 'metric' && setting.presentation !== 'weather-volume' ? ' analytics-kpi-card' : ''}`,
           style: { '--span': setting.span, '--widget-height': `${setting.height}px` }, 'data-widget-id': setting.id, 'data-widget-kind': setting.kind,
           'data-available': widget.available ?? 'unknown', 'data-auto-height': setting.autoHeight, 'data-compact-metadata': !!compactMetric }, header,
-          caption(`${formatNumber(widget.rowCount)} lignes · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
+          caption(`${widget.rowCount == null ? 'Périmètre indisponible' : `${formatNumber(widget.rowCount)} lignes`} · ${setting.filters?.length ? describeFilters(setting.filters) : widget.scopeLabel}`, 'analytics-widget-scope'),
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
             { snapshot: model.snapshot, historical: model.historical, compactWeather: business?.key === 'weather' && !editing,
               preserveWidgetAccent: !business || business.customLayout || editing,

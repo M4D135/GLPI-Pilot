@@ -15,12 +15,12 @@ function clickable(node, callback, label) {
 
 export function widgetContent(ctx, widget, activate, more, options = {}) {
   const setting = widget.settings; const data = widget.content;
-  if (setting.kind === 'history') return el('div', { class: 'analytics-history-mount' }, sparkline(data));
   const illustratedWeather = data && (setting.kind === 'weather' || setting.presentation === 'weather-volume');
   if (widget.available === false && !illustratedWeather) return el('div', { class: 'analytics-widget-unavailable' },
     el('strong', { text: 'Donnée indisponible' }),
     caption(widget.unavailableReason || 'Les champs ou les valeurs nécessaires à ce calcul ne sont pas disponibles dans ce périmètre.'),
     command(ctx, 'Vérifier les correspondances', () => ctx.navigate('mapping')));
+  if (setting.kind === 'history') return el('div', { class: 'analytics-history-mount' }, sparkline(data));
   if (!data) return empty('Source indisponible', `La source « ${setting.sourceKey} » n’est pas calculable dans ce relevé. Modifiez le widget ou les correspondances de colonnes.`);
   const body = el('div', { class: `analytics-widget-body kind-${setting.kind}` });
   if (setting.kind === 'metric') {
