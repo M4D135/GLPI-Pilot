@@ -255,7 +255,8 @@ export async function renderPilotWorkspace(ctx) {
           style: { '--span': setting.span, '--widget-height': `${setting.height}px` } });
         const controls = editing ? toolbar(
           command(ctx, 'Régler', () => openWidgetEditor(ctx, { model, board, persist }, setting)))
-          : toolbar(button('Détail', () => activate(widget, { kind: 'scope' }).catch(reason => error(ctx, reason)), { title: `Voir les lignes de ${title}` }));
+          : toolbar(button('Détail', () => activate(widget, { kind: 'scope' }).catch(reason => error(ctx, reason)),
+            { disabled: widget.rowCount == null, title: widget.rowCount == null ? widget.unavailableReason : `Voir les lignes de ${title}` }));
         article.append(el('div', { class: 'analytics-widget-heading' }, el('h3', { text: title }), controls),
           scopedPlaceholder ? el('div', { class: 'workspace-weather-placeholder', 'data-weather-placeholder': '' },
             badge(context.representedByHero ? 'Présentée dans la météo principale' : 'Hors du périmètre sélectionné'),

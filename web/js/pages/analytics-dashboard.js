@@ -372,7 +372,8 @@ export async function renderDashboard(ctx) {
           const check = checkbox('', selected.has(setting.id)); check.control.setAttribute('aria-label', `Sélectionner ${title}`);
           check.control.addEventListener('change', () => { if (check.control.checked) selected.add(setting.id); else selected.delete(setting.id); drawBulk(); });
           controls.append(check.element, command(ctx, 'Régler', () => widgetDialog(setting)));
-        } else controls.append(command(ctx, 'Lignes', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: setting.id, kind: 'scope' }, title)));
+        } else controls.append(command(ctx, 'Lignes', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, widgetId: setting.id, kind: 'scope' }, title),
+          { disabled: widget.rowCount == null, title: widget.rowCount == null ? widget.unavailableReason : undefined }));
         header.append(controls);
         const compactMetric = business && !editing && setting.kind === 'metric' && setting.presentation !== 'weather-volume' && setting.showDescription;
         const article = el('article', { class: `analytics-widget style-${setting.style} accent-${setting.accent}${setting.locked ? ' locked' : ''}${widget.available === false ? ' is-unavailable' : ''}${setting.kind === 'metric' && setting.presentation !== 'weather-volume' ? ' analytics-kpi-card' : ''}`,
