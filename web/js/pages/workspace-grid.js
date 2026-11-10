@@ -39,23 +39,9 @@ function freeAtColumn(rect, occupied) {
   }
   throw new Error('La disposition dépasse la hauteur maximale. Rapprochez les cartes ou ajoutez une section.');
 }
-function firstFree(rect, occupied, minimum = 0) {
-  let y = minimum;
-  while (y <= GRID_MAX_ROW) {
-    let next = Infinity;
-    for (let x = 0; x <= GRID_COLUMNS - rect.w; x++) {
-      const candidate = { ...rect, x, y };
-      const collisions = occupied.filter(other => gridOverlap(candidate, other));
-      if (!collisions.length) return candidate;
-      next = Math.min(next, ...collisions.map(other => other.y + other.h));
-    }
-    y = Math.max(y + 1, next);
-  }
-  throw new Error('La disposition dépasse la hauteur maximale. Ajoutez une section.');
-}
-
 // A narrow window is a projection, never a rewrite of the saved desktop layout.
-// Stored empty spaces are retained. Unpositioned legacy cards fill available slots.
+// Stored empty spaces are retained. Automatic cards follow aligned rows in their
+// original order, rather than climbing into holes below shorter neighbours.
 export function arrangeWorkspaceWidgets(widgets, width, heights = new Map(), maximumMeasuredHeight = 960) {
   const visible = widgets.filter(w => !w.hidden);
   const raw = visible.map(w => ({ id: w.id, locked: !!w.locked,
@@ -69,13 +55,28 @@ export function arrangeWorkspaceWidgets(widgets, width, heights = new Map(), max
     const placed = freeAtColumn({ ...rect, x: Math.min(w.gridX, GRID_COLUMNS - rect.w), y: w.gridY }, occupied);
     occupied.push(placed); byId.set(w.id, placed);
   }
-  let floor = 0;
+  let floor = 0, column = 0, row = [];
+  const flushRow = () => {
+    if (!row.length) return;
+    while (floor <= GRID_MAX_ROW) {
+      const placed = row.map(rect => ({ ...rect, y: floor }));
+      const collisions = occupied.filter(other => placed.some(rect => gridOverlap(rect, other)));
+      if (!collisions.length) {
+        for (const rect of placed) { occupied.push(rect); byId.set(rect.id, rect); }
+        floor += Math.max(...placed.map(rect => rect.h)); row = []; column = 0; return;
+      }
+      floor = Math.max(...collisions.map(rect => rect.y + rect.h));
+    }
+    throw new Error('La disposition dépasse la hauteur maximale. Ajoutez une section.');
+  };
   for (const w of visible) {
     if (byId.has(w.id)) continue;
+    const rect = raw.find(r => r.id === w.id);
+    if (w.startNewRow || column + rect.w > GRID_COLUMNS) flushRow();
     if (w.startNewRow) floor = Math.max(floor, 0, ...occupied.map(r => r.y + r.h));
-    const placed = firstFree(raw.find(r => r.id === w.id), occupied, floor);
-    occupied.push(placed); byId.set(w.id, placed);
+    row.push({ ...rect, x: column }); column += rect.w;
   }
+  flushRow();
   return visible.map(w => byId.get(w.id));
 }
 
@@ -117,6 +118,7 @@ export function previewResizeRect({ rect, span, width, startX, startY, pointerX,
   const step = (width + GRID_GAP) / GRID_COLUMNS;
   const columns = clamp((span || rect.w || 4) + Math.round((pointerX - startX) / step), 3, GRID_COLUMNS);
   const height = snapGridHeight(startHeight + (pointerY - startY), MIN_RESIZE_HEIGHT);
-  return { moving: { ...rect, x: Math.min(rect.x, GRID_COLUMNS - columns), w: columns, h: gridRows(height) },
+  const projected = effectiveGridSpan(columns, width);
+  return { moving: { ...rect, x: Math.min(rect.x, GRID_COLUMNS - projected), w: projected, h: gridRows(height) },
     size: { span: columns, height } };
 }

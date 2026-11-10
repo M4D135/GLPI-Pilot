@@ -127,10 +127,10 @@ public static partial class BusinessDashboardTemplates
         }
         var board = new DashboardBoardSettings { Id = "business-" + key, Name = view.Title, Description = view.Description, HideUnavailableWidgets = false };
         void Section(string id, string title, string description = "", string accent = "blue") => board.Sections.Add(new() { Key = id, Title = title, Description = description, Accent = accent });
-        DashboardWidgetSettings Add(string kind, string source, string title, string section, int span = 4, int height = 260, string accent = "blue")
+        DashboardWidgetSettings Add(string kind, string source, string title, string section, int span = 4, int height = 320, string accent = "blue")
         {
             var widget = new DashboardWidgetSettings { Id = $"business-{key}-{board.Widgets.Count}", Kind = kind, SourceKey = source, Title = title, Section = section,
-                Span = span, Height = height, AutoHeight = true, Accent = accent, ShowMiniHistory = false, TopCount = 30 };
+                Span = span, Height = height, AutoHeight = false, Accent = accent, ShowMiniHistory = false, TopCount = 30 };
             board.Widgets.Add(widget); return widget;
         }
         void Metrics(string section, params (string Key, string Label)[] metrics)
@@ -153,7 +153,7 @@ public static partial class BusinessDashboardTemplates
             foreach (var rule in rules)
             {
                 var section = rule.Kind switch { "team" => "teams", "category" => "categories", _ => "stock" };
-                var widget = Add("metric", rule.SourceKey, rule.Label, section, rule.Kind == "metric" && rule.SourceKey == "active" ? 12 : 3, 260, rule.Kind == "category" ? "purple" : rule.Kind == "team" ? "teal" : "blue");
+                var widget = Add("metric", rule.SourceKey, rule.Label, section, rule.Kind == "metric" && rule.SourceKey == "active" ? 12 : 4, 320, rule.Kind == "category" ? "purple" : rule.Kind == "team" ? "teal" : "blue");
                 widget.Id = WeatherWidgetId(rule.Id); widget.Hidden = !rule.Visible; widget.Presentation = rule.WeatherEnabled ? "weather-volume" : "compact";
                 widget.WarningValue = rule.WeatherEnabled ? rule.OrangeAbove : null; widget.CriticalValue = rule.WeatherEnabled ? rule.RedAbove : null; widget.Note = rule.Note;
                 if (rule.Kind != "metric") widget.Filters.Add(new() { Kind = rule.Kind == "team" ? "matrix-row" : "distribution",
@@ -177,14 +177,14 @@ public static partial class BusinessDashboardTemplates
             Section("distribution", "Groupes, catégories et types", "Les totaux par groupe et par rédacteur peuvent dépasser le stock : une occurrence peut appartenir à plusieurs groupes ou personnes.", "purple");
             Section("quality", "Affectations et qualité", accent: "orange");
             Metrics("stock", ("active", "Tickets en cours"), ("active-incidents", "Incidents"), ("active-requests", "Demandes"), ("without-group", "Sans groupe"));
-            foreach (var widget in board.Widgets) widget.Span = 3;
-            Add("metric", "new", "Nouveaux", "status", 3);
+            foreach (var widget in board.Widgets) widget.Span = 4;
+            Add("metric", "new", "Nouveaux", "status", 4);
             foreach (var status in new[] { 2, 3 })
             {
-                var widget = Add("metric", "active", status == 2 ? "En cours · attribués" : "En cours · planifiés", "status", 3);
+                var widget = Add("metric", "active", status == 2 ? "En cours · attribués" : "En cours · planifiés", "status", 4);
                 widget.Filters.Add(new() { Kind = "distribution", SourceKey = "status", Value = DashboardService.StatusLabel(status) });
             }
-            Add("metric", "pending", "En attente", "status", 3);
+            Add("metric", "pending", "En attente", "status", 4);
             var groups = Add("matrix", "group-status", "10 premiers groupes par statut", "distribution", 6, 440); groups.Presentation = "stacked"; groups.StackedMode = "volume"; groups.TopCount = 10;
             Distribution("active-category", "8 principales catégories", "distribution").TopCount = 8;
             var types = Add("matrix", "type-status", "Types et statuts", "distribution", 12, 300); types.Presentation = "stacked"; types.StackedMode = "volume";

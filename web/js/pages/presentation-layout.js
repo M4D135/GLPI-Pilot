@@ -80,6 +80,8 @@ export function passiveWidget(original) {
   for (const property of ['--widget-height', 'position', 'left', 'top', 'right', 'bottom', 'width', 'height', 'transform', 'grid-column', 'grid-row'])
     copy.style.removeProperty(property);
   copy.removeAttribute('data-grid-column'); copy.removeAttribute('data-grid-row');
+  copy.removeAttribute('data-reading-size'); copy.removeAttribute('data-reading-limited');
+  for (const row of copy.querySelectorAll('[data-reading-hidden]')) { row.hidden = false; row.removeAttribute('data-reading-hidden'); }
   copy.querySelector('.analytics-widget-heading')?.remove();
   copy.querySelectorAll('.toolbar,.no-print,input,select,textarea,[data-grid-move],[data-grid-size],[data-grid-resize],.workspace-grid-preview,.workspace-grid-ghost,.domenia-orbs,.domenia-glow-ring,.domenia-spotlight,.domenia-widget-light,.domenia-cursor-halo,.domenia-ripple').forEach(node => node.remove());
   for (const node of copy.querySelectorAll('button,a')) {

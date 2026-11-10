@@ -68,6 +68,7 @@ export async function renderPilotWorkspace(ctx) {
   const provenance = el('details', { class: 'workspace-provenance analytics-provenance print-provenance' });
   const navigation = el('nav', { class: 'pilot-section-index no-print', 'aria-label': 'Repères dans le pilotage' });
   const content = el('div', { class: 'pilot-composition analytics-board-host' });
+  const widgetBodies = new WeakMap();
   const status = el('div', { class: 'workspace-operation-status', role: 'status' });
   root.append(hero, commands, boardHelp, scopeLabel, provenance, navigation, status, content);
 
@@ -254,7 +255,7 @@ export async function renderPilotWorkspace(ctx) {
           style: { '--span': setting.span, '--widget-height': `${setting.height}px` } });
         const controls = editing ? toolbar(
           command(ctx, 'Régler', () => openWidgetEditor(ctx, { model, board, persist }, setting)))
-          : button('Détail', () => activate(widget, { kind: 'scope' }).catch(reason => error(ctx, reason)), { title: `Voir les lignes de ${title}` });
+          : toolbar(button('Détail', () => activate(widget, { kind: 'scope' }).catch(reason => error(ctx, reason)), { title: `Voir les lignes de ${title}` }));
         article.append(el('div', { class: 'analytics-widget-heading' }, el('h3', { text: title }), controls),
           scopedPlaceholder ? el('div', { class: 'workspace-weather-placeholder', 'data-weather-placeholder': '' },
             badge(context.representedByHero ? 'Présentée dans la météo principale' : 'Hors du périmètre sélectionné'),
@@ -263,6 +264,14 @@ export async function renderPilotWorkspace(ctx) {
             { snapshot: model.snapshot, historical: model.historical, compactWeather: !mainWeather, preserveWidgetAccent: editing || scope.composition !== 'service',
               onWeatherSelection: trigger => openWeatherSelectionEditor(ctx, { model, widget, reload: load, trigger }),
               onControls: () => navigate('data', { panel: 'quality' }), copyIds: async selection => { const result = await call('dashboard.copyIds', { ...run(), widgetId: widget.id, ...selection }); notify(`${formatNumber(result.count)} identifiants copiés.`); } }));
+        // History, unavailable content and scoped placeholders also need the same
+        // bounded body and full-reading action as metrics and charts.
+        const renderedBody = article.children[1];
+        if (renderedBody && !renderedBody.classList.contains('analytics-widget-body')) {
+          const body = el('div', { class: 'analytics-widget-body' });
+          renderedBody.replaceWith(body); body.append(renderedBody);
+        }
+        widgetBodies.set(article, article.children[1]);
         if (!setting.autoHeight) article.classList.add('is-fixed-height');
         grid.append(article);
       }
@@ -550,7 +559,9 @@ export async function renderPilotWorkspace(ctx) {
       const setting = board.widgets.find(widget => widget.id === item.id);
       const article = [...content.querySelectorAll('[data-widget-id]')].find(node => node.dataset.widgetId === item.id);
       if (!setting || !article) continue;
-      const host = article.querySelector(setting.kind === 'history' ? '.analytics-history-mount' : '[data-history-widget]');
+      // The live body may currently be in its enlarged reading dialog.
+      const body = widgetBodies.get(article) || article;
+      const host = body.querySelector(setting.kind === 'history' ? '.analytics-history-mount' : '[data-history-widget]');
       const history = el('div', { class: setting.kind === 'history' ? 'analytics-history-mount' : 'analytics-mini-history', 'data-history-widget': item.id });
       const observed = item.history?.points?.some(point => point.comparable && point.value != null && Number.isFinite(point.value));
       history.append(setting.kind === 'history' || observed ? sparkline(item.history, setting.kind === 'metric') : caption('Historique : aucune observation comparable.'));
@@ -562,7 +573,7 @@ export async function renderPilotWorkspace(ctx) {
           comparison.delta == null ? caption('Une fenêtre ne contient pas d’observation exploitable ; la variation reste indisponible.') : null,
           caption(comparison.note), caption(item.history?.explanation || '')));
       }
-      if (host) host.replaceWith(history); else article.append(history);
+      if (host) host.replaceWith(history); else body.append(history);
     }
   }
   await load();

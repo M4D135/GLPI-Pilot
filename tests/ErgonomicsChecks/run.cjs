@@ -46,6 +46,11 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       await page.screenshot({ path: path.join(process.env.GLPI_GUIDE_CAPTURES, name + '.png'), animations: 'disabled' });
       await page.evaluate(theme => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, before);
     };
+    await require('./workspace-grid.cjs')({ page, reset, ok, capture });
+    if (process.env.GLPI_TEST_GRID_ONLY === '1') {
+      ok(errors.length === 0 && external === 0, 'Grid checks use production modules without JavaScript errors or external requests');
+      console.log(`${checks}/${checks} grid interface checks passed.`); return;
+    }
     await reset();
     await page.evaluate(async () => {
       const { mountMap } = await window.importProduction('/web/js/pages/maps.js'); const { el } = await window.importProduction('/web/js/ui.js');
@@ -106,7 +111,15 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
     await page.waitForSelector('[data-grid-ready=true]');
     ok(await page.locator('.pilot-widget tbody tr:visible').count() === 3, 'Small summary shows three rows without deleting the remaining rows');
     ok((await page.locator('.workspace-reading-caption').innerText()).includes('22'), 'The preview explicitly announces additional loaded content');
-    ok(await page.locator('.analytics-widget-body').evaluate(node=>node.scrollHeight<=node.clientHeight+1), 'Widget body has no inner vertical scrollbar');
+    ok(await page.locator('.analytics-widget-body').evaluate(node=>getComputedStyle(node).overflowY==='hidden'), 'The bounded preview has no inner vertical scrollbar; enlargement exposes the complete content');
+    ok(await page.evaluate(async () => {
+      const { passiveWidget } = await window.importProduction('/web/js/pages/presentation-layout.js');
+      const original = document.querySelector('.pilot-widget'), copy = passiveWidget(original);
+      return copy.querySelectorAll('tbody tr:not([hidden])').length === 25
+        && !copy.querySelector('[data-reading-hidden],.workspace-reading-footer')
+        && !copy.hasAttribute('data-reading-size') && !copy.hasAttribute('data-reading-limited')
+        && original.querySelectorAll('[data-reading-hidden]').length === 22;
+    }), 'Presentation clones retain all loaded rows without changing the compact live widget');
     await page.locator('.pilot-widget tbody tr:visible').last().focus(); await page.keyboard.press('ArrowDown');
     ok(await page.evaluate(()=>picked===null&&document.activeElement?.dataset.widgetExpand==='w'), 'Keyboard navigation stops at the summary boundary without selecting a hidden ticket');
     await page.locator('[data-widget-expand=w]').click();

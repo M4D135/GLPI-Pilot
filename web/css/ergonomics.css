@@ -53,14 +53,12 @@
 @media(max-width:600px){.ticket-control-hub .toolbar{display:grid;grid-template-columns:1fr}.ticket-control-hub{padding:10px}}
 
 /* workspace-grid.css */
-/* Reading mode is a responsive summary, not a small scrolling application.
-   The precise saved geometry remains untouched and is used while composing. */
-.pilot-workspace[data-layout-editing=false] .pilot-widget-grid[data-workspace-grid]>.pilot-widget{height:auto;max-height:none}
-.pilot-workspace[data-layout-editing=false] .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:0 0 auto;overflow:visible;overscroll-behavior:auto}
-.pilot-workspace[data-layout-editing=false] .pilot-widget :is(.table-scroll,.analytics-chart,.analytics-distribution,.analytics-oldest-groups){max-height:none;overflow-y:visible}
-.pilot-workspace[data-layout-editing=false] .pilot-widget .table-scroll{overflow-x:auto}
+/* The same bounded preview is used in reading and composition. Enlargement is
+   the full reading surface; switching modes never discards the chosen height. */
+.pilot-workspace .pilot-widget :is(.table-scroll,.analytics-chart,.analytics-distribution,.analytics-oldest-groups){max-height:none;overflow-y:visible}
+.pilot-workspace .pilot-widget .table-scroll{overflow-x:auto}
 .pilot-workspace .pilot-widget [data-reading-hidden=true]{display:none!important}
-.workspace-reading-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;min-width:0}
+.workspace-reading-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;min-width:0;height:34px;min-height:34px;flex:0 0 34px}
 .workspace-reading-caption{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 .workspace-reading-footer>.button{flex:0 0 auto;min-height:34px}
 .pilot-widget[data-reading-size=small] :is(.analytics-metric-value,.analytics-volume-weather-numbers .analytics-metric-value){font-size:clamp(28px,3.4vw,46px)}

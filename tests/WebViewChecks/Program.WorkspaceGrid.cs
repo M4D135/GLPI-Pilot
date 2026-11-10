@@ -72,15 +72,58 @@ internal static partial class Program
                 await page.EvaluateAsync("()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
             }
             await ui.Navigate();
+            await page.GetByLabel("Composition du pilotage", new() { Exact = true }).SelectOptionAsync("service"); await ui.Idle();
+            await WaitForPageAsync(page, "document.querySelector('.pilot-block[data-section-key=flow] [data-grid-ready=true]')");
+            Require(await page.EvaluateAsync<bool>("""
+                () => {
+                  window.defaultStockRects = () => [...document.querySelectorAll('.pilot-block[data-section-key=flow] .pilot-widget[data-widget-kind=metric]')].map(node => {
+                    const r = node.getBoundingClientRect(), grid = node.parentElement.getBoundingClientRect();
+                    return { id: node.dataset.widgetId, x: r.x - grid.x, y: r.y - grid.y, width: r.width, height: r.height };
+                  });
+                  window.defaultStockBefore = window.defaultStockRects();
+                  const r = window.defaultStockBefore;
+                  return r.length >= 6 && r.every(item => Math.abs(item.height - 324) < 1)
+                    && Math.abs(r[0].y-r[1].y)<1 && Math.abs(r[1].y-r[2].y)<1
+                    && Math.abs(r[3].y-r[4].y)<1 && Math.abs(r[4].y-r[5].y)<1 && r[3].y>r[0].y;
+                }
+                """), "The real default service board starts with equal-height stock indicators on aligned rows.");
+            await page.Locator(".pilot-block[data-section-key=flow]").ScrollIntoViewIfNeededAsync();
+            await ui.Capture(args, "workspace-defaults-reading");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Personnaliser la vue", Exact = true }).ClickAsync(); await ui.Idle();
+            await page.EvaluateAsync("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+            Require(await page.EvaluateAsync<bool>("""
+                () => window.defaultStockRects().every(rect => {
+                  const before=window.defaultStockBefore.find(item=>item.id===rect.id);
+                  return before && ['x','y','width','height'].every(key=>Math.abs(before[key]-rect[key])<1);
+                })
+                """), "The default service indicators keep the same geometry while composing.");
+            await page.Locator(".pilot-block[data-section-key=flow]").ScrollIntoViewIfNeededAsync();
+            await ui.Capture(args, "workspace-defaults-editing");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Terminer la composition", Exact = true }).ClickAsync(); await ui.Idle();
             await page.GetByLabel("Composition du pilotage", new() { Exact = true }).SelectOptionAsync(board.Id); await Ready();
             Require(await page.EvaluateAsync<bool>("""
                 () => [...document.querySelectorAll('.pilot-widget > .analytics-widget-body')]
-                  .every(node => getComputedStyle(node).overflowY === 'visible')
+                  .every(node => getComputedStyle(node).overflowY === 'hidden')
                 """) && Item("grid-a").Height == 220 && Item("grid-b").Height == 220 && Item("grid-c").Height == 700,
-                "Reading summaries remove nested body scrolling without rewriting saved independent heights.");
+                "Reading previews keep bounded geometry without nested body scrolling or rewriting saved independent heights.");
             Require(await page.Locator("[data-grid-move],[data-grid-size],[data-grid-resize]").CountAsync() == 0,
                 "Reading mode does not expose movement or resizing controls.");
+            await page.EvaluateAsync("""
+                () => {
+                  window.workspaceRects = () => [...document.querySelectorAll('.pilot-widget')].map(node => {
+                    const r = node.getBoundingClientRect(), grid = node.parentElement.getBoundingClientRect();
+                    return { id: node.dataset.widgetId, x: r.x - grid.x, y: r.y - grid.y, width: r.width, height: r.height };
+                  });
+                  window.workspaceBeforeModeChange = window.workspaceRects();
+                  window.workspaceMatches = () => window.workspaceRects().every(rect => {
+                    const before = window.workspaceBeforeModeChange.find(item => item.id === rect.id);
+                    return before && ['x','y','width','height'].every(key => Math.abs(before[key] - rect[key]) < 1);
+                  });
+                }
+                """);
             await page.GetByRole(AriaRole.Button, new() { Name = "Personnaliser la vue", Exact = true }).ClickAsync(); await Ready();
+            Require(await page.EvaluateAsync<bool>("() => window.workspaceMatches()"),
+                "Entering composition preserves the real reading rectangles, including the tall independent chart.");
             var a = await Card("grid-a").BoundingBoxAsync() ?? throw new Exception("Missing first widget");
             var b = await Card("grid-b").BoundingBoxAsync() ?? throw new Exception("Missing second widget");
             var c = await Card("grid-c").BoundingBoxAsync() ?? throw new Exception("Missing chart");
@@ -160,7 +203,10 @@ internal static partial class Program
                     && Item("grid-b").Height == 220,
                 "The resize grip persists the 80-pixel drag on the row lattice without stretching another card.");
             await ui.Capture(args, "workspace-grid-edition");
+            await page.EvaluateAsync("() => { window.workspaceBeforeModeChange = window.workspaceRects(); }");
             await page.GetByRole(AriaRole.Button, new() { Name = "Terminer la composition", Exact = true }).ClickAsync(); await Ready();
+            Require(await page.EvaluateAsync<bool>("() => window.workspaceMatches()"),
+                "Validating composition preserves every moved and resized rectangle after the real C# save and reload.");
             var unchanged = JsonSerializer.Serialize(Current(), PilotApplication.Json);
             foreach (var size in new[] { (Width: 850, Height: 900), (Width: 1440, Height: 1000) })
             {

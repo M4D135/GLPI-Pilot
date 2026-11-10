@@ -7,6 +7,23 @@ internal static class WorkspaceChecks
     {
         var observed = new BusinessDashboardValues(new[] { "Support", "Terrain" }, new[] { "Matériel > Poste", "Accès" });
         DashboardSettings Settings() { var settings = new DashboardSettings(); settings.Normalize(); return settings; }
+        test("Default service and compatibility boards align metric dimensions without migrating saved choices", () =>
+        {
+            var settings = Settings();
+            foreach (var view in BusinessDashboardTemplates.Views)
+            {
+                var board = BusinessDashboardTemplates.Create(view.Key, settings, observed);
+                check(board.Widgets.All(widget => !widget.AutoHeight), "Generated cards have explicit independent heights.");
+                check(board.Widgets.Where(widget => widget.Kind == "metric" && widget.Presentation != "weather-volume")
+                    .All(widget => widget.Span == 4 && widget.Height == 320), "Default indicators share their width and height.");
+                var chosen = board.Widgets[0]; chosen.Span = 7; chosen.Height = 420; chosen.AutoHeight = true; chosen.GridX = 2; chosen.GridY = 17;
+                settings.Business.BoardOverrides.Add(board);
+                var restored = BusinessDashboardTemplates.Create(view.Key, settings, observed).Widgets[0];
+                check(restored.Span == 7 && restored.Height == 420 && restored.AutoHeight && restored.GridX == 2 && restored.GridY == 17,
+                    "A saved custom size, automatic-height choice and gap remain untouched.");
+                settings.Business.BoardOverrides.Clear();
+            }
+        });
         test("Integrated workspace keeps all 48 weather rules without truncating its operational analyses", () =>
         {
             var settings = Settings();

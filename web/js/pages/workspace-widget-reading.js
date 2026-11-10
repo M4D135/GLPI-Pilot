@@ -3,7 +3,7 @@ import { openReadingView } from '../reading-mode.js';
 
 // Presentation only: keep the original rows and actions. No count, denominator,
 // filter, order or persisted layout is changed to make a smaller preview.
-export function attachWidgetReading(node, setting, signal) {
+export function attachWidgetReading(node, setting, signal, { controls = null, onContentChange = () => {} } = {}) {
   const body = node.querySelector(':scope > .analytics-widget-body');
   if (!body) return { dispose() {} };
   const size = setting.height <= 240 ? 'small' : setting.height <= 400 ? 'medium' : 'large';
@@ -16,10 +16,17 @@ export function attachWidgetReading(node, setting, signal) {
     if (expanded || disposed) return;
     showAll();
     expanded = openReadingView(body, { title: node.querySelector('h3')?.textContent || 'Widget', signal,
-      className: 'workspace-widget-focus', returnFocus: expand, onClose: () => { expanded = null; compact(); } });
+      className: 'workspace-widget-focus', returnFocus: expand, onClose: () => { expanded = null; compact(); onContentChange(); } });
   }, { attributes: { 'data-widget-expand': setting.id }, title: 'Lire tout le contenu chargé sans changer la disposition' });
-  const footer = el('div', { class: 'workspace-reading-footer no-print' }, label, expand);
+  const footer = el('div', { class: 'workspace-reading-footer no-print' }, ...(controls ? [controls] : [label, expand]));
   node.append(footer);
+  function describe() {
+    if (disposed || expanded) return;
+    const clipped = body.scrollHeight > body.clientHeight + 1;
+    label.textContent = hidden.size ? `Aperçu · ${hidden.size} élément(s) supplémentaire(s) chargé(s)`
+      : clipped ? 'Aperçu · agrandir pour tout lire' : 'Vue complète';
+    node.dataset.readingLimited = String(hidden.size > 0 || clipped);
+  }
   function showAll() {
     for (const child of hidden) { child.hidden = false; child.removeAttribute('data-reading-hidden'); }
     hidden.clear();
@@ -36,24 +43,27 @@ export function attachWidgetReading(node, setting, signal) {
         (group.tagName === 'TBODY' ? child.tagName === 'TR' : child.matches('.analytics-bar-row')));
       for (const child of children.slice(limit)) { child.hidden = true; child.dataset.readingHidden = 'true'; hidden.add(child); }
     }
-    label.textContent = hidden.size ? `Aperçu · ${hidden.size} élément(s) supplémentaire(s) chargé(s)` : 'Vue complète';
-    node.dataset.readingLimited = String(hidden.size > 0);
+    describe();
   }
   const summaryKeys = event => {
     if (expanded || disposed || event.key !== 'ArrowDown' || !event.target.matches?.('tr')) return;
     if (event.target.nextElementSibling?.dataset.readingHidden !== 'true') return;
-    event.preventDefault(); event.stopImmediatePropagation(); expand.focus({ preventScroll: true });
+    event.preventDefault(); event.stopImmediatePropagation();
+    (controls?.querySelector('button') || expand).focus({ preventScroll: true });
   };
   body.addEventListener('keydown', summaryKeys, true);
   const observer = new MutationObserver(() => {
     if (scheduled || disposed || expanded) return;
-    scheduled = true; queueMicrotask(() => { scheduled = false; compact(); });
+    scheduled = true; queueMicrotask(() => { scheduled = false; if (disposed) return; compact(); onContentChange(); });
   });
   observer.observe(body, { childList: true, subtree: true });
+  const resizeObserver = new ResizeObserver(describe); resizeObserver.observe(body);
+  body.addEventListener('toggle', onContentChange, true);
   compact();
   const dispose = () => {
     if (disposed) return;
-    disposed = true; observer.disconnect(); body.removeEventListener('keydown', summaryKeys, true); expanded?.close(); showAll(); footer.remove();
+    disposed = true; observer.disconnect(); resizeObserver.disconnect(); body.removeEventListener('keydown', summaryKeys, true);
+    body.removeEventListener('toggle', onContentChange, true); expanded?.close(); showAll(); footer.remove();
     delete node.dataset.readingSize; delete node.dataset.readingLimited;
     signal?.removeEventListener('abort', dispose);
   };

@@ -1,9 +1,9 @@
 import { el, button, select, caption } from './analytics-ui.js';
 import { attachWidgetReading } from './workspace-widget-reading.js';
 import { GRID_COLUMNS, GRID_STEP, GRID_GAP, GRID_MAX_ROW, WIDGET_SIZES,
-  MIN_WIDGET_HEIGHT, MIN_RESIZE_HEIGHT, MAX_WIDGET_HEIGHT,
+  MIN_WIDGET_HEIGHT, MIN_RESIZE_HEIGHT,
   arrangeWorkspaceWidgets, effectiveGridSpan, planWorkspaceDrop, presetForWidget,
-  gridHeight, gridRows, widgetRows, snapGridHeight, previewMoveRect, previewResizeRect } from './workspace-grid.js';
+  gridHeight, gridRows, snapGridHeight, previewMoveRect, previewResizeRect } from './workspace-grid.js';
 
 // One controller per rendered composition. It owns its observers, gestures and
 // preview; the existing C# save path owns validation, undo and disk persistence.
@@ -33,25 +33,21 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
       grid.dataset.workspaceGrid = '';
       const items = cards(grid), settings = items.map(node => setting(node.dataset.widgetId)).filter(Boolean);
       const step = unit(grid), heights = new Map();
-      // Only composition positions cards on absolute rows: reading mode keeps its
-      // deliberate natural height and its saved cap.
-      const composing = canEdit(), maximum = composing ? MAX_WIDGET_HEIGHT : GRID_MAX_ROW * GRID_STEP;
       for (const node of items) {
         const widget = setting(node.dataset.widgetId); if (!widget) continue;
         const span = effectiveGridSpan(widget.span, width(grid));
         node.style.width = `${span * step - GRID_GAP}px`;
-        // Auto height fits its own content, bounded by its configured height.
-        // Explicit sizes are exact. Neither mode inherits a neighbour's height.
-        // In composition the painted height is the one the row span reserves, so a
-        // card lands exactly where the preview showed it and keeps the grid gap.
-        const measured = () => Math.max(MIN_WIDGET_HEIGHT, node.getBoundingClientRect().height);
-        if (!composing) { node.style.setProperty('--widget-height', `${widget.height}px`); heights.set(widget.id, measured()); continue; }
-        const rows = widgetRows(widget.autoHeight === false ? widget.height : measured(), maximum);
-        node.style.setProperty('--widget-height', `${gridHeight(rows)}px`);
-        heights.set(widget.id, gridHeight(rows));
+        // Both modes measure the same preview, header and footer. Explicit sizes
+        // stay exact; automatic content can shrink or grow within its saved cap.
+        const cap = snapGridHeight(widget.height);
+        node.style.setProperty('--widget-height', `${cap}px`);
+        node.style.height = widget.autoHeight === false ? `${cap}px` : 'auto';
+        const height = widget.autoHeight === false ? cap : snapGridHeight(Math.max(MIN_WIDGET_HEIGHT, node.getBoundingClientRect().height));
+        node.style.height = `${height}px`;
+        heights.set(widget.id, height);
       }
       try {
-        const arranged = arrangeWorkspaceWidgets(settings, width(grid), heights, maximum);
+        const arranged = arrangeWorkspaceWidgets(settings, width(grid), heights);
         placements.set(grid, arranged);
         for (const rect of arranged) {
           const node = nodes.get(rect.id); if (!node) continue;
@@ -59,7 +55,7 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
           node.dataset.gridColumn = String(rect.x); node.dataset.gridRow = String(rect.y);
         }
         const bottom = Math.max(0, ...arranged.map(rect => rect.y * GRID_STEP + heights.get(rect.id)));
-        grid.style.height = `${Math.max(80, bottom + (canEdit() ? 120 : 0))}px`;
+        grid.style.height = `${Math.max(80, bottom)}px`;
         grid.dataset.gridReady = 'true';
       } catch (error) { announce(error.message); }
     }
@@ -102,15 +98,17 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
   function sizePlan(grid, widget, size) {
     const rects = placements.get(grid) || [];
     const current = rects.find(rect => rect.id === widget.id); if (!current) return null;
-    return planWorkspaceDrop(rects, { ...current, x: Math.min(current.x, GRID_COLUMNS - size.span), w: size.span,
+    const span = effectiveGridSpan(size.span, width(grid));
+    return planWorkspaceDrop(rects, { ...current, x: Math.min(current.x, GRID_COLUMNS - span), w: span,
       h: gridRows(size.height) });
   }
 
   for (const [id, node] of nodes) {
     observer.observe(node);
-    if (!canEdit()) { const widget = setting(id); if (widget) readers.push(attachWidgetReading(node, widget, signal)); continue; }
     const widget = setting(id); if (!widget) continue;
-    const controls = node.querySelector('.analytics-widget-heading > .toolbar'); if (!controls) continue;
+    const controls = canEdit() ? el('div', { class: 'workspace-grid-edit-controls' }) : null;
+    readers.push(attachWidgetReading(node, widget, signal, { controls, onContentChange: schedule }));
+    if (!controls) continue;
     const handle = button('Déplacer', null, { disabled: widget.locked, attributes: { 'data-grid-move': id,
       'aria-label': `Déplacer ${node.querySelector('h3')?.textContent || 'la carte'}` },
       title: 'Glissez vers une case libre ou une autre section. Flèches : déplacer ; Maj + flèche : cinq cases ; Échap : annuler.' });
@@ -140,7 +138,7 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
 
   function clearPreview(current) {
     current?.preview?.remove(); current?.ghost?.remove();
-    for (const grid of grids) grid.classList.remove('is-grid-target');
+    for (const grid of grids) { grid.classList.remove('is-grid-target'); grid.style.removeProperty('min-height'); }
     current?.node?.classList.remove('is-grid-moving');
     host.classList.remove('is-grid-gesture');
   }
@@ -222,6 +220,9 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
     event.preventDefault();
     if (!gesture.moved) {
       gesture.moved = true; host.classList.add('is-grid-gesture'); gesture.node.classList.add('is-grid-moving');
+      // Extra drop space exists only during the gesture, never in the validated
+      // section geometry. It still lets a card be placed below the last row.
+      for (const grid of grids) grid.style.minHeight = `${grid.getBoundingClientRect().height + 120}px`;
       document.body.append(gesture.ghost); scrolling = requestAnimationFrame(scrollTick);
     }
     previewAt(event.clientX, event.clientY);
@@ -257,7 +258,7 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
     void save(plan, id, grid, size);
   });
   on(window, 'resize', schedule);
-  if (canEdit()) host.prepend(caption('Glissez les poignées pour placer vos cartes, y compris entre sections. Petit, Moyen ou Grand : les hauteurs restent indépendantes. Sur un écran étroit, faites défiler la grille horizontalement.', 'workspace-grid-help no-print'));
+  if (canEdit()) host.prepend(caption('Glissez les poignées pour placer vos cartes, y compris entre sections. Petit, Moyen ou Grand : les hauteurs restent indépendantes. La disposition s’adapte à la largeur disponible.', 'workspace-grid-help no-print'));
   function dispose() {
     if (disposed) return;
     disposed = true; finish(true); host.removeAttribute('aria-busy'); observer.disconnect(); readers.forEach(reader => reader.dispose()); lifetime.abort(); cancelAnimationFrame(frame); cancelAnimationFrame(scrolling);

@@ -1,15 +1,20 @@
 /* Each section is an independent 12-column canvas, never a stretched CSS row. */
 .pilot-grid-viewport{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:2px 2px 8px}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]{display:block;position:relative;min-width:0;isolation:isolate;align-items:start;gap:16px}
-.pilot-workspace[data-layout-editing="true"] .pilot-widget-grid[data-workspace-grid]{min-width:960px;background-image:linear-gradient(to right,color-mix(in srgb,var(--border) 50%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in srgb,var(--border) 35%,transparent) 1px,transparent 1px);background-size:calc((100% + 16px)/12) 20px;border-radius:12px}
+.pilot-workspace[data-layout-editing="true"] .pilot-widget-grid[data-workspace-grid]{background-image:linear-gradient(to right,color-mix(in srgb,var(--border) 50%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in srgb,var(--border) 35%,transparent) 1px,transparent 1px);background-size:calc((100% + 16px)/12) 20px;border-radius:12px}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget{position:absolute;box-sizing:border-box;grid-column:auto!important;margin:0;min-width:0;min-height:0;max-height:var(--widget-height,320px);height:auto;align-self:start;overflow:hidden;transform:none!important;transition:box-shadow .15s,border-color .15s}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget[data-auto-height="false"]{height:var(--widget-height,320px)}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading{flex:0 0 auto;min-height:0;flex-wrap:wrap;align-items:flex-start}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading>h3{overflow-wrap:anywhere}
-.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:1 1 auto;min-height:0;overflow:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body:has(details[open]){overflow-y:auto}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.workspace-weather-placeholder{min-height:0;overflow:auto}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget .analytics-chart{max-width:100%}
-.pilot-workspace[data-layout-editing="true"] .pilot-widget-grid[data-workspace-grid]>.pilot-widget{padding-bottom:30px}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading>.toolbar{flex:0 0 64px;min-height:30px}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading>.toolbar>.button{width:64px;min-height:30px}
+.workspace-grid-edit-controls{display:flex;align-items:center;gap:6px;width:100%;min-width:0;padding-right:24px}
+.workspace-grid-edit-controls>.button{min-height:34px;padding:4px 7px;font-size:11px}
+.workspace-grid-edit-controls>.workspace-grid-size{flex:1;min-width:0;width:auto;max-width:106px;height:34px}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero{padding:18px!important}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero .analytics-volume-weather-summary{min-height:80px;padding:0;gap:10px}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.business-weather-hero .analytics-metric-value{font-size:clamp(34px,4vw,62px)}

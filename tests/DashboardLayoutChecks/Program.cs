@@ -12,6 +12,16 @@ DashboardLayoutSettings Layout(string preset = "overview")
 void Invalid(Action action) { try { action(); } catch (InvalidDataException) { return; } throw new Exception("Invalid layout accepted"); }
 Test("New local settings produce a usable default board", () => { var settings = new DashboardSettings(); settings.Normalize(); settings.Layout.Validate(); Assert(settings.Layout.Boards[0].Widgets.Count > 10); });
 Test("Every preset is valid and bounded", () => { foreach (var preset in new[] { "overview", "service", "operations", "analysis", "personal", "team", "deadlines", "quality", "geography", "empty" }) Layout(preset).Validate(); });
+Test("New default boards use uniform metric cards and explicit independent heights", () =>
+{
+    foreach (var preset in new[] { "overview", "service", "operations", "analysis", "personal", "team", "deadlines", "quality", "geography" })
+    {
+        var board = Layout(preset).Boards[0];
+        Assert(board.Widgets.All(widget => !widget.AutoHeight), preset + ": defaults must not shrink with content");
+        Assert(board.Widgets.Where(widget => widget.Kind == "metric" && widget.Presentation != "weather-volume")
+            .All(widget => widget.Span == 4 && widget.Height == 320), preset + ": metrics must share a readable size");
+    }
+});
 Test("Appending boards preserves existing identities and resolves imported identity and name collisions", () =>
 {
     var current = Layout("overview"); current.CatalogFavorites.Add("metric:active"); var imported = current.Copy();

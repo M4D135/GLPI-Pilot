@@ -38,6 +38,21 @@ test('explicit empty rows and horizontal gaps survive a reload', () => {
   const rects = arrangeWorkspaceWidgets(items, 1200);
   assert.equal(rects[0].x, 8); assert.equal(rects[0].y, 30); assert.equal(rects[1].y, 0); disjoint(rects);
 });
+test('automatic rows keep order and one baseline below unequal neighbours', () => {
+  const items = [widget('a', { height: 180 }), widget('b', { height: 320 }), widget('c', { height: 260 }),
+    widget('d'), widget('e'), widget('f'), widget('chart', { span: 12, height: 440 })];
+  const before = snapshot(items), rects = arrangeWorkspaceWidgets(items, 1200);
+  assert.deepEqual(rects.slice(3, 6).map(r => r.y), [17, 17, 17]);
+  assert.equal(rects[6].y, 17 + gridRows(220));
+  assert.equal(snapshot(items), before); disjoint(rects);
+});
+test('automatic rows do not backfill earlier holes or displace saved cards', () => {
+  const items = [widget('saved', { gridX: 0, gridY: 30, height: 440 }),
+    widget('a', { span: 8 }), widget('b', { span: 6 }), widget('c', { span: 4 })];
+  const rects = arrangeWorkspaceWidgets(items, 1200);
+  assert.equal(rects[0].y, 30); assert.equal(rects[2].y, rects[3].y);
+  assert.ok(rects[2].y > rects[1].y); disjoint(rects);
+});
 test('responsive widths never rewrite desktop positions or sizes', () => {
   const items = [widget('a', { gridX: 0, gridY: 0 }), widget('b', { gridX: 4, gridY: 0 }), widget('c', { gridX: 8, gridY: 0 })];
   const before = snapshot(items), desktop = arrangeWorkspaceWidgets(items, 1200);
@@ -160,4 +175,12 @@ test('the resize preview never escapes the grid and keeps the card reachable', (
   assert.ok(size.height <= MAX_WIDGET_HEIGHT, `height ${size.height} escapes the bound`);
   assert.equal(moving.h, gridRows(size.height));
   assert.equal(gridHeight(moving.h), size.height);
+});
+test('resizing at responsive widths previews the projected width without changing the saved span', () => {
+  const rect = { id: 'a', x: 0, y: 0, w: 4, h: widgetRows(220), locked: false };
+  for (const width of [390, 850, 1200]) {
+    const result = previewResizeRect({ rect, span: 4, width, startX: 0, startY: 0, pointerX: 0, pointerY: 20, startHeight: 224 });
+    assert.equal(result.size.span, 4);
+    assert.equal(result.moving.w, effectiveGridSpan(4, width));
+  }
 });

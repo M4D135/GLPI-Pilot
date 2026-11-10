@@ -145,11 +145,11 @@ public sealed class DashboardLayoutSettings
     {
         var board = new DashboardBoardSettings { Name = name };
         void Add(string kind, string key = "", int span = 4, int height = 320, string accent = "blue") => board.Widgets.Add(new()
-        { Kind = kind, SourceKey = key, Span = span, Height = height, Accent = accent });
+        { Kind = kind, SourceKey = key, Span = span, Height = height, AutoHeight = false, Accent = accent });
         if (preset == "empty") return board;
         void Metrics(params string[] keys)
         {
-            foreach (var key in keys) Add("metric", key, 3, 220,
+            foreach (var key in keys) Add("metric", key, 4, 320,
                 key.Contains("overdue", StringComparison.Ordinal) || key is "invalid-dates" or "inconsistent-dates" ? "red"
                     : key is "high" or "high-stale" or "stale" or "old" ? "orange" : "blue");
         }
@@ -245,7 +245,7 @@ public sealed class DashboardLayoutSettings
             : preset == "operations"
                 ? new[] { "active", "pending", "high", "overdue", "soon", "unassigned", "stale", "old" }
                 : new[] { "total", "active", "pending", "high", "overdue", "unassigned", "stale", "old" };
-        foreach (var key in metrics) Add("metric", key, 3, 200, key is "overdue" or "high" ? "orange" : "blue");
+        foreach (var key in metrics) Add("metric", key, 4, 320, key is "overdue" or "high" ? "orange" : "blue");
         if (preset != "analysis") Add("attention", span: 12, height: 400);
         var distributions = preset == "analysis"
             ? new[] { "status", "type", "urgency", "impact", "priority", "age", "inactivity", "category", "entity", "location", "city", "postal" }

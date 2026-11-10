@@ -39,7 +39,7 @@ public static partial class BusinessDashboardTemplates
             widget.Section = section;
             if (result.Widgets.Any(existing => existing.Id == widget.Id))
                 widget.Id = "workspace-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(source.Id + ":" + widget.Id)))[..32];
-            if (widget.Kind == "metric" && widget.Presentation != "weather-volume") widget.Span = 3;
+            if (widget.Kind == "metric" && widget.Presentation != "weather-volume") widget.Span = 4;
             result.Widgets.Add(widget);
         }
 
@@ -69,8 +69,8 @@ public static partial class BusinessDashboardTemplates
                 Add(source, widget, section);
             }
         }
-        result.Widgets.Add(new() { Id = "workspace-attention", Kind = "attention", SourceKey = "", Title = "Tickets à prendre en charge", Section = "attention", Span = 12, Height = 400, AutoHeight = true, Accent = "orange" });
-        result.Widgets.Add(new() { Id = "workspace-stock-history", Kind = "history", SourceKey = "active", Title = "Évolution observée du stock", Section = "flow", Span = 12, Height = 280, AutoHeight = true, Accent = "teal", ShowMiniHistory = false });
+        result.Widgets.Add(new() { Id = "workspace-attention", Kind = "attention", SourceKey = "", Title = "Tickets à prendre en charge", Section = "attention", Span = 12, Height = 400, AutoHeight = false, Accent = "orange" });
+        result.Widgets.Add(new() { Id = "workspace-stock-history", Kind = "history", SourceKey = "active", Title = "Évolution observée du stock", Section = "flow", Span = 12, Height = 280, AutoHeight = false, Accent = "teal", ShowMiniHistory = false });
         var layout = new DashboardLayoutSettings { ActiveBoardId = result.Id, Boards = new() { result } };
         // Validate before normalization: never silently drop a configured card.
         layout.Validate();
