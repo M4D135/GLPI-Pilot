@@ -301,12 +301,12 @@ internal static partial class Program
         await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
         await WaitForPageAsync(page, "document.querySelector('.page-content')?.dataset.page==='data'&&!document.querySelector('#content').hasAttribute('aria-busy')");
         const string draftUrl = "https://simulation.glpi.local/front/ticket.php?draft=retained";
-        await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).FillAsync(draftUrl);
+        await page.Locator(".workspace-live-source input[name=portalUrl]").FillAsync(draftUrl);
         await page.Locator(".page-content").EvaluateAsync("node=>node.dataset.navigatedDuringCollection='true'");
         singleCollectionRelease.TrySetResult(); await Idle(); singleCollectionRelease = null;
         Require(!ReferenceEquals(unchangedResult, app.Result) && app.Revision > failedRevision
             && await OnPage("data") && await page.Locator("[data-navigated-during-collection]").CountAsync() == 1
-            && await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).InputValueAsync() == draftUrl,
+            && await page.Locator(".workspace-live-source input[name=portalUrl]").InputValueAsync() == draftUrl,
             "A late collection completion preserves the page and unsaved form chosen while collection was running.");
         // Discard the synthetic unsaved draft by an explicit navigation.
         await DataPage(); await Idle();
