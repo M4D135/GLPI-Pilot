@@ -31,7 +31,7 @@ export async function sourceCacheCard(ctx, { compact = false } = {}) {
         toolbar(button('Revenir au GLPI Live', async () => {
           try {
             await ctx.api.call('collect.run', {});
-            await ctx.navigate('pilot');
+            await ctx.refresh();
           } catch (error) {
             if (error.name !== 'AbortError') ctx.notify('Retour au GLPI Live impossible : ' + error.message, 'danger');
           }

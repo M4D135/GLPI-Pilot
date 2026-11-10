@@ -46,6 +46,11 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       await page.screenshot({ path: path.join(process.env.GLPI_GUIDE_CAPTURES, name + '.png'), animations: 'disabled' });
       await page.evaluate(theme => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, before);
     };
+    if (process.env.GLPI_TEST_GRID_ONLY !== '1') await require('./source-navigation.cjs')({ page, reset, ok });
+    if (process.env.GLPI_TEST_SOURCE_NAVIGATION_ONLY === '1') {
+      ok(errors.length === 0 && external === 0, 'Source navigation uses production modules without JavaScript errors or external requests');
+      console.log(`${checks}/${checks} source navigation checks passed.`); return;
+    }
     await require('./workspace-grid.cjs')({ page, reset, ok, capture });
     if (process.env.GLPI_TEST_GRID_ONLY === '1') {
       ok(errors.length === 0 && external === 0, 'Grid checks use production modules without JavaScript errors or external requests');

@@ -22,6 +22,8 @@ internal static partial class Program
         var errors = new ConcurrentQueue<string>(); var operations = new ConcurrentQueue<string>(); var rejected = new ConcurrentQueue<string>();
         var campaigns = new ConcurrentQueue<JsonElement>(); var externalRequests = 0; var blockedLiveCalls = 0;
         var waitForCancellation = false; var returnFailedCampaign = false;
+        var failSingleCollection = false;
+        TaskCompletionSource? singleCollectionEntered = null, singleCollectionRelease = null, singleCollectionStopped = null;
         var cancellationPrepared = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         long cancellationRevision = 0;
         page.PageError += (_, error) => errors.Enqueue(error);
@@ -51,6 +53,17 @@ internal static partial class Program
             // Successful collections below use the real isolated C# demo engine.
             if (!app.IsTestMode && op is "collect.run" or "collect.connect" or "collect.campaign")
             { Interlocked.Increment(ref blockedLiveCalls); throw new InvalidOperationException("Unexpected real portal operation in the isolated UI fixture."); }
+            if (op == "collect.run" && app.IsTestMode)
+            {
+                if (failSingleCollection) throw new InvalidOperationException("Échec de collecte synthétique du contrôle de navigation.");
+                if (singleCollectionRelease is { } release)
+                {
+                    bridge?.Publish("operation.state", new { busy = true, operation = op });
+                    singleCollectionEntered!.TrySetResult();
+                    try { await release.Task.WaitAsync(ct); }
+                    finally { bridge?.Publish("operation.state", new { busy = false, operation = op }); singleCollectionStopped!.TrySetResult(); }
+                }
+            }
             if (op == "collect.campaign" && waitForCancellation)
             {
                 // Controlled pause after genuine simulated work has already
@@ -86,6 +99,21 @@ internal static partial class Program
             """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
         ILocator Group() => page.GetByRole(AriaRole.Dialog, new() { Name = "Collecter plusieurs recherches", Exact = true });
+        async Task Idle() => await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending&&!document.querySelector('#content').hasAttribute('aria-busy')&&!document.querySelector('button[aria-busy=true]')");
+        async Task<bool> OnPage(string id) => await page.Locator(".page-content").GetAttributeAsync("data-page") == id;
+        async Task ShowLiveSourceControl()
+        {
+            // Only the shell source label is projected as Live to exercise its
+            // global refresh branch. Every successful collect.run still uses
+            // the genuine isolated C# demo engine; no GLPI portal is contacted.
+            var bootstrap = await Call(app, "app.bootstrap");
+            var live = bootstrap.GetProperty("session").EnumerateObject().ToDictionary(item => item.Name, item => item.Value.Clone());
+            foreach (var flag in new[] { "demo", "testMode", "cachedSource", "historical", "fileSource" })
+                live[flag] = JsonSerializer.SerializeToElement(false);
+            live["sourceKind"] = JsonSerializer.SerializeToElement("live");
+            bridge!.Publish("session.changed", live); await delivery;
+            await WaitForPageAsync(page, "document.querySelector('.source-mode-picker')?.value==='live'");
+        }
         async Task DataPage()
         {
             await ClickNavigationAsync(page, "data"); await WaitForNavigationTargetAsync(page, "data");
@@ -207,9 +235,81 @@ internal static partial class Program
         await OpenDemonstrationFromSettingsAsync(page); await WaitForNavigationTargetAsync(page, "home"); await DataPage();
         Require(await Button("Collecter la simulation").IsVisibleAsync() && await page.Locator("[data-source-method=glpi]").CountAsync() == 0,
             "The demo labels its main action as a simulation and never advertises a live GLPI connection.");
-        await Button("Collecter la simulation").ClickAsync(); await WaitForNavigationTargetAsync(page, "pilot");
-        Require(app.IsTestMode && app.Result!.Rows.Count == 60 && operations.Contains("collect.run"),
-            "The primary simulated collection executes the actual C# engine and retains the complete fictitious dataset.");
+        await Button("Connecter la source simulée").ClickAsync(); await Idle();
+        Require(await OnPage("data") && operations.Contains("collect.connect"),
+            "Connecting the source leaves the Data workspace open.");
+        await Button("Collecter la simulation").ClickAsync(); await Idle();
+        Require(await OnPage("data") && app.IsTestMode && app.Result!.Rows.Count == 60 && operations.Contains("collect.run"),
+            "The primary collection refreshes Data in place with the actual C# result instead of opening Pilotage.");
+
+        await ClickNavigationAsync(page, "home"); await WaitForNavigationTargetAsync(page, "home"); await Idle();
+        foreach (var entry in new[] { "source-selector", "global-refresh", "command-palette" })
+        {
+            var before = operations.Count(op => op == "collect.run"); var beforeRevision = app.Revision;
+            await page.Locator(".page-content").EvaluateAsync("node=>node.dataset.beforeCollection='true'");
+            if (entry == "source-selector") await page.GetByLabel("Source des données", new() { Exact = true }).SelectOptionAsync("live");
+            else if (entry == "global-refresh")
+            {
+                await ShowLiveSourceControl();
+                await page.Locator(".page-heading button[aria-label=Actualiser]").ClickAsync();
+            }
+            else
+            {
+                await Button("Rechercher un écran, une action ou un ticket").ClickAsync();
+                await page.GetByRole(AriaRole.Combobox, new() { Name = "Rechercher une commande ou un ticket", Exact = true }).FillAsync("Simuler une collecte");
+                await page.Locator("[data-command-id='action:collect']").ClickAsync();
+            }
+            await Idle();
+            Require(await OnPage("home") && operations.Count(op => op == "collect.run") == before + 1
+                && app.Revision > beforeRevision && await page.Locator("[data-before-collection]").CountAsync() == 0
+                && (await page.Locator(".home-source-line").InnerTextAsync()).Contains("60 lignes", StringComparison.Ordinal),
+                "A successful collection from Home updates its actual data and stays on Home via " + entry + ".");
+        }
+
+        await ShowLiveSourceControl(); failSingleCollection = true;
+        await page.Locator(".page-content").EvaluateAsync("node=>node.dataset.beforeCollection='true'");
+        var unchangedResult = app.Result; var failedRevision = app.Revision;
+        await page.Locator(".page-heading button[aria-label=Actualiser]").ClickAsync(); await Idle(); failSingleCollection = false;
+        Require(await OnPage("home") && ReferenceEquals(unchangedResult, app.Result) && app.Revision == failedRevision
+            && await page.Locator("[data-before-collection]").CountAsync() == 1
+            && (await page.Locator("#notifications").InnerTextAsync()).Contains("Échec de collecte synthétique", StringComparison.Ordinal),
+            "A failed collection keeps Home and its previous data visible and reports the failure.");
+        await page.Locator("#notifications .toast.danger").GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+
+        singleCollectionEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        singleCollectionRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        singleCollectionStopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await page.Locator(".page-heading button[aria-label=Actualiser]").ClickAsync();
+        await singleCollectionEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await page.Locator(".statusbar").GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        await singleCollectionStopped.Task.WaitAsync(TimeSpan.FromSeconds(15)); await Idle();
+        singleCollectionRelease = null;
+        Require(await OnPage("home") && ReferenceEquals(unchangedResult, app.Result)
+            && await page.Locator("[data-before-collection]").CountAsync() == 1
+            && await page.Locator("#notifications .toast.danger").CountAsync() == 0,
+            "Cancelling collection through the real bridge keeps Home and its data without a spurious failure or navigation.");
+
+        await ShowLiveSourceControl();
+        singleCollectionEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        singleCollectionRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        singleCollectionStopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await page.Locator(".page-heading button[aria-label=Actualiser]").ClickAsync();
+        await singleCollectionEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await DataPage();
+        const string draftUrl = "https://simulation.glpi.local/front/ticket.php?draft=retained";
+        await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).FillAsync(draftUrl);
+        await page.Locator(".page-content").EvaluateAsync("node=>node.dataset.navigatedDuringCollection='true'");
+        singleCollectionRelease.TrySetResult(); await Idle(); singleCollectionRelease = null;
+        Require(await OnPage("data") && await page.Locator("[data-navigated-during-collection]").CountAsync() == 1
+            && await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).InputValueAsync() == draftUrl,
+            "A late collection completion preserves the page and unsaved form chosen while collection was running.");
+        // Discard the synthetic unsaved draft by an explicit navigation.
+        await DataPage(); await Idle();
+        await Button("Lire le pilotage").ClickAsync(); await WaitForNavigationTargetAsync(page, "pilot"); await Idle();
+        var composition = await page.GetByLabel("Composition du pilotage", new() { Exact = true }).InputValueAsync();
+        await page.GetByLabel("Source des données", new() { Exact = true }).SelectOptionAsync("live"); await Idle();
+        Require(await OnPage("pilot") && await page.GetByLabel("Composition du pilotage", new() { Exact = true }).InputValueAsync() == composition,
+            "Pilotage remains available by explicit navigation and collecting there preserves its selected composition.");
         var demoSettings = app.Settings.Copy();
         const string demoA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", demoB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         demoSettings.Sources = [new SourceProfile { Id = demoA, Name = "Simulation A", Url = "https://simulation.glpi.local/front/ticket.php?a=1", IncludedInCampaign = false },

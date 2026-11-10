@@ -128,14 +128,18 @@ function sourceMode(session=state.session){
 }
 async function collectLive(){
  if(sourceBusy)return;
+ const pageSignal=controller?.signal;
+ const collection=state.session.demo||state.session.testMode?'Collecte simulée':'Collecte GLPI';
  sourceBusy=true;refreshButton&&(refreshButton.disabled=true);
  try{
   const result=await api.call('collect.run',{});
-  notify('Collecte GLPI terminée. Les données affichées ont été actualisées.');
-  await navigate('pilot');
+  notify(collection+' terminée. Les données affichées ont été actualisées.');
+  // Collection updates data, not the user's destination. A late result must
+  // also leave alone any page opened while the collection was running.
+  await refreshCurrentPage(pageSignal);
   return result;
  }catch(error){
-  if(error.name!=='AbortError')notify('Collecte GLPI impossible : '+error.message+' · Le relevé précédent reste consultable.','danger');
+  if(error.name!=='AbortError')notify(collection+' impossible : '+error.message+' · Le relevé précédent reste consultable.','danger');
  }finally{sourceBusy=false;refreshButton&&(refreshButton.disabled=false);sessionChanged();}
 }
 async function selectDataSource(mode){
@@ -301,7 +305,7 @@ const palette=createCommandPalette({api:sessionApi,navigate,getPageSignal:()=>co
   ...(state.session.testMode?[{id:'action:test-exit',label:'Quitter la simulation',icon:'close',run:exitLocalTest}]:[]),
   {id:'action:demo',label:'Démonstration',icon:'spark',keywords:'données tickets fictifs découvrir essayer réglages',run:()=>navigate('settings',{section:'demo'})},
   ...themes.map(theme=>({id:`action:theme-${theme.id}`,label:theme.label,icon:theme.icon,keywords:'thème apparence couleurs clair sombre contraste Windows',run:()=>setTheme(theme.id)})),
-  {id:'action:collect',label:state.session.testMode?'Simuler une collecte':'Collecter la source actuelle',icon:'refresh',run:async()=>{await api.call('collect.run');await navigate('pilot-weather');}}
+  {id:'action:collect',label:state.session.testMode?'Simuler une collecte':'Collecter la source actuelle',icon:'refresh',run:collectLive}
  ]
 })});
 function commandPalette(){closeNavigation(true);palette.toggle();}

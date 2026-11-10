@@ -57,7 +57,7 @@ export async function renderDataWorkspace(ctx) {
   signal.addEventListener('abort', stopSettings, { once: true });
   const connectionStatus = el('p', { class: 'help', role: 'status', 'aria-live': 'polite' });
   const live = card(simulation ? 'Collecter dans la simulation' : 'GLPI en direct', field('Recherche mémorisée', source), connection.element,
-    toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => { await saveConnection(); await call('collect.run'); await navigate('pilot'); }, { primary: true, icon: 'download' }),
+    toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => { await saveConnection(); await call('collect.run'); await ctx.refresh(); }, { primary: true, icon: 'download' }),
       button(simulation ? 'Connecter la source simulée' : 'Se connecter', async () => { await saveConnection(); const result = await call('collect.connect'); connectionStatus.textContent = result.status?.message || result.status?.detail || 'Session connectée.'; }, { icon: 'arrow' })),
     connectionStatus, el('p', { class: 'help data-connection-help', text: simulation ? 'Connexion et téléchargements restent simulés. Vos essais ne modifient pas le profil réel.' : 'La collecte reste discrète. Si le SSO demande une action, le navigateur vous permet de terminer la connexion.' }),
     toolbar(button('Mes recherches', manageSearches, { icon: 'layers', attributes: { 'data-open-panel': 'sources' } }),
