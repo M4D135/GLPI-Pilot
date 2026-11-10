@@ -304,7 +304,8 @@ internal static partial class Program
         await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).FillAsync(draftUrl);
         await page.Locator(".page-content").EvaluateAsync("node=>node.dataset.navigatedDuringCollection='true'");
         singleCollectionRelease.TrySetResult(); await Idle(); singleCollectionRelease = null;
-        Require(await OnPage("data") && await page.Locator("[data-navigated-during-collection]").CountAsync() == 1
+        Require(!ReferenceEquals(unchangedResult, app.Result) && app.Revision > failedRevision
+            && await OnPage("data") && await page.Locator("[data-navigated-during-collection]").CountAsync() == 1
             && await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).InputValueAsync() == draftUrl,
             "A late collection completion preserves the page and unsaved form chosen while collection was running.");
         // Discard the synthetic unsaved draft by an explicit navigation.
