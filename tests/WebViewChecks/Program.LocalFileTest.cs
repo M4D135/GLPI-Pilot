@@ -442,7 +442,10 @@ internal static partial class Program
         var retainedSyncButton = await pressedSyncButton.EvaluateAsync<bool>("button=>button.isConnected&&document.activeElement===button");
         await page.Mouse.UpAsync(); await pressedSyncButton.DisposeAsync();
         Require(retainedSyncButton, "Refreshing the real library summary preserves the pressed synchronization button and its keyboard focus.");
-        try { await page.Locator(".library-outcome[aria-label='Bilan de la bibliothèque']").WaitForAsync(); }
+        // Real SQLite staging, ticket sync, team sync and application of the
+        // shared result can outlast the 12-second interaction timeout on the
+        // hosted runner. Wait for that one operation without retrying its click.
+        try { await page.Locator(".library-outcome[aria-label='Bilan de la bibliothèque']").WaitForAsync(new() { Timeout = 60000 }); }
         catch
         {
             Console.WriteLine("SIMULATION SYNC DIAGNOSTICS " + await page.EvaluateAsync<string>("""
