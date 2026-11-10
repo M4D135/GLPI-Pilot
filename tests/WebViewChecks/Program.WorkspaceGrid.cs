@@ -73,7 +73,7 @@ internal static partial class Program
             }
             await ui.Navigate();
             await page.GetByLabel("Composition du pilotage", new() { Exact = true }).SelectOptionAsync("service"); await ui.Idle();
-            await WaitForPageAsync(page, "document.querySelector('.pilot-block[data-section-key=flow] [data-grid-ready=true]')");
+            await WaitForPageAsync(page, "!!document.querySelector('.pilot-block[data-section-key=flow] [data-grid-ready=true]')");
             Require(await page.EvaluateAsync<bool>("""
                 () => {
                   window.defaultStockRects = () => [...document.querySelectorAll('.pilot-block[data-section-key=flow] .pilot-widget[data-widget-kind=metric]')].map(node => {
