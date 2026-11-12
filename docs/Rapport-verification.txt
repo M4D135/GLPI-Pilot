@@ -1,3 +1,27 @@
+GLPI Pilot 3.14.7 — Liens de documentation vérifiés
+Rapport embarqué avant la qualification Windows du 12 novembre 2026
+
+CHANGEMENTS
+- Aucun changement de l’application. Le code, l’interface et les contrôles
+  sont ceux de la 3.14.5.
+- Les liens vers REPRISE.md de Domenia 2 visent sa branche principale. Deux
+  liens vers des commits effacés sont remplacés par un texte.
+
+PREUVES LOCALES ACQUISES
+- Liens relatifs des documents : aucun lien cassé. Les seuls signalements
+  restants sont les repères de figures « fig: » des guides, résolus à la
+  construction des guides.
+- Liens GitHub de la documentation : tous répondent HTTP 200.
+- Le ZIP 3.14.6 publié a été retéléchargé : son empreinte est conforme à
+  SHA256SUMS.txt et l’archive est intègre.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. La livraison 3.14.7
+exige la qualification Windows et PostgreSQL complète de son commit, puis
+l’inspection du ZIP PROD-LIGHT original avant publication. Après la
+publication, la release v3.14.6 est retirée.
+===================================================================
+
 GLPI Pilot 3.14.6 — Rapport de vérification à jour dans le pack
 Rapport embarqué avant la qualification Windows du 12 novembre 2026
 
