@@ -26,7 +26,7 @@ Les aperçus et confirmations contrôlent la configuration en cours et les octet
 
 L’assistant de mise à jour de 3.10.1, par GitHub, partage réseau ou ZIP local, et le retour arrière préservent le défaut local lorsque `wad` est remplacé. Le ZIP officiel et son manifeste restent intacts. Pour un remplacement manuel complet du dossier, conserver le JSON souhaité ou le générer de nouveau depuis les réglages du profil.
 
-Voir le [guide de configuration et déploiement](https://github.com/M4D135/GLPI-Pilot/blob/v3.10.1/docs/Configuration-deploiement.txt).
+Voir le [guide de configuration et déploiement](Configuration-deploiement.txt).
 
 ## Livraison et validation
 

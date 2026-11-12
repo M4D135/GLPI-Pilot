@@ -22,7 +22,7 @@ Un poste installé avec un pack complet se met à jour avec des packs complets, 
 
 ## Qualification et distribution
 
-La qualification initiale a inspecté les trois ZIP. Depuis le 2 novembre 2026, les téléchargements Windows de cette release sont PROD et PROD-LIGHT. `SHA256SUMS.txt` contient leurs deux empreintes. Les sources et les tests sont accessibles dans [le ZIP du tag v3.13.6](https://github.com/M4D135/GLPI-Pilot/archive/refs/tags/v3.13.6.zip). Voir `docs/GitHub-et-compilation.txt` pour la publication en avance rapide.
+La qualification initiale a inspecté les trois ZIP. Depuis le 2 novembre 2026, les téléchargements Windows de cette release sont PROD et PROD-LIGHT. `SHA256SUMS.txt` contient leurs deux empreintes. Le tag v3.13.6 et le ZIP de ses sources n’existent plus depuis la recréation du dépôt, le 8 novembre 2026. Voir `docs/GitHub-et-compilation.txt` pour la publication en avance rapide.
 
 ## Avant la mise à jour et limites
 

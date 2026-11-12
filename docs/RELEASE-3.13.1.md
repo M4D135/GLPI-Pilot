@@ -1,6 +1,6 @@
 # GLPI Pilot 3.13.1 · Windows PROD + DEV
 
-Cette correction reprend les fonctions de la [version 3.13.0](https://github.com/M4D135/GLPI-Pilot/releases/tag/v3.13.0) : collecte complète et différentielle reprenable, bibliothèque transférable, ergonomie terrain, pilotage des tickets et identité orange pastel. Les couleurs, la disposition et les animations restent inchangées.
+Cette correction reprend les fonctions de la [version 3.13.0](RELEASE-3.13.0.md) : collecte complète et différentielle reprenable, bibliothèque transférable, ergonomie terrain, pilotage des tickets et identité orange pastel. Les couleurs, la disposition et les animations restent inchangées.
 
 ## Correction du panneau de partage
 

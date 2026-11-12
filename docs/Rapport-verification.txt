@@ -1,3 +1,50 @@
+GLPI Pilot 3.14.5 — Menu Réglages façon Domenia
+Contrôles, qualification et publication du 12 novembre 2026
+
+CHANGEMENTS
+- Réglages reprend le menu de configuration de Domenia 2 : un rail de dix
+  sections, une seule section affichée à la fois, quatre tuiles d’état en tête
+  et une recherche dans les réglages (touche « / »). Un lien vers un panneau
+  ou une section ouvre directement la bonne section.
+- Toutes les sections sont construites à l’ouverture, ce qui laisse les gardes
+  de saisie non appliquée voir tous les formulaires. Actualiser garde la
+  section courante ; une nouvelle visite rouvre Apparence.
+- La version reprend les corrections de la 3.14.4 : carte des tickets dès
+  l’ouverture et fond de rues fiable. La 3.14.4 n’a jamais été publiée : sa
+  qualification a été annulée par le push de la 3.14.5.
+
+PREUVES LOCALES ACQUISES (linux-arm64, Chromium headless)
+- WebViewChecks :
+  - navigation 42/42, identité 19/19, déploiement 24/24 ;
+  - observation enregistrée du référentiel 18/18, mouvement 34/34 ;
+  - palette 15/15, résolution 17/17 ;
+  - import hors connexion 85/85, intégration 136/136.
+- ErgonomicsChecks : 146/146.
+- WindowsStartupChecks a été compilé sans erreur. Son exécution reste réservée
+  à la qualification Windows.
+- Ces résultats ne remplacent pas l’exécution native Windows du pack publié.
+
+QUALIFICATION DES PACKS
+Commit : 674083983238ebaa905f4646cc1bf36539768c72
+Qualification : run 43195303876, tentative 1, 15/15 jobs réussis.
+Pack publié : GLPI-Pilot_3.14.5_PROD-LIGHT_Windows-x64.zip, 138 220 821 octets.
+SHA-256 : 1c3f3e90e608400087dbfd6510567a75469fb4828e2b0a12dc35d934a6d68462.
+Inspection avant publication :
+- wad/version.json : version 3.14.5, distribution PROD-LIGHT, commit ci-dessus ;
+- SHA256SUMS.txt : 339 empreintes sur 339 vérifiées ;
+- aucun runtime WebView2 embarqué.
+Publication : run 43208006931, release v3.14.5.
+Ce paragraphe a été écrit après la publication. Le rapport embarqué dans le
+pack 3.14.5 s’arrête donc encore à la 3.10.2.
+
+VERSIONS 3.11.0 À 3.14.4
+Leurs changements et leurs preuves sont dans docs/RELEASE-<version>.md.
+Le dépôt a été recréé le 8 novembre 2026 : les runs, tags et releases
+antérieurs à cette date n’existent plus. Le 12 novembre 2026, les releases
+v3.14.0 à v3.14.3 et leurs tags ont été retirés à leur tour. Seule la v3.14.5
+reste publiée.
+===================================================================
+
 GLPI Pilot 3.10.2 — Actualisation, aperçu du référentiel et données privées
 Contrôles du 26 octobre 2026 avant qualification des archives Windows
 
@@ -1099,7 +1146,7 @@ VALIDATION DE LIVRAISON 3.3.0 — TERMINÉE
 Le workflow du commit 1c258028b1181b62b95d87c71fb6fb4cf616e4cf a réussi :
 contrôles Windows, PostgreSQL 17, packs extraits, démarrage, mise à jour
 et retour arrière, puis publication des deux éditions.
-https://github.com/M4D135/GLPI-Pilot/actions/runs/40075617962
+Run 40075617962 de l’ancien dépôt, supprimé avec lui le 8 novembre 2026.
 
 HISTORIQUE — PROTOCOLES ET RÉSULTATS DES VERSIONS PRÉCÉDENTES
 Les restrictions de l’ancien mode test décrites dans la section 3.2.2
@@ -1220,7 +1267,7 @@ ci-dessous ne constituent pas une validation anticipée de la 3.2.1.
 
 PREUVES DE LA LIVRAISON PRECEDENTE 3.2.0
 Commit : af4bcd708a5175a7fe3d0a9297d425a0e58564a1
-Run : https://github.com/M4D135/GLPI-Pilot/actions/runs/39867111330
+Run : 39867111330 (ancien dépôt, supprimé le 8 novembre 2026)
 Windows : 1 781/1 781 contrôles, 39 suites canoniques, dont 24/24
 démarrages/parcours natifs, 4/4 mise à jour et 5/5 reconstruction DEV.
 PostgreSQL 17.11 réel : bibliothèque 37/37 et espace partagé 20/20.

@@ -49,4 +49,4 @@ GLPI_TEST_CHROMIUM=/chemin/vers/chromium node run.cjs result-local.log
 
 Les chemins des fixtures sont calculés à partir du script et convertis avec `pathToFileURL`, y compris sous Windows. Le second argument est facultatif et désigne le journal brut à enregistrer ; le script affiche aussi chaque vérification en console. Un échec donne un code de sortie non nul.
 
-Les journaux produits restent locaux ou dans les artefacts de CI ; ils ne sont pas des entrées des tests. Le [résultat historique du 21 octobre 2026](https://github.com/M4D135/GLPI-Pilot/blob/876415ede30ae449c8e589967b36c07405d1c28d/tests/DomChecks/result-20261021.log) reste consultable dans l’historique Git. Il provenait de Chromium 138 avec Playwright 1.62.1 et ne qualifiait ni le SSO de production ni l’exécutable Windows.
+Les journaux produits restent locaux ou dans les artefacts de CI ; ils ne sont pas des entrées des tests. Le résultat historique du 21 octobre 2026 n’est plus consultable : il se trouvait dans l’historique Git effacé à la recréation du dépôt, le 8 novembre 2026. Il provenait de Chromium 138 avec Playwright 1.62.1 et ne qualifiait ni le SSO de production ni l’exécutable Windows.

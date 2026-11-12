@@ -12,7 +12,7 @@ Plusieurs widgets peuvent occuper la même diapo. Un widget peut revenir sur plu
 
 Le **PDF 16:9** garde une page par diapo, avec les mêmes positions, tailles et widgets. La recherche, les filtres et les réserves restent imprimés ; un contexte trop long reçoit des pages de contexte après les diapos. Les tableaux y conservent leur aperçu visuel ; l'**HTML** ajoute les données détaillées après les pages, et les exports **CSV / Excel** reprennent les tableaux complets des widgets sélectionnés. Aucun autre widget n'est ajouté. Les valeurs, seuils météo et pourcentages proviennent du même calcul daté, y compris hors connexion. Un changement de source ou de composition rend les anciens aperçus caducs.
 
-Voir le [guide de préparation des diapos](https://github.com/M4D135/GLPI-Pilot/blob/v3.10.0/docs/Presentation.md).
+Voir le [guide de préparation des diapos](Presentation.md).
 
 ## Animations regroupées dans les réglages
 

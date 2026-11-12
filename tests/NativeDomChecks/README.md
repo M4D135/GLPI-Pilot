@@ -160,8 +160,8 @@ GLPI_TEST_CHROMIUM=/path/to/chromium node tests/NativeDomChecks/run.cjs tests/Na
 ```
 
 Run that command from the repository root. Generated logs stay local or in CI
-artifacts; they are not test inputs. Historical results remain available in Git:
-[adapter 1.1.1, 82 successful checks](https://github.com/M4D135/GLPI-Pilot/blob/876415ede30ae449c8e589967b36c07405d1c28d/tests/NativeDomChecks/result-20261021-v111.log)
-and the [earlier adapter](https://github.com/M4D135/GLPI-Pilot/blob/876415ede30ae449c8e589967b36c07405d1c28d/tests/NativeDomChecks/result-20261021.log).
+artifacts; they are not test inputs. The historical results of 21 October 2026
+(adapter 1.1.1 with 82 successful checks, and the earlier adapter) were in the
+Git history erased when the repository was recreated on 8 November 2026.
 These are fixture results, not validation against a real GLPI instance. Browser
 binaries and `node_modules` are not included in the source deliverable.
