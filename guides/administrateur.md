@@ -145,7 +145,7 @@ Une configuration complète transporte les options publiques d'un poste vers les
 Quand : vous préparez le dossier PROD à diffuser à l'équipe.
 
 1. **Configurer un poste de référence.** Réglez sources, sites, seuils, tableaux et options dans ce dossier PROD.
-2. **Ouvrir la configuration.** Dans « Réglages », ouvrez « Configuration d’équipe », section « Configuration complète et déploiement ».
+2. **Ouvrir la configuration.** Dans « Réglages », choisissez la section « Configuration à diffuser » du rail, carte « Configuration complète et déploiement ».
 3. **Enregistrer comme défaut.** Cliquez sur « Définir comme configuration par défaut », puis « Enregistrer comme défaut ». Le fichier wad/GLPI-Pilot.deployment.json est écrit dans cette installation.
 4. **Diffuser.** Copiez le dossier complet, wad compris, par votre canal interne.
 
@@ -176,7 +176,7 @@ Quand : vous préparez le dossier PROD à diffuser à l'équipe.
 
 ## Thème de l'interface
 
-Quatre icônes de la barre du haut choisissent le thème : « Thème clair », « Thème sombre », « Contraste élevé » et « Thème : suivre Windows ». L'icône allumée indique le choix enregistré ; le même choix existe dans « Réglages », carte « Confort et présentation ». Le contraste élevé affiche le texte en blanc sur fond noir, avec des accents cyan et jaune ; « Suivre Windows » l'applique aussi quand Windows utilise un thème de contraste. La case « Contrastes renforcés » reste disponible pour les thèmes clair et sombre.
+Quatre icônes de la barre du haut choisissent le thème : « Thème clair », « Thème sombre », « Contraste élevé » et « Thème : suivre Windows ». L'icône allumée indique le choix enregistré ; le même choix existe dans « Réglages », section « Apparence », carte « Confort et présentation ». Le contraste élevé affiche le texte en blanc sur fond noir, avec des accents cyan et jaune ; « Suivre Windows » l'applique aussi quand Windows utilise un thème de contraste. La case « Contrastes renforcés » reste disponible pour les thèmes clair et sombre.
 
 Une configuration complète transmet le thème clair ou sombre et « Suivre Windows ». Le contraste élevé reste propre à chaque poste : il n'est ni exporté ni remplacé par une configuration.
 
@@ -277,7 +277,7 @@ Le dernier relevé réussi reste consultable hors connexion, avec sa date. Il ne
 
 ## Démonstration pour la formation
 
-La démonstration s'ouvre dans « Réglages », carte « Démonstration » ; le choix « Démonstration » de la source affichée y conduit aussi. « Ouvrir la démonstration » charge 60 tickets fictifs dans un espace isolé : toutes les fonctions sont utilisables, sans toucher au profil réel. Pendant la démonstration, la même carte propose « Quitter la démonstration », qui restaure l'espace habituel comme le bandeau « Quitter la simulation », et « Réinitialiser les données fictives ». Chaque action demande une confirmation. Les réglages modifiés pendant la démonstration ne sont pas conservés.
+La démonstration s'ouvre dans « Réglages », section « Démonstration » ; le choix « Démonstration » de la source affichée y conduit aussi. « Ouvrir la démonstration » charge 60 tickets fictifs dans un espace isolé : toutes les fonctions sont utilisables, sans toucher au profil réel. Pendant la démonstration, la même carte propose « Quitter la démonstration », qui restaure l'espace habituel comme le bandeau « Quitter la simulation », et « Réinitialiser les données fictives ». Chaque action demande une confirmation. Les réglages modifiés pendant la démonstration ne sont pas conservés.
 
 ![Espace « Données » pendant la démonstration : la source simulée est clairement signalée.](fig:admin-donnees-demonstration)
 
@@ -330,7 +330,7 @@ Le partage est facultatif. Il échange les données communes de l'équipe (plann
 
 ## Choisir le mode
 
-Dans « Réglages », « Partage entre postes » ouvre « Configurer le partage entre postes ».
+Dans « Réglages », section « Équipe et partage », « Partage entre postes » ouvre « Configurer le partage entre postes ».
 
 | Mode | Usage |
 |---|---|
@@ -494,7 +494,7 @@ La mise à jour remplace le pack sans toucher aux données de travail. L'assista
 
 ## Avec l'assistant
 
-1. **Ouvrir.** « Réglages », « Mettre à jour » ouvre « Mise à jour et retour arrière ».
+1. **Ouvrir.** « Réglages », section « Mises à jour et journal », « Mettre à jour » ouvre « Mise à jour et retour arrière ».
 2. **Choisir le pack.** « Rechercher le pack réseau » dans un dossier de diffusion contenant le ZIP de l'édition du poste et SHA256SUMS.txt, ou « Choisir le ZIP… » pour un pack local. L'application ne contacte aucun dépôt en ligne.
 3. **Vérifier.** « Copier et vérifier le pack réseau » ou « Vérifier le ZIP local » contrôle l'archive, son commit et chaque fichier. Renseignez si besoin le « SHA-256 attendu de l’archive » et le « Commit attendu ».
 4. **Installer.** « Fermer GLPI Pilot et installer la version vérifiée ». La version en cours reste inchangée jusqu'à ce clic.

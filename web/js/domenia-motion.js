@@ -17,7 +17,7 @@ export function initializeDomeniaMotion() {
   const trackedCharts = new Set();
   const drawingStrokes = new Set();
   const heroSelector = '.hero,.home-overview-heading';
-  const surfaceSelector = `${heroSelector},.page-heading,.metric,.calendar-metric,.analytics-widget,.library-result,.library-stat,.quick-link,.page-content > .card,.page-content > .grid > .card`;
+  const surfaceSelector = `${heroSelector},.page-heading,.metric,.calendar-metric,.analytics-widget,.library-result,.library-stat,.quick-link,.page-content > .card,.page-content > .grid > .card,.cfg-grid > .card,.cfg-slot > .card`;
   const metricSelector = '.metric,.library-stat,.analytics-kpi-card';
   const chartSelector = '.analytics-history svg,.analytics-column-chart svg';
   const decorationSelector = '.domenia-orbs,.domenia-glow-ring,.domenia-spotlight,.domenia-widget-light,.domenia-cursor-halo,.domenia-ripple';

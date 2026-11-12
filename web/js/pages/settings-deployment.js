@@ -131,8 +131,9 @@ export async function offerDeploymentConfiguration(ctx, deploymentState) {
   return modal;
 }
 
-export async function createDeploymentConfiguration(ctx) {
+export async function createDeploymentConfiguration(ctx, { onState } = {}) {
   const state = await ctx.api.call('deployment.state', {}, { signal: ctx.signal });
+  onState?.(state);
   const simulation = state.simulation || isSimulation(ctx.state.session), dialogs = new Set();
   const status = el('div', { class: 'deployment-status', 'data-deployment-state': state.seedStatus || '' },
     el('p', {}, badge('Premier lancement du profil', 'info'), ' ', state.seedMessage || 'Aucun résultat de configuration initiale disponible.'),
@@ -152,7 +153,7 @@ export async function createDeploymentConfiguration(ctx) {
         { label: 'Annuler', action: close => close() },
         { label: 'Enregistrer comme défaut', primary: true, action: async close => {
           const saved = await ctx.api.call('deployment.default.save', { confirmed: true, expectedSha256: state.defaultSha256 || '' }, { signal: ctx.signal });
-          Object.assign(state, saved.state); close();
+          Object.assign(state, saved.state); onState?.(state); close();
           ownDialog(ctx, dialog('Configuration par défaut enregistrée', el('div', {},
             el('p', { text: 'Ce fichier est enregistré dans wad. Vous pouvez diffuser le dossier PROD complet avec les options enregistrées.' }),
             el('pre', { class: 'deployment-value', text: saved.path }),

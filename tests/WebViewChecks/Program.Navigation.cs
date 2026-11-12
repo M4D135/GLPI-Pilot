@@ -94,6 +94,7 @@ internal static partial class Program
             {
                 var control = page.Locator($".page-content [data-open-panel='{panel}']").First;
                 if (await control.CountAsync() == 0) throw new InvalidOperationException("Missing contextual action for " + route + " in " + id + ": " + panel);
+                await ShowSettingsPaneAsync(page, control);
                 var details = control.Locator("xpath=ancestor::details");
                 for (var index = 0; index < await details.CountAsync(); index++)
                     if (await details.Nth(index).GetAttributeAsync("open") is null) await details.Nth(index).Locator(":scope > summary").ClickAsync();
@@ -111,11 +112,19 @@ internal static partial class Program
         }
     }
 
+    // Réglages shows one section at a time: a control of another section is reached through its rail entry.
+    private static async Task ShowSettingsPaneAsync(IPage page, ILocator control)
+    {
+        var pane = await control.EvaluateAsync<string?>("node=>{const pane=node.closest('[data-settings-pane]');return pane&&pane.hidden?pane.dataset.settingsPane:null;}");
+        if (pane is not null) await page.Locator($"[data-settings-nav='{pane}']").ClickAsync();
+    }
+
     // The demonstration is opened only from its Réglages card, then confirmed in its modal.
     private static async Task OpenDemonstrationFromSettingsAsync(IPage page)
     {
         await ClickNavigationAsync(page, "settings");
         await WaitForNavigationTargetAsync(page, "settings");
+        await page.Locator("[data-settings-nav=demonstration]").ClickAsync();
         var card = page.Locator("[data-settings-section=demo]");
         await card.WaitForAsync();
         await card.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la démonstration", Exact = true }).ClickAsync();
@@ -357,6 +366,49 @@ internal static partial class Program
         await page.Locator(".page-content").GetByRole(AriaRole.Button, new() { Name = "Organiser le menu", Exact = true }).ClickAsync();
         Require(await Editor().Locator("[data-nav-page]").CountAsync() == 6, "Réglages opens the same six-space customization controls as the permanent sidebar action.");
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        // Réglages follows the Paramètres screen of Domenia: a rail of sections, one section at a time and a search of the settings.
+        ILocator SettingsNav(string id) => page.Locator($".page-content [data-settings-nav='{id}']");
+        ILocator SettingsPane(string id) => page.Locator($".page-content [data-settings-pane='{id}']");
+        Require(await page.Locator(".page-content .cfg-rail [data-settings-nav]").CountAsync() == 10
+            && await SettingsNav("apparence").GetAttributeAsync("aria-current") == "page"
+            && await page.Locator(".page-content [data-settings-pane]:not([hidden])").CountAsync() == 1 && await SettingsPane("apparence").IsVisibleAsync()
+            && await page.Locator(".page-content .cfg-pulse-tile").CountAsync() == 4
+            && await page.Locator(".page-content .cfg-rail-pill.on").CountAsync() == 1,
+            "Réglages opens on Apparence with the ten sections of its rail, a single visible section, its sliding marker and the four state tiles.");
+        await Capture("settings-appearance-light");
+        var zoomField = page.GetByRole(AriaRole.Spinbutton, new() { Name = "Zoom (%)", Exact = true });
+        var savedZoom = await zoomField.InputValueAsync(); var typedZoom = savedZoom == "137" ? "138" : "137";
+        await zoomField.FillAsync(typedZoom);
+        await SettingsNav("historique").ClickAsync();
+        Require(await SettingsPane("historique").IsVisibleAsync() && !await zoomField.IsVisibleAsync()
+            && await SettingsNav("historique").GetAttributeAsync("aria-current") == "page" && await SettingsNav("apparence").GetAttributeAsync("aria-current") == "false"
+            && await SettingsPane("historique").GetByRole(AriaRole.Checkbox, new() { Name = "Archiver les collectes", Exact = true }).IsVisibleAsync(),
+            "A rail entry shows its own section in place of the previous one, here the history settings inline instead of a separate panel.");
+        await page.Keyboard.PressAsync("/");
+        Require(await page.EvaluateAsync<bool>("document.activeElement?.id==='cfg-search'"), "The slash key focuses the search of the settings outside text fields.");
+        await page.Locator("#cfg-search").PressSequentiallyAsync("delai sso");
+        var settingHit = page.Locator("#cfg-search-list [data-hit]"); await settingHit.First.WaitForAsync();
+        Require((await settingHit.First.InnerTextAsync()).Contains("Délais de connexion", StringComparison.Ordinal)
+            && await page.Locator("#cfg-search").GetAttributeAsync("aria-expanded") == "true",
+            "The search of the settings ignores accents and finds a setting by the words of its description.");
+        await Capture("settings-search-light");
+        await page.Keyboard.PressAsync("Enter");
+        await WaitForPageAsync(page, "document.activeElement?.name==='timeoutSeconds'");
+        Require(await SettingsPane("collecte").IsVisibleAsync() && await SettingsNav("collecte").GetAttributeAsync("aria-current") == "page"
+            && await SettingsPane("collecte").Locator(".cfg-flash").CountAsync() == 1 && await page.Locator("#cfg-search").InputValueAsync() == "",
+            "Choosing a found setting opens its section, lights the setting up and gives it the focus.");
+        await Capture("settings-collection-light");
+        await SettingsNav("apparence").ClickAsync();
+        Require(await zoomField.InputValueAsync() == typedZoom, "Changing section keeps a value typed and not yet applied in another section.");
+        await zoomField.FillAsync(savedZoom);
+        await SettingsNav("collecte").ClickAsync();
+        await page.Locator(".page-content.settings-workspace").EvaluateAsync("node=>node.dataset.previous='true'");
+        await page.Locator(".page-heading").GetByRole(AriaRole.Button, new() { Name = "Actualiser", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.page-content.settings-workspace[data-ready=true]:not([data-previous])')?.querySelector('[data-settings-nav=collecte]')?.getAttribute('aria-current')==='page'");
+        Require(await SettingsPane("collecte").IsVisibleAsync() && !await SettingsPane("apparence").IsVisibleAsync(),
+            "Actualiser rebuilds Réglages on the section it was showing.");
+        await Navigate("settings");
+        Require(await SettingsNav("apparence").GetAttributeAsync("aria-current") == "page", "A new visit of Réglages opens on Apparence.");
         await Navigate("home");
         var fold = page.Locator(".sidebar > .nav-fold");
         Task<bool> Folded() => page.Locator(".shell").EvaluateAsync<bool>("node=>node.classList.contains('nav-collapsed')");

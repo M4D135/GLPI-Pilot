@@ -1,0 +1,159 @@
+/* Réglages: the Paramètres screen of Domenia 2 (v2/web/css/pages/parametres.css) in the tokens of GLPI Pilot. Hero with
+   the state of the installation and the search of a setting, sliding section rail, one section at a time. Every rule is
+   scoped to the screen. Motion uses transform, opacity and filter only; reduced or disabled motion stops it (domenia.css). */
+.settings-workspace [hidden] { display: none !important; }
+.settings-workspace .cfg-page { container: cfg-page / inline-size; display: grid; gap: 22px; min-width: 0; }
+.settings-workspace [data-tone] { --tone: var(--accent); }
+.settings-workspace [data-tone=accent] { --tone: var(--d-violet); }
+.settings-workspace [data-tone=ok] { --tone: var(--success); }
+.settings-workspace [data-tone=warn] { --tone: var(--warning); }
+.settings-workspace [data-tone=alert] { --tone: var(--danger); }
+.settings-workspace [data-tone=off] { --tone: var(--faint); }
+
+/* ---------- Hero ---------- */
+.settings-workspace .cfg-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 520px); gap: 28px; align-items: center; margin: 0; }
+/* The results of the search open below the hero: its decoration stays inside its own frame instead of the hero clipping. */
+.settings-workspace .cfg-hero { overflow: visible; z-index: 2; }
+.settings-workspace .cfg-hero::before { inset: 0; border-radius: inherit; }
+.settings-workspace .cfg-hero > .domenia-orbs { inset: 0; }
+@container cfg-page (max-width: 1080px) { .settings-workspace .cfg-hero { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+.settings-workspace .cfg-hero-main { min-width: 0; }
+.settings-workspace .cfg-chips .badge { animation: cfg-chip-in 420ms var(--ease-spring) both; }
+.settings-workspace .cfg-chips .badge:nth-child(2) { animation-delay: 60ms; }
+@keyframes cfg-chip-in { from { opacity: 0; transform: translateY(6px) scale(.94); } }
+
+.settings-workspace .cfg-search { position: relative; margin-top: 18px; max-width: 560px; }
+.settings-workspace .cfg-search-box {
+  display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px 0 14px; border-radius: 14px;
+  border: 1px solid var(--control-border); background: color-mix(in srgb, var(--input-bg) 88%, transparent); box-shadow: var(--d-shadow);
+  transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
+}
+.settings-workspace .cfg-search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent), var(--d-shadow); }
+.settings-workspace .cfg-search-box > .icon { width: 18px; height: 18px; flex: none; color: var(--faint); transition: transform var(--motion) var(--ease-spring), color var(--motion-fast); }
+.settings-workspace .cfg-search-box:focus-within > .icon { color: var(--accent); transform: scale(1.12) rotate(-8deg); }
+.settings-workspace .cfg-search-box > input.cfg-search-input { flex: 1; width: auto; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 14px; }
+.settings-workspace .cfg-search-box > input.cfg-search-input:focus { outline: none; }
+.settings-workspace .cfg-search-box > kbd { flex: none; }
+.settings-workspace .cfg-search-list {
+  position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0; margin: 0; padding: 6px; list-style: none;
+  border-radius: 14px; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(18px) saturate(170%); box-shadow: var(--shadow-raised); transform-origin: top center; animation: cfg-drop var(--motion) var(--ease);
+}
+@keyframes cfg-drop { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+.settings-workspace .cfg-search-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 10px; cursor: pointer; color: var(--muted); }
+.settings-workspace .cfg-search-list li > .icon { width: 18px; height: 18px; color: var(--accent); }
+.settings-workspace .cfg-search-list li[aria-selected=true] { background: var(--accent-soft); color: var(--text); }
+.settings-workspace .cfg-hit-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-workspace .cfg-hit-section { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+.settings-workspace .cfg-search-list .cfg-hit-none { grid-template-columns: 1fr; cursor: default; color: var(--faint); }
+
+/* State tiles beside the title. */
+.settings-workspace .cfg-pulse { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.settings-workspace .cfg-pulse-tile {
+  position: relative; isolation: isolate; overflow: hidden; display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: auto auto auto;
+  column-gap: 12px; row-gap: 2px; align-content: start; min-height: 104px; padding: 14px; border-radius: 14px; text-align: left; cursor: pointer; color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--tone, var(--accent)) 26%, var(--border)); background: color-mix(in srgb, var(--surface) 76%, transparent);
+  box-shadow: var(--d-shadow); transition: transform var(--motion) var(--ease-spring), box-shadow var(--motion) var(--ease);
+  animation: cfg-tile-in 560ms var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 70ms + 140ms);
+}
+.settings-workspace .cfg-pulse-tile:nth-child(2) { --i: 1; } .settings-workspace .cfg-pulse-tile:nth-child(3) { --i: 2; } .settings-workspace .cfg-pulse-tile:nth-child(4) { --i: 3; }
+@keyframes cfg-tile-in { from { opacity: 0; transform: translateY(10px) scale(.96); filter: blur(4px); } }
+.settings-workspace .cfg-pulse-tile::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tone, var(--accent)) 20%, transparent), transparent 62%); }
+.settings-workspace .cfg-pulse-tile:hover { transform: translateY(-2px); box-shadow: var(--d-shadow-hover); }
+.settings-workspace .cfg-pulse-ico { grid-row: 1 / span 3; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: var(--tone, var(--accent)); background: color-mix(in srgb, var(--tone, var(--accent)) 15%, transparent); }
+.settings-workspace .cfg-pulse-ico .icon { width: 18px; height: 18px; }
+.settings-workspace .cfg-pulse-k { font-size: 10.5px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-workspace .cfg-pulse-v { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-workspace .cfg-pulse-s { font-size: 12px; color: var(--muted); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* ---------- Layout: section rail and content ---------- */
+.settings-workspace .cfg-layout { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 22px; align-items: start; min-width: 0; }
+@container cfg-page (max-width: 960px) { .settings-workspace .cfg-layout { grid-template-columns: minmax(0, 1fr); } }
+.settings-workspace .cfg-rail {
+  position: sticky; top: 12px; padding: 10px; border-radius: 18px; background: var(--d-glass); backdrop-filter: blur(16px) saturate(170%);
+  border: 1px solid var(--d-glass-border); box-shadow: var(--d-shadow);
+}
+.settings-workspace .cfg-rail ul { position: relative; z-index: 1; display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.settings-workspace .cfg-rail-item {
+  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 12px; width: 100%; min-height: 52px;
+  padding: 8px 12px 8px 8px; border: 0; border-radius: 14px; background: none; text-align: left; cursor: pointer; color: var(--muted);
+  transition: transform var(--motion) var(--ease-spring), color var(--motion-fast);
+  animation: cfg-cascade 520ms var(--ease) both; animation-delay: calc(var(--j, 0) * 40ms + 160ms);
+}
+@keyframes cfg-cascade { from { opacity: 0; transform: translateX(-8px); } }
+.settings-workspace .cfg-rail-item:hover { color: var(--text); transform: translateX(3px); }
+.settings-workspace .cfg-rail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-workspace .cfg-rail-item[aria-current=page] { color: var(--text); }
+.settings-workspace .cfg-rail-ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); transition: transform var(--motion) var(--ease-spring); }
+.settings-workspace .cfg-rail-ico .icon { width: 18px; height: 18px; }
+.settings-workspace .cfg-rail-item:hover .cfg-rail-ico { transform: rotate(-8deg) scale(1.08); }
+.settings-workspace .cfg-rail-item[aria-current=page] .cfg-rail-ico { color: #fff; background: var(--d-brand-action); box-shadow: 0 6px 16px var(--d-glow); }
+.settings-workspace .cfg-rail-text { display: grid; gap: 1px; min-width: 0; }
+.settings-workspace .cfg-rail-label { font-weight: 650; line-height: 1.3; }
+.settings-workspace .cfg-rail-desc { font-size: 11.5px; color: var(--faint); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.settings-workspace .cfg-rail-badge {
+  position: absolute; top: 5px; left: 34px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center;
+  font-size: 10px; font-weight: 800; line-height: 1; color: #2a0b1c; background: var(--brand-4, #ff7ab6); box-shadow: 0 0 0 2px var(--surface);
+}
+.settings-workspace .cfg-rail-pill {
+  position: absolute; z-index: 0; left: 10px; right: 10px; top: 10px; height: var(--h, 52px); border-radius: 14px; opacity: 0; pointer-events: none;
+  transform: translateY(var(--y, 0)); background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), 0 8px 22px color-mix(in srgb, var(--accent) 14%, transparent);
+  transition: transform 520ms var(--ease-spring), height var(--motion) var(--ease), opacity var(--motion);
+}
+.settings-workspace .cfg-rail-pill.on { opacity: 1; }
+.settings-workspace .cfg-rail-pill::before { content: ''; position: absolute; left: -2px; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: var(--brand-gradient); }
+@container cfg-page (max-width: 960px) {
+  .settings-workspace .cfg-rail { position: static; }
+  .settings-workspace .cfg-rail ul { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .settings-workspace .cfg-rail-pill { display: none; }
+  .settings-workspace .cfg-rail-item[aria-current=page] { background: var(--accent-soft); }
+}
+
+.settings-workspace .cfg-content { position: relative; min-width: 0; outline: none; }
+.settings-workspace .cfg-live { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.settings-workspace .cfg-pane { container: cfg-pane / inline-size; display: grid; gap: 18px; min-width: 0; }
+.settings-workspace .cfg-pane.cfg-enter { animation: cfg-pane-in 420ms var(--ease) both; }
+@keyframes cfg-pane-in { from { opacity: 0; transform: translateX(18px); filter: blur(6px); } }
+
+/* Section header */
+.settings-workspace .cfg-pane-head { display: flex; align-items: center; gap: 16px; padding: 2px; }
+.settings-workspace .cfg-pane-icon {
+  width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; flex: none; color: #fff; background: var(--d-brand-action);
+  box-shadow: 0 10px 26px var(--d-glow), inset 0 1px #ffffff45; animation: cfg-icon-in 520ms var(--ease-spring) both;
+}
+.settings-workspace .cfg-pane-icon .icon { width: 26px; height: 26px; }
+@keyframes cfg-icon-in { from { opacity: 0; transform: scale(.6) rotate(-12deg); } }
+.settings-workspace .cfg-pane-titles { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.settings-workspace .cfg-pane-titles h2 { margin: 0; font-family: var(--font-display); font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
+.settings-workspace .cfg-pane-titles p { margin: 0; color: var(--muted); max-width: 80ch; line-height: 1.5; }
+
+/* Cards of a section: two columns, a single card or a wide one takes the whole row. */
+.settings-workspace .cfg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; min-width: 0; }
+.settings-workspace .cfg-pane[data-settings-pane=apparence] .cfg-grid { grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); }
+.settings-workspace .cfg-grid > * { min-width: 0; margin: 0; }
+.settings-workspace .cfg-grid > :only-child, .settings-workspace .cfg-grid > [data-setting=acquisition], .settings-workspace .cfg-grid > [data-setting=deployment] { grid-column: 1 / -1; }
+@container cfg-pane (max-width: 820px) {
+  .settings-workspace .cfg-grid, .settings-workspace .cfg-pane[data-settings-pane=apparence] .cfg-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.settings-workspace .cfg-slot > .card { margin: 0; }
+.settings-workspace .cfg-slot:empty { display: none; }
+.settings-workspace .cfg-tools { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); }
+.settings-workspace .cfg-notes { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.settings-workspace .cfg-notes li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.settings-workspace .cfg-notes li > .icon { width: 16px; height: 16px; margin-top: 2px; color: var(--accent); }
+
+/* A setting found by the search: a ring that only fades. */
+.settings-workspace .cfg-flash { border-radius: 10px; animation: cfg-flash 1600ms var(--ease); }
+@keyframes cfg-flash { 0%, 30% { outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 4px; } 100% { outline: 3px solid transparent; outline-offset: 4px; } }
+
+:root[data-contrast=true] .settings-workspace :is(.cfg-rail, .cfg-pulse-tile, .cfg-search-list, .cfg-search-box) { background: var(--surface); border-color: currentColor; backdrop-filter: none; box-shadow: none; }
+:root[data-contrast=true] .settings-workspace .cfg-pulse-tile::before { display: none; }
+:root[data-contrast=true] .settings-workspace .cfg-rail-pill { background: transparent; box-shadow: inset 0 0 0 2px currentColor; }
+:root[data-contrast=true] .settings-workspace .cfg-rail-pill::before { background: currentColor; }
+:root[data-contrast=true] .settings-workspace :is(.cfg-rail-item[aria-current=page] .cfg-rail-ico, .cfg-pane-icon) { background: var(--accent-solid); box-shadow: none; }
+@media (forced-colors: active) {
+  .settings-workspace .cfg-rail-item[aria-current=page] { outline: 2px solid Highlight; }
+  .settings-workspace :is(.cfg-pane-icon, .cfg-rail-item[aria-current=page] .cfg-rail-ico) { color: CanvasText; background: Canvas; border: 1px solid CanvasText; }
+  .settings-workspace .cfg-rail-pill { display: none; }
+}

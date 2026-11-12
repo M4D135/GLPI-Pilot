@@ -149,6 +149,7 @@ internal sealed partial class WindowsWebViewFixture
                 await page.GetByRole(AriaRole.Button, new() { Name = "Collecter depuis GLPI", Exact = true }).ClickAsync();
                 await page.Locator(".page-content[data-page=data]").WaitForAsync();
                 await NavigateAsync(page, "settings");
+                await page.Locator("[data-settings-nav=demonstration]").ClickAsync();
                 await page.Locator("[data-settings-section=demo]").GetByRole(AriaRole.Button, new() { Name = "Ouvrir la démonstration", Exact = true }).ClickAsync();
                 await page.GetByRole(AriaRole.Dialog, new() { Name = "Ouvrir la démonstration", Exact = true }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir la démonstration", Exact = true }).ClickAsync();
                 await page.Locator(".page-content[data-page=home]").WaitForAsync();
@@ -527,6 +528,9 @@ internal sealed partial class WindowsWebViewFixture
         {
             var control = page.Locator($".page-content [data-open-panel='{panelName}']").First;
             if (await control.CountAsync() == 0) throw new InvalidOperationException("Missing contextual action: " + route + " in " + id);
+            // Réglages shows one section at a time: a control of another section is reached through its rail entry.
+            var pane = await control.EvaluateAsync<string?>("node=>{const pane=node.closest('[data-settings-pane]');return pane&&pane.hidden?pane.dataset.settingsPane:null;}");
+            if (pane is not null) await page.Locator($"[data-settings-nav='{pane}']").ClickAsync();
             var details = control.Locator("xpath=ancestor::details");
             for (var index = 0; index < await details.CountAsync(); index++)
                 if (await details.Nth(index).GetAttributeAsync("open") is null) await details.Nth(index).Locator(":scope > summary").ClickAsync();

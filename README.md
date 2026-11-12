@@ -1,4 +1,4 @@
-# GLPI Pilot 3.14.4 · Windows x64
+# GLPI Pilot 3.14.5 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -27,6 +27,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 3.14.5 : menu Réglages façon Domenia
+
+**Réglages** reprend le menu de configuration de Domenia : un rail de dix sections à gauche (Apparence, Pilotage, Collecte, Tickets, Historique, Équipe et partage, Configuration à diffuser, Mises à jour et journal, Démonstration, À propos et aide), une seule section affichée à la fois, quatre tuiles d’état en tête et **Rechercher un réglage** (touche <kbd>/</kbd>). Les réglages de collecte, de lecture des tickets, d’historique et de configuration d’équipe s’affichent dans leur section au lieu d’un panneau. Une valeur saisie et non appliquée reste en place quand on change de section.
 
 ## 3.14.4 : carte des tickets à l’ouverture et fond de rues fiable
 

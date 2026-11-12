@@ -141,6 +141,7 @@ internal static partial class Program
         await Capture("reference-cache-saved"); await CloseReference();
         var pack = Path.Combine(_root, "pack-configure"); Directory.CreateDirectory(pack); app.SetDeploymentFixture(pack, "9.9.9");
         await ClickNavigationAsync(page, "settings"); await WaitForNavigationTargetAsync(page, "settings");
+        await page.Locator("[data-settings-nav=deploiement]").ClickAsync();
         await page.Locator(".deployment-settings").WaitForAsync();
         await Button("Définir comme configuration par défaut").ClickAsync();
         var confirmDefault = page.GetByRole(AriaRole.Dialog, new() { Name = "Configuration par défaut du pack", Exact = true });

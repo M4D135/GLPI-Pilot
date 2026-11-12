@@ -4,7 +4,7 @@ GLPI Pilot rassemble vos tickets GLPI, vos interventions et la préparation de v
 
 ## La fenêtre
 
-- **Le menu de gauche.** Quatre espaces de travail : « Accueil », « Tickets », « Interventions » et « Pilotage ». En dessous : « Données » et « Réglages ».
+- **Le menu de gauche.** Quatre espaces de travail : « Accueil », « Tickets », « Interventions » et « Pilotage ». En dessous : « Données » et « Réglages ». « Réglages » range ses réglages en sections, dans un rail à gauche ; « Rechercher un réglage » (touche /) retrouve un réglage par ses mots.
 - **La barre du haut.** Le choix de la source affichée, votre identité, « Rechercher » (Ctrl K) et quatre icônes de thème : clair, sombre, contraste élevé (texte blanc sur fond noir) et « suivre Windows ». L'icône allumée indique votre choix ; il se retrouve dans « Réglages ».
 - **La barre du bas.** L'état du travail en cours, « Journal », et le zoom : « − », « 100 % », « + ».
 - **Le bouton « Actualiser ».** En haut à droite de chaque espace, il recharge ce que vous voyez sans changer d'écran.

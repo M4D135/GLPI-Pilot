@@ -57,6 +57,7 @@ internal static partial class Program
         {
             await ClickNavigationAsync(page, "settings"); await WaitForNavigationTargetAsync(page, "settings");
             await page.Locator(".settings-workspace[data-ready=true]").WaitForAsync();
+            await page.Locator("[data-settings-nav=deploiement]").ClickAsync();
         }
         async Task Idle() => await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
         async Task Capture(string name)
