@@ -86,6 +86,27 @@ public static class DeploymentConfigurationChecks
             await Reject(() => f.Call("terrain.reference.reset", new { draftVersion }));
             Check(DeploymentConfigurationInitializer.PreservesSites(f.Root));
         });
+        Add("a complete replacement that also selects another source installs its site reference on a loaded local observation", async f =>
+        {
+            var initial = f.App.Settings.Copy(); var target = initial.Copy();
+            var city = new CityDefinition { Name = "Commune fictive", Latitude = 44, Longitude = 5 }; target.Cities.Cities.Add(city);
+            target.Cities.Sites.Add(new() { Name = "Site fictif 01", CityId = city.Id, Aliases = new() { "SF01" }, Latitude = 44.01, Longitude = 5.01 });
+            await f.Call("settings.save", new { revision = f.App.Revision, settings = target }); var path = await Export(f);
+            await f.Call("settings.save", new { revision = f.App.Revision, settings = initial });
+            var data = SessionFixture.Data(); data.Rows = new() { new[] { "1", "SF01 écran en panne", "Nouveau", "11", "x" }, new[] { "2", "Commune fictive imprimante", "Nouveau", "12", "x" } };
+            data.Provenance.SourceKind = "file"; data.Provenance.SearchVerified = false; data.Provenance.ScopeVerified = false; data.SourceUrl = "";
+            f.App.LoadSessionFixture(data); await f.SelectB();
+            var before = (await f.Call("maps.workspace.get")).GetProperty("totals");
+            Check(before.GetProperty("tickets").GetInt32() == 2 && before.GetProperty("placed").GetInt32() == 0);
+            f.Host.OpenPath = path; var preview = await f.Call("deployment.preview");
+            await f.Call("deployment.apply", new { token = Token(preview), confirmed = true });
+            var map = await f.Call("maps.workspace.get"); var totals = map.GetProperty("totals");
+            Check(ReferenceEquals(f.App.Result, data) && f.App.Settings.ActiveSourceId == SessionFixture.ProfileA
+                && JsonSerializer.Serialize(f.App.EffectiveSettings.Cities, PilotApplication.Json) == JsonSerializer.Serialize(f.App.Settings.Cities, PilotApplication.Json)
+                && f.App.EffectiveSettings.Dashboard.ColumnMappings["title"] == "Titre");
+            Check(totals.GetProperty("placed").GetInt32() == 2 && totals.GetProperty("sites").GetInt32() == 1 && totals.GetProperty("approximate").GetInt32() == 1
+                && map.GetProperty("locations").EnumerateArray().Any(location => location.GetProperty("kind").GetString() == "site" && location.GetProperty("count").GetInt32() == 1));
+        });
         Add("the demo cannot export, preview or apply fictitious settings and cancellation does not replace options", async f =>
         {
             f.Host.OpenPath = null; Check((await f.Call("deployment.preview")).GetProperty("cancelled").GetBoolean());

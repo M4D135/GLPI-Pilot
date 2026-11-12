@@ -3,6 +3,10 @@ import land from '../../vendor/natural-earth/land.js';
 import { openReadingView, foldControls } from '../reading-mode.js';
 
 const tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+// With noWrap, Leaflet still asks for columns left and right of the world when the
+// view is wider than it (x = -1, x = 2^z). The host refuses those addresses, so the
+// layer is bounded just inside the antimeridian and never requests them.
+const tileBounds = [[-85.0511, -179.999], [85.0511, 179.999]];
 const routeColors = ['#397ad8', '#009b83', '#c47513', '#a760c5', '#d35767', '#548b36'];
 const coordinate = place => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)
   && Math.abs(place.latitude) <= 90 && Math.abs(place.longitude) <= 180;
@@ -141,16 +145,25 @@ export function mountMap(ctx, model, host, options = {}) {
       if (disposed || operation !== generation || ctx.signal.aborted) { await revoke(); return; }
       if (!permission?.enabled) { syncTileButton(); setState('Fond local · sans rues'); return; }
       const next = L.tileLayer(tileUrl, {
-        minZoom: 0, maxZoom: 19, noWrap: true, detectRetina: false, keepBuffer: 0,
+        minZoom: 0, maxZoom: 19, noWrap: true, bounds: tileBounds, detectRetina: false, keepBuffer: 0,
         updateWhenIdle: true, updateWhenZooming: false, referrerPolicy: 'strict-origin-when-cross-origin'
       });
       layer = next;
       if(firstStreetLayer){firstStreetLayer=false;if(!restoreView(options.view))fit();}
       syncTileButton();
-      next.on('load', () => { if (!disposed && layer === next) setState('Rues · OpenStreetMap'); });
-      next.once('tileerror', () => {
+      // A view is judged once every visible tile has loaded or failed. A missing tile leaves
+      // the local land visible beneath it; only a view without a single usable tile, twice
+      // in a row, shows that the detailed background cannot be reached.
+      let loadedTiles = 0, failedTiles = 0, retried = false;
+      next.on('loading', () => { loadedTiles = 0; failedTiles = 0; });
+      next.on('tileload', () => { loadedTiles++; });
+      next.on('tileerror', () => { failedTiles++; });
+      next.on('load', () => {
+        if (disposed || layer !== next) return;
+        if (loadedTiles > 0 || failedTiles === 0) { retried = false; setState('Rues · OpenStreetMap'); return; }
+        if (!retried) { retried = true; setTimeout(() => { if (!disposed && layer === next) next.redraw(); }, 1500); return; }
         // Finish Leaflet's tile event before detaching its layer or changing
-        // zoom. Removing it inside tileerror leaves in-flight view listeners
+        // zoom. Removing it inside the event leaves in-flight view listeners
         // with a null map during the same event dispatch.
         queueMicrotask(() => {
           if (!disposed && layer === next) void setStreets(false, 'Fond détaillé indisponible · le plan local reste affiché', false);
@@ -173,9 +186,11 @@ export function mountMap(ctx, model, host, options = {}) {
     });
     else map.setView([20, 0], 2, { animate: false });
   }
+  // A view saved below zoom 3 is the placeholder of a map that had nothing to place,
+  // or no better than fitting the places again: it is not restored.
   function restoreView(view) {
     if (!map || disposed || !Array.isArray(view?.center) || view.center.length !== 2 || !view.center.every(Number.isFinite)
-      || Math.abs(view.center[0]) > 90 || Math.abs(view.center[1]) > 180 || !Number.isFinite(view.zoom) || view.zoom < 1 || view.zoom > 19) return false;
+      || Math.abs(view.center[0]) > 90 || Math.abs(view.center[1]) > 180 || !Number.isFinite(view.zoom) || view.zoom < 3 || view.zoom > 19) return false;
     map.setView(view.center, view.zoom, {animate:false});return true;
   }
   function select(entry, fromMap = false) {
@@ -312,6 +327,7 @@ export function mountMap(ctx, model, host, options = {}) {
     observer.observe(mapElement);
     if (canLocate() && streetsWanted) void setStreets(true);
   } catch (error) { cleanup(); throw error; }
-  return { element: body, dispose: cleanup, fit, getView: () => map && !disposed ? {center:[map.getCenter().lat,map.getCenter().lng],zoom:map.getZoom(),streets:streetsWanted} : null,
+  return { element: body, dispose: cleanup, fit, // A map with nothing to place has no view worth remembering.
+    getView: () => map && !disposed && canLocate() ? {center:[map.getCenter().lat,map.getCenter().lng],zoom:map.getZoom(),streets:streetsWanted} : null,
     selectPlace: id => { const entry = entries.find(entry => entry.place.id === id); if (entry) select(entry); } };
 }

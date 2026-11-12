@@ -98,6 +98,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
     await capture('map-compact-list');
     await page.evaluate(() => controller.abort());
     ok(await page.evaluate(() => !document.querySelector('.maps-canvas')._leaflet_id), 'Aborting the page releases the Leaflet instance');
+    await require('./map-streets.cjs')({ page, reset, ok });
 
     await page.setViewportSize({ width: 1280, height: 800 }); await reset();
     await page.evaluate(async () => {

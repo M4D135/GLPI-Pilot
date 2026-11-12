@@ -129,6 +129,20 @@ internal static partial class Program
             () => {window.__refreshObservedMaps=[];const create=window.L.map;
               window.L.map=function(...args){const map=create.apply(this,args);window.__refreshObservedMaps.push(map);return map;};}
             """);
+        // Forget the calendar view remembered by the deep link above: a profile that never used a map command.
+        await page.EvaluateAsync("()=>{for(const key of Object.keys(localStorage))if(key.endsWith(':calendar'))localStorage.removeItem(key);}");
+        await page.Locator(".nav-item[data-page=interventions]").ClickAsync(); await page.Locator(".interventions-workspace").WaitForAsync(); await Idle();
+        if (await Tab("map").GetAttributeAsync("aria-current") != "page") await Tab("map").ClickAsync();
+        await page.Locator(".calendar-ticket-map-host .terrain-map-page[data-ready=true]").WaitForAsync(); await Idle();
+        var counted = await page.Locator(".maps-inline-host .maps-marker .maps-pin").AllInnerTextsAsync();
+        Require(app.Result is not null && await page.Locator(".calendar-map-host").CountAsync() == 0 && counted.Count > 0 && counted.All(text => int.TryParse(text, out var count) && count > 0),
+            "With an observation loaded and no map command ever used, Interventions → Carte opens on the ticket map and each marker carries its ticket count.");
+        await page.Locator("[data-calendar-action=planning-map]").ClickAsync(); await page.Locator(".calendar-map-host .maps-canvas").WaitForAsync(); await Idle();
+        await Tab("planning").ClickAsync(); await Idle(); await Tab("map").ClickAsync(); await page.Locator(".calendar-map-host .maps-canvas").WaitForAsync(); await Idle();
+        Require(await page.Locator(".calendar-ticket-map-host").CountAsync() == 0,
+            "An explicit choice of the planned-interventions map is kept when returning to the map tab.");
+        await page.Locator("[data-calendar-action=ticket-map]").ClickAsync();
+        await page.Locator(".calendar-ticket-map-host .terrain-map-page[data-ready=true]").WaitForAsync(); await Idle();
         await page.Locator(".nav-item[data-page=data]").ClickAsync(); await ReadyAsync(page.Locator(".data-workspace[data-ready=true]"));
         await page.Locator("[data-open-panel=sites]").ClickAsync(); await ReadyAsync(reference.Locator(".terrain-function-panel[data-ready=true]"));
         await reference.Locator(":scope > .modal-heading button").ClickAsync(); await reference.WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Idle();

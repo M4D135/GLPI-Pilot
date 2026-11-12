@@ -167,7 +167,7 @@ La carte montre où se trouvent les tickets de votre périmètre. Une tournée e
 
 ## Ouvrir la carte
 
-1. **Ouvrir.** Sur l'Accueil, cliquez sur « Carte des tickets ». Ou, dans « Interventions », cliquez sur l'onglet « Carte ».
+1. **Ouvrir.** Sur l'Accueil, cliquez sur « Carte des tickets ». Ou, dans « Interventions », cliquez sur l'onglet « Carte » : avec un relevé chargé, il ouvre la carte des tickets. « Carte des interventions prévues » montre à la place les interventions planifiées ; « Explorer les tickets sur la carte » revient aux tickets.
 2. **Choisir les tickets.** Cliquez sur « Tous les techniciens », « Mes tickets », « Équipes » ou « Techniciens ». « Visites prévues » affiche les visites d'une date.
 3. **Lire les compteurs.** « Stock du périmètre », « Sur la carte », « Localisation approximative » et « Sans coordonnées » disent combien de tickets sont placés, et avec quelle précision.
 
@@ -177,7 +177,7 @@ La carte montre où se trouvent les tickets de votre périmètre. Une tournée e
 
 - La molette fait défiler la page. Les boutons « + » et « − » zooment sur la carte.
 - « Agrandir la carte » lui donne toute la place. Dans la carte agrandie, la molette zoome.
-- « Tout afficher » recadre sur tous les repères. « Afficher la liste » montre les tickets sous la carte. « Afficher les rues » ajoute le plan des rues.
+- « Tout afficher » recadre sur tous les repères. « Afficher la liste » montre les tickets sous la carte. Le plan des rues s'affiche à l'ouverture ; « Fond hors ligne » le retire et « Afficher les rues » le remet.
 
 ## Voir les sites
 

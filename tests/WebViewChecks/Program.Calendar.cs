@@ -155,7 +155,13 @@ internal static partial class Program
         Require(File.Exists(host.NextSave) && (await File.ReadAllTextAsync(host.NextSave)).Contains("BEGIN:VEVENT", StringComparison.Ordinal), "Calendar export writes actual iCalendar events using the same visible scope.");
         host.NextSave = Path.Combine(_root, "planning.html"); await page.Locator(".calendar-more > summary").ClickAsync(); await Button("Exporter les fiches d’intervention").ClickAsync(); await Settled();
         Require(File.Exists(host.NextSave) && System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(host.NextSave)).Contains("Préparation libre", StringComparison.Ordinal), "The printable intervention brief exports actual saved appointments.");
-        await page.Locator("[data-calendar-tab=map]").ClickAsync(); await Settled(); await page.Locator(".maps-canvas").WaitForAsync();
+        await page.Locator("[data-calendar-tab=map]").ClickAsync(); await Settled();
+        var planningMap = page.Locator("[data-calendar-action=planning-map]");
+        await page.Locator(".calendar-map-host .maps-canvas, [data-calendar-action=planning-map]").First.WaitForAsync();
+        Require(await planningMap.CountAsync() == (app.Result is null ? 0 : 1),
+            "The map tab opens on the ticket map exactly when an observation is loaded, and on the planned interventions otherwise.");
+        if (await planningMap.CountAsync() > 0) { await planningMap.ClickAsync(); await Settled(); }
+        await page.Locator(".calendar-map-host .maps-canvas").WaitForAsync();
         Require(await page.Locator(".calendar-unmapped .calendar-event").CountAsync() >= 3 && await page.Locator("dialog.maps-dialog").CountAsync() == 0,
             "The embedded map retains free interventions without coordinates in its adjacent list.");
         await page.Locator("[data-calendar-tab=planning]").ClickAsync(); await Settled();

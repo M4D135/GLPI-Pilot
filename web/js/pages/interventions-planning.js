@@ -22,7 +22,11 @@ export async function renderInterventionsWorkspace(ctx){
  let date=localDay(initial.date||initial.visitDate||remembered.date)||today(Intl.DateTimeFormat().resolvedOptions().timeZone);
  let view=views.some(item=>item.value===(initial.view||remembered.view))?(initial.view||remembered.view):'week';
  let tab=['planning','map','tours'].includes(initial.tab)?initial.tab:['planning','map','tours'].includes(remembered.tab)?remembered.tab:'planning';
- let mapMode=initial.ticketMap||initial.panel?'tickets':remembered.mapMode==='tickets'?'tickets':'planning';
+ // The map tab shows the tickets as soon as an observation is loaded. Only the two map
+ // buttons record a lasting choice; a deep link or a default never does.
+ let mapChoice=['planning','tickets'].includes(remembered.mapChoice)?remembered.mapChoice:'',mapMode='';
+ const mapDefault=(entry={})=>entry.ticketMap||entry.panel?'tickets':mapChoice||(mapMode==='tickets'||state.session?.loaded===true?'tickets':'planning');
+ mapMode=mapDefault(initial);
  let filters={technicians:readKeys(initial.technicianKeys||remembered.technicians),teams:readKeys(initial.teamKeys||remembered.teams),mine:initial.mine??remembered.mine??false};
  let model=null,occurrences=[],editor=null,disposed=false,readController=null,loadVersion=0,mutation=false,refreshPending=false,undo=null;
  let childCleanup=null,childController=null,childSourceLoaded=false,childEntryParams={...initial},map=null,mapHost=null,tabVersion=0,panelMode='',dragKey='',dragTicket=null;
@@ -42,7 +46,7 @@ export async function renderInterventionsWorkspace(ctx){
  const call=(operation,args={},options={})=>api.call(operation,args,{signal,...options});
  function showIssue(message){replaceChildren(notice,el('div',{class:'calendar-message danger',role:'alert'},icon('shield'),el('span',{text:message})));}
  function editorState(){window.dispatchEvent(new CustomEvent('pilot:calendar-editor',{detail:{open:panelMode==='editor'||panelMode==='shift'||!!editor,dirty:!!editor?.dirty}}));}
- function persist(){const scroller=canvas.querySelector('.calendar-grid-scroll');if(scroller)gridScroll=scroller.scrollTop;saveWorkspaceView(state,'calendar',{date,view,tab,mapMode,...filters,...(gridScroll!==null?{scroll:gridScroll}:{})});}
+ function persist(){const scroller=canvas.querySelector('.calendar-grid-scroll');if(scroller)gridScroll=scroller.scrollTop;saveWorkspaceView(state,'calendar',{date,view,tab,mapMode,...(mapChoice?{mapChoice}:{}),...filters,...(gridScroll!==null?{scroll:gridScroll}:{})});}
  function range(){return calendarRange(date,view);}
  function request(){return{from:range().from,to:range().to,technicians:filters.mine&&model?.personalTechnician?[model.personalTechnician]:filters.technicians,teams:filters.teams,scope:filters.mine?'mine':'all',mine:filters.mine};}
  function displayZone(){return model?.timeZoneId||Intl.DateTimeFormat().resolvedOptions().timeZone;}
@@ -103,7 +107,7 @@ export async function renderInterventionsWorkspace(ctx){
    shell.dataset.view=view;
    // Entry parameters open a tool once; subsequent tab visits use the current view.
    const entryParams=childEntryParams;childEntryParams={};
-   if(tab==='planning')paintPlanning();else if(tab==='map'){if(mapMode==='tickets'){if(!childCleanup)await showTicketMap(entryParams);}else await paintMap();}else if(!childCleanup)await paintTours(entryParams);
+   if(tab==='planning')paintPlanning();else if(tab==='map'){mapMode=mapDefault(entryParams);if(mapMode==='tickets'){if(!childCleanup)await showTicketMap(entryParams);}else await paintMap();}else if(!childCleanup)await paintTours(entryParams);
    if(panelMode==='backlog')await showBacklog(true);else if(panelMode==='issues')showIssues(true);
    if(refreshPending&&editor?.dirty)notice.append(el('div',{class:'calendar-message info'},el('span',{text:'Le planning a évolué. Votre saisie est conservée ; la version sera vérifiée à l’enregistrement.'})));
    checkReminders();persist();fitViewport();shell.dataset.ready='true';
@@ -370,12 +374,12 @@ export async function renderInterventionsWorkspace(ctx){
  }
 
  async function clearChild(){
-  if(childCleanup?.beforeClose)await childCleanup.beforeClose();if(map){saveWorkspaceView(state,'calendar-map',map.getView?.()||{});map.dispose();map=null;}
+  if(childCleanup?.beforeClose)await childCleanup.beforeClose();if(map){const mapView=map.getView?.();if(mapView)saveWorkspaceView(state,'calendar-map',mapView);map.dispose();map=null;}
   if(childCleanup){await childCleanup();childCleanup=null;}childController?.abort();childController=null;mapHost=null;
  }
  async function switchTab(next,params={}){
   if(next===tab&&!Object.keys(params).length)return;await guardEditor();await clearChild();await closePanel(true);tab=next;++tabVersion;updateTabs();persist();
-  if(tab==='planning')paintPlanning();else if(tab==='map'){if(params.ticketMap||params.panel)mapMode='tickets';if(mapMode==='tickets')await showTicketMap(params);else await paintMap();}else await paintTours(params);
+  if(tab==='planning')paintPlanning();else if(tab==='map'){mapMode=mapDefault(params);if(mapMode==='tickets')await showTicketMap(params);else await paintMap();}else await paintTours(params);
  }
  async function paintTours(params={}){
   await clearChild();const version=++tabVersion,controller=new AbortController();childController=controller;childSourceLoaded=state.session?.loaded===true;const host=el('div',{class:'calendar-tours-host'});replaceChildren(canvas,host);const module=await import('./terrain-tours.js');if(disposed||version!==tabVersion||controller.signal.aborted)return;
@@ -387,7 +391,7 @@ export async function renderInterventionsWorkspace(ctx){
  async function paintMap(){
   mapMode='planning';persist();
   const priorView=map?.getView?.()||readWorkspaceView(state,'calendar-map',{});await clearChild();const version=++tabVersion;
-  const host=el('div',{class:'calendar-map-host'}),events=el('div',{class:'calendar-map-events'});replaceChildren(canvas,el('div',{class:'calendar-map-toolbar'},el('p',{text:'Interventions prévues sur la période affichée · aucune position en temps réel.'}),button('Explorer les tickets sur la carte',action(()=>showTicketMap()),{icon:'ticket',attributes:{dataset:{calendarAction:'ticket-map'}}})),host,events);mapHost=host;
+  const host=el('div',{class:'calendar-map-host'}),events=el('div',{class:'calendar-map-events'});replaceChildren(canvas,el('div',{class:'calendar-map-toolbar'},el('p',{text:'Interventions prévues sur la période affichée · aucune position en temps réel.'}),button('Explorer les tickets sur la carte',action(()=>{mapChoice='tickets';return showTicketMap();}),{icon:'ticket',attributes:{dataset:{calendarAction:'ticket-map'}}})),host,events);mapHost=host;
   const reference=await call('maps.preview',{kind:'sites'});if(disposed||version!==tabVersion)return;
   const allPlaces=(reference.routes||[]).flatMap(route=>route.places||[]),bySite=new Map();for(const place of allPlaces){bySite.set(place.id,place);bySite.set(String(place.id).replace(/^site:/,''),place);}
   const hasCoordinates=value=>Number.isFinite(value?.latitude)&&Number.isFinite(value?.longitude)&&Math.abs(value.latitude)<=90&&Math.abs(value.longitude)<=180;
@@ -403,7 +407,7 @@ export async function renderInterventionsWorkspace(ctx){
   const missing=visits.filter(entry=>!entry.place||entry.item.remote);replaceChildren(events,missing.length?el('details',{class:'calendar-unmapped',open:true},el('summary',{text:`${missing.length} intervention(s) sans repère sur la carte`}),el('p',{class:'help',text:'Les interventions à distance et les lieux sans coordonnées restent consultables ici.'}),...missing.map(({item})=>eventCard(item,{compact:true}))):null);
  }
  async function showTicketMap(params={}){
-  await guardEditor();await clearChild();await closePanel(true);mapMode='tickets';persist();const host=el('div',{class:'calendar-ticket-map-host'});replaceChildren(canvas,toolbar(button('Revenir à la carte du planning',action(()=>paintMap()),{icon:'calendar'})),host);
+  await guardEditor();await clearChild();await closePanel(true);mapMode='tickets';persist();const host=el('div',{class:'calendar-ticket-map-host'});replaceChildren(canvas,toolbar(button('Carte des interventions prévues',action(()=>{mapChoice='planning';return paintMap();}),{icon:'calendar',title:'Afficher les interventions planifiées sur la période, sans les tickets',attributes:{dataset:{calendarAction:'planning-map'}}})),host);
   const version=++tabVersion,controller=new AbortController();childController=controller;childSourceLoaded=state.session?.loaded===true;const module=await import('./terrain-map.js');if(disposed||version!==tabVersion||controller.signal.aborted)return;
   const done=await module.renderTicketMap({...ctx,root:host,signal:controller.signal,params:{technicianKeys:selectedResourceKeys(),visitDate:date,mine:filters.mine,...params},navigate:async(id,args={})=>{if(id==='interventions'&&args.plan)return applyPrefill(args);if(id==='interventions'||id==='terrain-map'||id==='tours')return switchTab(id==='tours'?'tours':args.tab||'map',args);return navigate(id,args);}});
   if(disposed||version!==tabVersion||controller.signal.aborted){await done?.();return;}childCleanup=done;

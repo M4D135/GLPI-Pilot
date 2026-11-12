@@ -521,7 +521,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--library-only', '--screenshots', (Join-Path $logs 'library-preview')) `
                 -LogName 'ticket-library-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^21/21 ticket library WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--calendar-only', '--screenshots', (Join-Path $logs 'calendar-preview')) `
-                -LogName 'calendar-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^32/32 intervention calendar WebView checks passed\.\r?$'
+                -LogName 'calendar-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^33/33 intervention calendar WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--navigation-only', '--screenshots', (Join-Path $logs 'navigation-preview')) `
                 -LogName 'navigation-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 navigation WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--presentation-only', '--screenshots', (Join-Path $logs 'presentation-preview')) `

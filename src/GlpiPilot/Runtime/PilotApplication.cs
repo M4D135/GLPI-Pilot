@@ -259,9 +259,12 @@ public sealed partial class PilotApplication : IAsyncDisposable
                 if (Locations is { } locations && GeographySignature(previous) != GeographySignature(next)) { Result = locations.Source; Locations = null; }
                 _resultContext = next.Copy();
             }
-            else if (!sourceChanged && !IsHistorical && _resultContext is { } local)
+            else if (!IsHistorical && _resultContext is { } local)
             {
-                if (JsonSerializer.Serialize(previous.Queries, Json) != JsonSerializer.Serialize(next.Queries, Json)) local.Queries = next.Queries.Copy();
+                // A local observation keeps the mapping that opened it, and the queries of another
+                // source do not reach it. The site reference is shared by every source: a replaced
+                // reference reaches it even when the same save also selects another source.
+                if (!sourceChanged && JsonSerializer.Serialize(previous.Queries, Json) != JsonSerializer.Serialize(next.Queries, Json)) local.Queries = next.Queries.Copy();
                 if (JsonSerializer.Serialize(previous.Cities, Json) != JsonSerializer.Serialize(next.Cities, Json))
                 {
                     local.Cities = next.Cities.Copy();

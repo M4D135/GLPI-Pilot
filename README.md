@@ -1,4 +1,4 @@
-# GLPI Pilot 3.14.3 · Windows x64
+# GLPI Pilot 3.14.4 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -27,6 +27,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 3.14.4 : carte des tickets à l’ouverture et fond de rues fiable
+
+Dans **Interventions → Carte**, la carte des tickets s’ouvre directement dès qu’un relevé est chargé, avec le nombre de tickets sur chaque repère ; la carte des interventions prévues reste à un bouton. Le fond de rues se charge seul à l’ouverture, y compris sur un écran large et en vue très dézoomée, et une tuile manquante ne le retire plus. Une configuration complète qui change aussi de source applique son référentiel de sites au relevé importé déjà affiché. Voir les [notes de version 3.14.4](docs/RELEASE-3.14.4.md).
 
 ## 3.14.3 : pilotage, disposition et actualisation
 
