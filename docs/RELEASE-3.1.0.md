@@ -12,7 +12,7 @@ Cette version poursuit le modèle C# / WinForms / WebView2 de Domenia 2. Elle re
 
 La suppression des espaces de groupement des identifiants numériques sert à leur présentation. Elle n’utilise pas une conversion numérique susceptible de perdre de grands identifiants ; les valeurs originales et l’identité de la ligne utilisée pour ouvrir le ticket sont conservées.
 
-Les principes de densité, de navigation et d’animation ont été examinés dans les sources de [Domenia 2](https://github.com/M4D135/domenia-d120/tree/4349a0007a75e88559ccb50c968622c6e2cd464e/v2/web). Les traitements métier et la persistance restent en C#.
+Les principes de densité, de navigation et d’animation ont été examinés dans les sources de Domenia 2, au commit 4349a00 de l’ancien dépôt, effacé à sa recréation le 9 novembre 2026. Les traitements métier et la persistance restent en C#.
 
 ## Des sections de dashboard indépendantes des widgets
 

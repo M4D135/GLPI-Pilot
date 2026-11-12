@@ -29,7 +29,7 @@ Les tickets les plus anciens, les auteurs de suivis et de tâches, leur intersec
 
 ### Une météo réellement animée
 
-La référence visuelle examinée est l’[Accueil de Domenia v2 au commit 54b071d](https://github.com/M4D135/domenia-d120/tree/54b071d8cdecaa387a67d6c1a1e620af4674f2ba/v2/web) : bandeau à orbes colorées, surfaces translucides, reflets au survol et graphiques dessinés progressivement. Les scènes météo de GLPI Pilot sont des SVG propres à l’application.
+La référence visuelle examinée est l’Accueil de Domenia v2 au commit 54b071d, dans l’ancien dépôt effacé à sa recréation le 9 novembre 2026 : bandeau à orbes colorées, surfaces translucides, reflets au survol et graphiques dessinés progressivement. Les scènes météo de GLPI Pilot sont des SVG propres à l’application.
 
 Le soleil, ses rayons et son halo, les différents plans de nuages et les gouttes de pluie possèdent des mouvements séparés. Les scènes ont une amplitude visible et continuent à vivre après l’apparition de la carte. Les états inconnus ou partiels restent identifiables et ne reçoivent pas une gravité inventée.
 

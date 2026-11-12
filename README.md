@@ -538,7 +538,7 @@ Projet **C# .NET 10, WinForms et WebView2**. Les sources d’interface se trouve
 
 ### VM Windows hors ligne
 
-Avec PowerShell 7.2 ou ultérieur, depuis la racine des sources, utiliser les chemins du laboratoire décrits dans [REPRISE.md de Domenia 2](https://github.com/M4D135/domenia-d120/blob/v2/v2/REPRISE.md) :
+Avec PowerShell 7.2 ou ultérieur, depuis la racine des sources, utiliser les chemins du laboratoire décrits dans [REPRISE.md de Domenia 2](https://github.com/M4D135/domenia-d120/blob/master/v2/REPRISE.md) :
 
 ```powershell
 $env:DOTNET_CLI_HOME = 'C:\DomeniaDev\dotnet-home'

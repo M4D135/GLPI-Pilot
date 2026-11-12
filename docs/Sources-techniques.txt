@@ -32,7 +32,7 @@ Excel : échappement SpreadsheetML des valeurs de texte
 https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/bd0aa042-434a-4ca7-b25f-4e1fd25a954d
 
 Architecture WebView 3.0 : modèle Domenia v2 étudié
-https://github.com/M4D135/domenia-d120/blob/v2/v2/REPRISE.md
+https://github.com/M4D135/domenia-d120/blob/master/v2/REPRISE.md
 Les moteurs C# restent locaux ; l’hôte WinForms embarque la page WebView2.
 Le contrat du pont et la politique des ressources figurent dans WebView-contract.md.
 

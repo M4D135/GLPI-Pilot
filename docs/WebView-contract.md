@@ -333,4 +333,4 @@ Implémentations : [runtime de carte](../src/GlpiPilot/Runtime/PilotApplication.
 
 Le port CDP de vérification est disponible uniquement avec `GLPI_PILOT_TEST_MODE=1`, une racine temporaire `GLPI-Pilot-Checks-*` sans lien et `--test-port`. Les harnais créent et nettoient leurs propres profils ; ils ne déplacent pas le profil réel. Les variables externes de démarrage WebView sont retirées avant de créer le moteur.
 
-Référence d’infrastructure lue : [REPRISE.md](https://github.com/M4D135/domenia-d120/blob/v2/v2/REPRISE.md), branche v2, 22 octobre 2026. VM Windows 11 4 vCPU/8 Go, SDK/cache locaux et session de bureau à préserver. La CI Windows publique et cette VM privée sont deux environnements distincts.
+Référence d’infrastructure lue : [REPRISE.md](https://github.com/M4D135/domenia-d120/blob/master/v2/REPRISE.md), branche v2, 22 octobre 2026. VM Windows 11 4 vCPU/8 Go, SDK/cache locaux et session de bureau à préserver. La CI Windows publique et cette VM privée sont deux environnements distincts.

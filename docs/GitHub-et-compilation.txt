@@ -55,7 +55,7 @@ Les licences Microsoft du SDK et du runtime fixe sont conservées dans licenses/
 
 VM WINDOWS 11 HORS LIGNE
 La référence d’infrastructure transmise est le document public :
-https://github.com/M4D135/domenia-d120/blob/v2/v2/REPRISE.md
+https://github.com/M4D135/domenia-d120/blob/master/v2/REPRISE.md
 Elle décrit une VM Windows 11 de 4 vCPU et 8 Go, un SDK portable et des caches
 locaux. Garder la session console ouverte ; ne pas la fermer ni redémarrer
 la machine pour une compilation. Les essais interactifs en VM se font à la
