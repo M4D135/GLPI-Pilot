@@ -1,3 +1,24 @@
+GLPI Pilot 3.14.6 — Rapport de vérification à jour dans le pack
+Rapport embarqué avant la qualification Windows du 12 novembre 2026
+
+CHANGEMENTS
+- Aucun changement de l’application. Le code, l’interface et les contrôles
+  sont ceux de la 3.14.5.
+- Le pack embarque ce rapport à jour. Celui de la 3.14.5 s’arrêtait à la
+  3.10.2.
+- Les liens vers des tags, commits et runs disparus sont corrigés dans les
+  notes de version et dans deux README de tests.
+
+QUALIFICATION DES PACKS
+Ce rapport est embarqué avant l’exécution du workflow. La livraison 3.14.6
+exige la qualification Windows et PostgreSQL complète de son commit. Le ZIP
+PROD-LIGHT original est ensuite inspecté : version, distribution et commit de
+wad/version.json, empreintes de SHA256SUMS.txt, absence de runtime WebView2.
+Le commit inscrit dans wad/version.json et les journaux CI sont la preuve
+finale. Après la publication de la 3.14.6, la release v3.14.5 est retirée :
+une seule version reste publiée.
+===================================================================
+
 GLPI Pilot 3.14.5 — Menu Réglages façon Domenia
 Contrôles, qualification et publication du 12 novembre 2026
 

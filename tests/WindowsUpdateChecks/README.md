@@ -24,7 +24,7 @@ dotnet publish tests/WindowsUpdateChecks/WindowsUpdateChecks.csproj `
   -p:PublishSingleFile=false -o .\artifacts\update-harness
 
 .\artifacts\update-harness\WindowsUpdateChecks.exe `
-  .\artifacts\windows-ci\release\GLPI-Pilot_3.14.5_PROD-LIGHT_Windows-x64.zip `
+  .\artifacts\windows-ci\release\GLPI-Pilot_3.14.6_PROD-LIGHT_Windows-x64.zip `
   .\artifacts\windows-update-evidence `
   .\artifacts\windows-ci\deployment-native-fixture\GLPI-Pilot.deployment.json
 ```

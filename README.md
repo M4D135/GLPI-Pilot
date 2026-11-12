@@ -1,4 +1,4 @@
-# GLPI Pilot 3.14.5 · Windows x64
+# GLPI Pilot 3.14.6 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -27,6 +27,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 3.14.6 : rapport de vérification à jour dans le pack
+
+L’application est identique à la 3.14.5. Le pack embarque désormais le rapport de vérification à jour (`wad/docs/Rapport-verification.txt`), qui s’arrêtait à la 3.10.2. Les liens vers des tags, commits et runs disparus des notes de version sont aussi corrigés. Seule la dernière version reste publiée dans les Releases.
 
 ## 3.14.5 : menu Réglages façon Domenia
 
