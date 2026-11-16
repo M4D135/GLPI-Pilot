@@ -253,6 +253,24 @@
   .home-overview-heading > .toolbar .button { flex: 1 1 auto; }
   .home-counter.button { min-width: 0; }
   .tickets-panel-heading h2 { overflow-wrap: anywhere; }
+  /* Keep the name and explanation readable on a narrow window. A fixed-width
+     identity button beside the avatar previously squeezed this column down to
+     a handful of characters despite the absence of horizontal scrolling. */
+  .home-identity-choice {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 12px;
+  }
+  .home-identity-choice > div { min-width: 0; }
+  .home-identity-choice > .button {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    min-width: 0;
+    width: 100%;
+    margin-left: 0;
+  }
 }
 :root:is([data-theme=contrast],[data-contrast=true]) .home-overview-heading,
 :root:is([data-theme=contrast],[data-contrast=true]) .home-counter.button,

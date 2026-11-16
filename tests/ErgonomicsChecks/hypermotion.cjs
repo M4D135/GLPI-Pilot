@@ -48,13 +48,24 @@ module.exports = async ({ page, reset, ok, capture }) => {
   for (const [width, height] of [[1280, 800], [1366, 768], [390, 800]]) {
     await page.setViewportSize({ width, height });
     ok(await page.locator('#root').evaluate(node => node.scrollWidth <= node.clientWidth + 1), `HyperMotion home has no horizontal overflow at ${width}×${height}`);
+    if (width === 390) {
+      ok(await page.locator('.home-identity-choice > div').evaluate(node => node.getBoundingClientRect().width >= 210),
+        'At phone width the identity explanation keeps a readable text column');
+      ok(await page.locator('.home-identity-choice > .button').evaluate(node => node.getBoundingClientRect().width >= 270),
+        'At phone width the identity action occupies a comfortable separate row');
+      await capture('hypermotion-home-mobile-dark');
+    }
   }
   await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
   ok(await page.locator('.home-overview-heading').evaluate(node => getComputedStyle(node).backgroundImage.includes('gradient')), 'The same home design remains styled in light mode');
-  await capture('hypermotion-home-light');
+  await capture('hypermotion-home-mobile-light');
   await page.evaluate(() => controller.abort());
 
   await page.setViewportSize({ width: 1280, height: 800 });
+  await home(false);
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
+  await capture('hypermotion-home-light');
+  await page.evaluate(() => controller.abort());
   await home(true);
   ok(await page.locator('.home-overview-heading .button.primary').innerText() === 'Voir les tickets', 'Loaded home prioritizes opening tickets');
   await page.getByRole('button', { name: 'Gérer les sources', exact: true }).click();
