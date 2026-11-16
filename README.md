@@ -1,4 +1,4 @@
-# GLPI Pilot 3.15.0 · Windows x64
+# GLPI Pilot 3.15.1 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
