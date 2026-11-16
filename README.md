@@ -1,14 +1,14 @@
-# GLPI Pilot 3.15.1 · Windows x64
+# GLPI Pilot 4.0.0 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
 **Un espace commun pour les tickets, les interventions et le pilotage des recherches GLPI accessibles par navigateur et SSO.** Calendrier, carte, tournées, météo, bibliothèque et données d’équipe sont réunis dans une seule interface. Aucun accès API ni accès direct à la base de GLPI n’est nécessaire. Le partage entre machines est facultatif : dossier réseau commun ou serveur PostgreSQL indépendant.
 
-La version 3 utilise un **hôte C# WinForms avec WebView2** et une interface locale HTML/CSS/JavaScript. Les calculs, la pagination, les validations, la persistance et les accès au navigateur restent en C#. Depuis la 3.14.0, seul le pack allégé est publié : il utilise le runtime WebView2 Evergreen de Windows, ou à défaut le runtime fixe publié une seule fois pour tous les outils dans le [Socle Windows](https://github.com/M4D135/socle-windows/releases). Les pages de l’application n’ont besoin d’aucun site hébergé. Le modèle de migration est documenté dans le [contrat WebView](docs/WebView-contract.md), à partir de Domenia 2.
+La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface locale HTML/CSS/JavaScript. Les calculs, la pagination, les validations, la persistance et les accès au navigateur restent en C#. Depuis la 3.14.0, seul le pack allégé est publié : il utilise le runtime WebView2 Evergreen de Windows, ou à défaut le runtime fixe publié une seule fois pour tous les outils dans le [Socle Windows](https://github.com/M4D135/socle-windows/releases). Les pages de l’application n’ont besoin d’aucun site hébergé. Le modèle de migration est documenté dans le [contrat WebView](docs/WebView-contract.md), à partir de Domenia 2.
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). **La validation Windows de la version 3 dépend du résultat du workflow de son commit**, indiqué dans le [rapport de vérification](docs/Rapport-verification.txt) et les journaux de la livraison. La présence de sources, d’un EXE compilé ou d’un ZIP local ne signifie pas que cette validation a réussi.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). **Le code 4.0.0 de la branche HyperMotion reste en prépublication jusqu’à la qualification complète du commit exact et la vérification GLPI/SSO en situation réelle.** La présence de sources, d’un EXE compilé ou d’un ZIP local ne signifie pas que cette validation a réussi. Les rapports et les journaux de qualification de chaque release font foi.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -28,7 +28,11 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
-## 3.15.0 : recherche centrale et SSO — version courante
+## 4.0.0 : HyperMotion et lecture différée des tickets — prépublication
+
+Refonte visuelle Domenia v2/HyperMotion, sans changement des règles métier ou de la disposition des widgets. Accueil plus lisible et contextuel, modes clair/sombre, contraste et mobilité améliorés. La lecture GLPI d'un ticket se déclenche 500 ms après son ouverture, sans collecte au survol, avec annulation si la sélection change, actualisation manuelle immédiate et indicateur K2000 discret. Voir [le périmètre et les limites de qualification de la 4.0.0](docs/RELEASE-4.0.0.md).
+
+## 3.15.0 : recherche centrale et SSO — version historique qualifiée
 
 La version courante réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Elle a été qualifiée par le run 43861855164 (tentative 2, 15/15 jobs verts) et publiée par le run 43872397061 : `GLPI-Pilot_3.15.0_PROD-LIGHT_Windows-x64.zip`, 138 246 401 octets, SHA-256 `f074ecca1536c2fa7eaa5a228550bf97dd4d0ca26ca487fff0ba7e3f11fd1df5`. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
 
