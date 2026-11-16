@@ -147,6 +147,18 @@ internal static partial class Program
         await Capture("calendar-week-light");
         await page.EvaluateAsync("document.documentElement.dataset.theme='dark'"); await page.SetViewportSizeAsync(1280, 800); await Capture("calendar-week-dark-1280");
         Require(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth<=innerWidth+1"), "The 1280-pixel shell contains the calendar without document-level horizontal overflow.");
+        Console.WriteLine("CALENDAR LAYOUT: " + await page.EvaluateAsync<string>("""
+            () => {
+              const bounds = selector => {
+                const element = document.querySelector(selector); if (!element) return null;
+                const box = element.getBoundingClientRect(); return {top:box.top,height:box.height,width:box.width};
+              };
+              return JSON.stringify({font:getComputedStyle(document.body).fontFamily,
+                workspaceScroll:document.querySelector('.workspace').scrollTop,
+                grid:bounds('.calendar-grid-scroll'),controls:bounds('.calendar-controls'),
+                metrics:bounds('.calendar-metrics'),undo:bounds('.calendar-undo-line')});
+            }
+            """));
         Require(await page.EvaluateAsync<bool>("document.querySelector('.calendar-grid-scroll').getBoundingClientRect().top<=390"), "At 1280 × 800 the calendar starts above 390 pixels and keeps its date context and filters accessible.");
         await page.EvaluateAsync("document.documentElement.dataset.theme='light'"); await page.SetViewportSizeAsync(1440, 980);
         host.NextSave = Path.Combine(_root, "planning.ics");

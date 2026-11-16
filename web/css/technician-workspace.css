@@ -51,3 +51,25 @@
 .page-content[data-page=interventions]{gap:8px}.page-content>.ticket-tools-context{margin-bottom:0;gap:6px}.ticket-tool-screen .interventions-workspace{gap:8px}
 .workspace:has(.page-content[data-page=interventions])>.page-heading{min-height:32px;margin-bottom:8px}.workspace:has(.page-content[data-page=interventions])>.page-heading h1{font-size:20px}
 :root:not([data-theme=contrast]) .page-heading::before{content:none}:root:not([data-theme=contrast]) .page-heading h1{background:none;color:var(--text);animation:none}
+
+/* Keep the 1280×800 planning header compact on Windows font metrics.
+   Mini-calendar, filters and common search remain visible. */
+@media (max-width:1300px) and (min-width:1201px){
+  .page-content[data-page=interventions]{gap:6px}
+  .workspace:has(.page-content[data-page=interventions])>.page-heading{min-height:28px;margin-bottom:6px}
+  .ticket-tools-context{gap:4px}
+  .ticket-tools-nav .ticket-tool{min-height:32px}
+  .ticket-tool-screen .interventions-workspace{gap:6px}
+  .calendar-commandbar>.toolbar>.button{height:32px;line-height:1.2}
+  .calendar-controls{flex-wrap:nowrap;padding:2px 0;gap:6px}
+  .calendar-controls>.toolbar{flex-wrap:nowrap;min-width:0}
+  .calendar-controls>.toolbar:last-child>select{max-width:130px}
+  .calendar-controls :is(input,select,.button){height:32px;line-height:1.2;min-width:0}
+  .calendar-controls .button>span{overflow:hidden;text-overflow:ellipsis}
+  .calendar-range-label{font-size:14px;line-height:1.2;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .calendar-scope-line{min-height:18px;line-height:1.2}
+  .calendar-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 8px;padding-bottom:6px}
+  .calendar-metric>div{min-width:0}
+  .calendar-metric strong,.calendar-metric>div>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .calendar-undo-line{min-height:28px;padding:3px 8px}
+}
