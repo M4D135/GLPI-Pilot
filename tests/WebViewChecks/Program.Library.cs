@@ -121,7 +121,8 @@ internal static partial class Program
 
         await View("Résolution");
         await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("imprimante");
-        await Button("Rechercher").ClickAsync();
+        await page.GetByRole(AriaRole.Dialog, new() { Name = "Retrouver une résolution", Exact = true })
+            .GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelectorAll('.library-result').length===1 && !document.querySelector('.library-results').hasAttribute('aria-busy')");
         var resultText = await page.Locator(".library-result").InnerTextAsync();
         Require(resultText.Contains("7000001") && resultText.Contains(LibrarySolution)

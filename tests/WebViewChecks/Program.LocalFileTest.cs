@@ -653,7 +653,7 @@ internal static partial class Program
         var waitedBeforeRejection = await TransitionWithPendingSave("test-file", "Note enregistrée avant le refus d’empreinte");
         await WaitForPageAsync(page, "document.querySelector('#notifications')?.textContent.includes('Le fichier a changé')");
         await Ready("records");
-        await page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
+        await page.Locator(".tickets-workspace[data-view=detail]").WaitForAsync();
         await Button("Consulter les observations").ClickAsync();
         Require(ReferenceEquals(app.Result, sourceBeforeCancel) && waitedBeforeRejection
             && personalSaves.Any(value => value is ("Note enregistrée avant le refus d’empreinte", true))

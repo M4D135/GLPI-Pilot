@@ -345,13 +345,13 @@ internal static partial class Program
             async () => {
               const rows=[...document.querySelectorAll('.page-content table tr')].slice(0,8);if(rows.length<3)return false;
               const read=()=>JSON.stringify(rows.map(node=>{const r=node.getBoundingClientRect();return [node.textContent,...[r.x,r.y,r.width,r.height].map(value=>Math.round(value*100)/100)];}));
-              const before=read(), background=getComputedStyle(document.body,'::before').transform;
+              const before=read();
               await new Promise(resolve=>setTimeout(resolve,900));
-              return before===read()&&background!==getComputedStyle(document.body,'::before').transform;
+              return before===read()&&getComputedStyle(document.body,'::before').content==='none';
             }
             """);
         Require(stableTable && externalRequests == 0 && errors.IsEmpty,
-            "The real ticket rows and values stay fixed while the continuous background moves, with no external request or browser error.");
+            "The real ticket rows and values stay fixed on the sober workspace background, with no decorative background, external request or browser error.");
         await Capture("motion-tickets-stable");
         if (args.Contains("--screenshots"))
         {

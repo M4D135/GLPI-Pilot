@@ -194,7 +194,9 @@ Task CheckTargetPolicy()
 
 async Task CheckDashboardReturn()
 {
-    var focus = new FocusCallTrace();
+    // This case checks the SSO route, not the platform's window manager.
+    // Match the other passive SSO fixtures; native window behaviour has its own checks.
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
     bool authenticated = false;
     var targetQueries = new ConcurrentQueue<string>();
     await using var h = await Create(async route =>
@@ -215,11 +217,14 @@ async Task CheckDashboardReturn()
         }
         else await route.FulfillAsync(new() { Status = 404 });
     }, focus: focus);
-    var result = await h.Service.OpenTargetAsync(Settings(), CancellationToken.None);
+    IPage result;
+    try { result = await h.Service.OpenTargetAsync(Settings(), CancellationToken.None); }
+    catch { foreach (var line in h.Logs) Console.Error.WriteLine("TRACE dashboard-return " + line); throw; }
     Equal(target, result.Url);
     Equal(2, targetQueries.Count);
     True(targetQueries.All(query => query == new Uri(target).Query), "Le retour après SSO doit reprendre tous les paramètres de recherche.");
     True(h.Logs.Any(line => line.Contains("retour automatique", StringComparison.Ordinal)), "Le retour depuis le tableau de bord doit être journalisé.");
+    True(!h.Logs.Any(line => line.Contains("actualisation automatique", StringComparison.Ordinal)), "La redirection SSO passive doit aboutir sans actualisation forcée.");
     Equal(0, focus.BringToFrontCalls);
 }
 

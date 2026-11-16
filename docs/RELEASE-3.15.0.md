@@ -8,4 +8,6 @@ La première connexion SSO peut cocher « Se souvenir de mon choix » puis valid
 
 Les liens provenant de la supervision remplacent correctement une ancienne recherche. Les filtres saisis rapidement dans plusieurs champs sont conservés ensemble. Le changement de relevé invalide les anciennes coordonnées de sélection. Le choix explicite entre carte des tickets et carte des interventions reste mémorisé.
 
+Une correction de lieu conserve la recherche et les tickets cochés malgré l’actualisation du relevé. La fermeture des outils de référentiel recharge la carte sur la révision courante. Si un import est refusé, la fiche pleine page retrouve son contexte et ses observations.
+
 Seul le pack PROD-LIGHT, sans runtime WebView2 embarqué, est destiné à la livraison. Sa qualification Windows/PostgreSQL complète et l’inspection du ZIP original sont requises avant publication. Les données des tests sont synthétiques ; le SSO propre à l’organisation n’est pas simulé à l’identique. Les guides Word/PDF restent leurs instantanés historiques.

@@ -6,6 +6,7 @@ import { teamScopeCatalog, teamScopeSelection } from '../team-scope.js';
 import {workspaceContextKey,readWorkspaceView,saveWorkspaceView,currentScope,rememberScope} from '../work-context.js';
 import { editLocationCorrection } from './terrain-correction.js';
 import { createReadyAction } from '../terrain-activity.js';
+import { ticketSearchContext, publishTicketSearch } from '../ticket-search-context.js';
 
 const selections=new WeakMap();
 
@@ -208,18 +209,28 @@ export async function renderTicketMap(ctx) {
     if (model.visitsWarning) warnings.append(el('p', { class: 'notice warning', text: model.visitsWarning }));
   }
   async function correctRows(rows) {
+    const searchContext=ticketSearchContext(ctx.state);
     await editLocationCorrection(p, { revision: model.revision, rows, onApplied: async result => {
       // Only a successful correction preserves indices across its known revision change.
       await load({ correctedRevision: result.revision });
+      if(linkedSearch&&ctx.state.session.revision===result.revision&&workspaceContextKey(ctx.state)===selectionKey){
+        publishTicketSearch(ctx.state,linkedSearch,searchContext?.total??model.totals.tickets,searchContext?.selectedRows||[],searchContext?.labels||[]);
+        ctx.refreshTicketSearch?.();
+      }
       p.message(result.removed ? `Correction retirée pour ${formatNumber(result.count)} ${unit(result.count)}.`
         : `Site corrigé pour ${formatNumber(result.count)} ${unit(result.count)}. La carte et la liste sont actualisées.`);
     } });
   }
   async function load({ correctedRevision = null } = {}) {
+    if(model&&linkedSearch&&correctedRevision===null&&linkedSearch.revision!==ctx.state.session.revision){
+      await ctx.refresh();return;
+    }
     const before=model,oldFilters=before?JSON.stringify(before.filters):JSON.stringify(previous.filters),oldRows=[...selected];
     viewport=map?.getView()||viewport;
-    const next = await p.call('maps.workspace.get', {...filters,...(linkedSearch?{ticketSearch:linkedSearch}:{})});
+    const search=linkedSearch&&correctedRevision!==null?{...linkedSearch,revision:correctedRevision}:linkedSearch;
+    const next = await p.call('maps.workspace.get', {...filters,...(search?{ticketSearch:search}:{})});
     if (ctx.signal.aborted) return;
+    if(linkedSearch&&correctedRevision===next.revision)linkedSearch.revision=correctedRevision;
     map?.dispose(); mapHost.replaceChildren(); generation++;
     model = next; filters = { ...model.filters }; selected = new Set();
     if(placeKey&&!model.locations.some(location=>location.key===placeKey)){placeKey='';offset=0;}

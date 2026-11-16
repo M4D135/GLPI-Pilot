@@ -24,7 +24,12 @@ internal static partial class Program
         await using (var ui = await LocationCorrectionUi.CreateAsync(browser, settings, source))
         {
             await ui.Navigate();
-            await ui.Page.GetByLabel("Type de ticket", new() { Exact = true }).SelectOptionAsync("incident"); await ui.Idle();
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Modifier la recherche", Exact = true }).ClickAsync(); await ui.Idle();
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Outils du tableau", Exact = true }).ClickAsync();
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Vue des colonnes", Exact = true }).ClickAsync();
+            await ui.Page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).FillAsync("Incident");
+            await ui.Page.GetByLabel("Filtrer Statut", new() { Exact = true }).FillAsync("Nouveau");
+            await ui.Page.Locator(".ticket-tools-nav [data-calendar-tab=map]").ClickAsync(); await ui.Idle();
             await ui.Page.GetByLabel("Rechercher dans les tickets du périmètre").FillAsync("ATX");
             await ui.Page.Locator(".maps-ticket-panel").GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync(); await ui.Idle();
             Require(await ui.Page.Locator(".maps-ticket-rows").GetAttributeAsync("data-total") == "46"
@@ -47,13 +52,19 @@ internal static partial class Program
                 && (await ui.Editor.Locator(".maps-correction-tickets").InnerTextAsync()).Contains("#7001", StringComparison.Ordinal)
                 && (await ui.Editor.Locator(".maps-correction-tickets").InnerTextAsync()).Contains("#7046", StringComparison.Ordinal), "A correction prepared from checked tickets includes both pages and displays the exact two identities before any write.");
             await ui.FindSite("ATX", "Atelier Cobalt"); await ui.Save("Appliquer aux 2 tickets");
-            Require(await ui.Page.GetByLabel("Type de ticket", new() { Exact = true }).InputValueAsync() == "incident"
+            Require(await ui.Page.Locator(".maps-ticket-rows").GetAttributeAsync("data-total") == "46"
                 && await ui.Page.GetByLabel("Rechercher dans les tickets du périmètre").InputValueAsync() == "ATX"
                 && (await ui.Page.Locator(".maps-selection-count").InnerTextAsync()).StartsWith("2 ", StringComparison.Ordinal)
                 && (await ui.Page.Locator("[data-correct-row='45']").Locator("..").InnerTextAsync()).Contains("Correction manuelle", StringComparison.Ordinal), "The real C# batch correction immediately refreshes the list, retaining the ticket type, search, page and two-ticket selection.");
             var map = await Call(ui.App, "maps.workspace.get", new { type = "incident" });
             Require(map.GetProperty("locations").EnumerateArray().Any(location => location.GetProperty("count").GetInt32() == 2
                 && location.GetProperty("place").GetProperty("label").GetString()!.Contains("Atelier Cobalt", StringComparison.Ordinal)), "The actual map groups exactly the two corrected tickets under Atelier Cobalt while the other ambiguous tickets remain separate.");
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Modifier la recherche", Exact = true }).ClickAsync(); await ui.Idle();
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Outils du tableau", Exact = true }).ClickAsync();
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Vue des colonnes", Exact = true }).ClickAsync();
+            Require(await ui.Page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).InputValueAsync() == "Incident"
+                && await ui.Page.GetByLabel("Filtrer Statut", new() { Exact = true }).InputValueAsync() == "Nouveau", "Returning to search after a site correction preserves both central filters at the new source revision.");
+            await ui.Page.Locator(".ticket-tools-nav [data-calendar-tab=map]").ClickAsync(); await ui.Idle();
             await ui.Page.Locator("[data-correct-row='45']").ClickAsync(); await ui.FindSite("ANNEXE", "Annexe fictive");
             var prepared = await Call(ui.App, "terrain.correction.prepare", new { revision = ui.App.Revision, rows = new[] { 0 } });
             await Call(ui.App, "terrain.correction.apply", new { token = prepared.GetProperty("token").GetString(), siteId = site.Id, reason = "Concurrent explicit correction", remove = false });

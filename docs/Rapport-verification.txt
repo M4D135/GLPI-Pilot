@@ -6,6 +6,8 @@ CHANGEMENTS
 - Fiches pleine page, mini-calendrier et agendas, supervision compacte.
 - Préférence SSO reconnue et récupération Superviseur / Assistance / Tickets.
 - Correction des transitions de périmètre et des filtres saisis rapidement.
+- Recherche et sélection conservées après correction de lieu ; carte
+  actualisée après modification du référentiel ou des effectifs.
 - Parcours de tests adaptés aux contrôles réels de la nouvelle navigation.
 
 ÉTAT DE LA VALIDATION

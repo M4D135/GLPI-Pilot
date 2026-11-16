@@ -22,7 +22,7 @@ export async function renderInterventionsWorkspace(ctx){
  }
  const active=params.tab||'planning',navigation=ticketToolNavigation(ctx,active),host=el('div',{class:'ticket-tool-screen'});
  ctx.root.append(navigation,host);
- const local={...ctx,root:host,params,navigate:(id,args={})=>ctx.navigate(id,args)};
+ const local={...ctx,root:host,params,refreshTicketSearch:()=>navigation.refresh(),navigate:(id,args={})=>ctx.navigate(id,args)};
  try{
   const cleanup=await(active==='preparation'?renderFieldPreparation(local):renderPlanning(local));
   const dispose=async()=>{await cleanup?.();navigation.remove();host.remove();};
