@@ -17,7 +17,7 @@ public static class FieldUiTests
   Add("Actual workspace modules and both existing page exports remain importable", async p =>
   {
    Check(await p.EvaluateAsync<bool>("window.test.importsReady"));
-   await p.EvaluateAsync("window.test.mount('interventions')"); Check(await p.Locator("[data-field-nav='interventions']").CountAsync() == 1);
+   await p.EvaluateAsync("window.test.mount('interventions')"); Check(await p.Locator(".ticket-tools-nav").GetByRole(AriaRole.Button, new() { Name = "Matériel", Exact = true }).CountAsync() == 1);
    await p.EvaluateAsync("window.test.mount('pilot')"); Check(await p.Locator("[data-field-nav='pilot']").CountAsync() == 1);
   });
   Add("An existing preparation opens in a themed modal without mutating data", async p =>

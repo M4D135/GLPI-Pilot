@@ -172,13 +172,25 @@ internal static partial class Program
             var rows = await Call(app, "maps.workspace.rows", new { token = Map().GetProperty("token").GetString(), offset = 0, limit = 200 });
             return rows.GetProperty("items").EnumerateArray().Select(row => int.Parse(row.GetProperty("ticket").GetProperty("id").GetString()!, CultureInfo.InvariantCulture)).Order().ToArray();
         }
+        async Task<ILocator> OpenTerrainScope()
+        {
+            await page.GetByRole(AriaRole.Button, new() { Name = "Modifier la recherche", Exact = true }).ClickAsync();
+            await WaitForNavigationTargetAsync(page, "records"); await Settled();
+            await page.Locator(".tickets-work-scope").GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex(@"^Équipes(?: \(\d+\))?$") }).ClickAsync();
+            return page.GetByRole(AriaRole.Dialog, new() { Name = "Équipes du périmètre", Exact = true });
+        }
+        async Task ReturnToMap()
+        {
+            await page.Locator(".ticket-tools-nav").GetByRole(AriaRole.Button, new() { Name = "Carte", Exact = true }).ClickAsync();
+            await WaitForNavigationTargetAsync(page, "terrain-map"); await Settled();
+        }
         async Task ChooseTerrain(params string[] labels)
         {
-            await page.Locator(".maps-scope-toolbar").GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex(@"^Équipes(?: \(\d+\))?$") }).ClickAsync();
-            var picker = page.GetByRole(AriaRole.Dialog, new() { Name = "Équipes", Exact = true });
-            await picker.GetByRole(AriaRole.Button, new() { Name = "Toutes", Exact = true }).ClickAsync();
+            var picker = await OpenTerrainScope();
+            await picker.GetByRole(AriaRole.Button, new() { Name = "Toutes les équipes", Exact = true }).ClickAsync();
             foreach (var label in labels) await picker.GetByRole(AriaRole.Checkbox, new() { Name = label, Exact = true }).CheckAsync();
             await picker.GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync(); await Settled();
+            await ReturnToMap();
         }
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await ReadyAsync(page);
         await Navigate("pilot"); await Stock("100");
@@ -289,28 +301,30 @@ internal static partial class Program
         Require((await MapIds()).SequenceEqual(Enumerable.Range(10001, 84))
             && Map().GetProperty("totals").GetProperty("placed").GetInt32() == 84,
             "The actual Pilotage-to-Terrain action preserves the same 84 source IDs and their referenced positions.");
-        await page.Locator(".maps-scope-toolbar").GetByRole(AriaRole.Button, new() { Name = "Équipes (1)", Exact = true }).ClickAsync();
-        var terrainPicker = page.GetByRole(AriaRole.Dialog, new() { Name = "Équipes", Exact = true });
+        var terrainPicker = await OpenTerrainScope();
         Require(await terrainPicker.GetByRole(AriaRole.Checkbox).CountAsync() == 3
             && await terrainPicker.GetByRole(AriaRole.Checkbox, new() { Name = "Support", Exact = true }).IsCheckedAsync()
             && await terrainPicker.GetByRole(AriaRole.Checkbox, new() { Name = "Groupe isolé", Exact = true }).CountAsync() == 1,
             "Terrain uses the same unique team catalogue and retains an uncovered raw group as a useful choice.");
-        await terrainPicker.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        await terrainPicker.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync(); await ReturnToMap();
         await DeepLink("terrain-map", new { focusKeys = new[] { "group:Support", "team:scope-support" } }); await MapStock(84);
-        Require(await page.Locator(".maps-scope-toolbar").GetByRole(AriaRole.Button, new() { Name = "Équipes (1)", Exact = true }).CountAsync() == 1
-            && (await MapIds()).SequenceEqual(Enumerable.Range(10001, 84)),
-            "A legacy Terrain deep link keeps its tickets while its equivalent team/group keys collapse to one displayed choice.");
+        Require((await MapIds()).SequenceEqual(Enumerable.Range(10001, 84)),
+            "An explicit Terrain team link starts its own shared search with the same active-team scope as the records list.");
+        terrainPicker = await OpenTerrainScope();
+        Require(await page.Locator(".tickets-work-scope").GetByRole(AriaRole.Button, new() { Name = "Équipes (1)", Exact = true }).CountAsync() == 1,
+            "Equivalent legacy group/team keys collapse to one choice in the shared search.");
+        await terrainPicker.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync(); await ReturnToMap();
         await ChooseTerrain("Support", "Réseau"); await MapStock(96);
         Require((await MapIds()).SequenceEqual(Enumerable.Range(10001, 96))
             && Map().GetProperty("totals").GetProperty("tickets").GetInt32() == 96,
-            "Terrain counts the Support/Network union once per source row: 84 plus 18 minus six shared occurrences equals 96.");
+            "Shared search counts the Support/Network active-team union once per row: 84 plus 18 minus six shared occurrences equals 96.");
         await Capture("scope-terrain-union-light-1280");
         await ChooseTerrain("Groupe isolé"); await MapStock(4);
         Require((await MapIds()).SequenceEqual(Enumerable.Range(10097, 4)),
             "An observed group without a configured team remains selectable and reaches its four exact source tickets.");
-        await ChooseTerrain(); await MapStock(100);
-        Require(Map().GetProperty("filters").GetProperty("focusKeys").GetArrayLength() == 0 && (await MapIds()).Length == 100,
-            "All removes the team restriction in Terrain while closed tickets remain excluded from its active stock.");
+        await ChooseTerrain(); await MapStock(104);
+        Require(Map().GetProperty("filters").GetProperty("focusKeys").GetArrayLength() == 0 && (await MapIds()).Length == 104,
+            "All removes the team restriction in the shared search without an independent map status filter hiding four closed matches.");
 
         await Navigate("pilot"); await ChoosePilot("Réseau"); await Stock("18");
         var overlap = Pilot();

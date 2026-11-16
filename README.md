@@ -1,4 +1,4 @@
-# GLPI Pilot 3.14.7 · Windows x64
+# GLPI Pilot 3.15.0 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -28,9 +28,9 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
-## En préparation : recherche centrale et SSO
+## 3.15.0 : recherche centrale et SSO — candidat en qualification
 
-La branche de travail réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Cette évolution n’est pas encore livrée dans le pack 3.14.7. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
+La branche de travail réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Le pack publié reste la 3.14.7 tant que la qualification et la publication de la 3.15.0 ne sont pas terminées. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
 
 ## 3.14.7 : liens de documentation vérifiés
 

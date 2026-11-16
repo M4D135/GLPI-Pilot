@@ -3,7 +3,7 @@ name: Windows et PostgreSQL — qualification des packs PROD / PROD-LIGHT
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, master]
     paths:
       - 'src/**'
       - 'web/**'

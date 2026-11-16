@@ -35,7 +35,7 @@ internal sealed partial class WindowsWebViewFixture
         var referenceId = seeded.GetProperty("reference").GetProperty("id").GetString()!;
         var referenceLabel = seeded.GetProperty("reference").GetProperty("label").GetString()!;
         await NavigateAsync(page, "interventions");
-        await page.Locator("[data-field-nav='interventions']").ClickAsync();
+        await page.Locator(".ticket-tools-nav").GetByRole(AriaRole.Button, new() { Name = "Matériel", Exact = true }).ClickAsync();
         var row = page.Locator("[data-field-plan='" + planId + "']"); await row.WaitForAsync();
         await row.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
         await page.GetByLabel("Référence à ajouter", new() { Exact = true }).SelectOptionAsync(referenceId);

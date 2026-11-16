@@ -57,7 +57,7 @@ export async function renderTicketMap(ctx) {
   const mapHost = el('div', { class: 'maps-inline-host' });
   const rowsHost = el('div', { class: 'maps-ticket-rows' });
   const locationTitle = el('h2', { text: 'Tickets du périmètre' });
-  const search = input('', { type: 'search', placeholder: 'Titre ou identifiant', maxLength: 300, 'aria-label': 'Rechercher dans les tickets du périmètre' });
+  const search = input(ctx.params?.mapSearchText||'', { type: 'search', placeholder: 'Titre ou identifiant', maxLength: 300, 'aria-label': 'Rechercher dans les tickets du périmètre' });
   const selectionSummary = el('span', { class: 'maps-selection-count', role: 'status', 'aria-live': 'polite' });
   const correctSelected = button('Corriger le site des tickets sélectionnés', p.act(() => correctRows([...selected])), { icon: 'map', disabled: true });
   correctSelected.dataset.correctSelection = 'true';

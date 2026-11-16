@@ -1,3 +1,25 @@
+GLPI Pilot 3.15.0 — Recherche centrale, fiches pleine page et SSO
+Rapport préparé pour qualification du candidat du 16 novembre 2026
+
+CHANGEMENTS
+- Recherche et filtres partagés entre carte, planning, tournées et matériel.
+- Fiches pleine page, mini-calendrier et agendas, supervision compacte.
+- Préférence SSO reconnue et récupération Superviseur / Assistance / Tickets.
+- Correction des transitions de périmètre et des filtres saisis rapidement.
+- Parcours de tests adaptés aux contrôles réels de la nouvelle navigation.
+
+ÉTAT DE LA VALIDATION
+Le premier commit d’intégration 1fd5804 a passé ses contrôles locaux mais
+échoué lors de la qualification Windows 43847992852 : contrôles de
+navigation obsolètes et expiration d’un parcours SSO. Ce candidat inclut
+les corrections ; le résultat de sa propre qualification fait foi.
+Le pack doit passer les vrais EXE WinForms/WebView2, les parcours navigateur,
+les contrôles PostgreSQL et l’inspection d’archive avant publication.
+Aucune connexion au SSO d’entreprise de l’utilisateur n’est revendiquée.
+
+HISTORIQUE DES RAPPORTS
+===================================================================
+
 GLPI Pilot 3.14.7 — Liens de documentation vérifiés
 Rapport embarqué avant la qualification Windows du 12 novembre 2026
 

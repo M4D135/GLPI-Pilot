@@ -46,6 +46,7 @@ const api={available:true,call:async(operation,args={},options={})=>{
   return{saved:true,id:args.plan.id,revision:draft.revision+1,pending:true};
  }
  if(operation==='field.close'){drafts.delete(args.token);return{closed:true};}
+ if(operation==='records.list')return{revision:7,total:1,rows:[{index:99,cells:['42','Ticket fictif']}],headers:['ID','Titre']};
  if(operation==='calendar.tickets')return{revision:7,total:1,rows:[{key:'stable-ticket-42',id:'42',title:'Ticket fictif avec clé stable',location:'Site de démonstration',rowIndex:99}]};
  if(operation==='calendar.get')return{revision:7,occurrences:[{key:'stable-series:ordinal-5',title:'Visite fictive répétée',kind:'intervention',startLocal:'2026-11-02T09:00',location:'Site de démonstration'}]};
  if(operation==='field.report'){

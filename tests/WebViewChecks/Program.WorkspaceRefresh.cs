@@ -81,7 +81,7 @@ internal static partial class Program
             """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
         ILocator Refresh() => page.Locator(".page-heading button[title='Actualiser cet espace']");
-        ILocator Tab(string key) => page.Locator($".calendar-tabs [data-calendar-tab='{key}']");
+        ILocator Tab(string key) => page.Locator($".ticket-tools-nav [data-calendar-tab='{key}']");
         async Task Idle() => await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending&&!document.querySelector('#content').hasAttribute('aria-busy')&&!document.querySelector('.interventions-workspace')?.hasAttribute('aria-busy')&&document.querySelector('.page-heading button[title=\"Actualiser cet espace\"]')?.getAttribute('aria-busy')!=='true'");
         int Count(string operation) => requests.Count(request => request.Operation == operation);
         JsonElement Last(string operation) => requests.Last(request => request.Operation == operation).Arguments;
@@ -148,12 +148,11 @@ internal static partial class Program
         await reference.Locator(":scope > .modal-heading button").ClickAsync(); await reference.WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Idle();
         Require(app.IsFileSource && !app.IsTestMode && app.Result!.Rows.Count == 3,
             "The loaded-map scenario uses three rows read by the production CSV importer, not a canned map model.");
-        await page.GetByLabel("Type de ticket", new() { Exact = true }).SelectOptionAsync("incident"); await Idle();
-        await Button("Statuts actifs (4/4)").ClickAsync();
-        var statuses = page.GetByRole(AriaRole.Dialog, new() { Name = "Statuts actifs", Exact = true });
-        foreach (var control in await statuses.GetByRole(AriaRole.Checkbox).AllAsync())
-            if (await control.GetAttributeAsync("aria-label") != "Nouveau") await control.UncheckAsync();
-        await statuses.GetByRole(AriaRole.Button, new() { Name = "Appliquer", Exact = true }).ClickAsync(); await Idle();
+        await Button("Modifier la recherche").ClickAsync(); await Idle();
+        await Button("Outils du tableau").ClickAsync(); await Button("Vue des colonnes").ClickAsync();
+        await page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).FillAsync("Incident");
+        await page.GetByLabel("Filtrer Statut", new() { Exact = true }).FillAsync("Nouveau");
+        await Tab("map").ClickAsync(); await Idle();
         var search = page.GetByLabel("Rechercher dans les tickets du périmètre", new() { Exact = true });
         await search.FillAsync("4101"); await search.PressAsync("Enter"); await Idle();
         await page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 4101", Exact = true }).CheckAsync(); await Idle();
@@ -166,10 +165,10 @@ internal static partial class Program
         await MapSettled();
         var viewportBefore = await MapView(); var filtersBefore = Last("maps.workspace.get"); var mapReads = Count("maps.workspace.get");
         await Refresh().ClickAsync(); await Idle(); await MapSettled(); var viewportAfter = await MapView();
-        Require(Count("maps.workspace.get") == mapReads + 1 && Last("maps.workspace.get").GetRawText() == filtersBefore.GetRawText()
-            && await page.GetByLabel("Type de ticket", new() { Exact = true }).InputValueAsync() == "incident"
-            && Last("maps.workspace.get").GetProperty("statusCodes").EnumerateArray().Select(value => value.GetInt32()).SequenceEqual(new[] { 1 }),
-            "Global refresh reloads the actual ticket map exactly once with the current type and status filters.");
+        Require(Count("maps.workspace.get") == mapReads + 1 && Last("maps.workspace.get").GetProperty("ticketSearch").GetRawText() == filtersBefore.GetProperty("ticketSearch").GetRawText()
+            && Last("maps.workspace.get").GetProperty("ticketSearch").GetProperty("transform").GetProperty("filters").EnumerateArray()
+                .Select(value => value.GetProperty("value").GetString()).Order().SequenceEqual(new[] { "Incident", "Nouveau" }),
+            "Global refresh reloads the actual ticket map exactly once with type and status filters from the shared search.");
         Require(await search.InputValueAsync() == "4101" && await page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 4101", Exact = true }).IsCheckedAsync()
             && Last("maps.workspace.rows").GetProperty("search").GetString() == "4101"
             && Last("maps.workspace.rows").GetProperty("placeKey").GetString() == "site:" + north.Id && await reference.CountAsync() == 0,
