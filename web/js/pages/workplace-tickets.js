@@ -5,6 +5,7 @@ import { openLibraryPrecedents } from '../library-ticket.js';
 import { publishSharedOperation } from './shared-operations.js';
 import { mountMap } from './maps.js';
 import { searchForTools, searchToolParams } from '../ticket-search-context.js';
+import { createTicketLiveRead } from './ticket-live-read.js';
 const personalDrafts = new Map();
 
 export async function renderTickets(ctx) {
@@ -19,8 +20,43 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   const simulation = isSimulation(ctx.state.session);
   let state = await call(ctx, 'workplace.get'), current = null, source = null, opened = null;
   let personal = null, tool = null, disposed = false, version = 0, mapController = null;
+  let readStatus = 'idle', readError = null, readIndicator = null;
   const reader = el('section', { class: 'work-ticket-reader tickets-working-panel', 'aria-label': 'Lecture du ticket' });
   ctx.root.replaceChildren(reader);
+  function paintReadStatus() {
+    if (!readIndicator) return;
+    readIndicator.hidden = simulation || !current?.canRead || readStatus === 'idle' || readStatus === 'paused';
+    readIndicator.dataset.state = readStatus;
+    const labels = {
+      waiting: 'Copie disponible · vérification dans un instant',
+      reading: 'Lecture fraîche de la fiche GLPI…',
+      fresh: 'Fiche à jour · ' + date(current?.readAt),
+      error: 'Lecture indisponible · dernière observation conservée'
+    };
+    readIndicator.querySelector('.ticket-live-read-text').textContent = labels[readStatus] || '';
+    readIndicator.title = readStatus === 'error' ? readError?.message || 'Vous pouvez relancer la lecture.' : '';
+  }
+  function showReadStatus(status, error = null) {
+    readStatus = status; readError = error;
+    paintReadStatus();
+  }
+  const liveRead = createTicketLiveRead({
+    onState: showReadStatus,
+    read: async (ticketKey, signal) => {
+      const generation = version;
+      const updated = await ctx.api.call('workplace.ticket.read', { ticketKey },
+        { signal: ctx.signal ? AbortSignal.any([ctx.signal, signal]) : signal });
+      if (disposed || signal.aborted || generation !== version || current?.personal.key !== ticketKey) return;
+      personal?.remember();
+      await personal?.dispose();
+      if (disposed || signal.aborted || generation !== version || current?.personal.key !== ticketKey) return;
+      current = updated;
+      await draw();
+      return updated;
+    }
+  });
+  ctx.signal?.addEventListener('abort', () => liveRead.cancel(), { once: true });
+  const eligibleForLiveRead = ticket => !simulation && !!ticket?.canRead && !ctx.state.session?.cachedSource && !tool;
   const savePosition = async (ticket, patch = {}) => {
     ticket.personal.readingPosition = { ...ticket.personal.readingPosition, pageIndex: 0, ...patch };
     await ctx.api.call('workplace.ticket.position', { ticketKey: ticket.personal.key, position: ticket.personal.readingPosition });
@@ -36,6 +72,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   async function open(args) {
     const generation = ++version;
+    liveRead.cancel(); showReadStatus('idle');
     await closeTool(); await personal?.dispose(); personal = null;
     const ticket = await call(ctx, 'workplace.ticket.open', args), next = await call(ctx, 'workplace.get');
     if (disposed || ctx.signal?.aborted || generation !== version) return;
@@ -45,6 +82,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     onTicketOpened?.(current, args);
     if (args.section === 'personal') focusPersonal();
     else if (args.section && args.section !== 'reader') await openTool(args.section);
+    if (!disposed && generation === version) liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
   }
   function focusPersonal() {
     const control = reader.querySelector('.tickets-personal textarea');
@@ -91,19 +129,19 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   async function draw() {
     const ticket = current, generation = version;
-    const refresh = run(ctx, async () => {
-      personal?.remember(); const updated = await call(ctx, 'workplace.ticket.read', { ticketKey: ticket.personal.key });
-      if (disposed || current?.personal.key !== ticket.personal.key) return;
-      await personal?.dispose(); current = updated; await draw();
-    });
+    const refresh = run(ctx, () => liveRead.refresh(ticket.personal.key));
     const facts = sourceFacts(ticket), journalHost = el('div'), planningHost=el('section',{class:'tickets-plan-links',hidden:true,'aria-label':'Interventions liées au ticket'});
     const mapHost = el('div', { class: 'tickets-map-host' });
+    readIndicator = el('div', { class: 'ticket-live-read', role: 'status', 'aria-live': 'polite', dataset: { state: readStatus } },
+      el('span', { class: 'ticket-live-read-track', 'aria-hidden': 'true' }, el('span', { class: 'ticket-live-read-sweep' })),
+      el('span', { class: 'ticket-live-read-text' }));
     personal = ticketPersonalEditor(ctx, ticket.personal, state.checklistTemplates, value => { if (current?.personal.key === ticket.personal.key) current.personal = value; }, () => { current = null; onTicketClosed?.(); });
     replaceChildren(reader,
       el('header', { class: 'work-ticket-heading tickets-panel-heading' },
         toolbar(badge(`#${ticket.personal.id}`, 'info'), badge(simulation ? 'Simulation locale' : ticket.loaded ? 'Observation datée' : 'Lecture à demander')),
         el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
         el('p', { class: 'help', text: ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue' }),
+        readIndicator,
         toolbar(button('Actualiser la fiche', refresh, { icon: 'refresh', disabled: !ticket.canRead }),
           button(simulation ? 'Afficher la fiche simulée' : 'Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: ticket.personal.key }); if (simulation) await refresh(); }), { disabled: !ticket.canRead }))),
       !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(note), facts,
@@ -121,6 +159,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({ api: ctx.api, signal: ctx.signal, state: ctx.state, navigate: ctx.navigate }, { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget })), { icon: 'search' }),
       card('Carte du périmètre', mapHost, el('p', { class: 'help', text: 'Tickets du même périmètre et repères du lieu de ce ticket.' })),
       planningHost, el('div',{class:'tickets-detail-content'},journalHost,personal.element));
+    paintReadStatus();
     mapController?.dispose?.(); mapController = null;
     const mapGeneration = version;
     (async () => {
@@ -204,8 +243,14 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   if (ctx.params?.rowIndex != null) await open({ ...ctx.params, rowIndex: Number(ctx.params.rowIndex), revision: Number(ctx.params.revision) });
   else if (ctx.params?.ticketKey) await open({ ...ctx.params });
-  const cleanup = async () => { await closeTool(); await personal?.dispose(); personal = null; mapController?.dispose?.(); mapController = null; disposed = true; version++; };
-  cleanup.openTicket = open; cleanup.ticketKey = () => current?.personal.key; return cleanup;
+  const cleanup = async () => { liveRead.dispose(); await closeTool(); await personal?.dispose(); personal = null; mapController?.dispose?.(); mapController = null; disposed = true; version++; };
+  cleanup.openTicket = open;
+  cleanup.ticketKey = () => current?.personal.key;
+  cleanup.pauseLiveRead = () => { liveRead.cancel(); showReadStatus('paused'); };
+  cleanup.resumeLiveRead = () => {
+    if (current && !disposed) liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
+  };
+  return cleanup;
 }
 
 function ticketPersonalEditor(ctx, personal, templates, onSaved, onRemoved) {

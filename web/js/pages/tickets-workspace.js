@@ -54,11 +54,11 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
     const target = readerRoot.querySelector('.work-ticket-heading h2');
     if (target) { target.tabIndex = -1; target.focus({ preventScroll: true }); }
   };
-  const returnToList = () => perform(showList);
+  const returnToList = () => { readerCleanup?.pauseLiveRead?.(); return perform(showList); };
   function drawPath() {
     const position = sequence?.revision === ctx.state.session?.revision ? sequence.rows.indexOf(activeRow) : -1;
     const absolute=position<0?-1:(sequence.offset||0)+position;
-    const move = delta => perform(async()=>{const args=await listCleanup.ticketAt(absolute+delta);if(args)await showTicket(args);});
+    const move = delta => { readerCleanup?.pauseLiveRead?.(); return perform(async()=>{const args=await listCleanup.ticketAt(absolute+delta);if(args)await showTicket(args);}); };
     replaceChildren(path, button('Retour à la liste', returnToList, { icon: 'arrow', attributes: { class: 'button tickets-back' } }),
       position >= 0 ? toolbar(badge(`${absolute + 1} / ${sequence.total}`),
         button('Ticket précédent', () => move(-1), { disabled: absolute === 0, icon: 'arrow', attributes: { class: 'button tickets-back' } }),
@@ -123,6 +123,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
     try {
       if (!readerCleanup) await mountReader(args);
       else if (!reused) await readerCleanup.openTicket(args);
+      else readerCleanup.resumeLiveRead?.();
       if (disposed || ctx.signal?.aborted) return;
       drawPath(); detail.scrollTop = 0; scrollHost.scrollTop = 0; focusReader();
     } catch (error) {
@@ -131,6 +132,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
     }
   }
   async function showList() {
+    readerCleanup?.pauseLiveRead?.();
     await ensureList(); if (disposed || ctx.signal?.aborted) return;
     showingDetail = false; updateLayout(); drawResume();
     requestAnimationFrame(() => {
@@ -158,7 +160,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   await showList();
   if (ctx.params?.rowIndex != null || ctx.params?.ticketKey) await showTicket({ ...ctx.params, rowIndex: ctx.params.rowIndex == null ? undefined : Number(ctx.params.rowIndex), revision: ctx.params.revision == null ? undefined : Number(ctx.params.revision) });
   else if (resumeActive || ctx.params?.resumeTicket) { const work = await ctx.api.call('workplace.get', {}, { signal: ctx.signal }); if (work.activeTicketKey) await showTicket({ ticketKey: work.activeTicketKey, section: ctx.params?.section }); }
-  const cleanup=async () => { await queue; await readerCleanup?.(); await listCleanup?.(); disposed = true;  if (ctx.root.dataset.workspace === 'records') delete ctx.root.dataset.workspace; };
+  const cleanup=async () => { readerCleanup?.pauseLiveRead?.(); await queue; await readerCleanup?.(); await listCleanup?.(); disposed = true;  if (ctx.root.dataset.workspace === 'records') delete ctx.root.dataset.workspace; };
   cleanup.identityParams=()=>({...listCleanup?.identityParams?.(),...(showingDetail?currentArgs:{ticketKey:undefined,rowIndex:undefined,section:undefined,resumeTicket:false})});
   return cleanup;
 }

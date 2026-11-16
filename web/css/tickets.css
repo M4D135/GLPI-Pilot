@@ -53,6 +53,61 @@
 .tickets-panel-heading h2:focus { outline: none; }
 .tickets-panel-heading > .toolbar { margin-block: 7px; }
 .tickets-panel-heading .button { font-size: 11px; }
+/* Ticket cockpit: the cached fiche stays readable while a fresh observation
+   is requested. The tiny moving light is activity feedback, not a fake % bar. */
+.tickets-panel-heading {
+  position: relative; isolation: isolate; overflow: hidden;
+  padding: 18px 20px; border: 1px solid color-mix(in srgb,var(--brand-2,#6a5cff) 26%,var(--border));
+  border-radius: 17px;
+  background: linear-gradient(120deg,
+    color-mix(in srgb,var(--brand-1,#066ddb) 7%,var(--surface)),
+    color-mix(in srgb,var(--brand-2,#6a5cff) 8%,var(--surface)) 65%,
+    color-mix(in srgb,var(--brand-3,#19c3b2) 6%,var(--surface)));
+  box-shadow: inset 0 1px color-mix(in srgb,#fff 10%,transparent),0 10px 28px #0000000b;
+}
+.tickets-panel-heading::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  width: 220px; height: 220px; right: -90px; top: -150px; border-radius: 50%;
+  background: color-mix(in srgb,var(--brand-2,#6a5cff) 20%,transparent); filter: blur(35px);
+}
+.ticket-live-read {
+  display: flex; align-items: center; gap: 9px; min-height: 16px;
+  margin: 8px 0; color: var(--muted); font-size: 11px; line-height: 1.35;
+}
+.ticket-live-read[hidden] { display: none; }
+.ticket-live-read-track {
+  position: relative; flex: 0 0 78px; width: 78px; height: 3px; overflow: hidden;
+  border-radius: 99px; background: color-mix(in srgb,var(--border) 75%,var(--surface));
+  box-shadow: inset 0 0 2px #00000020;
+}
+.ticket-live-read-sweep {
+  display: block; position: absolute; top: 0; bottom: 0; width: 38%; left: 0;
+  border-radius: inherit; background: linear-gradient(90deg,transparent,#ff7ab6 38%,#8bbeff 78%,transparent);
+  opacity: .22; transform: translateX(-105%);
+}
+.ticket-live-read[data-state=reading] .ticket-live-read-sweep { opacity: .85; }
+.ticket-live-read[data-state=fresh] .ticket-live-read-track {
+  background: color-mix(in srgb,var(--brand-3,#19c3b2) 40%,var(--surface));
+}
+.ticket-live-read[data-state=fresh] .ticket-live-read-sweep {
+  transform: translateX(160%); opacity: .55; background: var(--brand-3,#19c3b2);
+}
+.ticket-live-read[data-state=error] { color: var(--warning); }
+.ticket-live-read[data-state=error] .ticket-live-read-track { background: color-mix(in srgb,var(--warning) 40%,var(--surface)); }
+:root[data-motion=normal][data-domenia-motion=on] .ticket-live-read[data-state=reading] .ticket-live-read-sweep {
+  animation: ticket-kitt-scan 1.65s ease-in-out infinite alternate;
+}
+@keyframes ticket-kitt-scan {
+  from { transform: translateX(-105%); } to { transform: translateX(260%); }
+}
+.tickets-panel-heading .help { margin-bottom: 0; }
+.tickets-actionbar .button {
+  border-radius: 11px; transition: background-color 180ms,border-color 180ms,box-shadow 180ms;
+}
+:root[data-motion=normal] .tickets-actionbar .button:hover {
+  border-color: color-mix(in srgb,var(--accent) 35%,var(--border));
+  box-shadow: 0 4px 16px color-mix(in srgb,var(--brand-1,#066ddb) 12%,transparent);
+}
 .tickets-source-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; padding: 12px 0; }
 .tickets-source-facts > div { padding: 9px 11px; background: color-mix(in srgb,var(--accent) 4%,var(--surface)); border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
 .tickets-source-facts span { display: block; color: var(--muted); font-size: 10px; margin-bottom: 4px; }
