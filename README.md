@@ -28,9 +28,9 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
-## 3.15.0 : recherche centrale et SSO — candidat en qualification
+## 3.15.0 : recherche centrale et SSO — version courante
 
-La branche de travail réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Le pack publié reste la 3.14.7 tant que la qualification et la publication de la 3.15.0 ne sont pas terminées. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
+La version courante réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Elle a été qualifiée par le run 43861855164 (tentative 2, 15/15 jobs verts) et publiée par le run 43872397061 : `GLPI-Pilot_3.15.0_PROD-LIGHT_Windows-x64.zip`, 138 246 401 octets, SHA-256 `f074ecca1536c2fa7eaa5a228550bf97dd4d0ca26ca487fff0ba7e3f11fd1df5`. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
 
 ## 3.14.7 : liens de documentation vérifiés
 
