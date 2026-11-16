@@ -97,7 +97,11 @@ public sealed partial class PilotApplication
         var (offset, limit) = TerrainPage(args); var term = Text(args, "search", 120); var state = Text(args, "state", 20); var date = Text(args, "date", 10);
         if (state.Length > 0 && state is not ("draft" or "ready" or "done")) throw new InvalidDataException("État de tournée inconnu.");
         if (date.Length > 0) _ = TerrainDate(date);
+        var searchRows = TicketSearchRows(args, ct);
+        var searchIds = searchRows is null ? null : CalendarCatalog(ct).Where(ticket => searchRows.Contains(ticket.RowIndex)).Select(ticket => ticket.Id).ToHashSet(StringComparer.Ordinal);
+        var searchSource = searchRows is null ? "" : CityOverrideStore.SourceKey(RequireResult());
         var rows = ScheduledTourStore.Load(DataPath("scheduled-tours.json")).Tours
+            .Where(value => searchIds is null || value.SourceKey == searchSource && value.Tickets.Any(ticket => searchIds.Contains(ticket.TicketId)))
             .Where(value => (state.Length == 0 || value.State == state) && TerrainContains(value.Name, term)
                 && (date.Length == 0 || value.Date == date || value.Stops.Any(stop => stop.Date == date)))
             .OrderByDescending(value => value.Date, StringComparer.Ordinal).ThenBy(value => value.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();

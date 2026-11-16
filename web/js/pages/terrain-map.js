@@ -21,7 +21,8 @@ export async function renderTicketMap(ctx) {
   if (simulationText) simulationText.textContent = 'Tickets et tournées restent dans la simulation. Les rues OpenStreetMap utilisent Internet ; un fond local reste disponible hors connexion.';
   const loaded = ctx.state.session?.loaded === true;
   const previous=readWorkspaceView(ctx.state,'map'),shared=currentScope(ctx.state);
-  const initial = {focusKeys:shared.focusKeys,technicianKeys:shared.technicianKeys,mine:!!ctx.state.settings?.dashboard?.personalTechnician,...previous.filters,...ctx.params};
+  const linkedSearch=ctx.params?.ticketSearch;
+  const initial = {focusKeys:shared.focusKeys,technicianKeys:shared.technicianKeys,mine:!!ctx.state.settings?.dashboard?.personalTechnician,...previous.filters,...ctx.params,...(linkedSearch?{focusKeys:[],technicianKeys:[],mine:false,type:'all',statusCodes:[1,2,3,4]}:{})};
   let model, map = null, filters = {
     focusKeys: Array.isArray(initial.focusKeys) ? [...initial.focusKeys] : initial.focusKey ? [initial.focusKey] : [],
     technicianKeys: Array.isArray(initial.technicianKeys) ? [...initial.technicianKeys] : initial.technicianKey ? [initial.technicianKey] : [],
@@ -49,7 +50,7 @@ export async function renderTicketMap(ctx) {
         panelButton('Panier et ordre des communes', 'projection'),
         panelButton('Services de route et de météo', 'services'))));
   actions.classList.add('maps-workspace-actions');
-  const controls = el('div', { class: 'maps-scope-toolbar toolbar' });
+  const controls = el('div', { class: 'maps-scope-toolbar toolbar',hidden:!!linkedSearch });
   const scopeSummary = el('p', { class: 'maps-scope-summary', role: 'status', 'aria-live': 'polite' });
   const totals = el('div', { class: 'maps-workload-totals' });
   const warnings = el('div', { class: 'maps-workload-warnings' });
@@ -189,7 +190,7 @@ export async function renderTicketMap(ctx) {
       button('Actualiser', p.act(() => load()), { icon: 'refresh' }));
     const groupLabels = teamSelection.options.map(choice => choice.label);
     const personLabels = filters.mine ? [model.choices.personalName] : technicians.filter(choice => filters.technicianKeys.includes(choice.key)).map(choice => choice.label);
-    scopeSummary.textContent = [groupLabels.length ? groupLabels.join(' · ') : 'Toutes les équipes',
+    scopeSummary.textContent = linkedSearch?`Recherche de tickets · ${formatNumber(model.totals.tickets)} ${unit()} · relevé du ${formatDate(model.sourceDate)}`:[groupLabels.length ? groupLabels.join(' · ') : 'Toutes les équipes',
       personLabels.length ? personLabels.join(' · ') : 'Tous les techniciens', `${formatNumber(model.totals.tickets)} ${unit()} · relevé du ${formatDate(model.sourceDate)}`].join(' — ');
   }
   function paintTotals() {
@@ -201,8 +202,8 @@ export async function renderTicketMap(ctx) {
     totals.replaceChildren(...facts.map(([label, value, detail, symbol]) => el('div', { class: `maps-workload-total tone-${symbol}` },
       el('span', { text: label }), el('strong', { text: formatNumber(value) }), el('small', { text: detail }))));
     warnings.replaceChildren();
-    if (!model.activeAvailable) warnings.append(el('p', { class: 'notice warning', text: 'Le stock actif ne peut pas être déterminé. Vérifiez la colonne Statut et ses correspondances.' }));
-    if (model.sourceUnknownStatus) warnings.append(el('p', { class: 'help', text: `${formatNumber(model.sourceUnknownStatus)} lignes au statut non reconnu dans le relevé complet sont exclues du stock actif. Les tickets résolus et clos sont également exclus.` }));
+    if (!linkedSearch && !model.activeAvailable) warnings.append(el('p', { class: 'notice warning', text: 'Le stock actif ne peut pas être déterminé. Vérifiez la colonne Statut et ses correspondances.' }));
+    if (!linkedSearch && model.sourceUnknownStatus) warnings.append(el('p', { class: 'help', text: `${formatNumber(model.sourceUnknownStatus)} lignes au statut non reconnu dans le relevé complet sont exclues du stock actif. Les tickets résolus et clos sont également exclus.` }));
     if (model.totals.review) warnings.append(el('p', { class: 'help', text: `${formatNumber(model.totals.review)} ${unit(model.totals.review)} avec une localisation à vérifier. La liste conserve toutes les lignes de ce périmètre.` }));
     if (model.visitsWarning) warnings.append(el('p', { class: 'notice warning', text: model.visitsWarning }));
   }
@@ -217,7 +218,7 @@ export async function renderTicketMap(ctx) {
   async function load({ correctedRevision = null } = {}) {
     const before=model,oldFilters=before?JSON.stringify(before.filters):JSON.stringify(previous.filters),oldRows=[...selected];
     viewport=map?.getView()||viewport;
-    const next = await p.call('maps.workspace.get', filters);
+    const next = await p.call('maps.workspace.get', {...filters,...(linkedSearch?{ticketSearch:linkedSearch}:{})});
     if (ctx.signal.aborted) return;
     map?.dispose(); mapHost.replaceChildren(); generation++;
     model = next; filters = { ...model.filters }; selected = new Set();
@@ -229,7 +230,7 @@ export async function renderTicketMap(ctx) {
     paintControls(); paintTotals(); paintSelection(); paintLocation();
     map = mountMap(ctx, model, mapHost, { onSelect: choosePlace,view:viewport });
     await loadRows();
-    rememberScope(ctx.state,filters);
+    if(!linkedSearch)rememberScope(ctx.state,filters);
     if (oldRows.length&&!selected.size) p.message('Le périmètre a changé. Sélectionnez les tickets à planifier dans cette nouvelle vue.');
     p.root.dataset.ready = 'true';
   }

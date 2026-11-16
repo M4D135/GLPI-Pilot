@@ -28,6 +28,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
+## En préparation : recherche centrale et SSO
+
+La branche de travail réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Cette évolution n’est pas encore livrée dans le pack 3.14.7. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
+
 ## 3.14.7 : liens de documentation vérifiés
 
 L’application est identique à la 3.14.5 et à la 3.14.6. Dans les documents du pack, les liens vers Domenia 2 visent désormais sa branche principale, et deux liens vers des commits effacés sont remplacés par un texte. Tous les liens relatifs et tous les liens GitHub de la documentation ont été vérifiés.

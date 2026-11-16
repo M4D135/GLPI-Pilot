@@ -314,8 +314,8 @@ public static class WorkBrowserChecks
         await row.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
         await ui.Page.Locator(".work-ticket-heading h2").WaitForAsync();
         Check((await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#" + expectedId + " ·", StringComparison.Ordinal)
-            && await ui.Page.EvaluateAsync<bool>("()=>workPage==='records'&&!document.querySelector('.tickets-list-pane').hidden&&!document.querySelector('.tickets-detail-pane').hidden&&document.querySelector('.tickets-workspace').classList.contains('has-detail')"),
-            "Opening a sorted and paged row keeps its original index and exposes an adjacent working panel beside the same list.");
+            && await ui.Page.EvaluateAsync<bool>("()=>workPage==='records'&&document.querySelector('.tickets-list-pane').hidden&&!document.querySelector('.tickets-detail-pane').hidden&&document.querySelector('.tickets-workspace').classList.contains('has-detail')"),
+            "Opening a sorted and paged row keeps its original index and opens a full-page ticket while retaining the hidden search.");
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Ticket suivant", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("id=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#'+id+' ·')", ui.Fixture.Source.Rows[originalIndex - 1][0]);
         Check((await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#" + ui.Fixture.Source.Rows[originalIndex - 1][0] + " ·", StringComparison.Ordinal));

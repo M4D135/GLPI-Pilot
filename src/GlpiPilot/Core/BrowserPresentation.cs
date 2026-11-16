@@ -176,7 +176,7 @@ public sealed partial class BrowserService
         await SetPageWindowAsync(page, true, ct);
         if (page.IsClosed || BackgroundMode || revision != Interlocked.Read(ref _presentationRevision)) return;
         await page.BringToFrontAsync();
-        Log?.Invoke("SSO · validation visible détectée : navigateur affiché temporairement. Aucune case ni aucun bouton de connexion n’est actionné automatiquement.");
+        Log?.Invoke("SSO · validation visible détectée : navigateur affiché temporairement. La préférence SSO reconnue peut être validée automatiquement ; toute autre intervention humaine reste accessible.");
     }
 
     private async Task ResumeAfterAuthenticationAsync(CancellationToken ct)

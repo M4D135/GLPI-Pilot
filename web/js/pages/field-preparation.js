@@ -24,7 +24,7 @@ export async function renderFieldPreparation(ctx){
  const status=el('div',{class:'field-status',role:'status'}),errors=el('div',{class:'field-errors','aria-live':'polite'}),notices=el('div',{class:'field-notices'});
  const metrics=el('div',{class:'field-metrics'}),rows=el('div',{class:'field-plan-list'}),materials=el('div',{class:'field-material-summary'});
  const pagination=el('div',{class:'field-pagination'}),selectionLabel=el('span',{class:'field-selection-label'});
- const call=(operation,args={},localSignal=signal)=>api.call(operation,args,{signal:localSignal});
+ const call=(operation,args={},localSignal=signal)=>api.call(operation,['calendar.tickets','calendar.get'].includes(operation)&&ctx.params?.ticketSearch?{...args,ticketSearch:ctx.params.ticketSearch}:args,{signal:localSignal});
  const problem=(error,host=errors)=>{if(error?.name==='AbortError'||disposed)return;replaceChildren(host,el('div',{class:'notice danger',role:'alert',text:error?.message||String(error)}));};
  const run=fn=>async()=>{try{await fn();}catch(error){problem(error,modal?.errors||errors);}};
  const filters=createFieldFilters({call,run,state,params:ctx.params,onTour:tourId=>showReport({tourId,timeZoneId:zone,title:'Fiches de tournée',archive:filters.archive()}),onSelectAll:selectAll,onChange:async()=>{offset=0;await load(true);}});
@@ -36,7 +36,7 @@ export async function renderFieldPreparation(ctx){
  function request(){
   if(!!from.value!==!!to.value)throw new Error('Indiquez le début et la fin de période, ou laissez les deux dates vides.');
   if(from.value&&to.value<from.value)throw new Error('La date de fin doit être égale ou postérieure au début.');
-  return{...filters.read(),scope:scope.value,search:search.value,includeClosed:closed.checked,offset,limit:30,...(from.value?{from:from.value,to:addDays(to.value,1),timeZoneId:zone}:{})};
+  return{...(ctx.params?.ticketSearch?{ticketSearch:ctx.params.ticketSearch}:{}),...filters.read(),scope:scope.value,search:search.value,includeClosed:closed.checked,offset,limit:30,...(from.value?{from:from.value,to:addDays(to.value,1),timeZoneId:zone}:{})};
  }
  async function load(clear=false){
   const version=++loading;++selectionGeneration;shell.setAttribute('aria-busy','true');errors.replaceChildren();

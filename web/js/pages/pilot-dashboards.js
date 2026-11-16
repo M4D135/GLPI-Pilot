@@ -206,7 +206,7 @@ export async function renderPilotWorkspace(ctx) {
     root.dataset.businessEditing = String(editing); root.dataset.layoutEditing = String(editing);
     root.dataset.weatherScope = model.weatherScope?.mode || 'service';
     replaceChildren(content); replaceChildren(navigation);
-    content.dataset.density = board.density || 'comfortable';
+    content.dataset.density = board.density || 'compact';
     if (model.comparison) content.append(comparisonCard(model.snapshot, model.comparison));
     const widgets = new Map(model.widgets.map(item => [item.id, item]));
     if (editing) content.append(el('div', { class: 'workspace-composition-tools no-print' },

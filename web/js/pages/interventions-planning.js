@@ -27,7 +27,8 @@ export async function renderInterventionsWorkspace(ctx){
  let mapChoice=['planning','tickets'].includes(remembered.mapChoice)?remembered.mapChoice:'',mapMode='';
  const mapDefault=(entry={})=>entry.ticketMap||entry.panel?'tickets':mapChoice||(mapMode==='tickets'||state.session?.loaded===true?'tickets':'planning');
  mapMode=mapDefault(initial);
- let filters={technicians:readKeys(initial.technicianKeys||remembered.technicians),teams:readKeys(initial.teamKeys||remembered.teams),mine:initial.mine??remembered.mine??false};
+ let filters={technicians:readKeys(initial.technicianKeys||(initial.ticketSearch?[]:remembered.technicians)),teams:readKeys(initial.teamKeys||(initial.ticketSearch?[]:remembered.teams)),mine:initial.mine??(initial.ticketSearch?false:remembered.mine)??false};
+ let followSearch=!!initial.ticketSearch;
  let model=null,occurrences=[],editor=null,disposed=false,readController=null,loadVersion=0,mutation=false,refreshPending=false,undo=null;
  let childCleanup=null,childController=null,childSourceLoaded=false,childEntryParams={...initial},map=null,mapHost=null,tabVersion=0,panelMode='',dragKey='',dragTicket=null;
  let gridScroll=typeof remembered.scroll==='number'?remembered.scroll:null;
@@ -37,7 +38,8 @@ export async function renderInterventionsWorkspace(ctx){
  const heading=el('div',{class:'calendar-commandbar'}),controls=el('div',{class:'calendar-controls'}),scopeLine=el('div',{class:'calendar-scope-line'});
  const metrics=el('div',{class:'calendar-metrics','aria-label':'Repères du planning'}),notice=el('div',{class:'calendar-notices','aria-live':'polite'});
  const canvas=el('div',{class:'calendar-board',tabIndex:-1}),panel=el('aside',{class:'calendar-side',hidden:true,'aria-label':'Détail de la planification'});
- const stage=el('div',{class:'calendar-stage'},canvas,panel),undoHost=el('div',{class:'calendar-undo','aria-live':'polite'});
+ const mini=el('aside',{class:'calendar-mini-rail','aria-label':'Navigation du calendrier'});
+ const stage=el('div',{class:'calendar-stage'},mini,canvas,panel),undoHost=el('div',{class:'calendar-undo','aria-live':'polite'});
  const selection=el('span',{class:'calendar-range-label'}),status=el('span',{class:'calendar-load-status',role:'status'});
  let layoutFrame=0;const fitViewport=()=>{if(disposed)return;const top=stage.getBoundingClientRect().top;shell.style.setProperty('--calendar-viewport-height',`${Math.max(320,window.innerHeight-Math.max(70,top)-48)}px`);};
  const layoutObserver=new ResizeObserver(()=>{cancelAnimationFrame(layoutFrame);layoutFrame=requestAnimationFrame(fitViewport);});
@@ -48,7 +50,7 @@ export async function renderInterventionsWorkspace(ctx){
  function editorState(){window.dispatchEvent(new CustomEvent('pilot:calendar-editor',{detail:{open:panelMode==='editor'||panelMode==='shift'||!!editor,dirty:!!editor?.dirty}}));}
  function persist(){const scroller=canvas.querySelector('.calendar-grid-scroll');if(scroller)gridScroll=scroller.scrollTop;saveWorkspaceView(state,'calendar',{date,view,tab,mapMode,...(mapChoice?{mapChoice}:{}),...filters,...(gridScroll!==null?{scroll:gridScroll}:{})});}
  function range(){return calendarRange(date,view);}
- function request(){return{from:range().from,to:range().to,technicians:filters.mine&&model?.personalTechnician?[model.personalTechnician]:filters.technicians,teams:filters.teams,scope:filters.mine?'mine':'all',mine:filters.mine};}
+ function request(){return{...(followSearch&&initial.ticketSearch?{ticketSearch:initial.ticketSearch}:{}),from:range().from,to:range().to,technicians:filters.mine&&model?.personalTechnician?[model.personalTechnician]:filters.technicians,teams:filters.teams,scope:filters.mine?'mine':'all',mine:filters.mine};}
  function displayZone(){return model?.timeZoneId||Intl.DateTimeFormat().resolvedOptions().timeZone;}
  function resources(){return model?.resources||[];}
  function labelFor(key){return resourceLabel(resources().find(resource=>resource.key===key))||key;}
@@ -59,7 +61,7 @@ export async function renderInterventionsWorkspace(ctx){
  function selected(item){return editor?.occurrence?.key===item.key;}
  function timeLabel(item){return item.allDay?'Toute la journée':`${localTime(item.displayStart||item.startLocal)}–${localTime(item.displayEnd||item.endLocal)}`;}
  function updateTabs(){replaceChildren(tabBar,...[['planning','Planning','calendar'],['map','Carte','map'],['tours','Tournées','route']].map(([key,label,symbol])=>button(label,action(()=>switchTab(key)),{icon:symbol,attributes:{class:`button calendar-tab ${tab===key?'active':''}`,'aria-current':tab===key?'page':undefined,dataset:{calendarTab:key}}})));shell.dataset.tab=tab;}
- heading.append(tabBar,toolbar(button('À planifier',action(()=>showBacklog()),{icon:'ticket',attributes:{dataset:{calendarAction:'backlog'}}}),button('Nouvelle intervention',action(()=>createEvent()),{primary:true,icon:'plus',attributes:{dataset:{calendarAction:'create'}}})));
+ heading.append(initial.toolsShell?el('h2',{class:'calendar-tool-title',text:tab==='map'?'Carte des tickets':tab==='tours'?'Tournées':'Planning'}):tabBar,toolbar(button('À planifier',action(()=>showBacklog()),{icon:'ticket',attributes:{dataset:{calendarAction:'backlog'}}}),button('Nouvelle intervention',action(()=>createEvent()),{primary:true,icon:'plus',attributes:{dataset:{calendarAction:'create'}}})));
  controls.append(toolbar(button('‹',action(()=>shiftPeriod(-1)),{title:'Période précédente',attributes:{'aria-label':'Période précédente'}}),button('Aujourd’hui',action(async()=>{date=today(displayZone());await periodChanged();})),button('›',action(()=>shiftPeriod(1)),{title:'Période suivante',attributes:{'aria-label':'Période suivante'}}),dateInput,selection),toolbar(viewInput,scopeInput,button('Filtrer',action(()=>showFilters()),{icon:'users',attributes:{dataset:{calendarAction:'filters'}}}),el('details',{class:'calendar-more'},el('summary',{text:'Options'}),el('div',{},button('Techniciens et disponibilités',action(()=>showResources()),{icon:'users'}),button('Déplacer plusieurs interventions',action(()=>showBatchShift()),{icon:'calendar'}),button('Versions à examiner',action(()=>showConflictGroups()),{icon:'layers',attributes:{dataset:{calendarAction:'conflicts'}}}),button('Rappels du planning',action(()=>showReminders()),{icon:'bell'}),button('Exporter en calendrier (.ics)',action(()=>exportCalendar()),{icon:'download'}),button('Exporter les fiches d’intervention',action(()=>exportCalendar('html')),{icon:'log'}),button('Imprimer le planning',()=>window.print(),{icon:'log'}),button('Actualiser',action(()=>load()),{icon:'refresh'})))));
  shell.append(heading,controls,scopeLine,metrics,notice,undoHost,stage);root.append(shell);
  for(const node of [heading,controls,metrics,notice,undoHost])layoutObserver.observe(node);window.addEventListener('resize',fitViewport);
@@ -114,11 +116,32 @@ export async function renderInterventionsWorkspace(ctx){
   }finally{signal?.removeEventListener('abort',abort);if(sequence===loadVersion){status.textContent='';shell.removeAttribute('aria-busy');}}
  }
  function paintPlanning(){
+  paintMiniCalendar();
   const previous=canvas.querySelector('.calendar-grid-scroll');const previousScroll=previous?.scrollTop;
   replaceChildren(canvas,view==='month'?monthGrid():view==='resources'?resourceWeek():view==='agenda'?agendaGrid():timeGrid());
   const scroller=canvas.querySelector('.calendar-grid-scroll');if(scroller){const geometry=scroller.querySelector('[data-start-minute]'),first=occurrences.filter(item=>!item.allDay).sort((a,b)=>a.displayStart.localeCompare(b.displayStart))[0],target=first?Math.max(0,minuteOf(first.displayStart)-30):480;scroller.scrollTop=previousScroll??gridScroll??(geometry?Math.max(0,(target-Number(geometry.dataset.startMinute))*Number(geometry.dataset.pixelsPerMinute)):0);scroller.addEventListener('scroll',persist,{passive:true});}
   if(!occurrences.length)canvas.append(el('div',{class:'calendar-empty-hint'},icon('calendar'),el('span',{text:'Cliquez sur un créneau pour réserver une intervention, avec ou sans ticket.'})));
   markSelection();
+ }
+ function paintMiniCalendar(){
+  const month=date.slice(0,7)+'-01',start=addDays(month,-((new Date(month+'T12:00:00').getDay()+6)%7));
+  const label=new Intl.DateTimeFormat('fr-FR',{month:'long',year:'numeric'}).format(new Date(month+'T12:00:00'));
+  const days=el('div',{class:'calendar-mini-days'},...['L','M','M','J','V','S','D'].map(text=>el('span',{class:'calendar-mini-weekday',text})));
+  for(let index=0;index<42;index++){
+   const day=addDays(start,index),current=day===date,isToday=day===today(displayZone());
+   days.append(button(String(Number(day.slice(8))),action(async()=>{date=day;await periodChanged();}),{attributes:{class:`button calendar-mini-day ${current?'selected':''} ${isToday?'today':''} ${day.slice(0,7)!==date.slice(0,7)?'outside':''}`,'aria-label':dateLabel(day),'aria-pressed':String(current),'aria-current':isToday?'date':undefined}}));
+  }
+  const agendas=el('div',{class:'calendar-mini-agendas'});
+  if(initial.ticketSearch){const linked=input('',{type:'checkbox',checked:followSearch,'aria-label':'Limiter aux tickets de la recherche'});linked.addEventListener('change',action(async()=>{followSearch=linked.checked;await load();}));agendas.append(el('label',{},linked,el('span',{text:'Liés à la recherche'})));}
+  const all=input('',{type:'checkbox',checked:!filters.mine&&!filters.technicians.length,'aria-label':'Tous les agendas'});
+  all.addEventListener('change',action(async()=>{filters.mine=false;filters.technicians=[];await load();}));
+  agendas.append(el('label',{},all,el('span',{text:'Tous les agendas'})));
+  for(const resource of resources().filter(value=>value.active!==false)){
+   const check=input('',{type:'checkbox',checked:selectedResourceKeys().length===0||selectedResourceKeys().includes(resource.key),'aria-label':resourceLabel(resource)});
+   check.addEventListener('change',action(async()=>{const chosen=new Set(selectedResourceKeys().length?selectedResourceKeys():resources().filter(value=>value.active!==false).map(value=>value.key));check.checked?chosen.add(resource.key):chosen.delete(resource.key);if(!chosen.size){check.checked=true;notify('Conservez au moins un agenda visible.','info');return;}filters.mine=false;filters.technicians=[...chosen];await load();}));
+   agendas.append(el('label',{},check,el('span',{text:resourceLabel(resource)})));
+  }
+  replaceChildren(mini,el('div',{class:'calendar-mini-heading'},el('strong',{text:label}),button('‹',action(async()=>{date=addMonths(date,-1);await periodChanged();}),{attributes:{'aria-label':'Mois précédent'}}),button('›',action(async()=>{date=addMonths(date,1);await periodChanged();}),{attributes:{'aria-label':'Mois suivant'}})),days,el('h3',{text:'Agendas'}),agendas,initial.ticketSearch?el('p',{class:'help',text:followSearch?'Interventions liées aux tickets de la recherche. Les conflits tiennent compte de tous les rendez-vous.':'Tous les rendez-vous des agendas choisis. La recherche reste disponible pour ajouter des tickets.'}):null);
  }
  function eventCard(item,{compact=false,style={},resize=false}={}){
   const conflict=issueFor(item),participants=(item.participantKeys||[]).map(labelFor),label=`${timeLabel(item)} · ${item.title} · ${participants.join(', ')||'À affecter'}`;
@@ -244,7 +267,7 @@ export async function renderInterventionsWorkspace(ctx){
   body.append(el('fieldset',{class:'calendar-form-section'},el('legend',{text:'Lieu'}),el('label',{class:'calendar-check'},remote,el('span',{text:'Intervention à distance'})),field('Site',site),field('Lieu / bâtiment',location),field('Adresse',address)));
   let tickets=copy(draft.tickets||[]);const linked=el('div'),ticketSearch=input('',{type:'search',placeholder:'Identifiant ou titre','aria-label':'Rechercher un ticket à lier',maxLength:200}),ticketResults=el('div',{class:'calendar-ticket-results'});
   const paintLinks=()=>replaceChildren(linked,tickets.length?ticketChips(tickets,true,key=>{tickets=tickets.filter(ticket=>ticket.key!==key);mine.dirty=true;paintLinks();}):el('p',{class:'help',text:'Cette intervention est libre. Vous pourrez y lier des tickets plus tard.'}));paintLinks();
-  async function findTickets(){const result=await call('calendar.tickets',{search:ticketSearch.value,offset:0,limit:30});if(editor!==mine)return;replaceChildren(ticketResults,...(result.tickets||[]).filter(ticket=>!tickets.some(link=>link.key===ticket.key)).map(ticket=>button(`#${ticket.id} · ${ticket.title}`,()=>{if(tickets.length>=2000)throw new Error('Une intervention accepte au maximum 2 000 tickets.');tickets.push({key:ticket.key,installation:ticket.installation,id:String(ticket.id||''),url:ticket.url||'',title:ticket.title||''});mine.dirty=true;paintLinks();ticketResults.replaceChildren();},{attributes:{class:'button calendar-search-result'}})),!result.tickets?.length?el('p',{class:'help',text:'Aucun ticket trouvé dans les données disponibles.'}):null);}
+  async function findTickets(){const result=await call('calendar.tickets',{...(initial.ticketSearch?{ticketSearch:initial.ticketSearch}:{}),search:ticketSearch.value,offset:0,limit:30});if(editor!==mine)return;replaceChildren(ticketResults,...(result.tickets||[]).filter(ticket=>!tickets.some(link=>link.key===ticket.key)).map(ticket=>button(`#${ticket.id} · ${ticket.title}`,()=>{if(tickets.length>=2000)throw new Error('Une intervention accepte au maximum 2 000 tickets.');tickets.push({key:ticket.key,installation:ticket.installation,id:String(ticket.id||''),url:ticket.url||'',title:ticket.title||''});mine.dirty=true;paintLinks();ticketResults.replaceChildren();},{attributes:{class:'button calendar-search-result'}})),!result.tickets?.length?el('p',{class:'help',text:'Aucun ticket trouvé dans les données disponibles.'}):null);}
   ticketSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void action(findTickets)();}});
   body.append(el('fieldset',{class:'calendar-form-section'},el('legend',{text:'Tickets liés'}),linked,toolbar(ticketSearch,button('Rechercher',action(findTickets),{icon:'search'})),ticketResults));
   const recurrenceBox=el('fieldset',{class:'calendar-form-section'},el('legend',{text:'Récurrence'}));recurrenceBox.hidden=!!original?.recurrence&&scope==='occurrence';
@@ -298,7 +321,7 @@ export async function renderInterventionsWorkspace(ctx){
   const paint=()=>{
    const tickets=results?.tickets||model?.backlog||[];replaceChildren(rows,...tickets.map(ticket=>{const selected=input('',{type:'checkbox',checked:selectedTickets.has(ticket.key),'aria-label':`Choisir le ticket ${ticket.id}`});selected.addEventListener('change',()=>{selected.checked?selectedTickets.set(ticket.key,ticket):selectedTickets.delete(ticket.key);create.disabled=!selectedTickets.size;count.textContent=`${formatNumber(selectedTickets.size)} ticket(s) sélectionné(s)`;});const row=el('article',{class:'calendar-backlog-row',draggable:true,dataset:{ticketKey:ticket.key}},selected,el('div',{},el('strong',{text:`#${ticket.id} · ${ticket.title||'Sans titre'}`}),el('small',{text:[ticket.type,ticket.location].filter(Boolean).join(' · ')})),button('Planifier',action(()=>createEvent({tickets:[ticket]})),{icon:'plus'}));row.addEventListener('dragstart',event=>{dragTicket=ticket;dragKey='';event.dataTransfer.effectAllowed='copy';event.dataTransfer.setData('application/x-glpi-calendar-ticket',ticket.key);});row.addEventListener('dragend',()=>dragTicket=null);return row;}),!tickets.length?empty('La file est vide','Chargez un relevé pour planifier ses tickets. Les interventions libres restent disponibles.'):null);};
   const pager=el('div',{class:'calendar-backlog-pager'});
-  async function search(){results=await call('calendar.tickets',{...request(),search:query.value,offset,limit:30,unplanned:true,technicians:selectedResourceKeys(),teams:filters.teams});if(panelMode!=='backlog')return;paint();replaceChildren(pager,button('Précédent',action(async()=>{offset=Math.max(0,offset-30);await search();}),{disabled:offset===0}),el('span',{text:`${Math.min(offset+1,results.total||0)}–${Math.min(offset+30,results.total||0)} / ${formatNumber(results.total)}`}),button('Suivant',action(async()=>{offset+=30;await search();}),{disabled:offset+30>=(results.total||0)}));}
+  async function search(){results=await call('calendar.tickets',{...request(),...(initial.ticketSearch?{ticketSearch:initial.ticketSearch}:{}),search:query.value,offset,limit:30,unplanned:true,technicians:selectedResourceKeys(),teams:filters.teams});if(panelMode!=='backlog')return;paint();replaceChildren(pager,button('Précédent',action(async()=>{offset=Math.max(0,offset-30);await search();}),{disabled:offset===0}),el('span',{text:`${Math.min(offset+1,results.total||0)}–${Math.min(offset+30,results.total||0)} / ${formatNumber(results.total)}`}),button('Suivant',action(async()=>{offset+=30;await search();}),{disabled:offset+30>=(results.total||0)}));}
   query.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();offset=0;void action(search)();}});
   const unassigned=occurrences.filter(item=>item.source==='calendar'&&item.state!=='cancelled'&&!item.participantKeys?.length);
   openPanel('backlog','À organiser',el('div',{class:'calendar-panel-body'},unassigned.length?el('section',{class:'calendar-unassigned'},el('h3',{text:'Interventions sans technicien'}),...unassigned.map(item=>eventCard(item,{compact:true}))):null,el('h3',{text:'Tickets sans intervention prévue'}),el('p',{class:'help',text:'Glissez un ticket sur le calendrier ou réunissez plusieurs tickets dans la même intervention.'}),toolbar(query,button('Rechercher',action(async()=>{offset=0;await search();}),{icon:'search'})),count,rows,pager),[create,button('Intervention libre',action(()=>createEvent()),{icon:'plus'})]);paint();await search();
@@ -378,13 +401,14 @@ export async function renderInterventionsWorkspace(ctx){
   if(childCleanup){await childCleanup();childCleanup=null;}childController?.abort();childController=null;mapHost=null;
  }
  async function switchTab(next,params={}){
+  if(initial.toolsShell){await guardEditor();return navigate('interventions',{...params,tab:next,ticketSearch:initial.ticketSearch});}
   if(next===tab&&!Object.keys(params).length)return;await guardEditor();await clearChild();await closePanel(true);tab=next;++tabVersion;updateTabs();persist();
   if(tab==='planning')paintPlanning();else if(tab==='map'){mapMode=mapDefault(params);if(mapMode==='tickets')await showTicketMap(params);else await paintMap();}else await paintTours(params);
  }
  async function paintTours(params={}){
   await clearChild();const version=++tabVersion,controller=new AbortController();childController=controller;childSourceLoaded=state.session?.loaded===true;const host=el('div',{class:'calendar-tours-host'});replaceChildren(canvas,host);const module=await import('./terrain-tours.js');if(disposed||version!==tabVersion||controller.signal.aborted)return;
   const childNavigate=async(id,args={})=>{if(id==='interventions'||id==='terrain-map'||id==='tours'){const next=id==='tours'||args.tourId?'tours':args.tab||'map';await switchTab(next,args);}else await navigate(id,args);};
-  const done=await module.renderTours({...ctx,root:host,signal:controller.signal,navigate:childNavigate,params:{...params,terrainPanel:params.terrainPanel||(params.tourId||params.openDraft?'planning':'saved')}});
+  const done=await module.renderTours({...ctx,root:host,signal:controller.signal,navigate:childNavigate,params:{...params,...(initial.ticketSearch?{ticketSearch:initial.ticketSearch}:{}),terrainPanel:params.terrainPanel||(params.tourId||params.openDraft?'planning':'saved')}});
   if(disposed||version!==tabVersion||controller.signal.aborted){await done?.();return;}childCleanup=done;
   host.querySelectorAll(':scope > .terrain-page > .terrain-heading, :scope > .terrain-page > [data-simulation]').forEach(node=>node.hidden=true);
  }
@@ -409,12 +433,13 @@ export async function renderInterventionsWorkspace(ctx){
  async function showTicketMap(params={}){
   await guardEditor();await clearChild();await closePanel(true);mapMode='tickets';persist();const host=el('div',{class:'calendar-ticket-map-host'});replaceChildren(canvas,toolbar(button('Carte des interventions prévues',action(()=>{mapChoice='planning';return paintMap();}),{icon:'calendar',title:'Afficher les interventions planifiées sur la période, sans les tickets',attributes:{dataset:{calendarAction:'planning-map'}}})),host);
   const version=++tabVersion,controller=new AbortController();childController=controller;childSourceLoaded=state.session?.loaded===true;const module=await import('./terrain-map.js');if(disposed||version!==tabVersion||controller.signal.aborted)return;
-  const done=await module.renderTicketMap({...ctx,root:host,signal:controller.signal,params:{technicianKeys:selectedResourceKeys(),visitDate:date,mine:filters.mine,...params},navigate:async(id,args={})=>{if(id==='interventions'&&args.plan)return applyPrefill(args);if(id==='interventions'||id==='terrain-map'||id==='tours')return switchTab(id==='tours'?'tours':args.tab||'map',args);return navigate(id,args);}});
+  const done=await module.renderTicketMap({...ctx,root:host,signal:controller.signal,params:{technicianKeys:selectedResourceKeys(),visitDate:date,mine:filters.mine,...params,...(initial.ticketSearch?{ticketSearch:initial.ticketSearch}:{})},navigate:async(id,args={})=>{if(id==='interventions'&&args.plan)return applyPrefill(args);if(id==='interventions'||id==='terrain-map'||id==='tours')return switchTab(id==='tours'?'tours':args.tab||'map',args);return navigate(id,args);}});
   if(disposed||version!==tabVersion||controller.signal.aborted){await done?.();return;}childCleanup=done;
   host.querySelectorAll(':scope > .terrain-page > .terrain-heading, :scope > .terrain-page > [data-simulation]').forEach(node=>node.hidden=true);
  }
  async function applyPrefill(params){
   const result=params.tickets?{tickets:params.tickets}:await call('calendar.tickets',{rowIndex:params.rowIndex,indices:params.indices,ticketKey:params.ticketKey,revision:params.revision,limit:2000});
+  if(result.total>2000)throw new Error('Choisissez au maximum 2 000 tickets à planifier. Affinez la recherche.');
   if(tab!=='planning'){await clearChild();tab='planning';updateTabs();paintPlanning();}await createEvent({day:params.date||date,tickets:result.tickets||[]});
  }
  function changed(){if(disposed)return;refreshPending=true;if(editor?.dirty){replaceChildren(notice,el('div',{class:'calendar-message info'},el('span',{text:'Le planning a évolué. Votre saisie est conservée ; la version sera vérifiée à l’enregistrement.'})));return;}clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{if(!mutation)void action(load)();},180);}

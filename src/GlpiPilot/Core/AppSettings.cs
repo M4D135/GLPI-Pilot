@@ -240,6 +240,9 @@ public sealed class AutomationSettings
     public int QuietEndHour { get; set; } = 8;
     public bool QuietHours { get; set; } = true;
     public bool AutomaticPaginationFallback { get; set; } = true;
+    public bool SsoRememberMe { get; set; } = true;
+    public bool SsoProfileMenuNavigation { get; set; } = true;
+    public int SsoAutomationMaxActions { get; set; } = 8;
     public string FixedTimes { get; set; } = "";
     public string WeekDays { get; set; } = "1,2,3,4,5";
     public bool ResumeAfterReconnect { get; set; } = true;
@@ -257,6 +260,7 @@ public sealed class AutomationSettings
         QuietEndHour = Math.Clamp(QuietEndHour, 0, 23);
         FixedTimes ??= ""; WeekDays ??= "1,2,3,4,5"; Recipe ??= "extract,quality,enrich,archive,alerts,xlsx";
         FailureAlertThreshold = Math.Clamp(FailureAlertThreshold, 1, 20);
+        SsoAutomationMaxActions = Math.Clamp(SsoAutomationMaxActions, 0, 12);
         Steps = (Steps ?? new()).Where(step => step != null).Take(20).ToList();
     }
 }

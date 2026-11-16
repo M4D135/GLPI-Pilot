@@ -160,7 +160,10 @@ public sealed partial class PilotApplication
             ct.ThrowIfCancellationRequested(); var recorded = FieldPreparationDocuments.ReadPlan(item);
             var observation = await FieldObserveAsync(recorded, ct, sources).ConfigureAwait(false); all.Add((item, observation.Document, observation));
         }
-        var selected = all.Where(row => !(scope == "mine" && person.Length == 0)
+        var searchKeys = TicketSearchKeys(a, ct);
+        var selected = all.Where(row => (searchKeys is null || row.Document.Tickets.Any(ticket => searchKeys.Contains(ticket.Key))
+                || row.Document.Plan.Owner.Kind == "ticket" && searchKeys.Contains(row.Document.Plan.Owner.Key))
+            && !(scope == "mine" && person.Length == 0)
             && (person.Length == 0 || row.Document.Plan.ParticipantKeys.Contains(person, StringComparer.Ordinal))
             && (team.Length == 0 || row.Document.Plan.ParticipantKeys.Any(teamPeople.Contains))
             && (site.Length == 0 || row.Document.Plan.SiteId == site) && (tour.Length == 0 || row.Document.Plan.TourIds.Contains(tour, StringComparer.Ordinal)

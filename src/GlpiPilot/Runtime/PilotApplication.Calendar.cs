@@ -99,7 +99,10 @@ public sealed partial class PilotApplication
                 : absent.ToString(CultureInfo.InvariantCulture) + " ticket(s) liés sont absents du relevé courant ; l’intervention reste planifiée.");
         }
         var issues = CalendarIssues(all, resources, ct).Concat(_calendarTourIssues).Concat(expansion.Issues.Select(issue => new CalendarConflict("invalid-occurrence", "danger", issue.Message, "", new[] { issue.InterventionId + ":" + issue.OriginalStartLocal }))).ToArray();
-        var visible = CalendarFilter(a, all, resources); var visibleKeys = visible.Select(value => value.Key).ToHashSet(StringComparer.Ordinal);
+        var searchKeys = TicketSearchKeys(a, ct);
+        var visible = CalendarFilter(a, all, resources);
+        if (searchKeys is not null) visible = visible.Where(value => value.Tickets.Any(ticket => searchKeys.Contains(ticket.Key))).ToArray();
+        var visibleKeys = visible.Select(value => value.Key).ToHashSet(StringComparer.Ordinal);
         // Invalid recurrence occurrences have no rendered card, so keep their issue visible in the selected resource scope.
         var visibleIds = visible.Select(value => value.InterventionId).ToHashSet(StringComparer.Ordinal);
         var filteredIssues = issues.Where(issue => issue.OccurrenceKeys.Any(visibleKeys.Contains) || issue.Kind == "tour-time-invalid"
@@ -149,7 +152,8 @@ public sealed partial class PilotApplication
         var selectedPeople = MapWorkspaceStrings(a, "technicians", 200, 400).ToHashSet(StringComparer.Ordinal);
         if (Text(a, "scope", 20, "all") == "mine") selectedPeople = new(StringComparer.Ordinal) { Settings.Dashboard.PersonalTechnician };
         var selectedTeams = MapWorkspaceStrings(a, "teams", 100, 1200).ToHashSet(StringComparer.Ordinal);
-        var backlog = catalog.Where(ticket => ticket.Active && !keys.Contains(ticket.Key)
+        var searchRows = TicketSearchRows(a, ct);
+        var backlog = catalog.Where(ticket => (searchRows is null || searchRows.Contains(ticket.RowIndex)) && ticket.Active && !keys.Contains(ticket.Key)
             && (selectedPeople.Count == 0 || ticket.ParticipantKeys.Any(selectedPeople.Contains) || selectedPeople.Contains("@unassigned") && ticket.ParticipantKeys.Length == 0)
             && (selectedTeams.Count == 0 || ticket.TeamKeys.Any(selectedTeams.Contains))).ToArray();
         var reference = EffectiveSettings.Cities;

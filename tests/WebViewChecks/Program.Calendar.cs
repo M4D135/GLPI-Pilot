@@ -68,7 +68,7 @@ internal static partial class Program
         }
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await ReadyAsync(page);
         await page.Locator(".nav-item[data-page=interventions]").ClickAsync(); await page.Locator(".interventions-workspace[data-ready=true]").WaitForAsync(); await Date("2026-11-02");
-        Require(await page.Locator(".calendar-tabs .calendar-tab").CountAsync() == 3 && app.Result is null,
+        Require(await page.Locator(".ticket-tools-nav .ticket-tool").CountAsync() == 5 && app.Result is null,
             "The common Planning / Map / Tours workspace opens without a loaded extraction.");
         await Button("Nouvelle intervention").ClickAsync(); await Editor().WaitForAsync();
         await page.GetByLabel("Objet", new() { Exact = true }).FillAsync("Préparation libre <b>sans ticket</b>");

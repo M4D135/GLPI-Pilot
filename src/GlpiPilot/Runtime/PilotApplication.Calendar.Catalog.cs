@@ -72,6 +72,7 @@ public sealed partial class PilotApplication
     private async Task<object?> CalendarTicketsAsync(JsonElement a, CancellationToken ct)
     {
         if (a.TryGetProperty("revision", out _)) CheckRevision(a);
+        var searchRows = TicketSearchRows(a, ct);
         var rows = CalendarCatalog(ct); var key = Text(a, "ticketKey", 300); var search = Text(a, "search", 300); var indices = new HashSet<int>();
         if (a.TryGetProperty("indices", out var selected))
         {
@@ -88,12 +89,12 @@ public sealed partial class PilotApplication
             var view = await CalendarViewAsync(a, ct).ConfigureAwait(false);
             booked = view.All.Where(value => value.State is not ("cancelled" or "done")).SelectMany(value => value.Tickets).Select(ticket => ticket.Key).ToHashSet(StringComparer.Ordinal);
         }
-        var filtered = rows.Where(row => (key.Length == 0 || row.Key == key) && (indices.Count == 0 || indices.Contains(row.RowIndex))
+        var filtered = rows.Where(row => (searchRows is null || searchRows.Contains(row.RowIndex)) && (key.Length == 0 || row.Key == key) && (!a.TryGetProperty("indices", out _) && !a.TryGetProperty("rowIndex", out _) || indices.Contains(row.RowIndex))
             && (!Flag(a, "unplanned") || row.Active && !booked.Contains(row.Key))
             && (people.Count == 0 || row.ParticipantKeys.Any(people.Contains) || people.Contains("@unassigned") && row.ParticipantKeys.Length == 0)
             && (teams.Count == 0 || row.TeamKeys.Any(teams.Contains))
             && (search.Length == 0 || TicketReadingService.Contains(row.Id + " " + row.Title + " " + row.Location, search))).ToList();
-        if (key.Length > 0 && filtered.Count == 0 && WorkDocument().Tickets.FirstOrDefault(ticket => ticket.Key == key) is { } cached)
+        if (searchRows is null && key.Length > 0 && filtered.Count == 0 && WorkDocument().Tickets.FirstOrDefault(ticket => ticket.Key == key) is { } cached)
             filtered.Add(new(cached.Key, ObjectIdentity.Installation(cached.Url), cached.Id, cached.Url, cached.Title, -1, "Absent du relevé", "", false, "", "", "", Array.Empty<string>(), Array.Empty<string>(), ""));
         var offset = Number(a, "offset", 0, 0, 1000000); var limit = Number(a, "limit", indices.Count > 0 ? Math.Min(indices.Count, 2000) : 50, 1, 2000);
         var selectedRows = filtered.Skip(offset).Take(limit).ToArray();

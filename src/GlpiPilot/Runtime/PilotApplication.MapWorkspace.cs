@@ -59,10 +59,11 @@ public sealed partial class PilotApplication
         var report = TerrainLocations(ct); var source = report.Data; var settings = EffectiveSettings;
         var baseline = DashboardService.Calculate(source, settings.Dashboard, IsHistorical ? source.ExtractedAt : DateTimeOffset.Now, ct);
         var roster = TechnicianDashboardService.Detect(source, settings.Dashboard, ct);
+        var searchRows = TicketSearchRows(args, ct);
         var context = TerrainContext(ct); var active = baseline.Metric("active")?.Rows.ToHashSet() ?? new();
         var filters = new List<DashboardScopeFilter>(); AnalyticsBusinessFocus(args, filters, ct);
         var focusKeys = MapWorkspaceStrings(args, "focusKeys");
-        var scope = DashboardService.ResolveScope(baseline, filters, ct).Where(active.Contains).ToHashSet();
+        var scope = searchRows ?? DashboardService.ResolveScope(baseline, filters, ct).Where(active.Contains).ToHashSet();
         var type = Text(args, "type", 20, "all");
         if (type is not ("all" or "incident" or "request" or "unknown")) throw new InvalidDataException("Type de ticket inconnu.");
         var types = baseline.Distributions.FirstOrDefault(distribution => distribution.Key == "type");
@@ -82,7 +83,7 @@ public sealed partial class PilotApplication
         }
         string Cell(int row, string role) => baseline.Column(role)?.Index is int column && column < source.Rows[row].Length
             ? DashboardService.NormalizeValue(source.Rows[row][column], role, source.Headers[column], settings.Dashboard) : "";
-        scope.RemoveWhere(row => !statuses.Contains(DashboardService.Status(Cell(row, "status"))));
+        if (searchRows is null) scope.RemoveWhere(row => !statuses.Contains(DashboardService.Status(Cell(row, "status"))));
         var owners = new Dictionary<int, List<TechnicianEntry>>();
         foreach (var person in roster.Technicians) foreach (var row in person.Rows)
         { if (!owners.TryGetValue(row, out var values)) owners[row] = values = new(); values.Add(person); }
@@ -155,7 +156,7 @@ public sealed partial class PilotApplication
             .Select(rule => new { key = "team:" + rule.Id, label = rule.Label, groups = rule.Values }).ToArray();
         var date = args.TryGetProperty("visitDate", out _) ? TerrainDate(Text(args, "visitDate", 10)) : DateOnly.FromDateTime(DateTime.Today);
         object[] visits; var visitsWarning = "";
-        try { visits = MapWorkspaceVisits(context, reference, tickets, date, technicians, focusKeys.Length > 0 || type != "all" || statuses.Count != 4, ct); }
+        try { visits = MapWorkspaceVisits(context, reference, tickets, date, technicians, searchRows is not null || focusKeys.Length > 0 || type != "all" || statuses.Count != 4, ct); }
         catch (Exception error) when (error is JsonException or InvalidDataException or IOException)
         { visits = Array.Empty<object>(); visitsWarning = "Le registre des visites prévues n’a pas pu être lu. Les tickets et leurs localisations restent disponibles ; vérifiez le registre des tournées."; }
         var token = MapCreatePreview(reference);

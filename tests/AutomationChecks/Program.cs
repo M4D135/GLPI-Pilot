@@ -33,6 +33,8 @@ const string legacyTarget = "http://glpi.test/glpi/front/ticket.php";
 const string csvAll = "\uFEFF\"ID\";\"Nom\";\r\n\"0001\";\"Paris A\";\r\n\"0002\";\"Paris B\";\r\n\"0003\";\"Paris C\";\r\n\"0004\";\"Paris D\";\r\n\"0005\";\"=1+1\";\r\n";
 const string csvPartial = "\uFEFFID;Nom\r\n0003;Paris C\r\n0004;Paris D\r\n";
 const string ready = "<!doctype html><html><title>GLPI — Recherche</title><body><a href='/logout.php'>Déconnexion</a><table class='search-results' id='results'><thead><tr><th>ID</th><th>Nom</th></tr></thead><tbody><tr><td>0005</td><td>Paris</td></tr></tbody></table></body></html>";
+const string ticketTarget = "http://glpi.test/glpi/front/ticket.php?criteria%5B0%5D%5Bvalue%5D=Paris&sort=1&order=ASC&start=2";
+const string ticketReady = "<!doctype html><html><title>GLPI — Tickets</title><body><a href='/logout.php'>Déconnexion</a><form data-search-itemtype='Ticket' data-count='1' data-start='0' data-limit='20'><table class='search-results' id='results'><thead><tr><th>ID</th><th>Sujet</th></tr></thead><tbody><tr><td>0005</td><td>Paris</td></tr></tbody></table></form></body></html>";
 using var playwright = await Playwright.CreateAsync();
 await using var browser = await playwright.Chromium.LaunchAsync(new()
 {
@@ -54,6 +56,18 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("SSO discret : contrôles masqués et redirection passive sans prise de focus", CheckInvisibleSso),
     ("SSO discret : validation dans une iframe IdP visible", CheckAuthenticationIframe),
     ("SSO discret : seule la fenêtre IdP ouverte par le portail est révélée", CheckAuthenticationPopup),
+    ("SSO : case Se souvenir de moi et validation automatique sans mot de passe", CheckSsoRememberMeAutomation),
+    ("SSO : case déjà cochée, seule la validation est actionnée", CheckSsoRememberMeAlreadyChecked),
+    ("SSO : consentement ambigu refusé sans cocher", CheckSsoConsentAmbiguousRefused),
+    ("SSO : MFA refusé sans cocher", CheckSsoMfaRefused),
+    ("Profil Superviseur puis Assistance > Tickets depuis un accueil authentifié", CheckProfileMenuLanding),
+    ("Racine portail résolue en vraie liste de tickets", CheckPortalRootResolution),
+    ("Racine portail non résolue : boucle bornée et repli humain", CheckBoundedLoop),
+    ("Automatisation : page personnalisée explicitement mémorisée à la racine", CheckMappedRoot),
+    ("Automatisation : première collecte SSO puis choix mémorisé à la collecte suivante", CheckRememberedCollection),
+    ("Automatisation : racine, filtres répétés et provenance de la collecte", CheckRootCollection),
+    ("Automatisation : mot de passe et choix ambigus restent intacts", CheckUnsafeSsoForms),
+    ("Automatisation : aucun profil administrateur ni lien externe n’est utilisé", CheckUnrelatedMenu),
     ("Un clic GLPI 10 : page 2 visible, cinq lignes natives et Excel automatique", CheckNative10),
     ("Annulation avant Excel : reçu natif intact et aucune phase Fichier prêt", () => CheckPipelineCancellation("excel-before")),
     ("Annulation après Excel : fichier terminé conservé, aucun faux succès", () => CheckPipelineCancellation("excel-after")),
@@ -275,7 +289,7 @@ async Task CheckPopupChoice()
 string InteractiveSsoMarkup() => """
     <!doctype html><html><body><h1>Authentification</h1>
     <form onsubmit="window.testSubmits++; return false">
-      <label><input id="remember" type="checkbox">Se souvenir de moi</label>
+      <label><input id="remember" type="checkbox">Se souvenir de mon choix</label>
       <button type="submit">Se connecter</button>
     </form>
     <script>window.testClicks=0;window.testSubmits=0;document.addEventListener('click',()=>window.testClicks++);</script>
@@ -289,14 +303,20 @@ async Task CheckInteractiveSso(string mode)
         new Uri(route.Request.Url).AbsolutePath == "/intermediate" ? InteractiveSsoMarkup() : ready),
         "http://glpi.test/intermediate", focus);
     var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var automated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message =>
+    {
+        if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult();
+        if (message.Contains("Se souvenir de moi", StringComparison.Ordinal) || message.Contains("continuation automatique", StringComparison.Ordinal)) automated.TrySetResult();
+    };
     using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
     var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
     await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    await automated.Task.WaitAsync(TimeSpan.FromSeconds(4));
     Equal(1, focus.BringToFrontCalls);
-    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
-    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
-    True(!await h.Page.Locator("#remember").IsCheckedAsync(), "La case de persistance appartient à l’utilisateur.");
+    Equal(2, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(1, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    True(await h.Page.Locator("#remember").IsCheckedAsync(), "La préférence demandée peut être cochée automatiquement.");
     True(!h.Service.BackgroundMode, "La validation nécessaire doit restaurer uniquement le navigateur dédié.");
     if (mode == "manual-show") await h.Service.ShowBrowserAsync(h.Page, CancellationToken.None);
     if (mode == "manual-hide")
@@ -312,11 +332,11 @@ async Task CheckInteractiveSso(string mode)
         try { await settling; throw new Exception("La connexion devait être annulée."); }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         Equal("http://glpi.test/intermediate", h.Page.Url);
-        Equal(0, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+        Equal(1, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
     }
     else
     {
-        // Completion is simulated externally. BrowserService never checks or submits the form.
+        // The fixture deliberately stays on the form after submission; finish its redirect externally.
         await h.Page.GotoAsync(target);
         var page = await settling;
         Equal(target, page.Url);
@@ -346,13 +366,20 @@ async Task CheckAuthenticationIframe()
     await using var h = await Create(route => Html(route, new Uri(route.Request.Url).Host == "other-glpi.test"
         ? InteractiveSsoMarkup() : authenticated ? ready : "<html><body><iframe src='http://other-glpi.test/idp'></iframe></body></html>"), target, focus);
     var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var automated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message =>
+    {
+        if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult();
+        if (message.Contains("Se souvenir de moi", StringComparison.Ordinal) || message.Contains("continuation automatique", StringComparison.Ordinal)) automated.TrySetResult();
+    };
     var settling = h.Service.WaitForTargetAsync(Settings(), CancellationToken.None);
     await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    await automated.Task.WaitAsync(TimeSpan.FromSeconds(4));
     Equal(1, focus.BringToFrontCalls);
     var idp = h.Page.Frames.Single(frame => new Uri(frame.Url).Host == "other-glpi.test");
-    Equal(0, await idp.EvaluateAsync<int>("() => window.testClicks"));
-    True(!await idp.Locator("#remember").IsCheckedAsync(), "La validation IdP intégrée ne doit pas être actionnée.");
+    Equal(2, await idp.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(1, await idp.EvaluateAsync<int>("() => window.testSubmits"));
+    True(await idp.Locator("#remember").IsCheckedAsync(), "La validation IdP intégrée peut cocher la préférence demandée.");
     authenticated = true; await h.Page.GotoAsync(target); await settling;
     True(h.Service.BackgroundMode, "La collecte reprend discrètement après l’authentification intégrée.");
 }
@@ -368,7 +395,12 @@ async Task CheckAuthenticationPopup()
     await unrelated.GotoAsync("http://other-glpi.test/unrelated");
     using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
     var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var automated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message =>
+    {
+        if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult();
+        if (message.Contains("Se souvenir de moi", StringComparison.Ordinal) || message.Contains("continuation automatique", StringComparison.Ordinal)) automated.TrySetResult();
+    };
     var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
     await Task.Delay(900);
     Equal(0, focus.BringToFrontCalls);
@@ -376,11 +408,312 @@ async Task CheckAuthenticationPopup()
     await h.Page.EvaluateAsync("() => window.open('http://other-glpi.test/idp','_blank')");
     var popup = focus.WrapPage(await popupPending);
     await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    await automated.Task.WaitAsync(TimeSpan.FromSeconds(4));
     Equal(1, focus.BringToFrontCalls);
-    Equal(0, await popup.EvaluateAsync<int>("() => window.testClicks"));
-    True(!await popup.Locator("#remember").IsCheckedAsync(), "La page IdP du popup reste contrôlée par l’utilisateur.");
+    Equal(2, await popup.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(1, await popup.EvaluateAsync<int>("() => window.testSubmits"));
+    True(await popup.Locator("#remember").IsCheckedAsync(), "La page IdP du popup peut cocher la préférence demandée.");
+    Equal(0, await unrelated.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(0, await unrelated.EvaluateAsync<int>("() => window.testSubmits"));
+    True(!await unrelated.Locator("#remember").IsCheckedAsync(), "Un onglet non lié reste contrôlé par l’utilisateur.");
     authenticated = true; await h.Page.GotoAsync(target); await settling;
     True(h.Service.BackgroundMode, "La fin de la connexion doit réduire le navigateur de nouveau.");
+}
+
+async Task CheckSsoRememberMeAutomation()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    bool authenticated = false;
+    await using var h = await Create(async route =>
+    {
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath == "/glpi/front/computer.php")
+        {
+            if (!authenticated) await Redirect(route, "/sso/remember");
+            else await Html(route, ready);
+        }
+        else if (uri.AbsolutePath == "/sso/remember")
+            await Html(route, """
+                <!doctype html><html><body><h1>SSO</h1>
+                <form onsubmit="window.testSubmits++; return false">
+                  <label><input id="remember" type="checkbox">Se souvenir de mon choix</label>
+                  <button type="submit">SE CONNECTER</button>
+                </form>
+                <script>window.testClicks=0;window.testSubmits=0;document.addEventListener('click',()=>window.testClicks++);</script>
+                </body></html>
+                """);
+        else await route.FulfillAsync(new() { Status = 404 });
+    }, target, focus);
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var automated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message =>
+    {
+        if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult();
+        if (message.Contains("Se souvenir de moi", StringComparison.Ordinal) || message.Contains("continuation automatique", StringComparison.Ordinal)) automated.TrySetResult();
+    };
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    await automated.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    Equal(2, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(1, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    True(await h.Page.Locator("#remember").IsCheckedAsync());
+    authenticated = true;
+    await h.Page.GotoAsync(target);
+    var page = await settling;
+    Equal(target, page.Url);
+    True(h.Service.BackgroundMode);
+}
+
+async Task CheckSsoRememberMeAlreadyChecked()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    bool authenticated = false;
+    await using var h = await Create(async route =>
+    {
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath == "/glpi/front/computer.php")
+        {
+            if (!authenticated) await Redirect(route, "/sso/remember-checked");
+            else await Html(route, ready);
+        }
+        else if (uri.AbsolutePath == "/sso/remember-checked")
+            await Html(route, """
+                <!doctype html><html><body><h1>SSO</h1>
+                <form onsubmit="window.testSubmits++; return false">
+                  <label><input id="remember" type="checkbox" checked>Se souvenir de mon choix</label>
+                  <button type="submit">SE CONNECTER</button>
+                </form>
+                <script>window.testClicks=0;window.testSubmits=0;document.addEventListener('click',()=>window.testClicks++);</script>
+                </body></html>
+                """);
+        else await route.FulfillAsync(new() { Status = 404 });
+    }, target, focus);
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var automated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message =>
+    {
+        if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult();
+        if (message.Contains("Se souvenir de moi", StringComparison.Ordinal) || message.Contains("continuation automatique", StringComparison.Ordinal)) automated.TrySetResult();
+    };
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    var settling = h.Service.WaitForTargetAsync(Settings(), cancellation.Token);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    await automated.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    Equal(1, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(1, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    True(await h.Page.Locator("#remember").IsCheckedAsync());
+    authenticated = true;
+    await h.Page.GotoAsync(target);
+    var page = await settling;
+    Equal(target, page.Url);
+    True(h.Service.BackgroundMode);
+}
+
+async Task CheckSsoConsentAmbiguousRefused()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    await using var h = await Create(route => Html(route, """
+        <!doctype html><html><body><h1>SSO</h1>
+        <form onsubmit="window.testSubmits++; return false">
+          <label><input id="remember" type="checkbox">Se souvenir de mon choix</label>
+          <label><input id="consent" type="checkbox">J'accepte les cookies</label>
+          <button type="submit">SE CONNECTER</button>
+        </form>
+        <script>window.testClicks=0;window.testSubmits=0;document.addEventListener('click',()=>window.testClicks++);</script>
+        </body></html>
+        """), "http://glpi.test/sso/consent", focus);
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var settings = Settings(); settings.TimeoutSeconds = 3;
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+    var settling = h.Service.WaitForTargetAsync(settings, cancellation.Token);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    Exception? failure = null;
+    try { await settling; }
+    catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { failure = ex; }
+    True(failure != null, "Le consentement ambigu devait interrompre la récolte.");
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    True(!await h.Page.Locator("#remember").IsCheckedAsync());
+    True(!await h.Page.Locator("#consent").IsCheckedAsync());
+    True(h.Logs.Any(line => line.Contains("consentement", StringComparison.OrdinalIgnoreCase) || line.Contains("intervention humaine", StringComparison.OrdinalIgnoreCase)));
+}
+
+async Task CheckSsoMfaRefused()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    await using var h = await Create(route => Html(route, """
+        <!doctype html><html><body><h1>SSO</h1>
+        <form onsubmit="window.testSubmits++; return false">
+          <label><input id="remember" type="checkbox">Se souvenir de mon choix</label>
+          <label><input id="otp" type="text" autocomplete="one-time-code"></label>
+          <button type="submit">SE CONNECTER</button>
+        </form>
+        <script>window.testClicks=0;window.testSubmits=0;document.addEventListener('click',()=>window.testClicks++);</script>
+        </body></html>
+        """), "http://glpi.test/sso/mfa", focus);
+    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    h.Service.Log += message => { if (message.Contains("validation visible détectée", StringComparison.Ordinal)) shown.TrySetResult(); };
+    var settings = Settings(); settings.TimeoutSeconds = 3;
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+    var settling = h.Service.WaitForTargetAsync(settings, cancellation.Token);
+    await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
+    Equal(1, focus.BringToFrontCalls);
+    Exception? failure = null;
+    try { await settling; }
+    catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { failure = ex; }
+    True(failure != null, "Le MFA devait interrompre la récolte.");
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testClicks"));
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.testSubmits"));
+    True(!await h.Page.Locator("#remember").IsCheckedAsync());
+    True(h.Logs.Any(line => line.Contains("MFA", StringComparison.OrdinalIgnoreCase) || line.Contains("intervention humaine", StringComparison.OrdinalIgnoreCase)));
+}
+
+async Task CheckProfileMenuLanding()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    bool profileSelected = false;
+    await using var h = await Create(async route =>
+    {
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath == "/glpi/front/index.php")
+        {
+            profileSelected = profileSelected || uri.Query.Contains("profiles_id=2", StringComparison.Ordinal);
+            await Html(route, """
+                <!doctype html><html><title>GLPI</title><body>
+                <a href='/logout.php'>Déconnexion</a>
+                <form method='get' action='/glpi/front/index.php' id='profile-form'><label>Profil</label><select name='profiles_id'><option value='1'>Technicien</option><option value='2'>Superviseur</option></select><button type='submit'>Changer de profil</button></form>
+                <nav><ul><li><a href='/glpi/front/ticket.php'>Assistance</a><ul><li><a href='/glpi/front/ticket.php?criteria%5B0%5D%5Bvalue%5D=Paris&sort=1&order=ASC&start=2'>Tickets</a></li></ul></li></ul></nav>
+                </body></html>
+                """);
+        }
+        else if (uri.AbsolutePath == "/glpi/front/ticket.php")
+        {
+            if (!profileSelected) await Redirect(route, "/glpi/front/index.php");
+            else await Html(route, ticketReady);
+        }
+        else await route.FulfillAsync(new() { Status = 404 });
+    }, "http://glpi.test/glpi/front/index.php", focus);
+    var settings = Settings(ticketTarget); settings.TimeoutSeconds = 12;
+    var result = await h.Service.WaitForTargetAsync(settings, CancellationToken.None);
+    Equal(ticketTarget, result.Url);
+    True(h.Logs.Any(line => line.Contains("Superviseur sélectionné", StringComparison.Ordinal)));
+    True(h.Logs.Any(line => line.Contains("Assistance > Tickets", StringComparison.Ordinal)));
+    True(TargetUrlPolicy.IncludesSearch(result.Url, ticketTarget));
+    Equal(0, focus.BringToFrontCalls);
+}
+
+async Task CheckPortalRootResolution()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    bool profileSelected = false;
+    await using var h = await Create(async route =>
+    {
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath == "/glpi/" || uri.AbsolutePath == "/glpi/front/index.php")
+        {
+            profileSelected = profileSelected || uri.Query.Contains("profiles_id=2", StringComparison.Ordinal);
+            await Html(route, """
+                <!doctype html><html><title>GLPI</title><body>
+                <a href='/logout.php'>Déconnexion</a>
+                <form method='get' action='/glpi/front/index.php' id='profile-form'><label>Profil</label><select name='profiles_id'><option value='1'>Technicien</option><option value='2'>Superviseur</option></select><button type='submit'>Changer de profil</button></form>
+                <nav><ul><li><a href='/glpi/front/ticket.php'>Assistance</a><ul><li><a href='/glpi/front/ticket.php'>Tickets</a></li></ul></li></ul></nav>
+                </body></html>
+                """);
+        }
+        else if (uri.AbsolutePath == "/glpi/front/ticket.php") await Html(route, ticketReady);
+        else await route.FulfillAsync(new() { Status = 404 });
+    }, "http://glpi.test/glpi/", focus);
+    var settings = Settings("http://glpi.test/glpi/"); settings.TimeoutSeconds = 12;
+    var result = await h.Service.WaitForTargetAsync(settings, CancellationToken.None);
+    True(TargetUrlPolicy.SamePage(result.Url, "http://glpi.test/glpi/front/ticket.php"), "La racine doit être résolue sur la vraie liste de tickets.");
+    True(h.Logs.Any(line => line.Contains("Assistance > Tickets", StringComparison.Ordinal)));
+    Equal(0, h.Logs.Count(line => line.Contains("racine portail non résolue", StringComparison.Ordinal)));
+}
+
+async Task CheckBoundedLoop()
+{
+    await using var h = await Create(route => Html(route, """
+        <!doctype html><html><title>GLPI</title><body><a href='/logout.php'>Déconnexion</a><h1>Accueil</h1></body></html>
+        """), "http://glpi.test/glpi/");
+    var settings = Settings("http://glpi.test/glpi/"); settings.TimeoutSeconds = 4;
+    Exception? failure = null;
+    try { await h.Service.WaitForTargetAsync(settings, CancellationToken.None); }
+    catch (TimeoutException ex) { failure = ex; }
+    True(failure != null, "La racine non résolue doit expirer explicitement.");
+    var attempts = h.Logs.Count(line => line.Contains("racine portail non résolue", StringComparison.Ordinal));
+    True(attempts > 0 && attempts <= 3, "La boucle racine doit être bornée.");
+}
+
+
+async Task CheckMappedRoot()
+{
+    const string url = "http://glpi.test/custom/";
+    await using var h = await Create(route => Html(route, ready), url);
+    var settings = Settings(url); settings.ReadySelector = "#results"; settings.SelectorOrigin = "http://glpi.test";
+    Equal(url, (await h.Service.WaitForTargetAsync(settings, CancellationToken.None)).Url);
+    Equal(url, h.Service.ResolvedTargetUrl);
+}
+
+async Task CheckRememberedCollection()
+{
+    var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    var empty = "<title>GLPI Tickets</title><a href='/logout.php'>Déconnexion</a><form data-search-itemtype='Ticket' data-count='0'><table class='search-results'><thead><tr><th>ID</th><th>Sujet</th></tr></thead><tbody></tbody></table></form>";
+    await using var h = await Create(route => Html(route, new Uri(route.Request.Url).AbsolutePath == "/sso/entry"
+        ? "<form onsubmit=\"event.preventDefault();if(!document.querySelector('#remember').checked)return;localStorage.setItem('remembered','yes');localStorage.setItem('submits',String(Number(localStorage.getItem('submits')||0)+1));location.href='" + ticketTarget + "'\"><select name='auth'><option value='sso'>SSO direct</option></select><label><input id='remember' type='checkbox'>Se souvenir de mon choix</label><button type='submit'>SE CONNECTER</button></form>"
+        : "<script>if(localStorage.getItem('remembered')!=='yes')location.replace('/sso/entry')</script>" + empty), ticketTarget, focus);
+    var settings = Settings(ticketTarget);
+    var first = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    True(first.Data.Complete && first.Data.Rows.Count == 0, "La première connexion doit aboutir à une vraie collecte vide vérifiée.");
+    var second = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    True(second.Data.Complete && second.Data.Provenance.SearchVerified, "La deuxième collecte doit réutiliser la session mémorisée.");
+    Equal("1", await h.Service.ActivePage!.EvaluateAsync<string>("() => localStorage.getItem('submits')"));
+    Equal(1, h.Logs.Count(line => line.Contains("continuation automatique", StringComparison.Ordinal)));
+}
+
+async Task CheckRootCollection()
+{
+    const string root = "http://glpi.test/glpi/?criteria%5B%5D=Paris&criteria%5B%5D=Aix";
+    const string list = "http://glpi.test/glpi/front/ticket.php?criteria%5B%5D=Paris&criteria%5B%5D=Aix&start=0";
+    var seen = new ConcurrentQueue<string>();
+    await using var h = await Create(route => {
+        seen.Enqueue(route.Request.Url);
+        return Html(route, new Uri(route.Request.Url).AbsolutePath.EndsWith("ticket.php", StringComparison.Ordinal)
+            ? "<title>GLPI Tickets</title><a href='/logout.php'>Déconnexion</a><form data-search-itemtype='Ticket' data-count='0'><table class='search-results'><thead><tr><th>ID</th><th>Sujet</th></tr></thead><tbody></tbody></table></form>"
+            : "<title>GLPI</title><a href='/logout.php'>Déconnexion</a><table><tr><th>Accueil</th></tr><tr><td>Ne pas collecter</td></tr></table><nav><a href='/glpi/front/ticket.php'>Tickets</a></nav>");
+    }, root);
+    var settings = Settings(root); settings.AutoMode = "pagination";
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    True(run.Data.Complete && run.Data.Rows.Count == 0 && run.Data.Provenance.SearchVerified);
+    Equal(root, run.Data.Provenance.RequestedUrl);
+    Equal(list, h.Service.ResolvedTargetUrl);
+    True(seen.Contains(list), "Tous les critères répétés doivent parvenir à la liste résolue.");
+}
+
+async Task CheckUnsafeSsoForms()
+{
+    foreach (var extra in new[] { "<input type='password'>", "<label><input type='checkbox'>Se souvenir de mon choix</label>", "<button type='submit'>SE CONNECTER</button>" })
+    {
+        await using var h = await Create(route => Html(route, "<form onsubmit='event.preventDefault();window.submits++'><label><input id='remember' type='checkbox'>Se souvenir de mon choix</label><button type='submit'>SE CONNECTER</button>" + extra + "</form><script>window.submits=0</script>"), "http://glpi.test/sso/entry");
+        var settings = Settings(); settings.TimeoutSeconds = 2;
+        try { await h.Service.WaitForTargetAsync(settings, CancellationToken.None); throw new Exception("Le formulaire ambigu ne doit pas être soumis."); }
+        catch (TimeoutException) { }
+        Equal(0, await h.Page.EvaluateAsync<int>("() => window.submits"));
+        True(!await h.Page.Locator("#remember").IsCheckedAsync());
+    }
+}
+
+async Task CheckUnrelatedMenu()
+{
+    await using var h = await Create(route => Html(route, "<title>GLPI</title><a href='/logout.php'>Déconnexion</a><a href='/glpi/front/central.php?newprofile=4' onclick='window.admin++'>Administrateur</a><nav><a href='http://other-glpi.test/glpi/front/ticket.php' onclick='window.external++'>Tickets</a></nav><script>window.admin=0;window.external=0</script>"), "http://glpi.test/glpi/");
+    var settings = Settings("http://glpi.test/glpi/"); settings.TimeoutSeconds = 2;
+    try { await h.Service.WaitForTargetAsync(settings, CancellationToken.None); throw new Exception("Aucune liste autorisée n’est disponible."); }
+    catch (TimeoutException) { }
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.admin + window.external"));
 }
 
 async Task CheckNative10()
@@ -1184,7 +1517,7 @@ static void Equal<T>(T expected, T actual)
     if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Attendu : {expected}\nObtenu : {actual}");
 }
 
-static void True(bool condition, string reason)
+static void True(bool condition, [System.Runtime.CompilerServices.CallerArgumentExpression("condition")] string reason = "")
 {
     if (!condition) throw new Exception(reason);
 }

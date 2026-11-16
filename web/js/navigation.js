@@ -2,9 +2,9 @@ import {el,button,icon,dialog} from './ui.js';
 
 export const navigationSpaces=[
  {id:'home',label:'Accueil',icon:'home',description:'Priorités, alertes et rendez-vous du jour'},
- {id:'records',label:'Tickets',icon:'ticket',description:'Liste de travail, fiches et actions'},
+ {id:'records',label:'Rechercher',icon:'search',description:'Tickets, filtres et outils du technicien'},
  {id:'interventions',label:'Interventions',icon:'calendar',description:'Planning commun, carte et tournées'},
- {id:'pilot',label:'Pilotage',icon:'chart',description:'Météo, activité et charge du périmètre'},
+ {id:'pilot',label:'Supervision',icon:'chart',description:'Météo, activité et charge du périmètre'},
  {id:'data',label:'Données',icon:'folder',description:'Importer, collecter et vérifier',utility:true},
  {id:'settings',label:'Réglages',icon:'settings',description:'Préférences et administration',utility:true}
 ];

@@ -22,7 +22,7 @@ export async function renderTours(ctx) {
   const order = select([{ value: 'saved', label: 'Ordre mémorisé' }, { value: 'alphabetical', label: 'Alphabétique' }, { value: 'priority', label: 'Priorités actives' }, { value: 'due', label: 'Échéances actives' }, { value: 'proximity', label: 'Proximité à vol d’oiseau' }], 'saved');
   const firstCity = referenceField(p, 'Première ville pour la proximité', 'city', '', '', { saved: true });
   const newTour = form([{ key: 'name', label: 'Nom de la tournée', required: true }, { key: 'date', label: 'Premier jour', type: 'date', required: true }], { name: 'Nouvelle tournée', date: new Date().toLocaleDateString('en-CA') });
-  p.body.append(summary, tabs, content);
+  p.body.append(...(ctx.params?.ticketSearch?[toolbar(button('Créer une tournée depuis la recherche',()=>ctx.navigate('interventions',{tab:'map',ticketMap:true,ticketSearch:ctx.params.ticketSearch}),{primary:true,icon:'route'})),el('p',{class:'help',text:'Les tournées ci-dessous contiennent au moins un ticket de votre recherche. Sur la carte, choisissez les tickets et préparez les étapes.'})]:[]),summary, tabs, content);
 
   function args(extra = {}) { return { revision: state.revision, draftVersion: state.draftVersion, ...extra }; }
   function filterArgs() { return { revision: state.revision, technician: scope.read(), allStatuses: allStatuses.checked }; }
@@ -307,7 +307,7 @@ export async function renderTours(ctx) {
   const savedSearch = input('', { placeholder: 'Nom de tournée', maxLength: 120 }), savedDate = input('', { type: 'date' });
   const savedState = select([{ value: '', label: 'Tous les états' }, ...Object.entries(stateLabels).map(([value, label]) => ({ value, label }))], '');
   async function loadRegistry(offset = 0) {
-    const data = await p.call('terrain.tours.list', { offset, limit: 20, search: savedSearch.value, date: savedDate.value, state: savedState.value });
+    const data = await p.call('terrain.tours.list', { ...(ctx.params?.ticketSearch?{ticketSearch:ctx.params.ticketSearch}:{}),offset, limit: 20, search: savedSearch.value, date: savedDate.value, state: savedState.value });
     const rows = table(data.items, [{ key: 'name', label: 'Tournée' }, { key: 'date', label: 'Premier jour' }, { key: 'stateLabel', label: 'État' }, { key: 'tickets', label: 'Tickets' }, { key: 'stops', label: 'Étapes' },
       { key: 'actions', label: '', render: row => button('Ouvrir', p.act(() => openTour(row.id))) }], { key: 'id', maxRows: 20, onSelect: row => p.run(() => openTour(row.id)), emptyText: 'Aucune tournée enregistrée dans cette sélection.' });
     registry.replaceChildren(card('Tournées enregistrées', toolbar(field('Nom', savedSearch), field('Date de visite', savedDate), field('État', savedState), button('Filtrer', p.act(() => loadRegistry(0)))), rows,

@@ -46,6 +46,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       await page.screenshot({ path: path.join(process.env.GLPI_GUIDE_CAPTURES, name + '.png'), animations: 'disabled' });
       await page.evaluate(theme => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, before);
     };
+    if (process.env.GLPI_TEST_TICKET_SEARCH_ONLY === '1') { await require('./ticket-search.cjs')({page,reset,ok,capture}); ok(errors.length===0, 'Shared search has no JavaScript errors'); console.log(`${checks}/${checks} ticket search interface checks passed.`); return; }
     if (process.env.GLPI_TEST_GRID_ONLY !== '1') await require('./source-navigation.cjs')({ page, reset, ok });
     if (process.env.GLPI_TEST_SOURCE_NAVIGATION_ONLY === '1') {
       ok(errors.length === 0 && external === 0, 'Source navigation uses production modules without JavaScript errors or external requests');
@@ -234,6 +235,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
     await capture('field-preparation-overview');
     await require('./tickets.cjs')({page,reset,ok,capture});
     await require('./tours.cjs')({page,reset,ok,capture});
+    await require('./ticket-search.cjs')({page,reset,ok,capture});
     ok(errors.length===0,`Production modules report no JavaScript errors (${errors.join('; ')})`);
     ok(external===0,'Synthetic ergonomics checks make no external requests');
     console.log(`${checks}/${checks} ergonomics checks passed.`);

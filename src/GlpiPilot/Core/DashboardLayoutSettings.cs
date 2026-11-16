@@ -267,7 +267,7 @@ public sealed class DashboardBoardSettings
     public string Id { get; set; } = DashboardLayoutSettings.NewId();
     public string Name { get; set; } = "Mon tableau de bord";
     public string Description { get; set; } = "";
-    public string Density { get; set; } = "comfortable";
+    public string Density { get; set; } = "compact";
     public bool HideUnavailableWidgets { get; set; } = true;
     public int? FreshnessWarningHours { get; set; }
     public List<DashboardSectionSettings> Sections { get; set; } = new();
@@ -291,7 +291,7 @@ public sealed class DashboardBoardSettings
         if (string.IsNullOrWhiteSpace(Id) || Id.Length > 96) Id = DashboardLayoutSettings.NewId();
         Name = string.IsNullOrWhiteSpace(Name) ? "Mon tableau de bord" : Name[..Math.Min(Name.Length, 120)];
         Description = (Description ?? "")[..Math.Min(Description?.Length ?? 0, 600)];
-        if (Density is not ("comfortable" or "compact")) Density = "comfortable";
+        if (Density is not ("comfortable" or "compact")) Density = "compact";
         if (FreshnessWarningHours is < 1 or > 8760) FreshnessWarningHours = null;
         Widgets = Widgets?.Where(x => x is not null).Take(DashboardLayoutSettings.MaximumWidgets(Id)).ToList() ?? new();
         Filters ??= new(); ComparisonFilters ??= new();

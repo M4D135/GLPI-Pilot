@@ -130,7 +130,7 @@ public sealed partial class PilotApplication
         var transform = args.TryGetProperty("transform", out var element) ? Read<PreviewTransform>(element) : new();
         var indices = args.TryGetProperty("indices", out var chosen) ? Read<int[]>(chosen) : null;
         if (indices is not null && (indices.Length > 1000000 || indices.Any(i => i < 0 || i >= data.Rows.Count))) throw new InvalidDataException("Sélection de lignes invalide.");
-        if (Flag(args, "basketOnly")) indices = RecordBasketRows(data, settings);
+        if (Flag(args, "basketOnly")) indices = indices is null ? RecordBasketRows(data, settings) : indices.Intersect(RecordBasketRows(data, settings)).ToArray();
         indices = RecordScopedRows(args, indices, ct);
         var query = _recordQueries.Query(data, Revision, Text(args, "search", 4000), indices, transform, CultureInfo.GetCultureInfo(settings.DateCulture), ct);
         var keys = DataObjectIdentity.KeyResolver(data, settings);
@@ -144,7 +144,7 @@ public sealed partial class PilotApplication
             var transform = args.TryGetProperty("transform", out var input) ? Read<PreviewTransform>(input) : new();
             var indices = args.TryGetProperty("indices", out var chosen) ? Read<int[]>(chosen) : null;
             if (indices is not null && (indices.Length > 1000000 || indices.Any(i => i < 0 || i >= data.Rows.Count))) throw new InvalidDataException("Sélection de lignes invalide.");
-            if (Flag(args, "basketOnly")) indices = RecordBasketRows(data, EffectiveSettings.Dashboard);
+            if (Flag(args, "basketOnly")) indices = indices is null ? RecordBasketRows(data, EffectiveSettings.Dashboard) : indices.Intersect(RecordBasketRows(data, EffectiveSettings.Dashboard)).ToArray();
             indices = RecordScopedRows(args, indices, ct);
             var query = _recordQueries.Query(data, Revision, Text(args, "search", 4000), indices, transform, CultureInfo.GetCultureInfo(EffectiveSettings.Dashboard.DateCulture), ct);
             var columns = PreviewViewPreferences.Load(DataPath("preview-view.json"), data.Headers).Where(c => c.Visible).OrderBy(c => c.DisplayIndex).Select(c => c.SourceIndex).ToArray();

@@ -50,7 +50,7 @@ public sealed partial class BrowserService
                   const controls = [...document.querySelectorAll('button,input[type=submit],input[type=button],a[role=button],[role=button]')].filter(e => visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true');
                   const label = e => norm(e.getAttribute('aria-label') || (e.matches('input') ? e.getAttribute('value') : e.textContent));
                   const signin = controls.some(e => /^(?:se connecter|connexion|s'identifier|s'authentifier|sign in|log in|login|connecter|connect|connexion sso|se connecter avec (?:sso|mon compte|votre compte))$/.test(label(e)));
-                  const remember = [...document.querySelectorAll('input[type=checkbox]')].filter(visible).some(e => /(?:se souvenir de moi|rester connecte|garder ma session|memoriser (?:ma connexion|mon compte)|remember me|keep me signed in|stay signed in)/.test(norm([e.getAttribute('aria-label'),...(e.labels || [])].map(v => typeof v === 'string' ? v : v?.textContent || '').join(' '))));
+                  const remember = [...document.querySelectorAll('input[type=checkbox]')].filter(visible).some(e => /(?:se souvenir de (?:mon choix|moi)|rester connecte|garder ma session|memoriser (?:ma connexion|mon compte)|remember me|keep me signed in|stay signed in)/.test(norm([e.getAttribute('aria-label'),...(e.labels || [])].map(v => typeof v === 'string' ? v : v?.textContent || '').join(' '))));
                   const proceed = controls.some(e => /^(?:continuer|continue|poursuivre|suivant|next|oui|yes|valider|confirmer)$/.test(label(e)));
                   const interactive = !search && !authenticated && (signin || proceed && (remember || any('input[autocomplete=username],input[type=email]')));
                   const challenge = password || interactive || any('input[autocomplete=one-time-code],input[name=otp],input[name=otc],input[name=verificationCode],iframe[title*=captcha i]');
@@ -214,6 +214,7 @@ public sealed partial class BrowserService
         var target = TargetUrlPolicy.Validate(settings.PortalUrl).AbsoluteUri;
         var timer = Stopwatch.StartNew();
         ConnectionStageSeconds = new(StringComparer.Ordinal);
+        ResetConnectionActions();
         var timedStage = "navigation"; var timedSince = TimeSpan.Zero;
         void RecordStage(string next)
         {
@@ -246,11 +247,17 @@ public sealed partial class BrowserService
             if (!ReferenceEquals(stablePage, page) || stableUrl != page.Url)
             { stablePage = page; stableUrl = page.Url; stableSince = timer.Elapsed; }
             var stableFor = timer.Elapsed - stableSince;
+            if (ResolvedTargetUrl.Length > 0) target = ResolvedTargetUrl;
+            if (TargetUrlPolicy.IsPortalRoot(target) && TargetUrlPolicy.IsTicketList(page.Url, target) && probe.Readable)
+                target = TargetUrlPolicy.MergeQuery(page.Url, target);
             var samePath = TargetUrlPolicy.SamePage(page.Url, target);
             var sameOrigin = Origin(page.Url) == Origin(target);
+            // Explicitly mapped custom pages may legitimately expose their table at a root URL.
+            var rootNeedsTickets = TargetUrlPolicy.IsPortalRoot(target) && !probe.ExplicitReady
+                && !(samePath && settings.TableHeaderFingerprint.Length > 0 && TargetUrlPolicy.SamePage(settings.TableTargetUrl, target));
             var dataReady = probe.Readable && (settings.AutoMode != "native" || probe.Search || probe.Native || probe.ExplicitReady
                 || probe.Table && (probe.Authenticated || settings.Automation.AutomaticPaginationFallback));
-            if (dataReady && samePath && stableFor.TotalMilliseconds >= 700)
+            if (dataReady && samePath && !rootNeedsTickets && stableFor.TotalMilliseconds >= 700)
             {
                 if (samePath && !reenteredAfterAuth && !TargetUrlPolicy.IncludesSearch(page.Url, target))
                 {
@@ -260,6 +267,7 @@ public sealed partial class BrowserService
                     lastRetryAt = timer.Elapsed; stableSince = timer.Elapsed;
                     continue;
                 }
+                ResolvedTargetUrl = target;
                 SetActivePage(page);
                 await ResumeAfterAuthenticationAsync(ct);
                 if (BackgroundMode) await SetPageWindowAsync(page, false, ct);
@@ -270,14 +278,28 @@ public sealed partial class BrowserService
             }
 
             if (probe.Challenge && stableFor.TotalMilliseconds >= 600)
+            {
                 await RevealAuthenticationAsync(page, ct);
+                if (!probe.Password && await TryRememberSsoAsync(page, settings, ct)) { stableSince = timer.Elapsed; continue; }
+            }
             else if (!probe.Challenge && await AuthenticationPopupAsync(page, settings, ct) is { } authenticationPopup)
+            {
                 await RevealAuthenticationAsync(authenticationPopup, ct);
+                if (await TryRememberSsoAsync(authenticationPopup, settings, ct)) { stableSince = timer.Elapsed; continue; }
+            }
 
             var authenticatedLanding = !probe.Challenge && !probe.Login && (probe.Authenticated || probe.Search || probe.ExplicitReady);
-            if (!samePath && sameOrigin && authenticatedLanding && stableFor.TotalSeconds >= 1 && targetRetries < 3 && (timer.Elapsed - lastRetryAt).TotalSeconds >= 3)
+            if ((!samePath || rootNeedsTickets) && sameOrigin && authenticatedLanding && stableFor.TotalSeconds >= 1 && targetRetries < 3 && (timer.Elapsed - lastRetryAt).TotalSeconds >= 1)
             {
+                if (await TryRecoverTicketNavigationAsync(page, settings, ct))
+                { lastRetryAt = timer.Elapsed; stableSince = timer.Elapsed; continue; }
                 targetRetries++;
+                if (TargetUrlPolicy.IsPortalRoot(target))
+                {
+                    Log?.Invoke("CIBLE · racine portail non résolue ; Assistance > Tickets reste introuvable.");
+                    lastRetryAt = timer.Elapsed;
+                    continue;
+                }
                 Log?.Invoke("CIBLE · connexion terminée sur une autre page ; retour automatique à la recherche demandée.");
                 await NavigateTargetAsync(page, target, ct);
                 lastRetryAt = timer.Elapsed; stableSince = timer.Elapsed;

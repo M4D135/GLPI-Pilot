@@ -10,8 +10,8 @@ export async function renderTickets(ctx) {
   return renderTicketsWorkspace(ctx, { resumeActive: true });
 }
 
-// A working panel, not a second ticket page: source facts, personal notes and
-// collected observations share one layout. Specialist tools open in context.
+// The full-page ticket combines source facts, collected observations and
+// a dedicated personal follow-up area. Specialist tools open in context.
 export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged, onTicketClosed } = {}) {
   if(fileSourceUnavailable(ctx))return;
   const simulation = isSimulation(ctx.state.session);
@@ -108,7 +108,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
         button('Brouillon de suivi', () => openTool('draft'), { icon: 'log', attributes: { 'aria-haspopup': 'dialog' } }), button('Actions assistées', () => openTool('actions'), { icon: 'check', primary: true, attributes: { 'aria-haspopup': 'dialog' } }),
         button('Autres outils', moreTools, { icon: 'settings' })),
       button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({ api: ctx.api, signal: ctx.signal, state: ctx.state, navigate: ctx.navigate }, { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget })), { icon: 'search' }),
-      planningHost, personal.element, journalHost);
+      planningHost, el('div',{class:'tickets-detail-content'},journalHost,personal.element));
     if(ctx.state.capabilities?.includes('calendar.forTicket'))void call(ctx,'calendar.forTicket',{ticketKey:ticket.personal.key}).then(planning=>{
       if(disposed||generation!==version||current?.personal.key!==ticket.personal.key)return;
       const rows=[...(planning.upcoming||[]),...(planning.past||[])];

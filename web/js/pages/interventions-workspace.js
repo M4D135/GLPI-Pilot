@@ -1,23 +1,23 @@
-import {button,toolbar} from '../ui.js';
+import {el} from '../ui.js';
 import {renderInterventionsWorkspace as renderPlanning} from './interventions-planning.js';
 import {renderFieldPreparation} from './field-preparation.js';
-import {retainFieldAction} from './field-navigation.js';
+import {currentScope} from '../work-context.js';
+import {ticketToolNavigation,searchForTools,publishTicketSearch} from '../ticket-search-context.js';
 
 export const pages=[{id:'interventions',title:'Interventions',group:'Interventions',icon:'calendar',render:renderInterventionsWorkspace}];
 export async function renderInterventionsWorkspace(ctx){
- if(ctx.params?.tab!=='preparation'){
-  const cleanup=await renderPlanning(ctx);
-  const action=button('Matériel',()=>ctx.navigate('interventions',{...ctx.params,tab:'preparation'}),
-   {icon:'layers',title:'Préparer le matériel des tickets, interventions et tournées',attributes:{'data-field-nav':'interventions'}});
-  return retainFieldAction(ctx,cleanup,action,()=>ctx.root.querySelector('.calendar-commandbar > .toolbar'));
+ const params={...ctx.params,toolsShell:true};
+ if(!params.ticketSearch&&ctx.state.session?.loaded){
+  let search=searchForTools(ctx.state);
+  if(!search){const query={revision:ctx.state.session.revision,...currentScope(ctx.state)};const result=await ctx.api.call('records.list',{...query,limit:1},{signal:ctx.signal});publishTicketSearch(ctx.state,query,result.total);search=searchForTools(ctx.state);}
+  params.ticketSearch=search;
  }
- const switcher=toolbar(
-  button('Planning, cartes et tournées',()=>ctx.navigate('interventions',{...ctx.params,tab:'planning'}),{icon:'calendar'}),
-  button('Préparer le matériel',null,{icon:'layers',attributes:{'aria-pressed':'true','data-field-nav':'interventions'}}));
- switcher.classList.add('field-workspace-switch');ctx.root.append(switcher);
+ const active=params.tab||'planning',navigation=ticketToolNavigation(ctx,active),host=el('div',{class:'ticket-tool-screen'});
+ ctx.root.append(navigation,host);
+ const local={...ctx,root:host,params,navigate:(id,args={})=>ctx.navigate(id,args)};
  try{
-  const cleanup=await renderFieldPreparation(ctx);
-  const dispose=async()=>{if(typeof cleanup==='function')await cleanup();switcher.remove();};
+  const cleanup=await(active==='preparation'?renderFieldPreparation(local):renderPlanning(local));
+  const dispose=async()=>{await cleanup?.();navigation.remove();host.remove();};
   if(cleanup)Object.assign(dispose,cleanup);return dispose;
- }catch(error){switcher.remove();throw error;}
+ }catch(error){navigation.remove();host.remove();throw error;}
 }

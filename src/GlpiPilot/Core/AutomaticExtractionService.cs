@@ -47,9 +47,10 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var navigation = settings.Copy();
         navigation.PortalUrl = settings.AutoMode == "pagination" ? TargetUrlPolicy.FirstPage(settings.PortalUrl) : settings.PortalUrl;
         var page = await browser.OpenTargetAsync(navigation, ct);
+        if (browser.ResolvedTargetUrl.Length > 0) navigation.PortalUrl = browser.ResolvedTargetUrl;
         var searchVerified = TargetUrlPolicy.IncludesSearch(page.Url, navigation.PortalUrl);
         Stage("Recherche du tableau mémorisé…", AutomaticRunPhase.Search);
-        var table = await browser.WaitForAutoTableAsync(page, settings, ct);
+        var table = await browser.WaitForAutoTableAsync(page, navigation, ct);
         var scopeEvidence = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
         var observedSort = await browser.ReadObservedSortAsync(table, ct);
         Log?.Invoke($"PÉRIMÈTRE · critères observables={scopeEvidence.Known} ; empreinte conservée, valeurs absentes du journal.");
@@ -73,7 +74,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             {
                 Stage("Export natif indisponible : retour à la première page pour lire toute la recherche…", AutomaticRunPhase.Retrieval);
                 var pagination = settings.Copy(); pagination.AutoMode = "pagination";
-                pagination.PortalUrl = TargetUrlPolicy.FirstPage(settings.PortalUrl);
+                pagination.PortalUrl = TargetUrlPolicy.FirstPage(navigation.PortalUrl);
                 page = await browser.OpenTargetAsync(pagination, ct);
                 table = await browser.WaitForAutoTableAsync(page, pagination, ct);
                 var resumedScope = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);

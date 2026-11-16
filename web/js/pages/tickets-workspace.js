@@ -3,7 +3,7 @@ import { importLocalTestFile } from '../local-file-test.js';
 import { renderRecordList } from './records.js';
 import { renderTicketReader } from './workplace-tickets.js';
 
-// One visible workspace owns the list and its adjacent reader. The historical
+// One visible workspace owns the search and its full-page ticket reader. The historical
 // route IDs are only entry points into this same list/selection state.
 export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {}) {
   ctx.root.dataset.workspace = 'records';
@@ -28,22 +28,21 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   if(isFileSource(source))heading.append(el('p',{class:'notice info',text:fileSourceDetailHelp}));
 
   const listParams = {};
-  for (const key of ['indices', 'rows', 'revision', 'mine', 'identityView']) if (ctx.params?.[key] != null) listParams[key] = ctx.params[key];
+  for (const key of ['indices', 'rows', 'revision', 'mine', 'identityView', 'returnToSearch']) if (ctx.params?.[key] != null) listParams[key] = ctx.params[key];
   let listCleanup = null, readerCleanup = null, listRevision = null;
   let listPosition = { top: 0, left: 0 }, lastFocus = null, currentTicket = null, currentArgs = null;
   let sequence = null, activeRow = null, disposed = false, queue = Promise.resolve(), showingDetail = false;
-  const wide = matchMedia('(min-width: 1240px)');
+
   const scrollHost = ctx.root.closest('#content') || ctx.root.closest('.page-content') || ctx.root;
   const perform = action => { const next = queue.then(() => !disposed && !ctx.signal?.aborted ? action() : undefined); queue = next.catch(() => {}); return next; };
   const sameRow = args => args.rowIndex != null && args.rowIndex === currentArgs?.rowIndex && args.revision === currentArgs?.revision;
   const sameTicket = args => sameRow(args) || args.ticketKey && args.ticketKey === readerCleanup?.ticketKey();
   function updateLayout() {
     shell.classList.toggle('has-detail', showingDetail); shell.dataset.view = showingDetail ? 'detail' : 'list';
-    list.hidden = showingDetail && !wide.matches; detail.hidden = !showingDetail;
+    list.hidden = showingDetail; detail.hidden = !showingDetail; heading.hidden = showingDetail;
     if (list.hidden) listCleanup?.suspend?.(); else listCleanup?.resume?.();
   }
-  const onWidth = () => { if (!disposed) updateLayout(); };
-  wide.addEventListener('change', onWidth);
+
   const rememberList = () => {
     if (list.hidden) return;
     listPosition = { top: scrollHost.scrollTop, left: scrollHost.scrollLeft };
@@ -58,11 +57,13 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   const returnToList = () => perform(showList);
   function drawPath() {
     const position = sequence?.revision === ctx.state.session?.revision ? sequence.rows.indexOf(activeRow) : -1;
-    const move = delta => perform(() => showTicket({ rowIndex: sequence.rows[position + delta], revision: sequence.revision }));
+    const absolute=position<0?-1:(sequence.offset||0)+position;
+    const move = delta => perform(async()=>{const args=await listCleanup.ticketAt(absolute+delta);if(args)await showTicket(args);});
     replaceChildren(path, button('Retour à la liste', returnToList, { icon: 'arrow', attributes: { class: 'button tickets-back' } }),
-      position >= 0 ? toolbar(badge(`${position + 1} / ${sequence.rows.length}`),
-        button('Ticket précédent', () => move(-1), { disabled: position === 0, icon: 'arrow', attributes: { class: 'button tickets-back' } }),
-        button('Ticket suivant', () => move(1), { disabled: position === sequence.rows.length - 1, icon: 'arrow' })) : null,
+      position >= 0 ? toolbar(badge(`${absolute + 1} / ${sequence.total}`),
+        button('Ticket précédent', () => move(-1), { disabled: absolute === 0, icon: 'arrow', attributes: { class: 'button tickets-back' } }),
+        button('Ticket suivant', () => move(1), { disabled: absolute === sequence.total - 1, icon: 'arrow' })) : null,
+      button('Mes dossiers',()=>savedDossiers(),{icon:'folder'}),
       button('Préparer le matériel',prepareCurrentTicket,{icon:'layers',attributes:{'data-field-context':'ticket'}}));
   }
   async function prepareCurrentTicket(){
@@ -123,7 +124,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
       if (!readerCleanup) await mountReader(args);
       else if (!reused) await readerCleanup.openTicket(args);
       if (disposed || ctx.signal?.aborted) return;
-      drawPath(); detail.scrollTop = 0; if (!wide.matches) scrollHost.scrollTop = 0; focusReader();
+      drawPath(); detail.scrollTop = 0; scrollHost.scrollTop = 0; focusReader();
     } catch (error) {
       if (!currentTicket) readerRoot.replaceChildren(empty('Cette fiche ne peut pas être ouverte', error.message));
       drawPath(); throw error;
@@ -157,7 +158,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   await showList();
   if (ctx.params?.rowIndex != null || ctx.params?.ticketKey) await showTicket({ ...ctx.params, rowIndex: ctx.params.rowIndex == null ? undefined : Number(ctx.params.rowIndex), revision: ctx.params.revision == null ? undefined : Number(ctx.params.revision) });
   else if (resumeActive || ctx.params?.resumeTicket) { const work = await ctx.api.call('workplace.get', {}, { signal: ctx.signal }); if (work.activeTicketKey) await showTicket({ ticketKey: work.activeTicketKey, section: ctx.params?.section }); }
-  const cleanup=async () => { await queue; await readerCleanup?.(); await listCleanup?.(); disposed = true; wide.removeEventListener('change', onWidth); if (ctx.root.dataset.workspace === 'records') delete ctx.root.dataset.workspace; };
+  const cleanup=async () => { await queue; await readerCleanup?.(); await listCleanup?.(); disposed = true;  if (ctx.root.dataset.workspace === 'records') delete ctx.root.dataset.workspace; };
   cleanup.identityParams=()=>({...listCleanup?.identityParams?.(),...(showingDetail?currentArgs:{ticketKey:undefined,rowIndex:undefined,section:undefined,resumeTicket:false})});
   return cleanup;
 }

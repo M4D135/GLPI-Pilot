@@ -295,7 +295,7 @@ internal static partial class Program
             "Customization controls the six spaces themselves and protects Accueil/Réglages without exposing old screens as choices.");
         await Editor().GetByRole(AriaRole.Checkbox, new() { Name = "Afficher Données", Exact = true }).UncheckAsync();
         await Editor().GetByRole(AriaRole.Button, new() { Name = "Épingler Interventions", Exact = true }).ClickAsync();
-        await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Tickets", Exact = true }).PressAsync("ArrowUp");
+        await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Rechercher", Exact = true }).PressAsync("ArrowUp");
         await SaveEditor(); var saved = AppSettings.Load().Interface;
         Require(saved.NavigationDefaultsVersion == 3 && saved.HiddenNavigation.Contains("data") && saved.PinnedNavigation.Contains("interventions")
             && saved.NavigationOrder.IndexOf("records") < saved.NavigationOrder.IndexOf("pilot") && saved.Accent == "violet" && saved.FrozenColumns == 3,
@@ -450,7 +450,7 @@ internal static partial class Program
         Require(trapped && await Button("Navigation").GetAttributeAsync("aria-expanded") == "false"
             && await Button("Navigation").EvaluateAsync<bool>("node=>node===document.activeElement"),
             "The compact drawer traps keyboard focus, closes with Escape and returns focus to its launcher.");
-        await OpenEditor(); await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Tickets", Exact = true }).PressAsync("ArrowDown");
+        await OpenEditor(); await Editor().GetByRole(AriaRole.Button, new() { Name = "Déplacer Rechercher", Exact = true }).PressAsync("ArrowDown");
         Require(await page.EvaluateAsync<bool>("document.activeElement?.dataset.navigationFocus==='page:records'&&document.documentElement.scrollWidth<=innerWidth+1&&document.querySelector('.navigation-modal').scrollWidth<=document.querySelector('.navigation-modal').clientWidth+1"),
             "At a narrow width the six-space editor keeps keyboard focus after reordering and fits the viewport.");
         await Capture("workspace-navigation-compact");
