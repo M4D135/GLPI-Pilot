@@ -3,6 +3,8 @@ import { call, run, message, note, pre, date, dataTable, pager, ticketButton, ch
 import { renderDraft, renderActions, renderInsights } from './workplace-actions.js';
 import { openLibraryPrecedents } from '../library-ticket.js';
 import { publishSharedOperation } from './shared-operations.js';
+import { mountMap } from './maps.js';
+import { searchForTools, searchToolParams } from '../ticket-search-context.js';
 const personalDrafts = new Map();
 
 export async function renderTickets(ctx) {
@@ -16,7 +18,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   if(fileSourceUnavailable(ctx))return;
   const simulation = isSimulation(ctx.state.session);
   let state = await call(ctx, 'workplace.get'), current = null, source = null, opened = null;
-  let personal = null, tool = null, disposed = false, version = 0;
+  let personal = null, tool = null, disposed = false, version = 0, mapController = null;
   const reader = el('section', { class: 'work-ticket-reader tickets-working-panel', 'aria-label': 'Lecture du ticket' });
   ctx.root.replaceChildren(reader);
   const savePosition = async (ticket, patch = {}) => {
@@ -95,6 +97,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       await personal?.dispose(); current = updated; await draw();
     });
     const facts = sourceFacts(ticket), journalHost = el('div'), planningHost=el('section',{class:'tickets-plan-links',hidden:true,'aria-label':'Interventions liées au ticket'});
+    const mapHost = el('div', { class: 'tickets-map-host' });
     personal = ticketPersonalEditor(ctx, ticket.personal, state.checklistTemplates, value => { if (current?.personal.key === ticket.personal.key) current.personal = value; }, () => { current = null; onTicketClosed?.(); });
     replaceChildren(reader,
       el('header', { class: 'work-ticket-heading tickets-panel-heading' },
@@ -106,9 +109,30 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(note), facts,
       el('div', { class: 'tickets-actionbar' }, button('Planifier', () => ctx.navigate('interventions', {plan:true,ticketKey:ticket.personal.key}), {icon:'calendar'}), button('Notes et rappels', focusPersonal, { icon: 'log' }),
         button('Brouillon de suivi', () => openTool('draft'), { icon: 'log', attributes: { 'aria-haspopup': 'dialog' } }), button('Actions assistées', () => openTool('actions'), { icon: 'check', primary: true, attributes: { 'aria-haspopup': 'dialog' } }),
-        button('Autres outils', moreTools, { icon: 'settings' })),
+        button('Autres outils', moreTools, { icon: 'settings' }),
+        button('Voir sur la carte', run(ctx, async () => {
+          const ticketSearch = searchForTools(ctx.state);
+          const model = await ctx.api.call('maps.workspace.get', ticketSearch ? { ticketSearch } : {});
+          const rows = await ctx.api.call('maps.workspace.rows', { token: model.token, limit: 2000 });
+          const item = (rows.items || []).find(value => value.ticket?.rowIndex === opened?.rowIndex);
+          await ctx.navigate('terrain-map', searchToolParams(ctx.state, item?.ticket?.placeKey ? { placeKey: item.ticket.placeKey } : {}));
+        }), { icon: 'map' }),
+        button('Ajouter à la tournée', () => ctx.navigate('interventions', searchToolParams(ctx.state, { tab: 'tours', rows: [opened?.rowIndex], revision: ctx.state.session?.revision })), { icon: 'route' })),
       button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({ api: ctx.api, signal: ctx.signal, state: ctx.state, navigate: ctx.navigate }, { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget })), { icon: 'search' }),
+      card('Carte du périmètre', mapHost, el('p', { class: 'help', text: 'Tickets du même périmètre et repères du lieu de ce ticket.' })),
       planningHost, el('div',{class:'tickets-detail-content'},journalHost,personal.element));
+    mapController?.dispose?.(); mapController = null;
+    const mapGeneration = version;
+    (async () => {
+      try {
+        const ticketSearch = searchForTools(ctx.state);
+        const model = await ctx.api.call('maps.workspace.get', ticketSearch ? { ticketSearch } : {});
+        if (disposed || version !== mapGeneration || current?.personal.key !== ticket.personal.key) return;
+        mapController = mountMap(ctx, model, mapHost, {});
+      } catch (error) {
+        if (!disposed && version === mapGeneration) mapHost.replaceChildren(empty('Carte indisponible', error.message));
+      }
+    })();
     if(ctx.state.capabilities?.includes('calendar.forTicket'))void call(ctx,'calendar.forTicket',{ticketKey:ticket.personal.key}).then(planning=>{
       if(disposed||generation!==version||current?.personal.key!==ticket.personal.key)return;
       const rows=[...(planning.upcoming||[]),...(planning.past||[])];
@@ -180,7 +204,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   if (ctx.params?.rowIndex != null) await open({ ...ctx.params, rowIndex: Number(ctx.params.rowIndex), revision: Number(ctx.params.revision) });
   else if (ctx.params?.ticketKey) await open({ ...ctx.params });
-  const cleanup = async () => { await closeTool(); await personal?.dispose(); personal = null; disposed = true; version++; };
+  const cleanup = async () => { await closeTool(); await personal?.dispose(); personal = null; mapController?.dispose?.(); mapController = null; disposed = true; version++; };
   cleanup.openTicket = open; cleanup.ticketKey = () => current?.personal.key; return cleanup;
 }
 

@@ -33,7 +33,7 @@ export async function renderTicketMap(ctx) {
   let selectionMemory=selections.get(ctx.state);if(!selectionMemory){selectionMemory=new Map();selections.set(ctx.state,selectionMemory);}
   const selectionKey=workspaceContextKey(ctx.state);
   const remembered=selectionMemory.get(selectionKey);
-  let selected = new Set(remembered?.revision===ctx.state.session.revision?remembered.rows:[]), placeKey = previous.placeKey || '', offset = previous.offset || 0, generation = 0, viewport=previous.viewport;
+  let selected = new Set(remembered?.revision===ctx.state.session.revision?remembered.rows:[]), placeKey = ctx.params?.placeKey || ctx.params?.mapPlaceKey || previous.placeKey || '', offset = previous.offset || 0, generation = 0, viewport=previous.viewport;
   let activePanel = null;
   function panelButton(label, name, options = {}) {
     const control = button(label, p.act(() => openPanel(name)), options);

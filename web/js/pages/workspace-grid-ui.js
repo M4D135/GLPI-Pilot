@@ -257,6 +257,25 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
     if (!plan) { announce('Emplacement occupé par une carte verrouillée.'); return; }
     void save(plan, id, grid, size);
   });
+  // Wheel events over a scrollable widget must scroll that widget immediately,
+  // even before it receives focus. Otherwise the page keeps the scroll gesture
+  // and the widget appears to ignore the wheel for about a second.
+  on(host, 'wheel', event => {
+    let node = event.target instanceof Element ? event.target : null;
+    while (node && node !== host) {
+      if (node.scrollHeight > node.clientHeight + 1) {
+        const delta = event.deltaY;
+        const atTop = node.scrollTop <= 0;
+        const atBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+        if ((delta < 0 && !atTop) || (delta > 0 && !atBottom)) {
+          node.scrollTop += delta;
+          event.preventDefault();
+          return;
+        }
+      }
+      node = node.parentElement;
+    }
+  }, { passive: false });
   on(window, 'resize', schedule);
   if (canEdit()) host.prepend(caption('Glissez les poignées pour placer vos cartes, y compris entre sections. Petit, Moyen ou Grand : les hauteurs restent indépendantes. La disposition s’adapte à la largeur disponible.', 'workspace-grid-help no-print'));
   function dispose() {

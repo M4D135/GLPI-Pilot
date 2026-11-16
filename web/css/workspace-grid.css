@@ -6,7 +6,7 @@
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget[data-auto-height="false"]{height:var(--widget-height,320px)}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading{flex:0 0 auto;min-height:0;flex-wrap:wrap;align-items:flex-start}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-heading>h3{overflow-wrap:anywhere}
-.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:1 1 auto;min-height:0;overflow:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+.pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body{flex:1 1 auto;min-height:0;overflow:hidden;overscroll-behavior:auto;scrollbar-width:thin}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.analytics-widget-body:has(details[open]){overflow-y:auto}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget>.workspace-weather-placeholder{min-height:0;overflow:auto}
 .pilot-workspace .pilot-widget-grid[data-workspace-grid]>.pilot-widget .analytics-chart{max-width:100%}
