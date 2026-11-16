@@ -25,7 +25,9 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   ctx.root.replaceChildren(reader);
   function paintReadStatus() {
     if (!readIndicator) return;
-    readIndicator.hidden = simulation || !current?.canRead || readStatus === 'idle' || readStatus === 'paused';
+    // Offline/cached sources and a paused specialist editor must not leave an
+    // empty scanner row between the ticket heading and its action buttons.
+    readIndicator.hidden = simulation || !current?.canRead || ['idle', 'paused', 'unavailable'].includes(readStatus);
     readIndicator.dataset.state = readStatus;
     const labels = {
       waiting: 'Copie disponible · vérification dans un instant',
