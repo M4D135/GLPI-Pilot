@@ -78,6 +78,19 @@ test('offline/unreadable tickets never trigger a background read', async () => {
   reader.dispose();
 });
 
+test('opening a ticket tool cancels auto-reading and closing it can resume safely', async () => {
+  const calls = [];
+  const reader = createTicketLiveRead({ delayMs: 10, read: async key => { calls.push(key); return key; } });
+  reader.schedule('ticket');
+  reader.cancel(); // modal editor opens before the dwell threshold
+  await pause(20);
+  assert.deepEqual(calls, []);
+  reader.schedule('ticket'); // same ticket, editor closed
+  await pause(20);
+  assert.deepEqual(calls, ['ticket']);
+  reader.dispose();
+});
+
 test('the manual refresh button starts immediately without a duplicate delayed read', async () => {
   const calls = [];
   const reader = createTicketLiveRead({ delayMs: 20, read: async key => { calls.push(key); return key; } });

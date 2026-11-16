@@ -196,6 +196,10 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     personal?.remember(); await closeTool();
     const ticket = current, titles = { reader: 'Observations du ticket', summary: 'Synthèse du ticket', search: 'Rechercher dans le ticket', handover: 'Passation du ticket', intelligence: 'Rapprochements', insights: 'Planification et relations', draft: 'Brouillon de suivi', actions: 'Actions assistées' };
     if (!titles[kind]) return;
+    // A tool may contain edits. Never let a delayed/background refresh replace
+    // the ticket beneath it; resume only after the same ticket's tool closes.
+    liveRead.cancel(); showReadStatus('paused');
+    const openingVersion = version;
     const content = el('div', { class: 'work-reader-body tickets-tool-content' }), modal = dialog(titles[kind], content);
     modal.element.classList.add('tickets-tool-modal');
     const nativeClose = modal.close;
@@ -207,7 +211,14 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       close() {
         if (this.closing) return this.closing;
         content.inert = true;
-        return this.closing = this.finish().then(() => { nativeClose(); if (tool === record) tool = null; })
+        return this.closing = this.finish().then(() => {
+          nativeClose();
+          if (tool === record) {
+            tool = null;
+            if (!disposed && version === openingVersion && current?.personal.key === ticket.personal.key && !ctx.signal?.aborted)
+              liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
+          }
+        })
           .catch(error => { content.inert = false; this.closing = null; throw error; });
       }
     };
