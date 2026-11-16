@@ -57,8 +57,8 @@ module.exports = async ({ page, reset, ok, capture }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await home(true);
   ok(await page.locator('.home-overview-heading .button.primary').innerText() === 'Voir les tickets', 'Loaded home prioritizes opening tickets');
-  await page.getByRole('button', { name: 'Actualiser le relevé', exact: true }).click();
-  ok(await page.evaluate(() => hyperRoutes.at(-1) === 'data'), 'The loaded home keeps an explicit source-refresh action');
+  await page.getByRole('button', { name: 'Gérer les sources', exact: true }).click();
+  ok(await page.evaluate(() => hyperRoutes.at(-1) === 'data'), 'The loaded home keeps a clearly labelled source-management action');
   await page.getByRole('button', { name: 'Voir les tickets', exact: true }).first().click();
   ok(await page.evaluate(() => hyperRoutes.at(-1) === 'records'), 'The loaded home opens the ticket workspace directly');
   await page.evaluate(() => controller.abort());
