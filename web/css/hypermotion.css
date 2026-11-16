@@ -1,0 +1,286 @@
+/* GLPI Pilot 4.0 · HyperMotion — a visual layer, never a change to business data.
+   Keep ticket, map, calendar and 12-column widget geometry owned by their pages.
+   Everything below has a light, high-contrast and reduced-motion fallback. */
+:root {
+  --hyper-cyan: #62d9ef;
+  --hyper-violet: #a48bff;
+  --hyper-mint: #61d9bd;
+  --hyper-pink: #f39bc9;
+  --hyper-line: color-mix(in srgb, var(--hyper-cyan) 25%, var(--border));
+  --hyper-ease: cubic-bezier(.2, .8, .2, 1);
+}
+:root[data-theme=dark] {
+  --bg: #0b1423;
+  --nav-bg: #101b2e;
+  --surface: #15233a;
+  --surface-2: #1a2b44;
+  --surface-alt: #192b42;
+  --surface-hover: #223b59;
+  --input-bg: #101f33;
+  --border: #30445f;
+  --control-border: #71849d;
+  --accent: #93d8ff;
+  --accent-solid: #1679dd;
+  --accent-soft: #203e61;
+}
+:root[data-theme=light] {
+  --hyper-cyan: #087ca9;
+  --hyper-violet: #674bb7;
+  --hyper-mint: #167c6d;
+  --hyper-pink: #a23e79;
+}
+
+/* Ambient atmosphere is static and clipped to the scrolling pane: no giant
+   blurred layer or continuous repaint while tables and map tiles move. */
+:root:not([data-theme=contrast]) .workspace {
+  background:
+    radial-gradient(ellipse 47% 290px at 87% -30px, color-mix(in srgb, var(--brand-2) 12%, transparent), transparent 78%),
+    radial-gradient(ellipse 37% 320px at -10% 51%, color-mix(in srgb, var(--brand-1) 9%, transparent), transparent 83%),
+    var(--bg);
+}
+:root:not([data-theme=contrast]) .sidebar {
+  background: linear-gradient(165deg, color-mix(in srgb, var(--brand-1) 7%, var(--nav-bg)), var(--nav-bg) 58%, color-mix(in srgb, var(--brand-2) 6%, var(--nav-bg)));
+  border-right-color: color-mix(in srgb, var(--hyper-cyan) 18%, var(--border));
+  box-shadow: inset -1px 0 color-mix(in srgb, var(--hyper-cyan) 7%, transparent);
+}
+:root:not([data-theme=contrast]) .topbar {
+  background: color-mix(in srgb, var(--surface) 93%, var(--bg));
+  box-shadow: 0 4px 25px #00000008;
+}
+:root:not([data-theme=contrast]) .topbar::after {
+  opacity: .65;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--brand-1) 24%, var(--brand-2) 51%, var(--brand-3) 80%, transparent);
+}
+:root:not([data-theme=contrast]) .brand-mark {
+  border: 1px solid #ffffff21;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-1) 8%, transparent), 0 5px 18px color-mix(in srgb, var(--brand-2) 21%, transparent);
+}
+:root:not([data-theme=contrast]) .nav-item[aria-current=page] {
+  border-color: color-mix(in srgb, var(--hyper-cyan) 25%, var(--border));
+  background: linear-gradient(100deg, color-mix(in srgb, var(--accent-soft) 95%, var(--surface)), color-mix(in srgb, var(--brand-2) 8%, var(--surface)));
+  box-shadow: inset 0 1px #ffffff0b, 0 4px 16px color-mix(in srgb, var(--brand-1) 8%, transparent);
+}
+:root:not([data-theme=contrast]) .search-command:focus-visible,
+:root:not([data-theme=contrast]) .search-command:hover {
+  border-color: var(--hyper-cyan);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hyper-cyan) 15%, transparent);
+}
+:root:not([data-theme=contrast]) .page-heading h1 {
+  background: linear-gradient(108deg, var(--text) 8%, color-mix(in srgb, var(--accent) 62%, var(--text)) 60%, var(--hyper-violet));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  letter-spacing: -.65px;
+}
+:root:not([data-theme=contrast]) .button.primary {
+  background: linear-gradient(112deg, #0868c5, #5362d8 58%, #077f91);
+  color: #fff;
+  border: 1px solid #ffffff20;
+  box-shadow: 0 5px 13px color-mix(in srgb, var(--brand-1) 19%, transparent), inset 0 1px #ffffff25;
+}
+:root:not([data-theme=contrast]) .button.primary:hover:not(:disabled) {
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--brand-2) 27%, transparent), inset 0 1px #ffffff38;
+  filter: brightness(1.065);
+}
+:root:not([data-theme=contrast]) :is(.sidebar,.topbar,.workspace) :is(.button,.nav-item,.search-command):focus-visible {
+  outline: 2px solid var(--hyper-cyan);
+  outline-offset: 3px;
+}
+
+/* Home — one clear action first, real counters and immediately readable tasks. */
+:root:not([data-theme=contrast]) .home-overview-heading {
+  border-color: color-mix(in srgb, var(--hyper-violet) 34%, var(--border));
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse at 90% 0%, color-mix(in srgb, var(--brand-2) 17%, transparent), transparent 61%),
+    linear-gradient(120deg, color-mix(in srgb, var(--surface) 95%, var(--bg)), color-mix(in srgb, var(--brand-1) 7%, var(--surface)));
+  box-shadow: 0 13px 35px #00000012, inset 0 1px #ffffff0c;
+}
+.home-overview-heading h2 { font-size: clamp(23px, 2vw, 31px); line-height: 1.2; }
+.home-overview-heading > .toolbar { gap: 7px; }
+.home-overview-heading .home-source-line { max-width: 76ch; }
+:root:not([data-theme=contrast]) .home-identity-choice {
+  border-color: color-mix(in srgb, var(--hyper-mint) 26%, var(--border));
+  background: linear-gradient(108deg, color-mix(in srgb, var(--hyper-mint) 7%, var(--surface)), var(--surface) 75%);
+}
+:root:not([data-theme=contrast]) .home-scope-controls .button.primary {
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 29%, var(--border));
+  color: var(--accent);
+  box-shadow: inset 0 1px var(--d-highlight);
+}
+.home-counter.button { position: relative; isolation: isolate; overflow: hidden; }
+:root:not([data-theme=contrast]) .home-counter.button {
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--widget-accent, var(--accent)) 7%, var(--surface)), var(--surface) 83%);
+  box-shadow: 0 7px 24px #0000000b, inset 0 1px var(--d-highlight);
+}
+.home-counter.button::before { height: 2px; }
+:root:not([data-theme=contrast]) .home-counter.button:focus-visible {
+  outline: 2px solid var(--hyper-cyan);
+  outline-offset: 2px;
+}
+:root:not([data-theme=contrast]) .home-workspace .card {
+  border-radius: 17px;
+  border-color: color-mix(in srgb, var(--hyper-cyan) 12%, var(--border));
+  background: color-mix(in srgb, var(--surface) 95%, var(--brand-1));
+  box-shadow: 0 7px 27px #0000000a, inset 0 1px var(--d-highlight);
+}
+:root:not([data-theme=contrast]) .home-workspace .card > h2 { color: var(--text); }
+:root:not([data-theme=contrast]) .home-ticket-row {
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 10px;
+  padding-inline: 9px;
+  transition: background-color 160ms var(--hyper-ease);
+}
+:root:not([data-theme=contrast]) .home-ticket-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.home-ticket-row .home-ticket-title { max-width: 74ch; }
+:root:not([data-theme=contrast]) .home-agenda-item {
+  border-radius: 10px;
+  padding-inline: 8px;
+  transition: background-color 160ms;
+}
+:root:not([data-theme=contrast]) .home-agenda-item:hover { background: color-mix(in srgb, var(--hyper-mint) 6%, var(--surface)); }
+
+/* Ticket reader — the live K2000 sweep retains the 500 ms scheduler in JS. */
+:root:not([data-theme=contrast]) .tickets-source-list,
+:root:not([data-theme=contrast]) .tickets-detail-pane {
+  border-color: color-mix(in srgb, var(--hyper-violet) 17%, var(--border));
+  border-radius: 17px;
+  box-shadow: 0 9px 29px #00000010, inset 0 1px var(--d-highlight);
+}
+:root:not([data-theme=contrast]) .tickets-panel-heading {
+  border-color: color-mix(in srgb, var(--hyper-violet) 28%, var(--border));
+  background: linear-gradient(117deg, color-mix(in srgb, var(--brand-1) 10%, var(--surface)), color-mix(in srgb, var(--brand-2) 9%, var(--surface)) 63%, var(--surface));
+}
+.tickets-panel-heading h2 { text-wrap: pretty; }
+:root:not([data-theme=contrast]) .tickets-source-facts > div {
+  border: 1px solid color-mix(in srgb, var(--hyper-cyan) 12%, var(--border));
+  border-radius: 11px;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--brand-1) 5%, var(--surface-alt)), var(--surface-alt));
+}
+:root:not([data-theme=contrast]) .ticket-live-read-track {
+  background: color-mix(in srgb, var(--hyper-cyan) 16%, var(--surface));
+}
+:root:not([data-theme=contrast]) .tickets-actionbar .button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand-1) 9%, var(--surface));
+}
+
+/* Analytical widgets: retain independent size, positions and edit handles. */
+:root:not([data-theme=contrast]) :is(.pilot-widget,.analytics-widget) {
+  border-color: color-mix(in srgb, var(--hyper-cyan) 13%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--brand-1) 4%, var(--surface)), var(--surface) 55%);
+  box-shadow: 0 5px 20px #0000000c, inset 0 1px var(--d-highlight);
+}
+:root:not([data-theme=contrast]) .pilot-widget:not(.is-grid-moving):not(.is-dragging):hover,
+:root:not([data-theme=contrast]) .analytics-widget:not(.is-dragging):not(.is-resizing):hover {
+  border-color: color-mix(in srgb, var(--hyper-violet) 42%, var(--border));
+  box-shadow: 0 10px 25px #00000018, inset 0 1px var(--d-highlight);
+}
+:root:not([data-theme=contrast]) .pilot-block-heading h2 { letter-spacing: -.55px; }
+:root:not([data-theme=contrast]) .pilot-section-index {
+  border-bottom-color: color-mix(in srgb, var(--hyper-cyan) 15%, var(--border));
+}
+:root:not([data-theme=contrast]) .pilot-section-index .button:hover {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--hyper-violet) 8%, var(--surface));
+}
+:root:not([data-theme=contrast]) .pilot-weather-scene { filter: drop-shadow(0 5px 11px color-mix(in srgb, var(--brand-1) 12%, transparent)); }
+
+/* Calendar, routes and maps: controls remain obvious; no position/scale change. */
+:root:not([data-theme=contrast]) .calendar-tabs {
+  border-color: color-mix(in srgb, var(--hyper-cyan) 15%, var(--border));
+  background: color-mix(in srgb, var(--surface) 91%, var(--brand-1));
+}
+:root:not([data-theme=contrast]) .calendar-tabs .calendar-tab.active {
+  background: linear-gradient(110deg, color-mix(in srgb, var(--brand-1) 17%, var(--surface)), color-mix(in srgb, var(--brand-2) 12%, var(--surface)));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hyper-cyan) 35%, var(--border)), 0 3px 8px #0000000a;
+}
+:root:not([data-theme=contrast]) .calendar-board,
+:root:not([data-theme=contrast]) .calendar-panel-heading {
+  border-color: color-mix(in srgb, var(--hyper-cyan) 19%, var(--border));
+}
+:root:not([data-theme=contrast]) .calendar-event:not(.is-dragging):not(.is-resizing) {
+  border-radius: 8px;
+  box-shadow: inset 0 1px #ffffff0e, 0 2px 6px #00000016;
+}
+:root:not([data-theme=contrast]) .calendar-event:hover:not(.is-dragging) {
+  box-shadow: inset 0 1px #ffffff17, 0 5px 13px #00000025;
+}
+:root:not([data-theme=contrast]) .maps-inline-host {
+  border-color: color-mix(in srgb, var(--hyper-cyan) 25%, var(--border));
+  border-radius: 18px;
+  box-shadow: 0 9px 28px #00000014, inset 0 1px var(--d-highlight);
+}
+:root:not([data-theme=contrast]) .maps-canvas { border-color: color-mix(in srgb, var(--hyper-cyan) 23%, var(--border)); border-radius: 13px; }
+:root:not([data-theme=contrast]) .maps-place[aria-pressed=true] {
+  background: linear-gradient(110deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), color-mix(in srgb, var(--hyper-violet) 9%, var(--surface)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hyper-cyan) 50%, var(--border));
+}
+:root:not([data-theme=contrast]) .maps-pin { box-shadow: 0 3px 10px #14243b66, 0 0 0 4px color-mix(in srgb, var(--hyper-cyan) 16%, transparent); }
+
+/* Minimal motion: compositor-only, never for layout-managed widgets or maps. */
+@keyframes hyper-focus-breathe {
+  0%, 100% { opacity: .45; transform: scale(.96); }
+  50% { opacity: .82; transform: scale(1.06); }
+}
+:root[data-motion=normal][data-domenia-motion=on] .home-overview-heading::after {
+  animation: hyper-focus-breathe 8s var(--hyper-ease) infinite;
+}
+:root[data-motion=normal][data-domenia-motion=on] .home-counter.button:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 29px #00000018, inset 0 1px var(--d-highlight);
+}
+:root[data-motion=normal][data-domenia-motion=on] .home-counter.button {
+  transition: transform 200ms var(--hyper-ease), box-shadow 200ms var(--hyper-ease), border-color 200ms;
+}
+
+/* Compact desktops must never hide the ticket actions or force horizontal
+   scrolling in the home hero; mobile and keyboard remain functional. */
+@media (max-width: 1366px) {
+  .home-overview-heading { gap: 12px; }
+  .home-overview-heading > .toolbar { flex-wrap: wrap; }
+  .home-overview-heading > .toolbar .button { min-height: 32px; }
+}
+@media (max-width: 1000px) {
+  .home-overview-heading { flex-wrap: wrap; }
+  .home-overview-heading > .toolbar { width: 100%; justify-content: flex-start; }
+  .home-overview-heading h2 { font-size: 24px; }
+}
+@media (max-width: 620px) {
+  .home-overview-heading > .toolbar .button { flex: 1 1 auto; }
+  .home-counter.button { min-width: 0; }
+  .tickets-panel-heading h2 { overflow-wrap: anywhere; }
+}
+:root:is([data-theme=contrast],[data-contrast=true]) .home-overview-heading,
+:root:is([data-theme=contrast],[data-contrast=true]) .home-counter.button,
+:root:is([data-theme=contrast],[data-contrast=true]) .pilot-widget,
+:root:is([data-theme=contrast],[data-contrast=true]) .analytics-widget { box-shadow: none; }
+:root[data-contrast=true] .home-overview-heading::after { animation: none; }
+:root[data-contrast=true] .page-heading h1 {
+  background: none;
+  color: var(--text);
+}
+:root[data-contrast=true] .button.primary {
+  background: var(--accent-solid);
+  border-color: var(--control-border);
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-overview-heading::after { animation: none !important; }
+  .home-counter.button { transition: none !important; transform: none !important; }
+}
+@media (forced-colors: active) {
+  .home-overview-heading::after { display: none; }
+  .page-heading h1 { background: none !important; color: CanvasText !important; }
+  .home-counter.button,.pilot-widget,.analytics-widget,.calendar-event,.maps-inline-host {
+    background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none;
+  }
+  .button.primary { background: Highlight; color: HighlightText; }
+}
+@media print {
+  .home-overview-heading::after { animation: none; }
+  .home-counter.button,.pilot-widget,.analytics-widget,.tickets-panel-heading,.maps-inline-host { box-shadow: none !important; }
+}

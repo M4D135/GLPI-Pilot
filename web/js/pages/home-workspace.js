@@ -17,10 +17,12 @@ export async function renderHomeWorkspace(ctx){
  const source=state.session,simulation=isSimulation(source),receipt=extractionStatus(source);
  const sourceText=source.loaded?`${formatNumber(source.rows)} lignes · ${source.testFileName||source.title||'Relevé courant'}`:'Aucun relevé chargé';
  root.append(el('header',{class:'home-overview-heading'},el('div',{},el('p',{class:'home-date',text:today}),
-  el('h2',{text:'À faire et à prévoir'}),el('div',{class:'home-source-line'},
+  el('h2',{text:'Votre journée en un regard'}),el('div',{class:'home-source-line'},
    source.loaded?badge(receipt.receipt,simulation?'info':receipt.tone):null,el('span',{text:sourceText}))),
-  toolbar(button('Planifier',()=>navigate('interventions',{plan:true}),{primary:true,icon:'calendar'}),button('Carte des tickets',()=>navigate('terrain-map'),{icon:'map'}),
-   !source.loaded?button('Collecter depuis GLPI',()=>navigate('data'),{icon:'download'}):button('Ouvrir le pilotage',()=>navigate('pilot'),{icon:'chart'}))));
+  toolbar(source.loaded?button('Voir les tickets',()=>navigate('records'),{primary:true,icon:'ticket'}):button('Collecter depuis GLPI',()=>navigate('data'),{primary:true,icon:'download'}),
+   button('Planifier',()=>navigate('interventions',{plan:true}),{icon:'calendar'}),
+   source.loaded?button('Actualiser le relevé',()=>navigate('data'),{icon:'refresh'}):button('Importer un fichier',()=>importLocalTestFile(ctx),{icon:'folder'}),
+   button('Carte',()=>navigate('terrain-map'),{icon:'map'}))));
  if(source.loaded&&receipt.attention)root.append(el('p',{class:'notice warning home-source-attention',text:receipt.attention}));
  const cachePosition=document.createComment('cache local');root.append(cachePosition);
  async function loadCache(){
