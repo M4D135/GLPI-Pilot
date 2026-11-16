@@ -91,7 +91,7 @@ internal sealed partial class WindowsWebViewFixture
                     "The packaged Standard host loads the local application brand at its original sidebar size.");
                 var registeredRoutes = await NavigationRouteIdsAsync(page);
                 Check(await page.Locator(".page-content[data-page=home]").CountAsync() == 1
-                    && await page.GetByRole(AriaRole.Heading, new() { Name = "À faire et à prévoir", Exact = true, Level = 2 }).IsVisibleAsync()
+                    && await page.GetByRole(AriaRole.Heading, new() { Name = "Votre journée en un regard", Exact = true, Level = 2 }).IsVisibleAsync()
                     && await page.GetByText("Aucun relevé chargé", new() { Exact = true }).IsVisibleAsync()
                     && registeredRoutes.SequenceEqual(new[] { "home", "records", "interventions", "pilot", "data", "settings" })
                     && await page.Locator(".workspace-view,.nav-group-toggle").CountAsync() == 0,
