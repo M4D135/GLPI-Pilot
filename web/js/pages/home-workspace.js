@@ -21,6 +21,7 @@ export async function renderHomeWorkspace(ctx){
    source.loaded?badge(receipt.receipt,simulation?'info':receipt.tone):null,el('span',{text:sourceText}))),
   toolbar(source.loaded?button('Voir les tickets',()=>navigate('records'),{primary:true,icon:'ticket'}):button('Collecter depuis GLPI',()=>navigate('data'),{primary:true,icon:'download'}),
    button('Planifier',()=>navigate('interventions',{plan:true}),{icon:'calendar'}),
+   source.loaded?button('Ouvrir le pilotage',()=>navigate('pilot'),{icon:'chart'}):null,
    source.loaded?button('Gérer les sources',()=>navigate('data'),{icon:'download'}):button('Importer un fichier',()=>importLocalTestFile(ctx),{icon:'folder'}),
    button('Carte des tickets',()=>navigate('terrain-map'),{icon:'map'}))));
  if(source.loaded&&receipt.attention)root.append(el('p',{class:'notice warning home-source-attention',text:receipt.attention}));

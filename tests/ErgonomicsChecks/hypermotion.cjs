@@ -61,5 +61,7 @@ module.exports = async ({ page, reset, ok, capture }) => {
   ok(await page.evaluate(() => hyperRoutes.at(-1) === 'data'), 'The loaded home keeps a clearly labelled source-management action');
   await page.getByRole('button', { name: 'Voir les tickets', exact: true }).first().click();
   ok(await page.evaluate(() => hyperRoutes.at(-1) === 'records'), 'The loaded home opens the ticket workspace directly');
+  await page.getByRole('button', { name: 'Ouvrir le pilotage', exact: true }).first().click();
+  ok(await page.evaluate(() => hyperRoutes.at(-1) === 'pilot'), 'The loaded home retains a direct path to the business dashboard');
   await page.evaluate(() => controller.abort());
 };
