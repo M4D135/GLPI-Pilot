@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). **Le code 4.0.0 de la branche HyperMotion reste en prépublication jusqu’à la qualification complète du commit exact et la vérification GLPI/SSO en situation réelle.** La présence de sources, d’un EXE compilé ou d’un ZIP local ne signifie pas que cette validation a réussi. Les rapports et les journaux de qualification de chaque release font foi.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.0 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -28,13 +28,13 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
-## 4.0.0 : HyperMotion et lecture différée des tickets — prépublication
+## 4.0.0 : interface, cartes et parcours tickets
 
-Refonte visuelle Domenia v2/HyperMotion, sans changement des règles métier ou de la disposition des widgets. Accueil plus lisible et contextuel, modes clair/sombre, contraste et mobilité améliorés. La lecture GLPI d'un ticket se déclenche 500 ms après son ouverture, sans collecte au survol, avec annulation si la sélection change, actualisation manuelle immédiate et indicateur K2000 discret. Voir [le périmètre et les limites de qualification de la 4.0.0](docs/RELEASE-4.0.0.md).
+Interface inspirée de Domenia v2, textes neutres sans slogans, thèmes clair/sombre et nuages des Réglages corrigés. La carte ouvre les rues détaillées par défaut et transmet les lieux choisis à une seule recherche centrale. Les descriptions, la sélection et le contexte sont conservés entre carte, recherche, fiche, planning et matériel. Navigation précédent/suivant dans les résultats, y compris entre les pages. Lecture GLPI après 500 ms, annulation des lectures inutiles, cache récent et indicateur K2000 discret. Les imports de configuration 3.15.1/4.0 sont pris en charge ; la simulation sur fichier reste distinguée des données de démonstration. Voir les [notes de version et limites de validation](docs/RELEASE-4.0.0.md).
 
 ## 3.15.0 : recherche centrale et SSO — version historique qualifiée
 
-La version courante réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Elle a été qualifiée par le run 43861855164 (tentative 2, 15/15 jobs verts) et publiée par le run 43872397061 : `GLPI-Pilot_3.15.0_PROD-LIGHT_Windows-x64.zip`, 138 246 401 octets, SHA-256 `f074ecca1536c2fa7eaa5a228550bf97dd4d0ca26ca487fff0ba7e3f11fd1df5`. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
+La version historique 3.15.0 réunit recherche, carte, planning, tournées et matériel autour des mêmes tickets et filtres, ouvre les fiches en pleine page et automatise la préférence SSO reconnue. Elle a été qualifiée par le run 43861855164 (tentative 2, 15/15 jobs verts) et publiée par le run 43872397061 : `GLPI-Pilot_3.15.0_PROD-LIGHT_Windows-x64.zip`, 138 246 401 octets, SHA-256 `f074ecca1536c2fa7eaa5a228550bf97dd4d0ca26ca487fff0ba7e3f11fd1df5`. Voir le [périmètre et les vérifications](docs/TECHNICIEN-RECHERCHE-2026-11-16.md).
 
 ## 3.14.7 : liens de documentation vérifiés
 
