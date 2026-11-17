@@ -1,13 +1,10 @@
-name: Integrate reviewed source provenance correction
+name: Integrate final terrain navigation test correction
 on:
   push:
     branches: ['codex/glpi-ticket-500ms-kitt-20261116']
     paths: ['.github/workflows/integrate-source-provenance.yml']
 permissions:
   contents: write
-concurrency:
-  group: integrate-source-provenance
-  cancel-in-progress: false
 jobs:
   integrate:
     if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/codex/glpi-ticket-500ms-kitt-20261116'
@@ -18,43 +15,35 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Apply reviewed changes to exact source blobs
+      - name: Target the actual parent details used by the production map
         shell: python
         run: |
-          import hashlib,json,pathlib,subprocess
-          changes=json.loads(r'''{"web/js/pages/data-workspace.js":{"before":"dc71f9a86d21467bd1504d7d27bb4cb3c8645a77","after":"087ac57fe7b7ba2b5cd9ddc45be2faadf5e45471","replacements":[["el('h2', { text: simulation ? 'Sources de simulation' : 'Sources de données' })","el('h2', { text: simulation ? demo ? 'Sources de démonstration' : 'Fichier en simulation' : 'Sources de données' })"]]},"web/js/app.js":{"before":"28926a44df8f9374ee3d303c706d9690a6221c38","after":"89f845d02674e8156de27170b31708408d015125","replacements":[["testBanner.hidden=!session.testMode;testFileName.textContent=session.testFileName||'Données de démonstration';","testBanner.hidden=!session.testMode;testBanner.querySelector('.local-test-copy > strong').textContent=session.demo?'Démonstration · données fictives':'Simulation · fichier local';testFileName.textContent=session.testFileName||(session.demo?'Données de démonstration':'Fichier local');"],["el('strong',{text:'Démonstration · données fictives'}),testFileName","el('strong',{text:'Simulation'}),testFileName"],["mode==='csv'?'Source fichier sélectionnée':'Mode démonstration';","mode==='csv'?'Source fichier sélectionnée':session.demo?'Mode démonstration':'Simulation sur fichier local';"]]},"web/js/pages/tickets-workspace.js":{"before":"89a7b06e56edcd73264e59febacddde1875578e3","after":"7a1e44aefd9835e7c434b86b601e983c01da70e3","replacements":[["isSimulation(source) ? 'démonstration fictive' : isFileSource(source)","isSimulation(source) ? source.demo ? 'démonstration fictive' : 'fichier local en simulation' : isFileSource(source)"]]},"web/js/pages/presentation-editor.js":{"before":"1ad01f6b8325b8ec3a2f8b742d397249f8360e35","after":"739e2889c491a73fd57b5c772f7c66801b5f6e4c","replacements":[["isSimulation(ctx.state.session) ? 'Démonstration · données fictives'","isSimulation(ctx.state.session) ? ctx.state.session.demo ? 'Démonstration · données fictives' : 'Simulation · fichier local'"]]},"tests/WebViewChecks/Program.DataSourceWorkflow.cs":{"before":"d05c07d0adda77e2ffeb2b32f3569cd84cfa8640","after":"ed58c57bc9ed15de881a356d754ba2db43280842","replacements":[["Name = \"Votre fichier, en simulation\", Exact = true","Name = \"Fichier en simulation\", Exact = true"],["&& !(await Group().InnerTextAsync()).Contains(\"données fictives\", StringComparison.Ordinal),","&& !(await Group().InnerTextAsync()).Contains(\"données fictives\", StringComparison.Ordinal)\n            && await page.Locator(\".local-test-banner .local-test-copy > strong\").InnerTextAsync() == \"Simulation · fichier local\"\n            && !(await page.Locator(\".local-test-banner\").InnerTextAsync()).Contains(\"fictives\", StringComparison.Ordinal),"],["Require(await Button(\"Collecter la simulation\").IsVisibleAsync() && await page.Locator(\"[data-source-method=glpi]\").CountAsync() == 0,","Require(await Button(\"Collecter la simulation\").IsVisibleAsync() && await page.Locator(\"[data-source-method=glpi]\").CountAsync() == 0\n            && await page.Locator(\".local-test-banner .local-test-copy > strong\").InnerTextAsync() == \"Démonstration · données fictives\","]]},"tests/WebViewChecks/Program.Resolution.cs":{"before":"1dc6c763358928d98d906e643b28cfd721f6255a","after":"885e3afd81a27f344de6b2429e1d392b3ec054bd","replacements":[[".Contains(\"vos termes saisis\")",".Contains(\"les termes saisis\")"]]}}''')
-          def blob(raw):return hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
-          subprocess.run(['git','merge-base','--is-ancestor','79b0a79556400197b54c3d31f9eff4160b9d8508','HEAD'],check=True)
-          for name,change in changes.items():
-            raw=subprocess.check_output(['git','show','HEAD:'+name])
-            assert blob(raw)==change['before'],'Source changed: '+name
-            text=raw.decode('utf-8')
-            for old,new in change['replacements']:
-              assert text.count(old)==1,'Ambiguous edit: '+name
-              text=text.replace(old,new)
-            raw=text.encode('utf-8')
-            assert blob(raw)==change['after'],'Result mismatch: '+name
-            pathlib.Path(name).write_bytes(raw)
-          subprocess.run(['git','add','--',*changes],check=True)
-          assert set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())==set(changes)
+          import hashlib,pathlib,subprocess
+          name='tests/WebViewChecks/Program.LocalFileTest.cs'
+          raw=subprocess.check_output(['git','show','HEAD:'+name])
+          def blob(value):return hashlib.sha1(b'blob '+str(len(value)).encode()+b'\0'+value).hexdigest()
+          assert blob(raw)=='2da21f21bb28da132821e6a65e10a413c1bb3d54','Source changed'
+          text=raw.decode('utf-8')
+          assert text.count('.map-management-tools')==4
+          text=text.replace('.map-management-tools','.maps-workspace-actions')
+          raw=text.encode('utf-8')
+          assert blob(raw)=='c0727210c3d66e94b4edb2db6aaadbddd1926c24'
+          assert "class:'maps-workspace-actions'" in pathlib.Path('web/js/pages/terrain-map.js').read_text()
+          pathlib.Path(name).write_bytes(raw)
+          subprocess.run(['git','add','--',name],check=True)
           subprocess.run(['git','diff','--cached','--check'],check=True)
-      - name: Check interface text, syntax and release safeguards
-        run: |
-          set -euo pipefail
-          for file in web/js/app.js web/js/pages/data-workspace.js web/js/pages/tickets-workspace.js web/js/pages/presentation-editor.js; do node --check "$file"; done
-          node --test tests/InterfaceCopyChecks/run.mjs tests/ErgonomicsChecks/ticket-live-read.test.mjs tests/WorkspaceGridChecks/run.mjs tests/PilotBoardLabelsChecks/run.mjs tests/WeatherGroupPickerChecks/run.mjs
-          python3 -m unittest discover -s tests/ReleasePackChecks -p 'test_*.py'
-      - name: Commit reviewed source and strengthened UI assertions
+          assert subprocess.check_output(['git','diff','--cached','--name-only'],text=True).strip()==name
+      - name: Verify release safeguards
+        run: python3 -m unittest discover -s tests/ReleasePackChecks -p 'test_*.py'
+      - name: Commit only the corrected test
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           branch=codex/glpi-ticket-500ms-kitt-20261116
           gh auth setup-git
-          current=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
-          test "$current" = "$GITHUB_SHA"
+          test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$GITHUB_SHA"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Distinguish imported file simulation from fictional demonstration throughout the interface'
+          git commit -m 'Open the actual terrain management container before testing its nested tools'
           git push origin "HEAD:refs/heads/$branch"
-          echo "Source correction committed as $(git rev-parse HEAD). Complete Windows qualification remains required." >> "$GITHUB_STEP_SUMMARY"
