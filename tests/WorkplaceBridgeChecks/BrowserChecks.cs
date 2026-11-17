@@ -21,8 +21,8 @@ public static class WorkBrowserChecks
             ("WebView ticket reader renders real engine observations and restores filters", TicketPage),
             ("WebView optional reader sections omit null placeholders while preserving literal user text", OptionalReaderContent),
             ("WebView seven-digit ticket IDs stay horizontal and open the original source row", TicketIdentifierLayout),
-            ("WebView unified Tickets retains its queried list and unfinished personal work", UnifiedTicketList),
-            ("WebView saved dossiers and original-row links remain local without automatic reads", SavedTicketJourney),
+            ("WebView cached Tickets retains its queried list and unfinished personal work", UnifiedTicketList),
+            ("WebView cached saved dossiers and original-row links remain local without automatic reads", SavedTicketJourney),
             ("WebView simulated ticket changes refresh the list and preserve the real workspace", SimulatedTicketJourney),
             ("WebView workspace panels await render and cleanup exactly once before close or navigation", WorkspacePanelLifecycle),
             ("WebView notes checklist and reminder save through real handler", PersonalPage),
@@ -103,7 +103,7 @@ public static class WorkBrowserChecks
         public List<string> Errors { get; } = new();
         public List<string> Operations { get; } = new();
         public List<string> ExternalRequests { get; } = new();
-        public async Task Start(string page, object? args = null, TicketDetailResult? detail = null, bool cacheDetail = true)
+        public async Task Start(string page, object? args = null, TicketDetailResult? detail = null, bool cacheDetail = true, bool cachedSource = false)
         {
             if (cacheDetail) Fixture.App.ReadFixture(detail ?? WorkFixture.Detail());
             _context = await _browser!.NewContextAsync(new() { ViewportSize = new() { Width = 1480, Height = 1050 }, Locale = "fr-FR" }); Page = await _context.NewPageAsync(); Page.PageError += (_, error) => Errors.Add(error);
@@ -141,6 +141,8 @@ public static class WorkBrowserChecks
                     cleanup=await page.render({root,api:workApi,state:workState,signal:controller.signal,navigate:workNavigate,params,refresh:()=>workNavigate(id,params),notify:(text,tone)=>{workNotices.push({text,tone});document.querySelector('#notices').textContent=text;}});window.workReady=true;};
                 }
                 """, state);
+            // Cached-source navigation must remain network-free regardless of runner speed.
+            if (cachedSource) await Page.EvaluateAsync("()=>workState.session.cachedSource=true");
             await Navigate(page, args);
         }
         public async Task Navigate(string page, object? args = null)
@@ -283,7 +285,7 @@ public static class WorkBrowserChecks
         await using var ui = new UiSession();
         ui.Fixture.Source.Rows = Enumerable.Range(0, 140).Select(i => new[] { (1000000 + i).ToString(), "Conservation réseau · ticket " + i, "Nouveau", "Normale", "Réseau", "Alice", "2026-10-26T12:00:00", "Site synthétique" }).ToList();
         ui.Fixture.Source.ExpectedTotal = 140; ui.Fixture.App.Settings.TicketDetails.AutoLoadOnSelection = true; ui.Fixture.App.LoadFixture(ui.Fixture.Source);
-        await ui.Start("records", cacheDetail: false);
+        await ui.Start("records", cacheDetail: false, cachedSource: true);
         var list = ui.Page.Locator(".tickets-list-pane");
         await list.GetByLabel("Recherche du relevé", new() { Exact = true }).FillAsync("Conservation");
         await ui.Page.WaitForFunctionAsync("()=>workLastRecords?.args.search==='Conservation'");
@@ -343,7 +345,7 @@ public static class WorkBrowserChecks
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Retour à la liste", Exact = true }).ClickAsync();
         await ui.Capture("tickets-workspace-list-compact.png");
         Check(ui.Operations.All(op => op is not ("workplace.ticket.read" or "workplace.ticket.browser" or "workplace.ticket.tab")) && ui.ExternalRequests.Count == 0,
-            "Opening, moving and returning never start a GLPI read, including with the legacy automatic-read setting enabled.");
+            "Cached-source opening, moving and returning never start a GLPI read, including with the legacy automatic-read setting enabled. Live-source delay and cancellation have separate regression coverage.");
         await ui.NoErrors();
     }
     private static async Task SavedTicketJourney()
@@ -353,7 +355,7 @@ public static class WorkBrowserChecks
         await ui.Fixture.Call("workplace.personal.save", new { ticketKey = key, notes = "Repère personnel conservé", pinned = true });
         ui.Fixture.Source.Rows.RemoveAt(0); ui.Fixture.Source.ExpectedTotal = 3;
         ui.Fixture.App.Settings.TicketDetails.AutoLoadOnSelection = true; ui.Fixture.App.LoadFixture(ui.Fixture.Source);
-        await ui.Start("tickets", cacheDetail: false);
+        await ui.Start("tickets", cacheDetail: false, cachedSource: true);
         Check(await ui.Page.Locator(".tickets-record-grid tbody tr").CountAsync() == 3
             && (await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#42 ·", StringComparison.Ordinal),
             "The legacy ticket entry resumes its dossier inside the same workspace and leaves the current source list intact.");
