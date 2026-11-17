@@ -57,7 +57,7 @@ public sealed partial class PilotApplication
                 || draft.Seed && !string.Equals(draft.Path, DeploymentConfigurationInitializer.ResolveSeedPath(_deploymentDirectory), StringComparison.OrdinalIgnoreCase)
                 || draft.Baseline != DeploymentConfigurationService.Fingerprint(Settings, AppPaths.DataRoot)
                 || draft.Sha256 != DeploymentConfigurationService.Digest(DeploymentConfigurationService.ReadBytes(draft.Path)))
-                throw new InvalidOperationException("L’aperçu a expiré : le fichier ou vos options ont changé. Examinez de nouveau la configuration complète.");
+                throw new InvalidOperationException("L’aperçu a expiré : le fichier ou les options ont changé. Examinez de nouveau la configuration complète.");
             var applied = DeploymentConfigurationService.Apply(draft.Configuration, Settings, AppPaths.DataRoot, ct, expectedFingerprint: draft.Baseline);
             _deploymentDraft = null; _libraryPreferences = null; _libraryPassword = ""; _libraryPasswordBinding = ""; _ticketLibrary = null; _teamWorkspace = null;
             ResetLibrarySharing();

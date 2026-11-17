@@ -5,7 +5,7 @@ import { call, run, message, revision, note, pre, date, heading, dataTable, page
 export async function renderDay(ctx) {
   const prefs = await call(ctx, 'workplace.get'); let page = 0; let active = ctx.params?.section || 'list'; let selected = null; let currentData; let disposed = false;
   const search = input(prefs.daySearch || '', { maxLength: 300, placeholder: 'Ticket, titre, ville ou notes' });
-  const scopes = ['Aujourd’hui', 'Mes tickets du relevé', 'File personnelle', 'Épinglés', 'Rappels à traiter', 'Reportés', 'Tous les conservés'];
+  const scopes = ['Aujourd’hui', 'Tickets attribués', 'File personnelle', 'Épinglés', 'Rappels à traiter', 'Reportés', 'Tous les conservés'];
   const scope = select(scopes.map((label, value) => ({ value: String(value), label })), String(prefs.dayScope || 0));
   const intro = el('div'); const content = el('div'); const selectedContent = el('div', { class: 'work-day-editor' });
   const choose = async row => {
@@ -18,7 +18,7 @@ export async function renderDay(ctx) {
   const load = async () => {
     currentData = await call(ctx, 'workplace.day.get', { search: search.value, scope: Number(scope.value), page }); if (disposed) return;
     const personalName=currentData.personalName||(ctx.state.identity?.key===currentData.personalTechnician?ctx.state.identity.label:'');
-    intro.replaceChildren(note(personalName ? `Mon identité : ${personalName}${currentData.sourceDate?' · relevé du '+date(currentData.sourceDate):''}` : 'Choisissez votre identité pour retrouver vos tickets.'), toolbar(button('Choisir mon identité', () => ctx.chooseIdentity?ctx.chooseIdentity():ctx.navigate('technicians')), button('Mon tableau de bord', () => ctx.navigate('dashboard', { technicianKey: currentData.personalTechnician }), { disabled: !currentData.personalTechnician }), badge(currentData.complete ? 'Relevé complet' : 'Couverture partielle ou non confirmée')));
+    intro.replaceChildren(note(personalName ? `Identité : ${personalName}${currentData.sourceDate?' · relevé du '+date(currentData.sourceDate):''}` : 'Sélectionner une identité pour filtrer les tickets attribués.'), toolbar(button('Choisir l’identité', () => ctx.chooseIdentity?ctx.chooseIdentity():ctx.navigate('technicians')), button('Tableau de bord personnel', () => ctx.navigate('dashboard', { technicianKey: currentData.personalTechnician }), { disabled: !currentData.personalTechnician }), badge(currentData.complete ? 'Relevé complet' : 'Couverture partielle ou non confirmée')));
     draw();
   };
   function draw() {
@@ -31,7 +31,7 @@ export async function renderDay(ctx) {
     } else if (active === 'briefing') {
       let briefingPage = 0; const rows = el('div'); const render = () => rows.replaceChildren(dataTable(data.briefing.lines.slice(briefingPage * 50, briefingPage * 50 + 50), [{ key: 'ticketId', label: 'Ticket' }, { key: 'kind', label: 'Événement observé' }, { key: 'message', label: 'Détail' }]), pager(briefingPage, 50, data.briefing.lines.length, value => { briefingPage = value; render(); })); render(); body.replaceChildren(note(data.briefing.summary), rows);
     } else if (active === 'tours') {
-      body.replaceChildren(note('Tournées enregistrées pour aujourd’hui : votre identité et les tournées sans technicien désigné. En l’absence d’identité choisie, toutes les tournées du jour sont visibles.'), dataTable(data.tours, [{ key: 'name', label: 'Tournée', render: row => button(row.name, () => ctx.navigate('tours', { tourId: row.tourId })) }, { key: 'state', label: 'État', render: row => ({ draft: 'Brouillon', ready: 'Prête', done: 'Terminée' }[row.state] || row.state) }, { key: 'startTime', label: 'Début' }, { key: 'endTime', label: 'Fin' }, { key: 'ticketIds', label: 'Tickets', render: row => row.ticketIds.join(', ') }]), button('Ouvrir les tournées', () => ctx.navigate('tours')));
+      body.replaceChildren(note('Tournées du jour attribuées à l’identité sélectionnée et tournées sans technicien. En l’absence d’identité choisie, toutes les tournées du jour sont visibles.'), dataTable(data.tours, [{ key: 'name', label: 'Tournée', render: row => button(row.name, () => ctx.navigate('tours', { tourId: row.tourId })) }, { key: 'state', label: 'État', render: row => ({ draft: 'Brouillon', ready: 'Prête', done: 'Terminée' }[row.state] || row.state) }, { key: 'startTime', label: 'Début' }, { key: 'endTime', label: 'Fin' }, { key: 'ticketIds', label: 'Tickets', render: row => row.ticketIds.join(', ') }]), button('Ouvrir les tournées', () => ctx.navigate('tours')));
     } else if (active === 'templates') {
       const choice = select([{ value: '', label: 'Nouveau modèle' }, ...Object.keys(data.templates).map(value => ({ value, label: value }))], ''); const name = input('', { maxLength: 100 }); const lines = textArea('', 20000, 12);
       choice.addEventListener('change', () => { name.value = choice.value; lines.value = (data.templates[choice.value] || []).join('\n'); });
@@ -42,7 +42,7 @@ export async function renderDay(ctx) {
       body.replaceChildren(enabled.element, note('Pendant l’ouverture de GLPI Pilot, les rappels restent visibles dans cette liste. Les notifications affichent uniquement un nombre. Les plages de silence et le verrouillage de session suspendent l’affichage sans consommer les rappels.'), button('Vérifier les rappels maintenant', run(ctx, async () => { const result = await call(ctx, 'workplace.reminders.check'); ctx.notify(`${result.count} rappel(s) à traiter` + (result.notified ? ' · notification affichée.' : result.deferred ? ' · notification différée.' : '.')); })));
     }
   }
-  ctx.root.replaceChildren(heading('Mes priorités', 'Votre file, vos rappels et les changements observés depuis la précédente session.'), intro, content);
+  ctx.root.replaceChildren(heading('Priorités', 'File personnelle, rappels et changements depuis la précédente session.'), intro, content);
   scope.addEventListener('change', run(ctx, async () => { page = 0; await saveView(); await load(); }));
   search.addEventListener('keydown', e => { if (e.key === 'Enter') run(ctx, async () => { page = 0; await saveView(); await load(); })(); });
   await load();

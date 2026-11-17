@@ -168,7 +168,7 @@ public sealed partial class PilotApplication
             }
             catch (InvalidDataException error) { return new { success = false, mode = "folder", message = AppPaths.SafeError(error) }; }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or TimeoutException)
-            { return new { success = false, mode = "folder", message = "Dossier partagé indisponible. Vérifiez son existence, la connexion au réseau et les droits de lecture et d’écriture de votre session Windows." }; }
+            { return new { success = false, mode = "folder", message = "Dossier partagé indisponible. Vérifiez son existence, la connexion au réseau et les droits de lecture et d’écriture de la session Windows." }; }
         }
         var password = LibraryConnectionPassword(settings, Text(args, "password", 8000));
         try

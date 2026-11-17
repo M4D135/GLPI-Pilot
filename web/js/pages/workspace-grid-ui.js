@@ -277,7 +277,7 @@ export function bindWorkspaceGrid({ host, getBoard, canEdit, persist, notify, si
     }
   }, { passive: false });
   on(window, 'resize', schedule);
-  if (canEdit()) host.prepend(caption('Glissez les poignées pour placer vos cartes, y compris entre sections. Petit, Moyen ou Grand : les hauteurs restent indépendantes. La disposition s’adapte à la largeur disponible.', 'workspace-grid-help no-print'));
+  if (canEdit()) host.prepend(caption('Déplacer les cartes par leur poignée, y compris entre sections. Tailles indépendantes : Petit, Moyen ou Grand.', 'workspace-grid-help no-print'));
   function dispose() {
     if (disposed) return;
     disposed = true; finish(true); host.removeAttribute('aria-busy'); observer.disconnect(); readers.forEach(reader => reader.dispose()); lifetime.abort(); cancelAnimationFrame(frame); cancelAnimationFrame(scrolling);

@@ -44,7 +44,7 @@ public sealed class TourExternalServices : IDisposable
     public static Uri Endpoint(string value)
     {
         if (value == null || value.Length > 1000 || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)
-            throw new InvalidDataException("L’adresse du fournisseur doit être HTTP(S), sans identifiant, paramètre ni fragment. Utilisez votre service autorisé.");
+            throw new InvalidDataException("L’adresse du fournisseur doit être HTTP(S), sans identifiant, paramètre ni fragment. Utiliser un service autorisé.");
         return uri;
     }
     public async Task<ScheduledTour> RouteAsync(ScheduledTour source, TourPlanningContext context, TourServiceSettings settings, bool consent, CancellationToken ct = default)

@@ -54,7 +54,7 @@ export const toIso = value => value ? new Date(value).toISOString() : '';
 export function personalEditor(ctx, personal, templates, onSaved) {
   const simulation=isSimulation(ctx.state.session);
   const notes = textArea(personal.notes, 8000, 8);
-  const pinned = checkbox(personal.pinned, 'Épingler ce ticket'); const queued = checkbox(personal.queueOrder != null, 'Dans ma file personnelle');
+  const pinned = checkbox(personal.pinned, 'Épingler ce ticket'); const queued = checkbox(personal.queueOrder != null, 'Dans la file personnelle');
   const offline = checkbox(personal.offline, 'Conserver les rubriques lues hors connexion');
   const reminder = input(toLocalInput(personal.reminderAt), { type: 'datetime-local' }); const snooze = input(toLocalInput(personal.snoozedUntil), { type: 'datetime-local' });
   const reason = input(personal.snoozeReason || '', { maxLength: 1200 });
@@ -72,7 +72,7 @@ export function personalEditor(ctx, personal, templates, onSaved) {
   });
   return el('div', { class: 'work-personal-editor' },
     note(simulation?'Les notes et rappels restent dans la simulation. Le partage les ajoute à son espace d’équipe pour essayer les parcours collaboratifs.':'Le travail personnel reste sur ce poste. « Enregistrer et partager la note » publie uniquement le texte de la note et sa référence de ticket dans l’espace d’équipe.'),
-    toolbar(pinned.element, queued.element, offline.element), field('Mes notes', notes),
+    toolbar(pinned.element, queued.element, offline.element), field('Notes personnelles', notes),
     toolbar(button('Enregistrer et partager la note', run(ctx, async () => {
       const saved = await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, notes: notes.value });
       await publishSharedOperation(ctx, 'workspace.publishPersonalNote', { ticketKey: personal.key });
@@ -80,6 +80,6 @@ export function personalEditor(ctx, personal, templates, onSaved) {
     }), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))),
     card('Liste de vérification', listRoot, toolbar(button('Ajouter une action', () => { if (checklist.length >= 40) { ctx.notify('La liste est limitée à 40 actions.', 'error'); return; } checklist.push({ text: '', done: false }); renderList(); }), template, button('Reprendre le modèle', () => { checklist.splice(0, checklist.length, ...(templates[template.value] || []).map(text => ({ text, done: false }))); renderList(); }))),
     el('div', { class: 'work-form-grid' }, field('Rappel personnel', reminder), field('Reporter jusqu’au', snooze), field('Motif du report', reason)),
-    toolbar(button('Enregistrer mon travail', save, { primary: true }), button('Rappel traité', run(ctx, async () => { await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, acknowledge: true }); ctx.notify('Rappel marqué comme traité.'); })), button('Retirer le dossier conservé…', run(ctx, async () => { if (!await confirm('Retirer ce dossier ?', 'Les notes, le brouillon, la liste et la copie hors connexion de ce dossier seront retirés. Les reçus d’actions restent conservés.', 'Retirer le dossier')) return; await call(ctx, 'workplace.personal.remove', { ticketKey: personal.key, confirmed: true }); ctx.navigate('tickets'); }), { danger: true })));
+    toolbar(button('Enregistrer', save, { primary: true }), button('Rappel traité', run(ctx, async () => { await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, acknowledge: true }); ctx.notify('Rappel marqué comme traité.'); })), button('Retirer le dossier conservé…', run(ctx, async () => { if (!await confirm('Retirer ce dossier ?', 'Les notes, le brouillon, la liste et la copie hors connexion de ce dossier seront retirés. Les reçus d’actions restent conservés.', 'Retirer le dossier')) return; await call(ctx, 'workplace.personal.remove', { ticketKey: personal.key, confirmed: true }); ctx.navigate('tickets'); }), { danger: true })));
 }
 export function textDialog(title, content, actions = []) { return dialog(title, pre(content), actions); }

@@ -69,7 +69,7 @@ public sealed partial class PilotApplication
             _librarySyncState = "offline";
             _librarySyncLabel = settings.SyncMode == "folder" ? "Dossier partagé indisponible · modifications conservées localement" : "Central indisponible · modifications conservées localement";
             _librarySyncError = settings.SyncMode == "folder"
-                ? "Vérifiez le dossier commun, la connexion réseau et les droits de votre session Windows. La prochaine synchronisation reprendra les échanges en attente."
+                ? "Vérifiez le dossier commun, la connexion réseau et les droits de la session Windows. La prochaine synchronisation reprendra les échanges en attente."
                 : "Vérifiez la connexion, le certificat TLS et les droits PostgreSQL. Une prochaine synchronisation reprendra les échanges en attente.";
             // Provider exceptions may include server text or connection details. Never expose them to the page or journal.
             Log("SYNCHRONISATION · échange central interrompu ; file locale conservée pour reprise.");

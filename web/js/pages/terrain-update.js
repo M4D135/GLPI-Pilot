@@ -15,7 +15,7 @@ export async function renderUpdates(ctx) {
   const install = button(label('Fermer GLPI Pilot et installer la version vérifiée','Simuler l’installation de cette version'), p.act(async () => {
     ensurePolicySaved(); if (!prepared) throw new Error('Vérifiez un pack avant de demander son installation.');
     if (!await confirm(prepared.isRollback ? 'Installer la version conservée' : 'Installer le pack vérifié',
-      simulation?`La version ${prepared.version} deviendra la version de simulation. Vous pourrez ensuite essayer le retour arrière depuis cet écran.`:`GLPI Pilot va se fermer pour installer la version ${prepared.version}. Une sauvegarde vérifiée des binaires sera conservée. Si le démarrage de la nouvelle version échoue, l’auxiliaire tentera de restaurer le pack précédent.`, label('Fermer et installer','Appliquer la simulation'))) return;
+      simulation?`La version ${prepared.version} deviendra la version de simulation. Retour arrière disponible depuis cet écran.`:`GLPI Pilot va se fermer pour installer la version ${prepared.version}. Une sauvegarde vérifiée des binaires sera conservée. Si le démarrage de la nouvelle version échoue, l’auxiliaire tentera de restaurer le pack précédent.`, label('Fermer et installer','Appliquer la simulation'))) return;
     const result = await p.call('update.install', { token: prepared.token, version: prepared.version, confirmed: true });
     if (result.closing) p.message('Installation lancée ; fermeture de GLPI Pilot…');
     else if(result.simulation){state=result.state||await p.call('update.state');prepared=state.prepared;paintSummary();paintArchive();paintPrepared();p.message(`Installation simulée terminée : version ${result.version||state.version}. Le retour arrière est disponible.`);}
@@ -30,13 +30,13 @@ export async function renderUpdates(ctx) {
       references.controls.get('sha256').control.value = result.simulation?result.sha256||'':''; references.controls.get('commit').control.value = result.simulation?result.commit||'':'';
       paintArchive(); paintPrepared();
     }))), archiveInfo, references.element,
-      button('Vérifier le ZIP local', p.act(async () => { ensurePolicySaved(); prepared = null; paintPrepared(); prepared = await p.call('update.prepareLocal', references.read()); paintPrepared(); p.message('Tous les fichiers du pack ont été contrôlés. L’installation reste à votre initiative.'); }))),
+      button('Vérifier le ZIP local', p.act(async () => { ensurePolicySaved(); prepared = null; paintPrepared(); prepared = await p.call('update.prepareLocal', references.read()); paintPrepared(); p.message('Tous les fichiers du pack sont vérifiés. Installation en attente de confirmation.'); }))),
     card('Confiance dans l’éditeur', policy.element,
       el('p', { text: 'La signature est facultative tant qu’aucun certificat de confiance n’est fourni. L’empreinte du fichier vérifie son intégrité ; l’état réel de signature de l’exécutable est affiché séparément dans le bilan.' }),
       button('Enregistrer la politique de confiance', p.act(async () => { state = await p.call('update.policy', { policy: policy.read() }); policyInitial = JSON.stringify(policy.read()); prepared = null; paintPrepared(); p.message('Politique enregistrée. Vérifiez de nouveau le pack avant de l’installer.'); }))),
     card('Pack préparé', review, toolbar(install,
       button('Préparer le retour à la version conservée', p.act(async () => {
-        ensurePolicySaved(); if (!await confirm('Préparer un retour arrière', 'La dernière sauvegarde des binaires de cette installation sera vérifiée. L’installation du retour arrière attendra ensuite votre confirmation.', 'Vérifier la sauvegarde')) return;
+        ensurePolicySaved(); if (!await confirm('Préparer un retour arrière', 'La dernière sauvegarde des binaires de cette installation sera vérifiée. Retour arrière soumis à confirmation.', 'Vérifier la sauvegarde')) return;
         prepared = null; paintPrepared(); prepared = await p.call('update.prepareRollback', { confirmed: true }); paintPrepared(); p.message('Retour arrière préparé à partir de la sauvegarde vérifiée.');
       }))),
       el('p', { class: 'terrain-muted', text: label('L’auxiliaire attend la fermeture de l’application, conserve l’ancien pack, remplace les binaires et vérifie le démarrage réel de WebView. Les données et préférences locales restent dans leur emplacement habituel. Une erreur de disque ou des fichiers maintenus ouverts peut nécessiter une récupération manuelle depuis la sauvegarde indiquée.','L’installation simulée actualise la version et conserve un bilan dans cet espace. Le retour arrière permet de retrouver la version simulée précédente.') })));

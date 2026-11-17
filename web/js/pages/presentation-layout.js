@@ -136,7 +136,7 @@ export function slideCanvas(slide, catalog, context, { editable = false, number 
     area.append(frame);
   }
   if (!slide.items.length) area.append(el('div', { class: 'presentation-empty-canvas' },
-    el('strong', { text: 'Une page pour vos chiffres' }), caption('Ajoutez un widget depuis la liste à droite, puis déplacez-le et ajustez sa taille.')));
+    el('strong', { text: 'Diapositive vide' }), caption('Ajoutez un widget depuis la liste à droite, puis déplacez-le et ajustez sa taille.')));
   return canvas;
 }
 

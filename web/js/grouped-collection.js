@@ -22,9 +22,9 @@ export async function openGroupedCollection(ctx, options = {}) {
     catch (error) { ctx.notify(error.message || 'Les recherches n’ont pas pu être ouvertes.', 'danger'); }
   };
   if (!searches.length) {
-    body.append(empty('Aucune recherche mémorisée', 'Renseignez l’adresse GLPI, puis ouvrez Mes recherches : donnez un nom et choisissez « Créer depuis la configuration actuelle ». Revenez ensuite ici pour choisir les recherches à collecter.'),
+    body.append(empty('Aucune recherche mémorisée', 'Renseignez l’adresse GLPI, puis ouvrez Recherches mémorisées : donnez un nom et choisissez « Créer depuis la configuration actuelle ». Revenez ensuite ici pour choisir les recherches à collecter.'),
       el('p', { class: 'help', text: 'Pour collecter uniquement l’adresse du formulaire, utilisez « Lancer la collecte » dans Données.' }));
-    modal = dialog('Collecter plusieurs recherches', body, [{ label: 'Ouvrir Mes recherches', primary: true, action: manage }]);
+    modal = dialog('Collecter plusieurs recherches', body, [{ label: 'Ouvrir Recherches mémorisées', primary: true, action: manage }]);
     const onAbort = () => modal.close();
     ctx.signal?.addEventListener('abort', onAbort, { once: true });
     modal.element.addEventListener('pilot:closed', () => ctx.signal?.removeEventListener('abort', onAbort), { once: true });
@@ -107,7 +107,7 @@ export async function openGroupedCollection(ctx, options = {}) {
     } finally { running = false; runController = null; setBusy(false); }
   }, { primary: true, icon: 'download' });
   const cancel = button('Annuler la collecte', () => { runController?.abort(); status.textContent = 'Arrêt de la collecte demandé…'; }, { icon: 'close' }); cancel.hidden = true;
-  const manageButton = button('Mes recherches', () => manage(modal.close), { icon: 'layers' });
+  const manageButton = button('Recherches mémorisées', () => manage(modal.close), { icon: 'layers' });
   const actions = toolbar(save, launch, cancel);
   body.append(preparation, status, progress, toolbar(manageButton), actions);
   modal = dialog('Collecter plusieurs recherches', body);

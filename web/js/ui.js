@@ -48,7 +48,7 @@ export function toolbar(...children) {
 export const empty=(title,detail='')=>el('div',{class:'empty'},icon('layers'),el('h3',{text:title}),detail?el('p',{text:detail}):null);
 export const badge=(text,tone='')=>el('span',{class:`badge ${tone}`,text});
 export const isSimulation=session=>session?.simulation===true||session?.testMode===true;
-export function simulationNotice(session,detail='Vos essais sont conservés dans cet espace de simulation. Quitter la simulation restaure votre espace de travail habituel.') {
+export function simulationNotice(session,detail='Les modifications restent dans la simulation. Quitter la simulation restaure le profil habituel.') {
  return isSimulation(session)?el('section',{class:'notice info','aria-label':'Simulation',dataset:{simulation:'true'}},badge('Simulation','info'),el('p',{text:detail})):null;
 }
 export const isFileSource=session=>session?.fileSource===true;

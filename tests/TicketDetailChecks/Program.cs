@@ -289,14 +289,14 @@ async Task ManualSections()
     await using var session = await Setup(legacy.Replace("</body>", "<p class='duplicated'>A</p><p class='duplicated'>B</p></body>", StringComparison.Ordinal));
     session.Settings.TicketDetails = new() { IncludeAutoDetected = false, MaxRowsPerSection = 1, Sections = new()
     {
-        new() { Name = "Mes notes", Selector = "#notes", Kind = "text" },
+        new() { Name = "Notes personnelles", Selector = "#notes", Kind = "text" },
         new() { Name = "Historique plafonné", Selector = "#followups", Kind = "table" },
         new() { Name = "Manquant", Selector = "#absent", Kind = "table" },
         new() { Name = "Ambigu", Selector = ".duplicated", Kind = "text" },
         new() { Name = "Invalide", Selector = "[", Kind = "text" }
     }};
     var result = await Read(session);
-    Require(result.Sections.Count == 2 && Section(result, "#notes").Name == "Mes notes", "Configuration non respectée.");
+    Require(result.Sections.Count == 2 && Section(result, "#notes").Name == "Notes personnelles", "Configuration non respectée.");
     var limited = Section(result, "#followups").Data;
     Require(limited.Rows.Count == 1 && limited.ExpectedTotal == 2 && !limited.Complete && limited.Warnings.Count > 0, "Limite silencieuse.");
     Require(result.Warnings.Any(w => w.Contains("Manquant", StringComparison.Ordinal)) && result.Warnings.Any(w => w.Contains("Ambigu", StringComparison.Ordinal)) && result.Warnings.Any(w => w.Contains("Invalide", StringComparison.Ordinal)), "Absence/ambiguïté non signalée.");

@@ -157,7 +157,7 @@ internal static partial class Program
         await Open("populations"); await Button("+ Période d’effectif").ClickAsync();
         Check(await page.GetByRole(AriaRole.Dialog).GetByText("Unité", new() { Exact = true }).CountAsync() == 1, "Dated population editing exposes the real unit and date interval form."); await CloseDialogs();
         await Open("assistant");
-        await page.GetByLabel("Votre demande", new() { Exact = true }).FillAsync("tickets actifs par catégorie");
+        await page.GetByLabel("Demande", new() { Exact = true }).FillAsync("tickets actifs par catégorie");
         var queryCount = app.Settings.Queries.Queries.Count; await Button("Préparer et voir le contenu exact").ClickAsync();
         await page.GetByText("Contenu préparé · pas encore envoyé", new() { Exact = true }).WaitForAsync();
         Check(await page.Locator(".analytics-prepared-content").CountAsync() > 0 && app.Settings.Queries.Queries.Count == queryCount, "Assistant preparation displays the exact payload without executing a query.");
@@ -216,9 +216,9 @@ internal static partial class Program
             && app.Settings.Dashboard.Layout.Boards[0].Widgets.Single(widget => widget.Id == "total").Title == "Volume ajusté" && app.Settings.Dashboard.Layout.Boards[0].Widgets.Count == 5,
             "A rejected save can be corrected in the same dialog and still addresses the original widget by identity.");
         await Section().GetByRole(AriaRole.Button, new() { Name = "Régler la section", Exact = true }).ClickAsync();
-        await page.GetByLabel("Titre de la section", new() { Exact = true }).FillAsync("Mon espace terrain");
+        await page.GetByLabel("Titre de la section", new() { Exact = true }).FillAsync("Espace personnel terrain");
         await Button("Enregistrer la section").ClickAsync(); await Ready("dashboard"); await CloseDialogs();
-        Check(app.Settings.Dashboard.Layout.Boards[0].Sections.Single(section => section.Key == sectionKey).Title == "Mon espace terrain"
+        Check(app.Settings.Dashboard.Layout.Boards[0].Sections.Single(section => section.Key == sectionKey).Title == "Espace personnel terrain"
             && app.Settings.Dashboard.Layout.Boards[0].Widgets.Single(widget => widget.Id == "total").Section == sectionKey,
             "Renaming a section preserves its identity and every widget association.");
         await Drag(Section().Locator("[data-drag-kind=section]"), page.Locator("[data-section-key=''] .analytics-section-heading"));

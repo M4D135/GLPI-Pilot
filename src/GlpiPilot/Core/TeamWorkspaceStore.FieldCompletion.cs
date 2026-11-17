@@ -89,7 +89,7 @@ public sealed partial class TeamWorkspaceStore
         await using var db = await Open(ct); using var tx = db.BeginTransaction();
         var old = await ReadItem(db, tx, id, ct) ?? throw new InvalidDataException("Document de préparation introuvable.");
         if (!FieldPreparationDocuments.IsKind(old.Kind) || old.Deleted) throw new InvalidDataException("Cette résolution concerne uniquement un catalogue ou une préparation existante.");
-        if (old.Revision != expectedRevision) throw new InvalidOperationException("La contribution a changé ; relisez les versions avant de confirmer votre choix.");
+        if (old.Revision != expectedRevision) throw new InvalidOperationException("La contribution a changé ; relisez les versions avant confirmation du choix.");
         string incoming;
         await using (var query = Command(db, tx, "SELECT incoming_json FROM gp_team_conflicts WHERE item_id=@id AND id=@conflict", ("@id", id), ("@conflict", conflictId)))
             incoming = (string?)await query.ExecuteScalarAsync(ct) ?? throw new InvalidOperationException("Ce conflit a déjà été résolu ou n’existe plus.");

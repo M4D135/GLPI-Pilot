@@ -26,7 +26,7 @@ public sealed partial class PilotApplication
     private static void CalendarCheckRevision(TeamWorkspaceItem? previous, long? expected)
     {
         if (previous is not null && previous.Revision != expected || previous is null && expected is not (null or 0))
-            throw new InvalidOperationException("L’intervention a changé. Rechargez sa version actuelle avant d’enregistrer ; votre saisie est conservée.");
+            throw new InvalidOperationException("L’intervention a changé. Rechargez sa version actuelle avant d’enregistrer ; saisie conservée.");
         if (previous?.Deleted == true) throw new InvalidOperationException("Cette intervention a été retirée du planning. Rechargez la vue.");
     }
     private async Task<IReadOnlyList<CalendarMutation>> CalendarPrepareAsync(JsonElement a, CancellationToken ct)

@@ -37,7 +37,7 @@ module.exports = async ({ page, reset, ok, capture }) => {
   }
 
   await home(false);
-  ok(await page.locator('.home-overview-heading h2').innerText() === 'Votre journée en un regard', 'The home heading tells the user what the page does');
+  ok(await page.locator('.home-overview-heading h2').innerText() === 'Activité', 'The home heading tells the user what the page does');
   ok(await page.locator('.home-overview-heading .button.primary').innerText() === 'Collecter depuis GLPI', 'No-source home puts GLPI collection first');
   ok(await page.locator('.home-counter').count() === 4, 'The actual home renders the four source-derived counters without fabricated values');
   await page.getByRole('button', { name: 'Collecter depuis GLPI', exact: true }).first().click();

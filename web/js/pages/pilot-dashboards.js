@@ -94,11 +94,9 @@ export async function renderPilotWorkspace(ctx) {
   }
   function drawHeader() {
     const receipt = extractionStatus(state.session);
-    replaceChildren(hero, el('div', {}, el('p', { class: 'workspace-eyebrow', text: scope.composition === 'service' ? 'VUE D’ENSEMBLE DU SERVICE' : 'TABLEAU PERSONNALISÉ' }),
-      el('h2', { text: 'Comprendre. Prioriser. Agir.' }),
-      el('p', { text: 'La météo, la charge et les tickets à traiter se lisent ensemble. Chaque chiffre ouvre les lignes qui le composent.' }),
+    replaceChildren(hero, el('div', {}, el('h2', { text: scope.composition === 'service' ? 'Tableaux de bord' : 'Tableau personnalisé' }),
       el('div', { class: 'workspace-intro-meta' }, badge(isSimulation(state.session) ? 'Simulation active' : model?.historical ? 'Observation archivée' : 'Relevé actif', 'info'),
-        el('span', { text: state.session.loaded ? `Observé le ${formatDate(model?.snapshot?.extractedAt || state.session.date)}` : 'Prêt à accueillir vos données' }))),
+        el('span', { text: state.session.loaded ? `Observé le ${formatDate(model?.snapshot?.extractedAt || state.session.date)}` : 'Aucun relevé chargé' }))),
       el('div', { class: 'hero-icon', 'aria-hidden': 'true' }, icon('chart')));
     boardHelp.hidden = !model;
     if (!model) {
@@ -172,7 +170,7 @@ export async function renderPilotWorkspace(ctx) {
       selectionRestored = true;
       if (!bootstrap.hasSource) {
         drawHeader();
-        replaceChildren(content, card('Un seul espace pour lire votre activité', caption('Importez un CSV ou un classeur : la météo, les équipes et les priorités seront calculées sur les mêmes tickets.'),
+        replaceChildren(content, card('Aucun relevé chargé', caption('Importez un CSV ou un classeur : la météo, les équipes et les priorités seront calculées sur les mêmes tickets.'),
           toolbar(command(ctx, 'Importer CSV / Excel', () => importLocalTestFile(ctx), { primary: true, icon: 'folder' }),
             button('Démonstration dans Réglages', () => navigate('settings', { section: 'demo' }), { icon: 'spark' }),
             button('Connecter GLPI', () => navigate('data'), { icon: 'download' }))));
@@ -260,7 +258,7 @@ export async function renderPilotWorkspace(ctx) {
         article.append(el('div', { class: 'analytics-widget-heading' }, el('h3', { text: title }), controls),
           scopedPlaceholder ? el('div', { class: 'workspace-weather-placeholder', 'data-weather-placeholder': '' },
             badge(context.representedByHero ? 'Présentée dans la météo principale' : 'Hors du périmètre sélectionné'),
-            caption('Cette carte reste dans votre composition. Elle sera de nouveau affichée lorsque le périmètre la concernera.')) :
+            caption('Cette carte reste dans la composition. Elle sera de nouveau affichée lorsque le périmètre la concernera.')) :
           widgetContent(ctx, widget, selection => activate(widget, selection).catch(reason => error(ctx, reason)), (kind, key) => more(widget, kind, key),
             { snapshot: model.snapshot, historical: model.historical, compactWeather: !mainWeather, preserveWidgetAccent: editing || scope.composition !== 'service',
               onWeatherSelection: trigger => openWeatherSelectionEditor(ctx, { model, widget, reload: load, trigger }),
@@ -316,7 +314,7 @@ export async function renderPilotWorkspace(ctx) {
     }));
     search.addEventListener('input', drawChoices); drawChoices();
     const modal = dialog('Choisir plusieurs équipes', el('div', {}, caption('Les choix se cumulent ; chaque ticket reste compté une seule fois dans le périmètre.'),
-      selection.unknownKeys.length ? caption('Les anciennes sélections absentes seront retirées si vous appliquez ce nouveau périmètre.', 'warning') : null,
+      selection.unknownKeys.length ? caption('L’application du nouveau périmètre retire les anciennes sélections absentes.', 'warning') : null,
       toolbar(search, button('Toutes', () => { selected.clear(); drawChoices(); })), host),
       [{ label: 'Annuler', action: close => close() }, { label: 'Appliquer', primary: true, action: async close => {
         if (selected.size > 64) throw new Error('Choisissez au maximum 64 équipes.'); scope.focusKeys = [...selected]; close(); await load({ rememberSelection: true });
@@ -420,7 +418,7 @@ export async function renderPilotWorkspace(ctx) {
     const preview = await call('dashboard.layout.import', { personal: personal() }); if (preview.cancelled) return;
     dialog('Vérifier les compositions importées', el('div', {}, caption(`${preview.layout.boards.length} composition(s) dans le fichier · ${preview.existingBoards} déjà enregistrée(s).`),
       preview.canAppend ? table(preview.addedBoards, [{ key: 'originalName', label: 'Nom dans le fichier' }, { key: 'name', label: 'Nom après ajout' }, { key: 'widgetCount', label: 'Cartes' }]) : caption(preview.appendReason, 'warning'),
-      caption('Ajouter conserve vos compositions. Remplacer retire toutes les compositions personnalisées de cette disposition ; le pilotage du service reste disponible.')),
+      caption('Ajouter conserve les compositions actuelles. Remplacer retire toutes les compositions personnalisées de cette disposition ; le pilotage du service reste disponible.')),
       [{ label: 'Ajouter à mes compositions', primary: true, disabled: !preview.canAppend, action: async close => {
         const result = await call('dashboard.layout.append', { personal: personal(), layout: preview.layout, baseFingerprint: preview.baseFingerprint });
         close(); await navigate('pilot', { boardId: result.boardId, technicianKey: scope.technicianKey });

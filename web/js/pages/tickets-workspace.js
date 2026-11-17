@@ -18,10 +18,10 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   const receipt = extractionStatus(source);
   const heading = el('header', { class: 'tickets-workspace-heading' },
     el('div', { class: 'tickets-source-summary' },
-      el('p', { text: source.loaded ? `${formatNumber(source.rows)} lignes · ${isSimulation(source) ? 'démonstration fictive' : isFileSource(source) ? 'source CSV / Excel' : source.historical ? 'relevé archivé' : 'relevé courant'}` : 'Votre liste, les informations du ticket et votre travail au même endroit.' }),
+      el('p', { text: source.loaded ? `${formatNumber(source.rows)} lignes · ${isSimulation(source) ? 'démonstration fictive' : isFileSource(source) ? 'source CSV / Excel' : source.historical ? 'relevé archivé' : 'relevé courant'}` : 'Aucun relevé chargé.' }),
       source.loaded ? el('div', { class: 'tickets-receipt' }, badge(receipt.receipt, receipt.tone),
         receipt.attention ? el('span', { class: 'tickets-receipt-attention', text: receipt.attention }) : null) : null),
-    toolbar(button('Mes dossiers', () => savedDossiers(), { icon: 'folder', disabled:isFileSource(source), title:isFileSource(source)?fileSourceDetailHelp:'' }), button('Importer un fichier', () => importLocalTestFile(ctx), { icon: 'folder' }),
+    toolbar(button('Dossiers conservés', () => savedDossiers(), { icon: 'folder', disabled:isFileSource(source), title:isFileSource(source)?fileSourceDetailHelp:'' }), button('Importer un fichier', () => importLocalTestFile(ctx), { icon: 'folder' }),
       button(isSimulation(source) ? 'Simuler une collecte' : 'Collecter', () => ctx.navigate('collect'), { icon: 'refresh' })));
   detail.append(path, readerRoot);
   shell.append(heading, resumeHost, el('div', { class: 'tickets-split' }, list, detail));
@@ -64,7 +64,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
       position >= 0 ? toolbar(badge(`${absolute + 1} / ${sequence.total}`),
         button('Ticket précédent', () => move(-1), { disabled: absolute === 0, icon: 'arrow', attributes: { class: 'button tickets-back' } }),
         button('Ticket suivant', () => move(1), { disabled: absolute === sequence.total - 1, icon: 'arrow' })) : null,
-      button('Mes dossiers',()=>savedDossiers(),{icon:'folder'}),
+      button('Dossiers conservés',()=>savedDossiers(),{icon:'folder'}),
       button('Préparer le matériel',prepareCurrentTicket,{icon:'layers',attributes:{'data-field-context':'ticket'}}));
   }
   function moveTicket(delta) {
@@ -158,13 +158,13 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   async function savedDossiers() {
     const search = input('', { 'aria-label': 'Rechercher dans les dossiers conservés', placeholder: 'ID, titre ou note personnelle', maxLength: 300 });
     const body = el('div', { class: 'tickets-saved-list' }); let page = 0, serial = 0;
-    const modal = dialog('Mes dossiers', el('div', { class: 'stack' }, el('p', { class: 'help', text: 'Vos dossiers et vos notes restent disponibles même si le ticket n’est plus dans le relevé courant.' }), toolbar(search, button('Rechercher', () => { page = 0; return load(); })), body));
+    const modal = dialog('Dossiers conservés', el('div', { class: 'stack' }, el('p', { class: 'help', text: 'Dossiers et notes conservés même si le ticket n’est plus dans le relevé courant.' }), toolbar(search, button('Rechercher', () => { page = 0; return load(); })), body));
     const load = async () => {
       const version = ++serial; const data = await ctx.api.call('workplace.ticket.list', { saved: true, search: search.value, page }, { signal: ctx.signal });
       if (version !== serial || !modal.element.isConnected) return;
       replaceChildren(body, ...data.rows.map(row => el('article', { class: 'tickets-saved-item' }, el('div', {}, badge(`#${row.id}`), el('strong', { text: row.title }), el('p', { class: 'help', text: row.status })),
         button('Ouvrir le dossier', () => { modal.close(); return perform(() => showTicket({ ticketKey: row.ticketKey })); }, { icon: 'ticket' }))),
-        data.total ? toolbar(badge(`${formatNumber(data.total)} dossiers`), button('Précédent', () => { page--; return load(); }, { disabled: page === 0 }), button('Suivant', () => { page++; return load(); }, { disabled: (page + 1) * data.pageSize >= data.total })) : empty('Aucun dossier conservé', 'Ouvrez un ticket ou ajoutez-le à votre file pour le retrouver ici.'));
+        data.total ? toolbar(badge(`${formatNumber(data.total)} dossiers`), button('Précédent', () => { page--; return load(); }, { disabled: page === 0 }), button('Suivant', () => { page++; return load(); }, { disabled: (page + 1) * data.pageSize >= data.total })) : empty('Aucun dossier conservé', 'Ouvrir un ticket ou l’ajouter à la file personnelle pour conserver son dossier.'));
     };
     search.addEventListener('keydown', event => { if (event.key === 'Enter') { page = 0; load().catch(error => ctx.notify(error.message, 'error')); } });
     await load();

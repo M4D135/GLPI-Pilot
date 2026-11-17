@@ -144,7 +144,7 @@ public static class FieldPreparationDocuments
             var category = reference is null ? null : catalogue.Categories.Single(value => value.Id == reference.CategoryId);
             if (reference is null || reference.Archived || category!.Archived || line.Code != reference.Code || line.Label != reference.Label
                 || line.Category != category.Name || line.Unit != reference.Unit)
-                throw new InvalidDataException("Le catalogue a changé. Relisez la référence avant d’ajouter cette ligne ; votre saisie reste ouverte.");
+                throw new InvalidDataException("Le catalogue a changé. Relisez la référence avant d’ajouter cette ligne ; saisie en cours conservée.");
         }
     }
 }

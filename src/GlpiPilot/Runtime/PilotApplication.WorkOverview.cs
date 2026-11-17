@@ -35,7 +35,7 @@ public sealed partial class PilotApplication
         if (Flag(args, "mine"))
         {
             var personal = TechnicianDashboardService.IdentityKey(Settings.Dashboard.PersonalTechnician);
-            if (personal.Length == 0) throw new InvalidOperationException("Choisissez votre identité avant d’afficher uniquement vos tickets.");
+            if (personal.Length == 0) throw new InvalidOperationException("Sélectionner une identité pour filtrer les tickets attribués.");
             technicians = [personal];
         }
         if (technicians.Length > 0)

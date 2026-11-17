@@ -265,7 +265,7 @@ public sealed record DashboardLayoutAppendResult(DashboardLayoutSettings Layout,
 public sealed class DashboardBoardSettings
 {
     public string Id { get; set; } = DashboardLayoutSettings.NewId();
-    public string Name { get; set; } = "Mon tableau de bord";
+    public string Name { get; set; } = "Tableau de bord personnel";
     public string Description { get; set; } = "";
     public string Density { get; set; } = "compact";
     public bool HideUnavailableWidgets { get; set; } = true;
@@ -289,7 +289,7 @@ public sealed class DashboardBoardSettings
     internal void Normalize()
     {
         if (string.IsNullOrWhiteSpace(Id) || Id.Length > 96) Id = DashboardLayoutSettings.NewId();
-        Name = string.IsNullOrWhiteSpace(Name) ? "Mon tableau de bord" : Name[..Math.Min(Name.Length, 120)];
+        Name = string.IsNullOrWhiteSpace(Name) ? "Tableau de bord personnel" : Name[..Math.Min(Name.Length, 120)];
         Description = (Description ?? "")[..Math.Min(Description?.Length ?? 0, 600)];
         if (Density is not ("comfortable" or "compact")) Density = "compact";
         if (FreshnessWarningHours is < 1 or > 8760) FreshnessWarningHours = null;
@@ -517,10 +517,10 @@ public sealed class DashboardScopeFilter
 
 public sealed class DashboardFilterPreset
 {
-    public string Name { get; set; } = "Mon contexte";
+    public string Name { get; set; } = "Contexte";
     public List<DashboardScopeFilter> Filters { get; set; } = new();
     public DashboardFilterPreset Copy() => new() { Name = Name, Filters = DashboardScopeFilter.CopyList(Filters) };
-    public void Normalize() { Name = string.IsNullOrWhiteSpace(Name) ? "Mon contexte" : Name[..Math.Min(Name.Length, 120)]; Filters ??= new(); }
+    public void Normalize() { Name = string.IsNullOrWhiteSpace(Name) ? "Contexte" : Name[..Math.Min(Name.Length, 120)]; Filters ??= new(); }
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(Name) || Name.Length > 120) throw new InvalidDataException("Un contexte de dashboard demande un nom de 1 à 120 caractères.");

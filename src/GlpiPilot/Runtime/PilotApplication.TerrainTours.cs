@@ -351,7 +351,7 @@ public sealed partial class PilotApplication
     {
         var draft = TerrainCheckedTour(args); if (!Flag(args, "consent")) throw new InvalidOperationException("Autorisez explicitement l’envoi des coordonnées et des dates au fournisseur choisi pour cette demande.");
         var settings = TerrainRead<TourServiceSettings>(args, "settings", 5000); settings.Validate(); var endpoint = TourExternalServices.Endpoint(routing ? settings.RoutingEndpoint : settings.WeatherEndpoint);
-        if (Text(args, "consentEndpoint", 1000) != endpoint.AbsoluteUri) throw new InvalidOperationException("L’adresse a changé depuis votre autorisation. Confirmez l’adresse affichée avant de relancer la demande.");
+        if (Text(args, "consentEndpoint", 1000) != endpoint.AbsoluteUri) throw new InvalidOperationException("L’adresse a changé depuis l’autorisation. Confirmez l’adresse affichée avant de relancer la demande.");
         var context = TerrainContext(ct); using var service = new TourExternalServices();
         Publish("terrain.progress", new { message = routing ? "Calcul des segments routiers…" : "Lecture des prévisions quotidiennes…" });
         var result = routing ? await service.RouteAsync(draft, context, settings, true, ct) : await service.WeatherAsync(draft, context, settings, true, ct);

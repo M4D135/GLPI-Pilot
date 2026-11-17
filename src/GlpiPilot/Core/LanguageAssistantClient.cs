@@ -40,7 +40,7 @@ public static class LanguageAssistantClient
                 var hint = response.StatusCode switch
                 {
                     HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "Vérifiez la clé et les autorisations du modèle.",
-                    HttpStatusCode.TooManyRequests => "Le fournisseur limite les requêtes. Réessayez plus tard si vous le souhaitez.",
+                    HttpStatusCode.TooManyRequests => "Limite de requêtes du fournisseur atteinte. Réessayer ultérieurement.",
                     HttpStatusCode.BadRequest => "Vérifiez le modèle et la compatibilité chat/completions, JSON mode et max_completion_tokens.",
                     _ => "Vérifiez le fournisseur et sa disponibilité."
                 };

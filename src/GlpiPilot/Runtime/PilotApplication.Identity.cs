@@ -62,7 +62,7 @@ public sealed partial class PilotApplication
             if (people.TryGetValue(key, out var person)) people[key] = person with { FromCalendar = true };
             else people.Add(key, new(key, key, false, true, null));
         }
-        var message = Result is null ? "Choisissez votre nom ou ajoutez-le pour préparer vos interventions, même sans relevé."
+        var message = Result is null ? "Sélectionner ou ajouter une identité pour préparer les interventions, même sans relevé."
             : roster is { Available: false } ? roster.Message : "";
         return (people.Values.OrderBy(person => person.Label, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(person => person.Key, StringComparer.Ordinal).ToArray(), message);
@@ -107,7 +107,7 @@ public sealed partial class PilotApplication
         if (input.Any(char.IsControl)) throw new InvalidDataException("Saisissez un nom ou un identifiant sur une seule ligne.");
         var label = Regex.Replace(input.Normalize(NormalizationForm.FormC), @"\s+", " ").Trim();
         if (label.Length == 0 || DashboardService.SplitTechnicianNames(label, EffectiveSettings.Dashboard.MultiValueSeparators).Count != 1)
-            throw new InvalidDataException("Saisissez le nom ou l’identifiant d’une seule personne, tel qu’il apparaît dans vos données.");
+            throw new InvalidDataException("Saisissez le nom ou l’identifiant d’une seule personne, tel qu’il apparaît dans les données.");
         var key = TechnicianDashboardService.IdentityKey(label);
         var catalog = await IdentityPeopleAsync(ct).ConfigureAwait(false);
         var matching = catalog.People.Where(person => TechnicianDashboardService.IdentityKey(person.Key) == key

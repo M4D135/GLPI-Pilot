@@ -36,7 +36,7 @@ export function createCommandPalette({api, getCommands, navigate, getPageSignal,
     const body = el('div', {class: 'command-palette-body'},
       el('div', {class: 'command-palette-input'}, icon('search'), search),
       el('div', {class: 'command-palette-scope', hidden: !ticketLookup}, field('Installation des tickets conservés', sources),
-        el('p', {class: 'help', text: 'Recherche locale · la consultation conserve votre écran et votre relevé.'})),
+        el('p', {class: 'help', text: 'Recherche locale · écran et relevé conservés.'})),
       results, status,
       el('div', {class: 'command-palette-footer'},
         el('span', {text: '↑ ↓ choisir · Entrée ouvrir · Échap fermer'}), browse));

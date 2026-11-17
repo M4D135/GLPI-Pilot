@@ -42,7 +42,7 @@ public sealed partial class PilotApplication
             var plan = RequireAnalyticsAssistantPlan(args);
             if (plan.Request.Settings.Provider != "local") throw new InvalidOperationException("Préparez de nouveau cette demande dans la simulation locale.");
             return SimulationResult(await AnalyticsGenerateAssistantAsync(args, ct).ConfigureAwait(false),
-                "Simulation : proposition calculée sur votre relevé par le moteur local, sans appel à un modèle externe. Vous pouvez l’essayer et l’enregistrer dans cet espace.");
+                "Simulation : proposition calculée sur le relevé par le moteur local, sans appel à un modèle externe. Aperçu et enregistrement disponibles dans cet espace.");
         });
 
         ReplaceSimulationOperation("update.state", (args, ct) => Task.FromResult<object?>(SimulationUpdateState()));

@@ -63,7 +63,7 @@ internal static partial class Program
             """);
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
         ILocator IdentityDialog() => page.Locator("dialog.identity-dialog");
-        ILocator Search() => IdentityDialog().GetByLabel("Rechercher votre nom", new() { Exact = true });
+        ILocator Search() => IdentityDialog().GetByLabel("Rechercher une identité", new() { Exact = true });
         Task<JsonElement> Identity() => Call(app, "identity.get", new { currentOnly = true });
         async Task Ready(string route) => await WaitForNavigationTargetAsync(page, route);
         async Task Navigate(string route) { await ClickNavigationAsync(page, route); await Ready(route); }
@@ -77,7 +77,7 @@ internal static partial class Program
             """, keys);
         async Task Choose(string key)
         {
-            await IdentityDialog().Locator($"article[data-identity-key='{key}']").GetByRole(AriaRole.Button, new() { Name = "C’est moi : ", Exact = false }).ClickAsync();
+            await IdentityDialog().Locator($"article[data-identity-key='{key}']").GetByRole(AriaRole.Button, new() { Name = "Sélectionner : ", Exact = false }).ClickAsync();
             await IdentityDialog().WaitForAsync(new() { State = WaitForSelectorState.Detached });
         }
         async Task WaitRows(params string[] ids) => await WaitForPageAsync(page, """
@@ -91,25 +91,25 @@ internal static partial class Program
         }
 
         await page.GotoAsync("https://glpi-pilot.local/index.html"); await ReadyAsync(page); await Ready("home");
-        Require(await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Choisir mon identité"
+        Require(await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Choisir l’identité"
             && await page.Locator("#identity-trigger").IsVisibleAsync() && (await Identity()).GetProperty("current").ValueKind == JsonValueKind.Null,
             "An unconfigured installation exposes the identity choice directly before any ticket data or account is present.");
         await OpenIdentity(); await Capture("identity-empty-light");
-        Require(await IdentityDialog().GetByRole(AriaRole.Heading, new() { Name = "Mon identité", Exact = true }).IsVisibleAsync()
+        Require(await IdentityDialog().GetByRole(AriaRole.Heading, new() { Name = "Identité", Exact = true }).IsVisibleAsync()
             && await IdentityDialog().Locator("article[data-identity-key]").CountAsync() == 0 && mutations.IsEmpty,
             "Opening the empty identity chooser does not silently choose a person or write local settings.");
         const string declaredName = "Noémie Hors-Relevé";
         await IdentityDialog().GetByLabel("Nom tel qu’il apparaît dans les tickets", new() { Exact = true }).FillAsync(declaredName);
-        await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Enregistrer mon identité", Exact = true }).ClickAsync();
+        await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Enregistrer l’identité", Exact = true }).ClickAsync();
         await IdentityDialog().WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Ready("home");
         var declared = (await Identity()).GetProperty("current"); var declaredKey = declared.GetProperty("key").GetString()!;
         Require(declared.GetProperty("label").GetString() == declaredName && declaredKey.Length > 0 && app.Result is null
             && AppSettings.Load().Dashboard.PersonalTechnician == declaredKey
-            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Mon identité : " + declaredName,
+            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Identité : " + declaredName,
             "An explicit name can be declared without a source or a full availability form and is saved in the actual local profile.");
         await page.ReloadAsync(); await ReadyAsync(page); await Ready("home");
         Require((await Identity()).GetProperty("current").GetProperty("key").GetString() == declaredKey
-            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Mon identité : " + declaredName
+            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Identité : " + declaredName
             && AppSettings.Load().Dashboard.PersonalTechnician == declaredKey,
             "Reloading the real interface retains the declared identity and its readable label.");
         var beforeCancel = mutations.Count;
@@ -119,16 +119,16 @@ internal static partial class Program
         Require(mutations.Count == beforeCancel && (await Identity()).GetProperty("current").GetProperty("key").GetString() == declaredKey
             && AppSettings.Load().Dashboard.PersonalTechnician == declaredKey,
             "Searching and cancelling leaves the previous identity and saved profile unchanged.");
-        await OpenIdentity(); await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Retirer mon identité", Exact = true }).ClickAsync();
+        await OpenIdentity(); await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Retirer l’identité", Exact = true }).ClickAsync();
         await IdentityDialog().WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Ready("home");
         Require((await Identity()).GetProperty("current").ValueKind == JsonValueKind.Null && AppSettings.Load().Dashboard.PersonalTechnician.Length == 0
-            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Choisir mon identité",
+            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Choisir l’identité",
             "Removing an identity clears the saved personal filter without selecting a replacement person.");
 
         app.LoadQualityFixture(IdentitySource()); await delivery; await Navigate("records"); await WaitRows("#101", "#102", "#201", "#301", "#401");
-        await Button("Mes tickets").ClickAsync(); await IdentityDialog().WaitForAsync(); await Search().WaitForAsync();
+        await Button("Tickets attribués").ClickAsync(); await IdentityDialog().WaitForAsync(); await Search().WaitForAsync();
         Require(await page.Locator(".page-content[data-page=records]").CountAsync() == 1 && (await Identity()).GetProperty("current").ValueKind == JsonValueKind.Null,
-            "Mes tickets opens the identity chooser inside Tickets without detouring through calendar administration.");
+            "Tickets attribués opens the identity chooser inside Tickets without detouring through calendar administration.");
         const string accentedKey = "ÉLODIE MARTIN", plainKey = "ELODIE MARTIN";
         await Search().FillAsync("elodie"); await WaitCandidates(accentedKey, plainKey); await Capture("identity-search-light");
         Require(await IdentityDialog().Locator($"article[data-identity-key='{accentedKey}']").GetByText("Élodie Martin", new() { Exact = true }).IsVisibleAsync()
@@ -142,7 +142,7 @@ internal static partial class Program
             "Choosing the accented identity returns to Tickets and displays exactly its two real source rows.");
         await OpenIdentity(); await Search().FillAsync("elodie"); await WaitCandidates(accentedKey, plainKey); await Choose(plainKey); await Ready("records"); await WaitRows("#201");
         Require((await Identity()).GetProperty("current").GetProperty("key").GetString() == plainKey
-            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Mon identité : Elodie Martin"
+            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Identité : Elodie Martin"
             && await page.Locator(".tickets-record-grid tbody tr").CountAsync() == 1,
             "Changing the identity from the global control refreshes the personal ticket scope without merging a similar name.");
 
@@ -150,18 +150,18 @@ internal static partial class Program
         await page.Locator(".tickets-detail-pane .work-ticket-heading h2").WaitForAsync();
         await Button("Notes et rappels").ClickAsync();
         const string pendingNote = "Note conservée avant changement d’identité";
-        await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync(pendingNote);
+        await page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync(pendingNote);
         var ticketKey = (await Call(app, "workplace.get")).GetProperty("activeTicketKey").GetString()!;
         var held = (Started: new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), Release: new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
         heldPersonalSave = held;
-        await Button("Enregistrer mon travail").ClickAsync(); await held.Started.Task.WaitAsync(TimeSpan.FromSeconds(8));
+        await Button("Enregistrer").ClickAsync(); await held.Started.Task.WaitAsync(TimeSpan.FromSeconds(8));
         var beforePendingChoice = mutations.Count;
         try
         {
             // Search is read-only and can finish while the old reader save is pending.
             await page.Locator("#identity-trigger").ClickAsync(); await IdentityDialog().WaitForAsync();
             await Search().FillAsync("elodie"); await WaitCandidates(accentedKey, plainKey);
-            await IdentityDialog().Locator($"article[data-identity-key='{accentedKey}']").GetByRole(AriaRole.Button, new() { Name = "C’est moi : ", Exact = false }).ClickAsync();
+            await IdentityDialog().Locator($"article[data-identity-key='{accentedKey}']").GetByRole(AriaRole.Button, new() { Name = "Sélectionner : ", Exact = false }).ClickAsync();
             await WaitForPageAsync(page, "document.querySelector('.workspace')?.inert === true");
             Require(mutations.Count == beforePendingChoice && app.Settings.Dashboard.PersonalTechnician == plainKey,
                 "An identity transition waits for the old ticket reader save before admitting the identity mutation.");
@@ -176,9 +176,9 @@ internal static partial class Program
         await Navigate("data");
         var normalSettings = await File.ReadAllBytesAsync(Path.Combine(_root, "settings.json"));
         await OpenDemonstrationFromSettingsAsync(page); await Ready("home"); await OpenIdentity();
-        await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Mon nom n’est pas dans la liste", Exact = true }).ClickAsync();
+        await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Ajouter une identité", Exact = true }).ClickAsync();
         await IdentityDialog().GetByLabel("Nom tel qu’il apparaît dans les tickets", new() { Exact = true }).FillAsync("Identité de simulation");
-        await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Enregistrer mon identité", Exact = true }).ClickAsync();
+        await IdentityDialog().GetByRole(AriaRole.Button, new() { Name = "Enregistrer l’identité", Exact = true }).ClickAsync();
         await IdentityDialog().WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Ready("home");
         var settingsDuringSimulation = await File.ReadAllBytesAsync(Path.Combine(_root, "settings.json"));
         Require(app.IsTestMode && (await Identity()).GetProperty("current").GetProperty("label").GetString() == "Identité de simulation"
@@ -187,7 +187,7 @@ internal static partial class Program
         await Button("Quitter la simulation").ClickAsync(); await Ready("pilot");
         var settingsAfterSimulation = await File.ReadAllBytesAsync(Path.Combine(_root, "settings.json"));
         Require(!app.IsTestMode && (await Identity()).GetProperty("current").GetProperty("key").GetString() == accentedKey
-            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Mon identité : Élodie Martin"
+            && await page.Locator("#identity-trigger").GetAttributeAsync("aria-label") == "Identité : Élodie Martin"
             && normalSettings.SequenceEqual(settingsAfterSimulation),
             "Leaving simulation restores the normal identity, its header label and the original saved profile.");
 
@@ -196,7 +196,7 @@ internal static partial class Program
         var savedZoom = app.Settings.InterfaceZoomPercent; await zoom.FillAsync("125");
         var beforeGuard = mutations.Count;
         await OpenIdentity(); await Search().FillAsync("elodie"); await WaitCandidates(accentedKey, plainKey);
-        await IdentityDialog().Locator($"article[data-identity-key='{plainKey}']").GetByRole(AriaRole.Button, new() { Name = "C’est moi : Elodie Martin", Exact = true }).ClickAsync();
+        await IdentityDialog().Locator($"article[data-identity-key='{plainKey}']").GetByRole(AriaRole.Button, new() { Name = "Sélectionner : Elodie Martin", Exact = true }).ClickAsync();
         var settingsGuard = page.GetByRole(AriaRole.Dialog, new() { Name = "Changer d’identité ?", Exact = true });
         await settingsGuard.WaitForAsync(); await Capture("identity-unsaved-settings");
         await settingsGuard.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
@@ -206,7 +206,7 @@ internal static partial class Program
             && (await Identity()).GetProperty("current").GetProperty("key").GetString() == accentedKey && mutations.Count == beforeGuard,
             "Declining the identity change preserves unapplied settings, the previous identity and the untouched profile.");
         await OpenIdentity(); await Search().FillAsync("elodie"); await WaitCandidates(accentedKey, plainKey);
-        await IdentityDialog().Locator($"article[data-identity-key='{plainKey}']").GetByRole(AriaRole.Button, new() { Name = "C’est moi : Elodie Martin", Exact = true }).ClickAsync();
+        await IdentityDialog().Locator($"article[data-identity-key='{plainKey}']").GetByRole(AriaRole.Button, new() { Name = "Sélectionner : Elodie Martin", Exact = true }).ClickAsync();
         await settingsGuard.WaitForAsync();
         await settingsGuard.GetByRole(AriaRole.Button, new() { Name = "Continuer le changement", Exact = true }).ClickAsync();
         await settingsGuard.WaitForAsync(new() { State = WaitForSelectorState.Detached });

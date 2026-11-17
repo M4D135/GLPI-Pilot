@@ -810,7 +810,7 @@ void CheckSuppliedParts()
 void CheckPartialLayouts()
 {
     var current = Sample(); current.Normalize();
-    current.Dashboard.PersonalLayout.Boards[0].Name = "Mon suivi personnel";
+    current.Dashboard.PersonalLayout.Boards[0].Name = "Suivi personnel personnel";
     for (var i = 1; i < 12; i++) current.Dashboard.PersonalLayout.Boards.Add(DashboardLayoutSettings.CreateBoard("Personnel " + i, "empty"));
     current.Normalize();
     var personal = JsonSerializer.Serialize(current.Dashboard.PersonalLayout);

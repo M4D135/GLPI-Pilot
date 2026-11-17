@@ -34,7 +34,7 @@ export async function renderLibraryCollection(ctx) {
   const transfer = el('details', { class: 'card collection-disclosure' }, el('summary', { text: 'Transférer une bibliothèque préparée' }), transferHost);
   const shell = el('section', { class: 'collection-workspace', 'aria-label': 'Collecte des tickets' },
     el('header', { class: 'collection-header' }, button('Bibliothèque', () => navigate('library'), { icon: 'layers' }), el('h1', { text: 'Collecte des tickets' })),
-    el('p', { class: 'collection-intro', text: 'Constituez votre bibliothèque une fois, puis actualisez les contenus nouveaux ou modifiés. Une reprise vérifie l’index et conserve les fiches encore valides.' }),
+    el('p', { class: 'collection-intro', text: 'Collecte initiale, puis mise à jour des contenus nouveaux ou modifiés. Une reprise vérifie l’index et conserve les fiches valides.' }),
     errors, statusCard, settings, transfer, journal);
   root.replaceChildren(shell);
   function controlButton(label, handler, options) {
@@ -153,7 +153,7 @@ export async function renderLibraryCollection(ctx) {
         const result = await call('library.bootstrap.preview'); if (result.cancelled) return;
         const p = result.preview;
         try {
-          if (!await confirm('Importer cette bibliothèque ?', `${formatNumber(p.manifest.records)} tickets · ${formatNumber(p.complete)} fiches complètes · export du ${formatDate(p.manifest.exportedAt)}.\nInstallation : ${p.manifest.installation}\n${result.warning}\nConfirmez votre habilitation et la fusion avec vos données locales. Aucune suppression ni collecte GLPI n’est lancée.`, 'Importer et conserver les conflits')) return;
+          if (!await confirm('Importer cette bibliothèque ?', `${formatNumber(p.manifest.records)} tickets · ${formatNumber(p.complete)} fiches complètes · export du ${formatDate(p.manifest.exportedAt)}.\nInstallation : ${p.manifest.installation}\n${result.warning}\nConfirmer l’habilitation et la fusion avec les données locales. Aucune suppression ni collecte GLPI n’est lancée.`, 'Importer et conserver les conflits')) return;
           const imported = await call('library.bootstrap.apply', { token: result.token, confirmedAuthorized: true, confirmedMerge: true });
           notify(`${formatNumber(imported.added)} ajoutés · ${formatNumber(imported.identical)} identiques · ${formatNumber(imported.conflicts)} conflits conservés.`); await reload();
         } finally { if (!signal?.aborted) await call('library.bootstrap.cancel'); }

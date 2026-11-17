@@ -197,9 +197,9 @@ internal static partial class Program
         await Capture("deployment-startup-offer");
         Require(app.Settings.Cities.Sites.Count == 0, "An existing profile receives a startup proposal and is never automatically replaced by the pack.");
         await offer.GetByRole(AriaRole.Button, new() { Name = "Examiner la configuration du pack", Exact = true }).ClickAsync(); await Review().WaitForAsync();
-        Require(await Review().GetByRole(AriaRole.Button, new() { Name = "Garder mes réglages", Exact = true }).IsVisibleAsync(),
+        Require(await Review().GetByRole(AriaRole.Button, new() { Name = "Conserver les réglages", Exact = true }).IsVisibleAsync(),
             "The startup proposal opens the same exhaustive review with explicit Keep and Replace choices.");
-        await Review().GetByRole(AriaRole.Button, new() { Name = "Garder mes réglages", Exact = true }).ClickAsync();
+        await Review().GetByRole(AriaRole.Button, new() { Name = "Conserver les réglages", Exact = true }).ClickAsync();
         await page.ReloadAsync(); await ReadyAsync(page);
         Require(await offer.CountAsync() == 0 && !(await Call(app, "deployment.state")).GetProperty("offer").GetProperty("available").GetBoolean()
             && app.Settings.Cities.Sites.Count == 0, "Keeping local settings is remembered for this pack hash and version across a new startup.");

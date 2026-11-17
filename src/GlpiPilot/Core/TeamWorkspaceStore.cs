@@ -100,7 +100,7 @@ public sealed partial class TeamWorkspaceStore
         var next = proposed.Copy();
         await using var db = await Open(ct); using var tx = db.BeginTransaction(); var old = await ReadItem(db, tx, next.Id, ct);
         if (old is not null && expectedRevision != old.Revision || old is null && expectedRevision is not (null or 0))
-            throw new InvalidOperationException("Cette contribution a changé. Actualisez-la avant d’enregistrer votre modification.");
+            throw new InvalidOperationException("Cette contribution a changé. Actualisez-la avant d’enregistrer la modification.");
         if (old?.Kind != null && old.Kind != next.Kind) throw new InvalidOperationException("Le type d’une contribution existante ne peut pas être modifié.");
         next.CreatedAt = old?.CreatedAt ?? DateTimeOffset.UtcNow; next.UpdatedAt = DateTimeOffset.UtcNow;
         next.CentralRevision = old?.CentralRevision ?? 0; next.Revision = (old?.Revision ?? 0) + 1; next.Pending = true; next.Conflicts = old?.Conflicts ?? 0;

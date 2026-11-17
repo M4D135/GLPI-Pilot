@@ -246,7 +246,7 @@ internal sealed class BrowserProfileLease : IDisposable
             return new(new FileStream(Path.Combine(profile, "pilot-session.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None));
         }
         catch (UnauthorizedAccessException)
-        { throw new InvalidOperationException("Le profil navigateur réservé à GLPI Pilot n’est pas accessible en écriture. Vérifiez les droits de votre dossier utilisateur."); }
+        { throw new InvalidOperationException("Le profil navigateur réservé à GLPI Pilot n’est pas accessible en écriture. Vérifiez les droits du dossier utilisateur."); }
         catch (IOException)
         { throw new InvalidOperationException("Le profil navigateur réservé à GLPI Pilot est occupé ou indisponible. Fermez l’autre instance de GLPI Pilot et son navigateur, puis réessayez. Aucun profil n’a été supprimé."); }
     }

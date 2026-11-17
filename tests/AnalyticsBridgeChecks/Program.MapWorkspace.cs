@@ -102,7 +102,7 @@ internal static partial class Program
             var mine = await Call(app, "maps.workspace.get", new { mine = true });
             var unassigned = await Call(app, "maps.workspace.get", new { technicianKeys = new[] { "@unassigned" } });
             Check(Int(people.GetProperty("totals"), "tickets") == 6 && Int(mine.GetProperty("totals"), "tickets") == 3 && Int(unassigned.GetProperty("totals"), "tickets") == 2,
-                "Management filters combine technicians once per row, Mes tickets uses the already selected identity, and unassigned tickets have their own explicit scope.");
+                "Management filters combine technicians once per row, Tickets attribués uses the already selected identity, and unassigned tickets have their own explicit scope.");
             var combined = await Call(app, "maps.workspace.get", new { focusKeys = new[] { "team:map-team-a" }, technicianKeys = new[] { "ALEX" }, type = "request", statusCodes = new[] { 4 } });
             var combinedRows = await Call(app, "maps.workspace.rows", new { token = Str(combined, "token") });
             Check(Int(combined.GetProperty("totals"), "tickets") == 1 && Rows(combinedRows).SequenceEqual(new[] { 1 }),

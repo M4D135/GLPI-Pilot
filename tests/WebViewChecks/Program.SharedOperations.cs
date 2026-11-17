@@ -158,7 +158,7 @@ internal static partial class Program
         await Go("records");
         await page.Locator(".tickets-record-grid tbody tr").Filter(new() { HasText = "#8200001" }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
         await Button("Notes et rappels").ClickAsync();
-        await page.GetByRole(AriaRole.Textbox, new() { Name = "Mes notes", Exact = true }).FillAsync(SharedNote);
+        await page.GetByRole(AriaRole.Textbox, new() { Name = "Notes personnelles", Exact = true }).FillAsync(SharedNote);
         await Button("Enregistrer et partager la note").ClickAsync();
         var noteItem = await Published("workspace.publishPersonalNote");
         var personal = (await Call(app, "workplace.ticket.open", new { ticketKey })).GetProperty("personal");

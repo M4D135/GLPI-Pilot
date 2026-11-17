@@ -319,7 +319,7 @@ internal static partial class Program
         try { await ReadyAsync(page); } catch { Console.WriteLine("BODY: " + await page.Locator("body").InnerTextAsync()); if (delivery.Exception is not null) Console.WriteLine(delivery.Exception); throw; }
         await WaitForNavigationTargetAsync(page, "home");
         var initialHome = page.Locator(".page-content[data-page=home]");
-        Require(await initialHome.GetByRole(AriaRole.Heading, new() { Name = "Votre journée en un regard", Exact = true }).IsVisibleAsync()
+        Require(await initialHome.GetByRole(AriaRole.Heading, new() { Name = "Activité", Exact = true }).IsVisibleAsync()
             && await initialHome.GetByText("Aucun relevé chargé", new() { Exact = true }).IsVisibleAsync()
             && await initialHome.GetByRole(AriaRole.Button, new() { Name = "Collecter depuis GLPI", Exact = true }).IsEnabledAsync()
             && await initialHome.GetByRole(AriaRole.Button, new() { Name = "Planifier", Exact = true }).IsEnabledAsync()

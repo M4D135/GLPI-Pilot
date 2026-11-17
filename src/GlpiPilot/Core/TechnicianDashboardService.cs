@@ -68,7 +68,7 @@ public static class TechnicianDashboardService
             ? "Aucun technicien renseigné dans la colonne sélectionnée pour ce relevé."
             : multipleAssignments
                 ? "Techniciens détectés dans le relevé. Les affectations multiples figurent dans chaque vue concernée ; leurs totaux ne s’additionnent pas."
-                : "Techniciens détectés dans la colonne d’affectation du relevé. Le choix « C’est moi » est mémorisé sur ce poste.";
+                : "Techniciens détectés dans la colonne d’affectation du relevé. Le choix « Sélectionner » est mémorisé sur ce poste.";
         if (entries.Any(entry => entry.UnknownStatusCount > 0))
             message += " Certains statuts sont absents ou non reconnus ; les volumes actifs connus peuvent être partiels.";
         return new(true, assignee.Header, message, entries);
@@ -78,7 +78,7 @@ public static class TechnicianDashboardService
         string technicianKey, DateTimeOffset? referenceTime = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(technicianKey))
-            throw new InvalidOperationException("Choisissez votre nom parmi les techniciens détectés avant d’ouvrir cette vue personnelle.");
+            throw new InvalidOperationException("Sélectionner une identité parmi les techniciens détectés avant d’ouvrir la vue personnelle.");
         var roster = Detect(data, settings, ct);
         return CalculateForKnownTechnician(data, settings, roster, technicianKey, referenceTime, ct);
     }

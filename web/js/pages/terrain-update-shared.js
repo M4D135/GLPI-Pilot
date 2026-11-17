@@ -32,15 +32,15 @@ export function sharedUpdatePanels(p, options) {
     folderReady(); ensurePolicySaved(); if (!offer?.newer) throw new Error('Recherchez une version plus récente sur le partage.');
     if (!await confirm('Préparer la mise à jour réseau', `Copier localement la version ${offer.version} (${formatNumber(offer.bytes / 1048576, { maximumFractionDigits: 1 })} Mio) et vérifier son empreinte ? L’installation attendra une confirmation séparée.`, 'Copier et vérifier')) return;
     clearPrepared(); const result = await p.call('update.shared.prepare', { token: offer.token, consent: true });
-    setPrepared(result); p.message('Pack réseau copié et vérifié localement. L’installation attend votre décision.');
+    setPrepared(result); p.message('Pack réseau copié et vérifié localement. Installation en attente de confirmation.');
   }), { disabled: true });
   const preview = button('Comparer le patch de sites', p.act(async () => {
     folderReady(); patch = null; paintPatch(); patch = await p.call('update.sites.preview'); paintPatch();
-    p.message('Comparatif préparé. Les valeurs locales restent inchangées jusqu’à votre confirmation.');
+    p.message('Comparatif préparé. Valeurs locales inchangées avant confirmation.');
   }), disabled);
   const apply = button('Appliquer le patch de sites', p.act(async () => {
     folderReady(); if (!patch) throw new Error('Comparez le patch avant de l’appliquer.');
-    if (!await confirm('Appliquer le référentiel partagé', `${patch.added} ajout(s), ${patch.modified} modification(s), ${patch.unchanged} élément(s) identique(s). Les valeurs modifiées, y compris vos corrections locales affichées dans « Avant », seront remplacées par celles du patch. Les éléments absents sont conservés. Une sauvegarde sera créée avant application.`, 'Sauvegarder et appliquer')) return;
+    if (!await confirm('Appliquer le référentiel partagé', `${patch.added} ajout(s), ${patch.modified} modification(s), ${patch.unchanged} élément(s) identique(s). Les valeurs modifiées, y compris les corrections locales affichées dans « Avant », seront remplacées par celles du patch. Les éléments absents sont conservés. Une sauvegarde sera créée avant application.`, 'Sauvegarder et appliquer')) return;
     const result = await p.call('update.sites.apply', { token: patch.token, confirmed: true });
     patch = null; paintPatch();
     patchReview.append(card('Patch de sites appliqué', facts([['Ajouts', result.added], ['Modifications', result.modified], ['Identiques', result.unchanged], ['SHA-256 appliqué', result.sha256], ['Sauvegarde du référentiel précédent', result.backupPath]])));
@@ -54,10 +54,10 @@ export function sharedUpdatePanels(p, options) {
   const network = card('Dossier réseau partagé',
     el('p', { text: 'Déposez le ZIP de l’édition du poste (PROD ou PROD-LIGHT) et SHA256SUMS.txt dans ce dossier. Le logiciel copie le pack localement avant de le vérifier.' }),
     simulation ? el('p', { class: 'terrain-warning', text: 'Démonstration : aucun dossier réseau réel n’est consulté. Quittez la démonstration pour utiliser une publication réelle.' }) : null,
-    field('Dossier de diffusion', folder, 'Chemin Windows UNC ou dossier local accessible avec les droits de votre session.'), toolbar(choose, save, find, copy), sharedReview);
+    field('Dossier de diffusion', folder, 'Chemin Windows UNC ou dossier local accessible avec les droits de la session.'), toolbar(choose, save, find, copy), sharedReview);
   const sites = card('Patch des sites',
     el('p', { text: 'Le même dossier peut contenir GLPI-Pilot-Sites-v1.csv et GLPI-Pilot-Sites.sha256. Ce patch met à jour les villes, sites et bâtiments sans remplacer le logiciel. Les éléments absents du fichier restent conservés.' }),
-    el('p', { text: 'Vérifiez les valeurs avant/après, notamment vos corrections locales. Les identifiants restent stables pour conserver les liens des interventions et des tournées. Aucun ticket distant n’est modifié.' }),
+    el('p', { text: 'Vérifier les valeurs avant/après, notamment les corrections locales. Les identifiants restent stables pour conserver les liens des interventions et des tournées. Aucun ticket distant n’est modifié.' }),
     toolbar(preview, apply, exportPatch), patchReview);
   folder.addEventListener('input', invalidate);
   function paintOffer() {

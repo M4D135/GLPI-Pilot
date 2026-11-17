@@ -39,7 +39,7 @@ public sealed partial class TeamWorkspaceStore
         await using var db = await Open(ct); using var tx = db.BeginTransaction();
         var old = await ReadItem(db, tx, next.Id, ct);
         if ((old?.Revision ?? 0) != expectedRevision)
-            throw new InvalidOperationException("Cette préparation ou ce catalogue a changé. Rechargez avant d’enregistrer ; votre saisie n’a pas été écrasée.");
+            throw new InvalidOperationException("Cette préparation ou ce catalogue a changé. Rechargez avant d’enregistrer ; saisie conservée.");
         if (old is not null && (old.Deleted || old.Kind != next.Kind || old.Conflicts > 0))
             throw new InvalidOperationException("Ce document a été retiré ou possède des versions en conflit. Examinez les versions avant de le modifier.");
         if (next.Kind == FieldPreparationDocuments.CatalogueKind)

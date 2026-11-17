@@ -368,7 +368,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                 if (selection != null && !string.IsNullOrWhiteSpace(selection.Selector)) return (selection, Origin(frame.Url));
                 await Task.Delay(200, ct);
             }
-            throw new InvalidOperationException("La sélection a expiré. Tu peux relancer le choix de l’élément.");
+            throw new InvalidOperationException("Sélection expirée. Relancer le choix de l’élément.");
         }
         finally
         {

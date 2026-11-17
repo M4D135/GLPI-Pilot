@@ -31,9 +31,9 @@ export async function renderAssistant(ctx) {
     preparationHost.replaceChildren(); proposalHost.replaceChildren(); state.textContent = 'Demande modifiée : préparez à nouveau le contenu avant de générer.';
   };
   const requestForm = el('div', {}, el('div', { class: 'analytics-form-grid' }, field('Objectif', operation), field('Moteur', provider), field('Endpoint complet', endpoint), field('Modèle', model),
-    field('Tickets fournis au maximum', maximum), field('Délai maximal (secondes)', timeout)), external.element, field('Votre demande', prompt),
+    field('Tickets fournis au maximum', maximum), field('Délai maximal (secondes)', timeout)), external.element, field('Demande', prompt),
     el('div', { class: 'analytics-summary-options' }, field('Périmètre de synthèse', scope), field('Limiter à des identifiants précis', identifiers), details('Champs de tickets autorisés dans la synthèse', roles,
-      caption('Les champs personnels et les titres restent exclus tant que vous ne les sélectionnez pas. Une demande de requête transmet seulement le schéma, jamais les cellules des tickets.'))));
+      caption('Champs personnels et titres exclus sans sélection explicite. Une demande de requête transmet seulement le schéma, jamais les cellules des tickets.'))));
   requestForm.addEventListener('input', invalidate); requestForm.addEventListener('change', invalidate);
   const updateMode = () => {
     const remote = provider.value === 'compatible'; endpoint.disabled = model.disabled = !remote; external.control.disabled = !remote;
@@ -49,7 +49,7 @@ export async function renderAssistant(ctx) {
       const result = await ctx.api.call('assistant.generate', { preparationId: request.preparationId, revision: request.revision, confirmed: consent.control.checked, apiKey: key.value },
         { signal: AbortSignal.any([ctx.signal, generateAbort.signal]) });
       if (captured !== generation || ctx.signal.aborted) return;
-      state.textContent = result.simulation||simulation?'Proposition simulée calculée depuis le relevé. Vous pouvez la prévisualiser et l’enregistrer dans cet espace.':'Proposition reçue et contrôlée contre le périmètre fourni. Aucun enregistrement automatique.';
+      state.textContent = result.simulation||simulation?'Proposition simulée calculée depuis le relevé. Aperçu et enregistrement disponibles dans la simulation.':'Proposition reçue et contrôlée contre le périmètre fourni. Aucun enregistrement automatique.';
       showProposal(result);
     } catch (reason) {
       state.textContent = reason.name === 'AbortError' || reason.code === 'CANCELLED' ? 'Génération annulée ; aucune proposition appliquée.' : 'La génération n’a pas abouti.';

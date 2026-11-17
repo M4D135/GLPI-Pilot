@@ -32,7 +32,7 @@ public static class WorkBrowserChecks
             ("WebView calendar typed controls save real technician capacity", CalendarPage),
             ("WebView local dispatch persists an explicit proposal", PlanningPage),
             ("WebView enrichment restoration does not start network reads", EnrichmentPage),
-            ("WebView Mon espace uses personal identity and live stored templates", DayPage),
+            ("WebView Espace personnel uses personal identity and live stored templates", DayPage),
             ("WebView relations expose unknown facts and block unsafe links", InsightsPage)
         };
     }
@@ -300,7 +300,7 @@ public static class WorkBrowserChecks
         var originalIndex = int.Parse((await row.GetAttributeAsync("data-focus-key"))![4..]);
         var expectedId = ui.Fixture.Source.Rows[originalIndex][0];
         await row.GetByRole(AriaRole.Checkbox).CheckAsync();
-        await list.GetByRole(AriaRole.Button, new() { Name = "Ajouter à ma file", Exact = true }).ClickAsync();
+        await list.GetByRole(AriaRole.Button, new() { Name = "Ajouter à la file personnelle", Exact = true }).ClickAsync();
         Check(WorkplaceStore.Load(Path.Combine(ui.Fixture.Folder, "workplace.json")).Tickets.Single(t => t.QueueOrder.HasValue).Id == expectedId,
             "A selected source occurrence adds its actual ticket to the personal queue without changing the source.");
         await ui.Page.EvaluateAsync("""
@@ -322,8 +322,8 @@ public static class WorkBrowserChecks
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Ticket précédent", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("id=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#'+id+' ·')", expectedId);
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Notes et rappels", Exact = true }).ClickAsync();
-        await ui.Page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync("Texte personnel encore non enregistré");
-        await ui.Page.EvaluateAsync("()=>window.workNoteBefore=document.querySelector('[aria-label=\"Mes notes\"]')||[...document.querySelectorAll('textarea')].find(node=>node.value==='Texte personnel encore non enregistré')");
+        await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync("Texte personnel encore non enregistré");
+        await ui.Page.EvaluateAsync("()=>window.workNoteBefore=document.querySelector('[aria-label=\"Notes personnelles\"]')||[...document.querySelectorAll('textarea')].find(node=>node.value==='Texte personnel encore non enregistré')");
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Retour à la liste", Exact = true }).ClickAsync();
         await ui.Page.EvaluateAsync("()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
         Check(await ui.Page.EvaluateAsync<bool>("""
@@ -335,7 +335,7 @@ public static class WorkBrowserChecks
                 &&document.activeElement===before.opener;}
             """), "Returning preserves the same list DOM, query, column filter, sort, page, selection, both scroll axes and opener focus.");
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Reprendre la fiche", Exact = true }).ClickAsync();
-        Check(await ui.Page.GetByLabel("Mes notes", new() { Exact = true }).InputValueAsync() == "Texte personnel encore non enregistré"
+        Check(await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).InputValueAsync() == "Texte personnel encore non enregistré"
             && await ui.Page.EvaluateAsync<bool>("()=>workNoteBefore.isConnected&&workNoteBefore.value==='Texte personnel encore non enregistré'"),
             "A list round-trip keeps the same personal editor and its unsaved text.");
         await ui.Capture("tickets-workspace-reader-desktop.png");
@@ -357,11 +357,11 @@ public static class WorkBrowserChecks
         Check(await ui.Page.Locator(".tickets-record-grid tbody tr").CountAsync() == 3
             && (await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#42 ·", StringComparison.Ordinal),
             "The legacy ticket entry resumes its dossier inside the same workspace and leaves the current source list intact.");
-        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Mes dossiers", Exact = true }).ClickAsync();
+        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Dossiers conservés", Exact = true }).ClickAsync();
         await ui.Page.GetByLabel("Rechercher dans les dossiers conservés", new() { Exact = true }).FillAsync("Repère personnel");
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync();
         Check(await ui.Page.Locator(".tickets-saved-item").CountAsync() == 1);
-        await ui.Page.GetByRole(AriaRole.Dialog, new() { Name = "Mes dossiers", Exact = true }).GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        await ui.Page.GetByRole(AriaRole.Dialog, new() { Name = "Dossiers conservés", Exact = true }).GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Retour à la liste", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("()=>!document.querySelector('.tickets-list-pane').hidden&&document.querySelectorAll('.tickets-record-grid tbody tr').length===3");
         Check(await ui.Page.Locator(".tickets-record-grid tbody tr").CountAsync() == 3);
@@ -371,7 +371,7 @@ public static class WorkBrowserChecks
             && await ui.Page.GetByText("Fiche non lue", new() { Exact = true }).CountAsync() == 1,
             "An unread source row opens its exact local dossier and exposes an explicit refresh action.");
         await ui.Navigate("tickets", new { ticketKey = key, section = "personal" });
-        Check(await ui.Page.GetByLabel("Mes notes", new() { Exact = true }).InputValueAsync() == "Repère personnel conservé",
+        Check(await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).InputValueAsync() == "Repère personnel conservé",
             "A ticketKey deep link still restores personal work after source rows change.");
         Check(ui.Operations.All(op => op is not ("workplace.ticket.read" or "workplace.ticket.browser" or "workplace.ticket.tab")) && ui.ExternalRequests.Count == 0);
         await ui.NoErrors();
@@ -394,8 +394,8 @@ public static class WorkBrowserChecks
         await list.Locator("tbody tr").Nth(1).GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
         Check((await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#7000002 ·", StringComparison.Ordinal));
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Notes et rappels", Exact = true }).ClickAsync();
-        await ui.Page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync("Note isolée de simulation");
-        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Enregistrer mon travail", Exact = true }).ClickAsync();
+        await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync("Note isolée de simulation");
+        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("()=>workNotices.some(n=>n.text==='Travail personnel enregistré dans la simulation.')");
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Actions assistées", Exact = true }).ClickAsync();
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Inspecter les formulaires simulés", Exact = true }).ClickAsync();
@@ -437,10 +437,10 @@ public static class WorkBrowserChecks
     private static async Task PersonalPage()
     {
         await using var ui = new UiSession(); await ui.Start("tickets", new { rowIndex = 0, revision = ui.Fixture.App.Revision, section = "personal" });
-        await ui.Page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync("Note depuis la vraie interface WebView"); await ui.Page.GetByLabel("Épingler ce ticket", new() { Exact = true }).CheckAsync();
+        await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync("Note depuis la vraie interface WebView"); await ui.Page.GetByLabel("Épingler ce ticket", new() { Exact = true }).CheckAsync();
         await ui.Page.GetByText("Checklist, rappels et conservation", new() { Exact = true }).ClickAsync();
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Ajouter une action", Exact = true }).ClickAsync(); await ui.Page.GetByLabel("Action personnelle", new() { Exact = true }).FillAsync("Vérification terrain");
-        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Enregistrer mon travail", Exact = true }).ClickAsync(); await ui.Page.WaitForFunctionAsync("()=>workNotices.some(n=>n.text==='Travail personnel enregistré.')");
+        await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync(); await ui.Page.WaitForFunctionAsync("()=>workNotices.some(n=>n.text==='Travail personnel enregistré.')");
         var p = WorkplaceStore.Load(Path.Combine(ui.Fixture.Folder, "workplace.json")).Tickets.Single(); Check(p.Pinned && p.Notes.Contains("WebView") && p.Checklist.Single().Text == "Vérification terrain"); await ui.NoErrors();
     }
     private static async Task DraftPage()
@@ -515,7 +515,7 @@ public static class WorkBrowserChecks
     private static async Task DayPage()
     {
         await using var ui = new UiSession(); await ui.Fixture.Call("workplace.technicians.me", new { technicianKey = "Alice" }); await ui.Start("day");
-        Check(await ui.Page.GetByText("Mon identité : Alice", new() { Exact = false }).CountAsync() == 1);
+        Check(await ui.Page.GetByText("Identité : Alice", new() { Exact = false }).CountAsync() == 1);
         await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Modèles de listes", Exact = true }).ClickAsync(); await ui.Page.GetByLabel("Nom du modèle", new() { Exact = true }).FillAsync("Vérification UI"); await ui.Page.GetByLabel("Une action par ligne (40 maximum)", new() { Exact = true }).FillAsync("Une action\nUn contrôle"); await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Enregistrer le modèle", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("()=>workNotices.some(n=>n.text==='Modèle enregistré.')"); Check(WorkplaceStore.Load(Path.Combine(ui.Fixture.Folder, "workplace.json")).ChecklistTemplates["Vérification UI"].Count == 2); await ui.NoErrors();
     }

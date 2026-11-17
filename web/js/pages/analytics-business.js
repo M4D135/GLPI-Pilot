@@ -25,7 +25,7 @@ async function renderBusiness(ctx, view) {
   ctx.root.dataset.businessView = view.key;
   const bootstrap = await call(ctx, 'dashboard.business.bootstrap'); if (ctx.signal.aborted) return cleanup;
   if (!bootstrap.hasSource) {
-    ctx.root.append(card('Vos rubriques sont prêtes', caption('Chargez une liste d’incidents pour calculer les volumes, ou explorez ces vues avec la démonstration, depuis Réglages.'),
+    ctx.root.append(card('Aucun relevé chargé', caption('Chargez une liste d’incidents pour calculer les volumes, ou explorez ces vues avec la démonstration, depuis Réglages.'),
       toolbar(button('Importer un fichier ou collecter', () => ctx.navigate('collect'), { primary: true, icon: 'download' }),
         button('Démonstration dans Réglages', () => ctx.navigate('settings', { section: 'demo' }), { icon: 'spark' }),
         button('Régler le pilotage', () => ctx.navigate('pilot-settings'), { icon: 'settings' }))));
@@ -179,7 +179,7 @@ export async function renderBusinessSettings(ctx) {
   }
   function drawSites() {
     siteHost.replaceChildren();
-    if (!sites.length) { siteHost.append(empty('Aucun site configuré', 'Ajoutez vos sites ou reprenez le paramétrage de votre classeur Excel.')); return; }
+    if (!sites.length) { siteHost.append(empty('Aucun site configuré', 'Ajouter des sites ou importer le paramétrage du classeur Excel.')); return; }
     siteHost.append(table(sites, [
       { key: 'name', label: 'Site', render: site => { const control = input(site.name, { maxLength: 200, 'aria-label': 'Nom du site' }); return bind(control, 'input', () => site.name = control.value); } },
       { key: 'aliases', label: 'Alias · une variante par ligne', render: site => { const control = textArea((site.aliases || []).join('\n'), 3); control.setAttribute('aria-label', `Alias de ${site.name}`); return bind(control, 'input', () => site.aliases = split(control.value)); } },

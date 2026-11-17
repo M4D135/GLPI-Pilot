@@ -93,7 +93,7 @@ public sealed partial class PilotApplication
         var mine = Flag(args, "mine"); var technicians = MapWorkspaceStrings(args, "technicianKeys", 64, 400);
         if (mine)
         {
-            if (personal is null) throw new InvalidOperationException("Choisissez d’abord votre identité parmi les techniciens de ce relevé pour afficher Mes tickets.");
+            if (personal is null) throw new InvalidOperationException("Sélectionner une identité parmi les techniciens du relevé pour afficher les tickets attribués.");
             technicians = new[] { personal.Key };
         }
         if (technicians.Length > 0)

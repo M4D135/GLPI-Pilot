@@ -68,7 +68,7 @@ try
     Check("Missing dependency advice requests complete autonomous pack", StartupDiagnostics.RecoveryAdvice(new FileNotFoundException()).Contains("runtime"));
     Check("Advice follows nested loader failure", StartupDiagnostics.RecoveryAdvice(new Exception("outer", new BadImageFormatException())).Contains("x64"));
     Check("Memory failure advice is distinct", StartupDiagnostics.RecoveryAdvice(new OutOfMemoryException()).Contains("mémoire"));
-    Check("IO failure advice does not recommend deleting settings", StartupDiagnostics.RecoveryAdvice(new IOException()).Contains("Conservez vos préférences"));
+    Check("IO failure advice does not recommend deleting settings", StartupDiagnostics.RecoveryAdvice(new IOException()).Contains("Conserver les préférences"));
     Console.WriteLine($"{checks} startup resilience checks passed.");
 }
 finally { Directory.Delete(root, true); }

@@ -19,7 +19,7 @@ export async function sourceCacheCard(ctx, { compact = false } = {}) {
     host.append(toolbar(badge(ctx.state.session.cachedSource ? 'Cache local consulté' : 'Copie locale disponible', 'info'),
       el('strong', { text: source })),
       el('p', { class: 'help', text: `${formatNumber(data.rows)} lignes · observation du ${formatDate(data.extractedAt)} · mémorisée le ${formatDate(data.savedAt)}` }),
-      el('p', { text: 'Ce relevé daté reste consultable sans connexion. Il ne détermine pas l’état de votre session SSO ; utilisez « Revenir au GLPI Live » pour récupérer les données actuelles.' }));
+      el('p', { text: 'Relevé daté consultable hors connexion. État de la session SSO non vérifié. « Revenir au GLPI Live » lance une nouvelle collecte.' }));
     if (data.error) host.append(el('p', { class: 'notice warning', text: data.error }));
     if (data.recovered) host.append(el('p', { class: 'notice warning', text: 'La copie précédente a été retrouvée après un problème de lecture de la plus récente. Vérifiez la date affichée.' }));
     if (data.complete === false) host.append(el('p', { class: 'help', text: 'Cette copie conserve les limites du relevé d’origine ; elle ne certifie pas un inventaire complet de GLPI.' }));
@@ -27,7 +27,7 @@ export async function sourceCacheCard(ctx, { compact = false } = {}) {
     // successful collection replaces the displayed cache; on failure the
     // existing observation is kept and the user sees the actual error.
     if (ctx.state.session.cachedSource) {
-      host.append(el('p', { class: 'help', text: 'Vous consultez une photographie locale. Votre configuration GLPI reste disponible.' }),
+      host.append(el('p', { class: 'help', text: 'Copie locale datée. Configuration GLPI conservée.' }),
         toolbar(button('Revenir au GLPI Live', async () => {
           try {
             await ctx.api.call('collect.run', {});

@@ -13,7 +13,7 @@ export async function openLibraryPrecedents({api, signal, state, navigate}, refe
   const modal = dialog('Ticket absent de la bibliothèque', el('div', {class: 'library-reference-missing'},
     el('p', {}, el('strong', {class: 'library-ticket-id', text: `Ticket ${result.ticket.id}`}), ' · ', result.installation),
     el('p', {text: 'Aucune fiche de ce ticket n’est conservée dans le cache de cette installation GLPI. Recueillez-la dans la Bibliothèque pour rechercher ses précédents.'}),
-    el('p', {class: 'help', text: 'Votre fiche de travail et votre saisie restent ouvertes.'})),
+    el('p', {class: 'help', text: 'La fiche et la saisie en cours restent ouvertes.'})),
     [{label: 'Revenir à la fiche', action: close => close()}], {returnFocus: options.returnFocus});
   const abort = () => modal.close();
   signal?.addEventListener('abort', abort, {once: true});

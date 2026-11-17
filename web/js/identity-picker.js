@@ -4,8 +4,8 @@ import { el, button, icon, toolbar, input, field, dialog, empty, formatNumber } 
 export function openIdentityPicker({ api, state, signal }) {
   return new Promise(resolve => {
     let model = null, busy = false, reading = false, closed = false, serial = 0, timer = null, readController = null;
-    const search = input('', { type: 'search', placeholder: 'Nom, prénom ou identifiant présent dans vos tickets',
-      maxLength: 300, 'aria-label': 'Rechercher votre nom', autocomplete: 'off' });
+    const search = input('', { type: 'search', placeholder: 'Nom, prénom ou identifiant du technicien',
+      maxLength: 300, 'aria-label': 'Rechercher une identité', autocomplete: 'off' });
     const current = el('div', { class: 'identity-current', hidden: true });
     const message = el('p', { class: 'help identity-source-message', hidden: true });
     const resultStatus = el('p', { class: 'identity-result-status', role: 'status', 'aria-live': 'polite' });
@@ -16,19 +16,19 @@ export function openIdentityPicker({ api, state, signal }) {
       placeholder: 'Ex. : Marie Dupont ou m.dupont' });
     const manual = el('form', { class: 'identity-manual', hidden: true, onSubmit: event => {
       event.preventDefault(); void create();
-    } }, el('h3', { text: 'Saisir mon nom' }), field('Nom tel qu’il apparaît dans les tickets', name),
-    el('p', { class: 'help', text: 'Recopiez le nom ou l’identifiant utilisé dans les affectations de vos tickets. Vous pourrez changer ce choix à tout moment.' }),
-    toolbar(button('Enregistrer mon identité', () => create(), { primary: true, icon: 'check' }),
+    } }, el('h3', { text: 'Saisie manuelle' }), field('Nom tel qu’il apparaît dans les tickets', name),
+    el('p', { class: 'help', text: 'Nom ou identifiant utilisé dans les affectations de tickets.' }),
+    toolbar(button('Enregistrer l’identité', () => create(), { primary: true, icon: 'check' }),
       button('Revenir à la liste', () => { manual.hidden = true; add.hidden = false; search.focus(); })));
-    const add = button('Mon nom n’est pas dans la liste', () => {
+    const add = button('Ajouter une identité', () => {
       manual.hidden = false; add.hidden = true; name.value = search.value.trim(); name.focus();
     }, { icon: 'plus' });
     const body = el('div', { class: 'identity-picker' },
-      el('p', { class: 'identity-intro', text: 'Retrouvez votre nom, puis cliquez sur « C’est moi ». Ce choix personnalise vos tickets et vos interventions.' }),
-      state.session?.testMode || state.session?.demo ? el('p', { class: 'notice info', text: 'Vous êtes en simulation : ce choix reste dans cet espace de test.' }) : null,
-      current, field('Rechercher votre nom', search), message, resultStatus, results, pagination, error, add, manual,
-      el('p', { class: 'help identity-local-note', text: 'Votre choix est mémorisé dans votre profil. Les noms proposés viennent des tickets chargés et des participants du planning.' }));
-    const modal = dialog('Mon identité', body, [{ label: 'Fermer', action: close => { if (!busy) close(); } }]);
+      el('p', { class: 'identity-intro', text: 'Identité utilisée pour filtrer les tickets et les interventions.' }),
+      state.session?.testMode || state.session?.demo ? el('p', { class: 'notice info', text: 'Simulation : identité limitée à cet espace de test.' }) : null,
+      current, field('Rechercher une identité', search), message, resultStatus, results, pagination, error, add, manual,
+      el('p', { class: 'help identity-local-note', text: 'Identité enregistrée dans le profil. Liste issue des tickets chargés et des participants du planning.' }));
+    const modal = dialog('Identité', body, [{ label: 'Fermer', action: close => { if (!busy) close(); } }]);
     modal.element.classList.add('identity-dialog');
     modal.element.addEventListener('cancel', event => {
       if (busy) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -44,8 +44,8 @@ export function openIdentityPicker({ api, state, signal }) {
       if (closed || !model) return;
       current.hidden = !model.current;
       current.replaceChildren(...(model.current ? [el('span', { class: 'identity-avatar', 'aria-hidden': 'true' }, icon('users')),
-        el('div', { class: 'identity-current-copy' }, el('small', { text: 'Votre identité actuelle' }), el('strong', { text: model.current.label })),
-        button('Retirer mon identité', () => commit('identity.clear', { revision: model.revision }), { icon: 'close' })] : []));
+        el('div', { class: 'identity-current-copy' }, el('small', { text: 'Identité actuelle' }), el('strong', { text: model.current.label })),
+        button('Retirer l’identité', () => commit('identity.clear', { revision: model.revision }), { icon: 'close' })] : []));
       message.textContent = model.message || ''; message.hidden = !message.textContent || !!model.people?.length;
       const offset = model.offset || 0, people = model.people || [];
       resultStatus.textContent = model.total ? `${formatNumber(offset + 1)}–${formatNumber(offset + people.length)} sur ${formatNumber(model.total)} personne${model.total > 1 ? 's' : ''}`
@@ -55,16 +55,16 @@ export function openIdentityPicker({ api, state, signal }) {
         const selected = person.key === model.current?.key;
         const origin = person.fromSource ? `${formatNumber(person.ticketCount)} ticket${person.ticketCount === 1 ? '' : 's'} dans le relevé`
           : person.fromCalendar ? 'Participant du planning · absent de ce relevé' : 'Identité mémorisée · absente de ce relevé';
-        const choose = button(selected ? 'Identité actuelle' : 'C’est moi', () => commit('identity.set', { key: person.key, revision: model.revision }),
+        const choose = button(selected ? 'Identité actuelle' : 'Sélectionner', () => commit('identity.set', { key: person.key, revision: model.revision }),
           { primary: !selected, icon: selected ? 'check' : undefined, disabled: selected || busy || reading,
-            attributes: { 'aria-label': selected ? `Identité actuelle : ${person.label}` : `C’est moi : ${person.label}` } });
+            attributes: { 'aria-label': selected ? `Identité actuelle : ${person.label}` : `Sélectionner : ${person.label}` } });
         return el('article', { class: `identity-person${selected ? ' selected' : ''}`, dataset: { identityKey: person.key } },
           el('span', { class: 'identity-avatar', 'aria-hidden': 'true', text: person.label.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() }),
           el('div', { class: 'identity-person-copy' }, el('strong', { text: person.label }), el('small', { text: origin }),
             person.key!==nameKey(person.label)||people.some(other => other.key !== person.key && nameKey(other.label) === nameKey(person.label)) ? el('small', { class: 'identity-key', text: 'Repère : '+person.key }) : null), choose);
       }));
-      if (!people.length) results.append(empty(search.value.trim() ? 'Votre nom n’apparaît pas ?' : 'Commencez par votre nom',
-        'Vous pouvez le saisir ci-dessous, ou charger un relevé contenant vos affectations.'));
+      if (!people.length) results.append(empty(search.value.trim() ? 'Aucune identité correspondante' : 'Rechercher une identité',
+        'Saisie manuelle disponible ci-dessous. Un relevé peut aussi fournir les identités attribuées aux tickets.'));
       pagination.replaceChildren(...(model.total > model.limit ? [
         button('Précédent', () => load(Math.max(0, offset - model.limit)), { disabled: !offset || busy || reading }),
         button('Suivant', () => load(offset + model.limit), { disabled: offset + people.length >= model.total || busy || reading })] : []));

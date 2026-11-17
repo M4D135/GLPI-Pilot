@@ -125,12 +125,12 @@ internal static partial class Program
             "An occurrence edit preserves the other dates and renders its replacement exactly once.");
         await page.Locator("#identity-trigger").ClickAsync();
         var identity = page.Locator("dialog.identity-dialog"); await identity.WaitForAsync();
-        await identity.GetByLabel("Rechercher votre nom", new() { Exact = true }).FillAsync("Samir");
-        await identity.Locator("article[data-identity-key='calendar-samir']").GetByRole(AriaRole.Button, new() { Name = "C’est moi : Samir Laurent", Exact = true }).ClickAsync();
+        await identity.GetByLabel("Rechercher une identité", new() { Exact = true }).FillAsync("Samir");
+        await identity.Locator("article[data-identity-key='calendar-samir']").GetByRole(AriaRole.Button, new() { Name = "Sélectionner : Samir Laurent", Exact = true }).ClickAsync();
         await identity.WaitForAsync(new() { State = WaitForSelectorState.Detached });
         await WaitForNavigationTargetAsync(page, "interventions"); await Settled();
         await page.GetByLabel("Périmètre des interventions", new() { Exact = true }).SelectOptionAsync("mine"); await Settled();
-        Require(await page.Locator(".calendar-event").CountAsync() == 1, "Choosing C’est moi filters shared events without hiding team functions or requiring an account.");
+        Require(await page.Locator(".calendar-event").CountAsync() == 1, "Choosing Sélectionner filters shared events without hiding team functions or requiring an account.");
         await page.GetByLabel("Périmètre des interventions", new() { Exact = true }).SelectOptionAsync("all"); await Settled();
         await page.Locator(".calendar-more > summary").ClickAsync(); await Button("Déplacer plusieurs interventions").ClickAsync();
         await page.Locator(".calendar-batch-choice").Filter(new() { HasText = "Préparation libre" }).GetByRole(AriaRole.Checkbox).CheckAsync();

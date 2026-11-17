@@ -165,7 +165,7 @@ public static partial class BusinessDashboardTemplates
                     previous.AddRange(rule.Values);
                 }
             }
-            if (!rules.Any(rule => rule.Kind == "category")) Note("Catégories du relevé", "Les catégories apparaissent dès qu’elles sont présentes dans le relevé. Vous pouvez aussi définir leurs racines dans Paramètres du pilotage.", "categories");
+            if (!rules.Any(rule => rule.Kind == "category")) Note("Catégories du relevé", "Les catégories apparaissent dès qu’elles sont présentes dans le relevé. Possibilité de définir leurs racines dans Paramètres du pilotage.", "categories");
             if (!rules.Any(rule => rule.Kind == "team")) Note("Équipes du relevé", "Les groupes du relevé alimentent cette section. Paramètres du pilotage permet de les réunir en équipes et de régler leur ordre.", "teams");
             Metrics("context", ("pending", "En attente"), ("without-group", "Sans groupe"), ("active-multiple-groups", "Plusieurs groupes"),
                 ("active-no-author", "Sans rédacteur visible"), ("high", "Priorités hautes"), ("old", "Tickets anciens"));

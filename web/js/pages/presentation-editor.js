@@ -40,13 +40,13 @@ export function preparePilotPresentation({ ctx, model, board, content, scopeText
   const presentButton = button('Présenter', () => safely(async () => { validateLaunch(); await saveDeck(); openViewer(); }), { primary: true, icon: 'chart', disabled: true });
   const body = el('div', { class: 'presentation-editor', 'data-presentation-editor': '', 'data-ready': 'false' },
     el('div', { class: 'presentation-editor-top' },
-      el('div', {}, el('p', { class: 'presentation-editor-eyebrow', text: 'COMPOSER VOTRE RÉUNION' }),
+      el('div', {}, el('p', { class: 'presentation-editor-eyebrow', text: 'PRÉSENTATION' }),
         el('p', { class: 'presentation-editor-context', text: scopeText }), provenance()),
       toolbar(undoButton, redoButton, saveStatus, saveButton, presentButton)), errors,
     el('div', { class: 'presentation-editor-workspace' },
       el('aside', { class: 'presentation-slide-rail' }, toolbar(el('h3', { text: 'Diapos' }), button('+', () => addSlide(), { title: 'Ajouter une diapo', attributes: { 'aria-label': 'Ajouter une diapo' } })),
         thumbnails, button('Composer automatiquement', () => safely(async () => {
-          if (!await confirm('Réorganiser la présentation', 'Répartir les widgets du tableau sur plusieurs diapos ? Vous pourrez annuler cette modification.', 'Composer')) return;
+          if (!await confirm('Réorganiser la présentation', 'Répartir les widgets du tableau sur plusieurs diapos ? Modification annulable.', 'Composer')) return;
           change(() => { deck = groupedDeck(available); current = 0; selectedId = ''; });
         }), { attributes: { 'data-presentation-auto': '' } })),
       el('section', { class: 'presentation-stage-column' }, toolbar(slideTitle,

@@ -6,7 +6,7 @@ const sourceNames = { manual: 'Correction locale', location: 'Champ GLPI', build
 const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
 export async function renderReference(ctx) {
-  const p = page(ctx, 'Référentiel géographique', 'Villes, sites, bâtiments et règles de localisation. Préparez vos modifications, puis vérifiez leur effet sur le relevé complet.');
+  const p = page(ctx, 'Référentiel géographique', 'Villes, sites, bâtiments et règles de localisation. Aperçu des modifications sur le relevé avant application.');
   let state = await p.call('terrain.reference.state'), kind = !state.cities && state.sites ? 'site' : 'city', offset = 0;
   if (['site', 'city', 'building'].includes(ctx.params?.referenceKind)) kind = ctx.params.referenceKind;
   const summary = el('div'), listing = el('div'), configuration = el('div'), warningArea = el('div');
@@ -32,14 +32,14 @@ export async function renderReference(ctx) {
     saveReference.textContent = preserved ? 'Enregistrer le référentiel de travail…' : 'Simuler et enregistrer le référentiel';
     p.root.querySelector('.terrain-heading p').textContent = preserved
       ? 'Villes, sites, bâtiments et règles de localisation. Enregistrez le référentiel de travail pour les prochains imports et collectes ; le relevé conservé reste figé.'
-      : 'Villes, sites, bâtiments et règles de localisation. Préparez vos modifications, puis vérifiez leur effet sur le relevé complet.';
+      : 'Villes, sites, bâtiments et règles de localisation. Aperçu des modifications sur le relevé avant application.';
     summary.replaceChildren(el('div', { class: 'terrain-statbar' },
       badge(`${formatNumber(state.cities)} villes`), badge(`${formatNumber(state.sites)} sites`), badge(`${formatNumber(state.buildings)} bâtiments`),
       state.sitesWithoutCity ? badge(`${formatNumber(state.sitesWithoutCity)} sites · commune non renseignée`) : '',
       badge(state.dirty ? 'Brouillon modifié' : 'Référentiel enregistré', state.dirty ? 'warn' : 'ok')));
     warningArea.replaceChildren();
     if (state.conflicted) warningArea.append(el('p', { class: 'terrain-warning', text: 'Le référentiel a été modifié ailleurs depuis l’ouverture du brouillon. Rechargez-le avant de reprendre les modifications.' }));
-    if (preserved) warningArea.append(el('p', { class: 'notice info', text: `${state.observationKind === 'cache' ? 'Le dernier relevé conservé est consulté hors connexion.' : 'Une archive est ouverte.'} Vous pouvez enregistrer le référentiel de travail. L’enregistrement du référentiel ne recalcule pas ce relevé. Les nouveaux sites serviront aux prochains imports et collectes et à votre configuration par défaut.${state.observationKind === 'cache' ? ' Une correction manuelle reste possible pour les tickets du cache.' : ''}` }));
+    if (preserved) warningArea.append(el('p', { class: 'notice info', text: `${state.observationKind === 'cache' ? 'Le dernier relevé conservé est consulté hors connexion.' : 'Une archive est ouverte.'} Enregistrement du référentiel de travail disponible. L’enregistrement du référentiel ne recalcule pas ce relevé. Les nouveaux sites serviront aux prochains imports et collectes et à la configuration par défaut.${state.observationKind === 'cache' ? ' Une correction manuelle reste possible pour les tickets du cache.' : ''}` }));
     if (state.warnings.length) warningArea.append(details(`Contrôles du dictionnaire · ${state.warnings.length}`, el('ul', {}, ...state.warnings.map(value => el('li', { text: value })))));
   }
   async function reload() { state = await p.call('terrain.reference.state'); paintState(); paintConfiguration(); await loadList(); }
@@ -53,7 +53,7 @@ export async function renderReference(ctx) {
       { key: 'actions', label: 'Actions', render: row => toolbar(button('Modifier', p.act(async () => { const result = await p.call('terrain.reference.detail', { kind, id: row.id }); state.draftVersion = result.draftVersion; await edit(kind, result.entry); })),
         ...(kind === 'site' || kind === 'city' ? [button('Voir la carte', p.act(() => openMap(ctx, { ...draft(), kind, id: row.id, referenceDraft: true })))] : []),
         button('Retirer', p.act(async () => { if (await confirm(`Retirer ${row.name}`, 'La suppression sera ajoutée au brouillon. Les rattachements existants doivent d’abord être déplacés ou retirés.', 'Retirer')) { state = await p.call('terrain.reference.delete', { ...draft(), kind, id: row.id }); await reload(); } }), { danger: true })) }
-    ], { key: 'id', maxRows: 40, emptyText: 'Aucune référence. Ajoutez une ville ou importez votre référentiel CSV.' }), pager(data, next => p.run(async () => { offset = next; await loadList(); })));
+    ], { key: 'id', maxRows: 40, emptyText: 'Aucune référence. Ajouter une ville ou importer un référentiel CSV.' }), pager(data, next => p.run(async () => { offset = next; await loadList(); })));
   }
   function paintConfiguration() {
     const config = state.configuration, priorities = [...config.sourcePriority];
@@ -90,7 +90,7 @@ export async function renderReference(ctx) {
     const body = el('div', { class: 'terrain-editor' }, errors);
     if (entryKind !== 'city') {
       parent = referenceField(p, entryKind === 'site' ? 'Commune de rattachement · facultative' : 'Site de rattachement', entryKind === 'site' ? 'city' : 'site', entryKind === 'site' ? value.cityId : value.siteId, '',
-        entryKind === 'site' ? { empty: 'Commune non renseignée', help: 'Le site et ses alias fonctionnent sans commune. Vous pourrez le rattacher plus tard ; aucune position géographique ne sera inventée.' } : {});
+        entryKind === 'site' ? { empty: 'Commune non renseignée', help: 'Site et alias utilisables sans commune. Rattachement ultérieur possible ; aucune position géographique déduite.' } : {});
       body.append(parent.element);
     }
     body.append(editor.element);
@@ -119,7 +119,7 @@ export async function renderReference(ctx) {
     const panel = el('div', {}, el('p', { text: preserved
       ? `Enregistrer le brouillon du référentiel de travail : ${formatNumber(state.cities)} villes, ${formatNumber(state.sites)} sites et ${formatNumber(state.buildings)} bâtiments.`
       : `${formatNumber(data.totalRows)} lignes examinées ; ${formatNumber(data.changedRows)} localisations modifiées.` }),
-      preserved ? el('p', { class: 'notice info', text: `L’enregistrement de ce référentiel ne recalcule pas ${data.observationKind === 'cache' ? 'le relevé du cache local' : 'l’archive ouverte'}. Les cellules et décisions capturées à l’origine restent conservées. Le référentiel enregistré servira aux prochains imports et collectes et sera inclus dans votre configuration par défaut.` }) : '',
+      preserved ? el('p', { class: 'notice info', text: `L’enregistrement de ce référentiel ne recalcule pas ${data.observationKind === 'cache' ? 'le relevé du cache local' : 'l’archive ouverte'}. Les cellules et décisions capturées à l’origine restent conservées. Le référentiel enregistré servira aux prochains imports et collectes et sera inclus dans la configuration par défaut.` }) : '',
       data.limited ? el('p', { text: 'Les 1 000 premiers changements sont consultables. Le calcul porte sur toutes les lignes.' }) : '', errors, content);
     const paint = value => content.replaceChildren(table(value.items, [
       { key: 'rowIndex', label: 'Ligne', render: row => String(row.rowIndex + 1) }, { key: 'before', label: 'Avant' }, { key: 'after', label: 'Après' }, { key: 'explanation', label: 'Décision' }

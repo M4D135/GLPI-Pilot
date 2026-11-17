@@ -36,7 +36,7 @@ export async function reviewSharedBusinessConflict(ctx,item,onChanged=async()=>{
  const body=el('div',{class:'library-detail library-business-review'},el('p',{text:review.title||sharedBusinessKinds[review.kind]||'Données communes'}),metadata,
   review.kind==='team-dataset'?el('p',{class:'notice info',text:'L’écran compare le résumé de chaque relevé : dimensions, observation et empreinte. L’export conserve les deux relevés complets pour les examiner.'}):null,
   comparison.truncated?el('p',{class:'notice warning',text:'Cette comparaison est limitée en nombre de champs ou en longueur. Exportez les deux versions complètes pour examiner les valeurs absentes de l’aperçu.'}):null,
-  el('p',{class:'help',text:'Votre choix porte sur la version entière. Il sera transmis aux autres postes à la prochaine synchronisation.'}),search,counter,fields,pager);
+  el('p',{class:'help',text:'Choix appliqué à la version entière. Il sera transmis aux autres postes à la prochaine synchronisation.'}),search,counter,fields,pager);
  const apply=choice=>async close=>{const result=await call('sharing.business.resolve',{id:review.id,conflictId:review.conflictId,expectedRevision:review.expectedRevision,choice});close();notify(result.message||'Version retenue.');await onChanged();};
  const modal=dialog('Comparer les données communes',body,[
   {label:'Conserver la version actuelle',action:apply('current')},
@@ -53,7 +53,7 @@ export async function renderSharedBusinessStatus(ctx,host=ctx.root){
    section.replaceChildren(el('div',{class:'library-business-heading'},el('div',{},el('h3',{text:'Données communes'}),el('p',{class:'help',text:status.enabled?`${formatNumber(status.documents)} document(s) commun(s) conservé(s) · sites, règles, relevés, tournées et organisation de l’équipe.`:'Le partage est facultatif. Les sites, règles, relevés, tournées et paramètres d’organisation sont disponibles sur ce poste.'})),button('Actualiser le partage',refresh,{icon:'refresh'})),
     ...(status.warnings||[]).map(text=>el('p',{class:'notice warning',text})),
     ...(status.conflicts||[]).map(item=>el('article',{class:'library-business-conflict'},el('div',{},badge(item.label||sharedBusinessKinds[item.kind]||'Données communes','warning'),el('strong',{text:item.title||'Version commune'}),el('span',{class:'help',text:`Proposition reçue le ${formatDate(item.recordedAt)}`})),button('Comparer et choisir',()=>reviewSharedBusinessConflict(ctx,item,refresh),{icon:'layers'}))),
-    ...(status.moreConflicts?[el('p',{class:'help',text:'D’autres propositions restent à examiner. La liste sera actualisée après vos décisions.'})]:[]),
+    ...(status.moreConflicts?[el('p',{class:'help',text:'D’autres propositions restent à examiner. Liste actualisée après validation des choix.'})]:[]),
     ...(!status.conflicts?.length?[el('p',{class:'help',text:'Aucune proposition concurrente à examiner.'})]:[]));
   }catch(error){if(!disposed&&!signal?.aborted)showError(section,error);}
  }

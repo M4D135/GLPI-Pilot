@@ -263,7 +263,7 @@ internal static partial class Program
         await OpenMotion(); await Choose("reduce"); await Settle();
         Require(Flag(await Observe(previewCloud), "frozen") && app.Settings.Interface.ReduceMotion
             && !app.Settings.Interface.FollowWindowsMotion && AppSettings.Load().Interface.ReduceMotion
-            && await MotionDialog().Locator(".motion-preview-status").InnerTextAsync() == "Animations réduites dans votre profil.",
+            && await MotionDialog().Locator(".motion-preview-status").InnerTextAsync() == "Animations réduites dans ce profil.",
             "The Reduce choice in Settings stops actual movement immediately and records an explicit reduced profile, distinct from following Windows.");
         await Choose("system"); await Settle();
         var systemPaused = Flag(await Observe(previewCloud), "frozen");

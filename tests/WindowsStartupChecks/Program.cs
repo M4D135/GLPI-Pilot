@@ -80,7 +80,7 @@ internal sealed partial class WindowsWebViewFixture
                         """) && Digest(settingsPath) == initialHash,
                         "An existing native profile receives a deployment offer while its exact settings remain unchanged before any choice.");
                     var offer = page.GetByRole(AriaRole.Dialog, new() { Name = "Configuration fournie avec ce pack", Exact = true });
-                    await offer.GetByRole(AriaRole.Button, new() { Name = "Garder mes réglages", Exact = true }).ClickAsync();
+                    await offer.GetByRole(AriaRole.Button, new() { Name = "Conserver les réglages", Exact = true }).ClickAsync();
                     await offer.WaitForAsync(new() { State = WaitForSelectorState.Detached });
                     Check(await page.EvaluateAsync<bool>("async()=>!(await (await import('/js/bridge.js')).api.call('deployment.state')).offer.available"),
                         "The actual keep-settings button closes the deployment offer and records its file hash and application version without applying it.");
@@ -91,7 +91,7 @@ internal sealed partial class WindowsWebViewFixture
                     "The packaged Standard host loads the local application brand at its original sidebar size.");
                 var registeredRoutes = await NavigationRouteIdsAsync(page);
                 Check(await page.Locator(".page-content[data-page=home]").CountAsync() == 1
-                    && await page.GetByRole(AriaRole.Heading, new() { Name = "Votre journée en un regard", Exact = true, Level = 2 }).IsVisibleAsync()
+                    && await page.GetByRole(AriaRole.Heading, new() { Name = "Activité", Exact = true, Level = 2 }).IsVisibleAsync()
                     && await page.GetByText("Aucun relevé chargé", new() { Exact = true }).IsVisibleAsync()
                     && registeredRoutes.SequenceEqual(new[] { "home", "records", "interventions", "pilot", "data", "settings" })
                     && await page.Locator(".workspace-view,.nav-group-toggle").CountAsync() == 0,

@@ -56,7 +56,7 @@ export function reviewDeploymentConfiguration(ctx, review, { seed = false, dialo
   const rows = el('div', { class: 'deployment-comparison' }), paging = el('div'), summary = el('p', { role: 'status' });
   const acknowledged = checkbox('Je confirme le remplacement de toutes les options du profil par les valeurs affichées.');
   const content = el('div', { class: 'deployment-review' },
-    el('p', { text: 'Examinez toutes les options avant de remplacer la configuration du profil. Les valeurs du fichier seront appliquées ensemble après votre confirmation.' }),
+    el('p', { text: 'Vérifier les options avant de remplacer la configuration du profil. Les valeurs du fichier sont appliquées ensemble après confirmation.' }),
     el('p', {}, el('strong', { text: 'Fichier : ' }), el('code', { text: review.fileName })),
     el('p', { class: 'help deployment-hash', text: `SHA-256 : ${review.sha256}` }),
     review.warnings?.length ? el('div', { class: 'notice warning' }, el('ul', {}, ...review.warnings.map(text => el('li', { text })))) : null,
@@ -66,9 +66,9 @@ export function reviewDeploymentConfiguration(ctx, review, { seed = false, dialo
     el('p', { class: 'help', text: 'Les tableaux de réglages sont détaillés par position [0], [1], etc. « (absent) » indique une valeur ajoutée ou retirée. Les chaînes restent entre guillemets pour conserver les espaces et caractères exacts.' }),
     acknowledged.element);
   const actions = [{ label: 'Annuler', action: close => close() },
-    ...(seed ? [{ label: 'Garder mes réglages', action: async close => {
+    ...(seed ? [{ label: 'Conserver les réglages', action: async close => {
       await ctx.api.call('deployment.decline', { sha256: review.sha256 }, { signal: ctx.signal }); close();
-      ctx.notify('Vos réglages sont conservés pour cette configuration du pack.');
+      ctx.notify('Réglages conservés pour cette configuration du pack.');
     } }] : []),
     { label: 'Sauvegarder et remplacer', primary: true, disabled: true, action: async close => {
       if (!acknowledged.control.checked) throw new Error('Confirmez le remplacement après lecture de l’aperçu.');
@@ -114,14 +114,14 @@ export async function offerDeploymentConfiguration(ctx, deploymentState) {
   if (!deploymentState?.offer?.available || deploymentState.simulation || isSimulation(ctx.state.session)) return null;
   const offer = deploymentState.offer;
   const modal = ownDialog(ctx, dialog('Configuration fournie avec ce pack', el('div', {},
-    el('p', { text: offer.reason || 'Ce pack propose une configuration différente. Vous pouvez examiner toutes les valeurs avant de remplacer vos réglages, ou conserver votre configuration actuelle.' }),
+    el('p', { text: offer.reason || 'Configuration du pack différente du profil actuel. Examiner les valeurs avant remplacement, ou conserver les réglages actuels.' }),
     el('p', { text: 'Le choix est mémorisé pour cette version et cette empreinte du fichier. Aucune base ni session de connexion n’est transférée.' }),
     el('p', { text: `Version du pack : ${offer.version}` }),
     el('p', {}, el('strong', { text: 'Fichier : ' }), el('code', { text: deploymentState.fileName })),
     el('p', { class: 'help deployment-hash', text: `SHA-256 : ${offer.sha256}` })), [
-    { label: 'Garder mes réglages', action: async close => {
+    { label: 'Conserver les réglages', action: async close => {
       await ctx.api.call('deployment.decline', { sha256: offer.sha256 }, { signal: ctx.signal }); close();
-      ctx.notify('Vos réglages sont conservés pour cette configuration du pack.');
+      ctx.notify('Réglages conservés pour cette configuration du pack.');
     } },
     { label: 'Examiner la configuration du pack', primary: true, action: async close => {
       requireSaved(ctx); const preview = await ctx.api.call('deployment.seed.preview', {}, { signal: ctx.signal });
@@ -148,14 +148,14 @@ export async function createDeploymentConfiguration(ctx, { onState } = {}) {
       ownDialog(ctx, dialog('Configuration par défaut du pack', el('div', {},
         el('p', { text: `Enregistrer toutes les options actuelles dans wad/${state.fileName}, dans ce dossier PROD ? Le dossier wad est créé si nécessaire.` }),
         el('pre', { class: 'deployment-value', text: state.defaultPath || state.seedPath }),
-        el('p', { text: 'Vous pourrez diffuser ce dossier avec sa configuration. Un profil neuf la recevra automatiquement ; un profil existant pourra l’examiner avant de remplacer ses réglages.' }),
+        el('p', { text: 'Dossier diffusable avec sa configuration. Un profil neuf la recevra automatiquement ; un profil existant pourra l’examiner avant de remplacer ses réglages.' }),
         el('p', { class: 'help', text: 'Si ce dossier contient déjà une configuration par défaut, sa copie sera conservée dans AppData avant remplacement.' })), [
         { label: 'Annuler', action: close => close() },
         { label: 'Enregistrer comme défaut', primary: true, action: async close => {
           const saved = await ctx.api.call('deployment.default.save', { confirmed: true, expectedSha256: state.defaultSha256 || '' }, { signal: ctx.signal });
           Object.assign(state, saved.state); onState?.(state); close();
           ownDialog(ctx, dialog('Configuration par défaut enregistrée', el('div', {},
-            el('p', { text: 'Ce fichier est enregistré dans wad. Vous pouvez diffuser le dossier PROD complet avec les options enregistrées.' }),
+            el('p', { text: 'Fichier enregistré dans wad. Diffuser le dossier PROD complet pour inclure cette configuration.' }),
             el('pre', { class: 'deployment-value', text: saved.path }),
             el('p', { class: 'help deployment-hash', text: `SHA-256 : ${saved.sha256}` }),
             saved.backupPath ? el('div', {}, el('strong', { text: 'Ancienne configuration du pack conservée :' }), el('pre', { class: 'deployment-value', text: saved.backupPath })) : null)), dialogs);
@@ -180,7 +180,7 @@ export async function createDeploymentConfiguration(ctx, { onState } = {}) {
     el('details', { class: 'deployment-pack-location' }, el('summary', { text: 'Préparer la configuration du premier lancement' }),
       el('p', { text: `Emplacement attendu : wad/${state.fileName}. Diffusez le dossier wad avec les deux lanceurs du pack PROD.` }),
       el('p', { class: 'help', text: 'Un ancien fichier à la racine reste reconnu si aucun fichier n’existe dans wad. Le fichier dans wad est prioritaire ; un fichier invalide est signalé sans appliquer silencieusement l’ancien.' }),
-      el('p', { text: 'Sur un profil existant, Garder les réglages mémorise le refus pour cette version et ce fichier. Vous pouvez toujours importer manuellement une configuration complète.' }),
+      el('p', { text: 'Sur un profil existant, Garder les réglages mémorise le refus pour cette version et ce fichier. Import manuel d’une configuration complète toujours disponible.' }),
       el('p', { class: 'help', text: 'Emplacement d’enregistrement dans cette installation :' }), el('pre', { class: 'deployment-value', text: state.defaultPath || state.seedPath }),
       state.seedPath && state.seedPath !== state.defaultPath ? el('div', {}, el('p', { class: 'help', text: 'Ancienne configuration actuellement reconnue :' }), el('pre', { class: 'deployment-value', text: state.seedPath })) : null), status,
     result ? el('section', { class: 'notice success', 'data-deployment-applied': '' }, el('strong', { text: 'Configuration complète appliquée' }),

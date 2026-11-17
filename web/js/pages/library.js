@@ -172,9 +172,9 @@ export async function renderLibrary(ctx) {
     actionButtons.find(entry=>entry.control===syncControl).disabled=!shared;
     syncControl.disabled=busy||!shared;
     overviewDetails.replaceChildren(
-      el('div', { class: 'library-overline' }, icon('layers'), el('span', { text: 'Votre mémoire de travail GLPI' }), badge(simulation?'Stockage de simulation':'Stockage local', 'info')),
-      el('h2', { text: hasTickets ? 'Votre bibliothèque GLPI' : 'Collecter les tickets accessibles' }),
-      el('p', { text: simulation?'Retrouvez les fiches et contenus disponibles dans le relevé de simulation. Une mise à jour du cache reprend leurs modifications ; les rapprochements restent limités à ces données.':hasTickets ? 'Retrouvez les fiches et leurs solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de votre session.' : 'Tous les statuts, dans les entités actives de votre session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' }));
+      el('div', { class: 'library-overline' }, icon('layers'), badge(simulation?'Stockage de simulation':'Stockage local', 'info')),
+      el('h2', { text: hasTickets ? 'Bibliothèque GLPI' : 'Collecter les tickets accessibles' }),
+      el('p', { text: simulation?'Retrouvez les fiches et contenus disponibles dans le relevé de simulation. Une mise à jour du cache reprend leurs modifications ; les rapprochements restent limités à ces données.':hasTickets ? 'Fiches et solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de la session.' : 'Tous les statuts, dans les entités actives de la session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' }));
     statistics.replaceChildren(...[
       [s.ticketCount, 'Tickets conservés', 'Index de la bibliothèque'],
       [s.contentCount, 'Fiches avec contenu', 'Lectures effectivement recueillies'],
@@ -184,7 +184,7 @@ export async function renderLibrary(ctx) {
     storageDetails.replaceChildren(toolbar(badge(modeLabel,shared?'info':''),
         el('span', { class: 'help', text: model.sync?.label || (shared ? 'Synchronisation disponible.' : 'Le partage est facultatif.') })),
       el('div', { class: 'library-storage-path', text: syncMode==='folder'?`Partage : ${settings.sharedFolder||'Dossier à choisir'}`:`Copie locale : ${settings.localFolder||'Dossier géré par l’application'}` }),
-      el('p', { class: 'help', text: shared?`${count(s.pendingCount)} ticket(s) et ${count(model.team?.pending)} contribution(s) en attente · Dernière synchronisation : ${formatDate(model.sync?.lastSuccess)}`:'Vos données et vos interventions restent disponibles localement.' }),
+      el('p', { class: 'help', text: shared?`${count(s.pendingCount)} ticket(s) et ${count(model.team?.pending)} contribution(s) en attente · Dernière synchronisation : ${formatDate(model.sync?.lastSuccess)}`:'Données et interventions disponibles localement.' }),
       ...(shared&&settings.autoSync?[el('p',{class:'help',text:`Synchronisation automatique toutes les ${settings.intervalMinutes||5} minute(s)${model.sync?.nextSync?' · Prochain passage : '+formatDate(model.sync.nextSync):''}`})]:[]));
     syncError.textContent=model.sync?.lastError||'';syncError.hidden=!model.sync?.lastError;
     if (busy) lock(true);
@@ -231,8 +231,8 @@ export async function renderLibrary(ctx) {
         offset = response.offset; const rows = response.rows || [];
         summary.textContent = `${count(response.total)} résultat(s)${resolved ? ' parmi les tickets résolus' : ''}`;
         results.replaceChildren(...rows.map(row => resultCard(row, resolved)));
-        if (!rows.length) results.append(empty(query ? 'Aucun ticket ne correspond' : resolved ? 'Aucun précédent résolu confirmé' : 'Votre bibliothèque est prête à être alimentée',
-          query ? 'Essayez un numéro, un terme plus court ou une autre installation.' : resolved ? 'Mettez à jour le cache pour recueillir et confirmer les contenus des tickets résolus ou clos. Les fiches à recontrôler restent consultables dans Bibliothèque.' : 'Aspirez les tickets accessibles depuis votre session GLPI pour recueillir leur contenu.'));
+        if (!rows.length) results.append(empty(query ? 'Aucun ticket ne correspond' : resolved ? 'Aucun précédent résolu confirmé' : 'Aucun ticket conservé',
+          query ? 'Essayez un numéro, un terme plus court ou une autre installation.' : resolved ? 'Mettez à jour le cache pour recueillir et confirmer les contenus des tickets résolus ou clos. Les fiches à recontrôler restent consultables dans Bibliothèque.' : 'Aspirez les tickets accessibles depuis la session GLPI pour recueillir leur contenu.'));
         pager.replaceChildren(button('Précédent', async () => { offset = Math.max(0, offset - response.limit); await load(); }, { disabled: offset === 0 }),
           el('span', { text: `${response.total ? offset + 1 : 0}–${Math.min(response.total, offset + rows.length)} sur ${count(response.total)}` }),
           button('Suivant', async () => { offset += response.limit; await load(); }, { disabled: offset + response.limit >= response.total }));
@@ -311,8 +311,8 @@ export async function renderLibrary(ctx) {
     }
     const folderPick=button('Choisir le dossier partagé',async()=>{const result=await call('library.sharedFolder.pick');if(!result.cancelled&&result.folder)controls.sharedFolder.value=result.folder;},{icon:'folder'});
     const folder=el('div',{class:'library-shared-folder'},field('Dossier réseau commun',controls.sharedFolder,'Choisissez un dossier déjà accessible dans Windows. Tous les postes de l’équipe utilisent ce même dossier partagé.'),folderPick,
-      el('p',{class:'library-setting-note',text:'Le nom du serveur ou la lettre du lecteur peut dépendre de votre poste. C’est le dossier commun et ses droits Windows qui réunissent l’équipe.'}));
-    const local=el('div',{class:'library-local-mode'},icon('folder'),el('div',{},el('strong',{text:'Fonctionnement autonome'}),el('p',{text:'La bibliothèque, le planning et les réglages restent sur ce poste. Vous pourrez activer le partage plus tard.'})));
+      el('p',{class:'library-setting-note',text:'Le nom du serveur ou la lettre du lecteur peut dépendre du poste. C’est le dossier commun et ses droits Windows qui réunissent l’équipe.'}));
+    const local=el('div',{class:'library-local-mode'},icon('folder'),el('div',{},el('strong',{text:'Fonctionnement autonome'}),el('p',{text:'La bibliothèque, le planning et les réglages restent sur ce poste. Partage facultatif.'})));
     const sharedOptions=el('div',{class:'library-shared-options'},automatic.element,field('Intervalle de synchronisation (minutes)',controls.intervalMinutes),el('p',{class:'library-setting-note',text:'En cas de coupure du réseau, le travail continue sur la copie locale. Les modifications en attente sont reprises au prochain échange ; les versions concurrentes sont conservées pour examen.'}));
     const modeDescription=el('p',{class:'library-setting-note library-mode-description'});
     const test=button('Tester la connexion',async()=>{connectionStatus.textContent=mode.value==='folder'?'Vérification du dossier partagé…':'Test de connexion en cours…';connectionStatus.dataset.tone='';try{const result=await call('library.connection.test',{settings:read(),password:mode.value==='postgres'?password.value:''});connectionStatus.textContent=result.message||'Accès établi.';connectionStatus.dataset.tone=result.success===false?'danger':'success';}catch(error){connectionStatus.textContent=error.message;connectionStatus.dataset.tone='danger';}});
@@ -320,12 +320,12 @@ export async function renderLibrary(ctx) {
     const editor = el('form', { class: 'card library-settings', onSubmit: event => event.preventDefault() },
       el('div', { class: 'library-settings-grid' },
         el('section', { class: 'library-settings-section' }, el('h2', { text: 'Copie locale' }),
-          field('Dossier de la bibliothèque', controls.localFolder, 'Ce dossier reste sur votre poste et conserve la copie de travail, même lorsque le partage est actif.'),
+          field('Dossier de la bibliothèque', controls.localFolder, 'Dossier local sur ce poste et conserve la copie de travail, même lorsque le partage est actif.'),
           button('Choisir le dossier', async () => { const result = await call('library.folder.pick'); const folder = result.folder ?? result.path; if (folder) controls.localFolder.value = folder; }, { icon: 'folder' }),
           field('Fuseau des dates GLPI', controls.sourceTimeZone, 'Choisissez le fuseau d’affichage de GLPI. Sans ce choix, la collecte reste possible ; une date sans décalage horaire ne permet pas de réutiliser un contenu sans le relire.'),
           field('Format des dates GLPI', controls.sourceDateOrder, 'Choisissez l’ordre affiché dans GLPI. En détection prudente, une date telle que 05/06 reste ambiguë et le contenu sera relu.'),
           field('Recontrôler les contenus après (jours)', controls.maxAgeDays, 'Une relecture périodique complète le contrôle incrémental de la date de modification.'),
-          field('Votre nom dans l’espace d’équipe', controls.displayName),
+          field('Nom affiché dans l’espace d’équipe', controls.displayName),
           el('p', { class: 'library-setting-note', text: 'Les pièces jointes sont conservées sous forme de références. La bibliothèque recueille les onglets de consultation accessibles ; elle conserve les limites et les lectures partielles.' }),
           action('Relire tous les contenus', () => perform('Relecture de tous les contenus accessibles…', 'library.capture', { mode: 'all' }), { icon: 'refresh',disabled:isFileSource(ctx.state.session),title:isFileSource(ctx.state.session)?fileSourceDetailHelp:'' }),
           model.administration?el('section',{class:'library-administration'},el('h3',{text:'Administration locale'}),el('p',{class:'help',text:'Une sauvegarde vérifiée est créée avant l’effacement. Les données distantes et les fichiers personnels sont conservés.'}),toolbar(button('Réinitialiser les tickets locaux',()=>resetLocal(false),{danger:true}),button('Réinitialiser toute la base locale',()=>resetLocal(true),{danger:true}))):null),
@@ -345,7 +345,7 @@ export async function renderLibrary(ctx) {
     const update=()=>{const shared=mode.value!=='local',isFolder=mode.value==='folder',isPostgres=mode.value==='postgres';local.hidden=shared;folder.hidden=!isFolder;pg.hidden=!isPostgres;sharedOptions.hidden=!shared;test.disabled=!shared;forget.hidden=!isPostgres;
       for(const control of [controls.host,controls.port,controls.database,controls.username,controls.tlsMode,password,remember.control])control.disabled=!isPostgres;
       controls.sharedFolder.disabled=!isFolder;controls.sharedFolder.required=isFolder;automatic.control.disabled=!shared;controls.intervalMinutes.disabled=!shared||!automatic.control.checked;
-      modeDescription.textContent=isFolder?'Un dossier réseau commun suffit pour réunir les données des postes de l’équipe. Aucun compte supplémentaire n’est créé dans GLPI Pilot.':isPostgres?'Utilisez le serveur PostgreSQL prévu pour votre équipe. Les identifiants ci-dessous concernent uniquement cette connexion technique.':'Le partage est désactivé. Toutes les fonctions restent utilisables sur ce poste.';connectionStatus.textContent='';};
+      modeDescription.textContent=isFolder?'Un dossier réseau commun suffit pour réunir les données des postes de l’équipe. Aucun compte supplémentaire n’est créé dans GLPI Pilot.':isPostgres?'Serveur PostgreSQL de l’équipe. Les identifiants ci-dessous concernent uniquement cette connexion technique.':'Le partage est désactivé. Toutes les fonctions restent utilisables sur ce poste.';connectionStatus.textContent='';};
     mode.addEventListener('change',update);automatic.control.addEventListener('change',update);update();
     const common=el('div',{class:'library-business-host'});content.replaceChildren(editor,common);mountBusinessStatus(common);
   }
@@ -357,7 +357,7 @@ export async function renderLibrary(ctx) {
     const submit = async () => { teamOffset = 0; await load(); };
     const form = el('form', { class: 'card library-search', onSubmit: event => { event.preventDefault(); void submit().catch(error => showError(content, error)); } },
       el('h2', { text: 'Conserver et partager le travail de l’équipe' }),
-      el('p', { class: 'help', text: simulation?'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées pendant la simulation. Vous pouvez les examiner, les reprendre et les synchroniser dans le partage simulé.':'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées depuis vos outils. La synchronisation les échange avec l’équipe ; examinez une contribution avant de la reprendre sur ce poste.' }),
+      el('p', { class: 'help', text: simulation?'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées pendant la simulation. Examen, reprise et synchronisation disponibles dans le partage simulé.':'Retrouvez les notes, connaissances, tournées, répartitions et compétences publiées depuis les outils de l’application. La synchronisation les échange avec l’équipe ; examinez une contribution avant de la reprendre sur ce poste.' }),
       toolbar(search, field('Type de contribution', filter), button('Rechercher', submit, { icon: 'search' }), button('Ajouter une contribution', () => editWorkspace(), { primary: true, icon: 'plus' })),
       toolbar(button('Partager la configuration actuelle', () => publishWorkspace('workspace.publishConfiguration', 'Partager la configuration', 'Configuration de l’équipe')),
         button('Partager les statistiques actuelles', () => publishWorkspace('workspace.publishStatistics', 'Partager les statistiques', 'Statistiques du relevé')),
@@ -498,7 +498,7 @@ export async function renderLibrary(ctx) {
         button('Différences suivantes', () => { offset += 80; paint(); }, { disabled: offset + 80 >= (review.fields?.length || 0) }));
     };
     pager.classList.add('library-pagination');
-    const body = el('div', { class: 'library-detail' }, el('p', { class: 'help', text: 'Examinez les sections et leurs différences. Vos choix seront appliqués ensemble après validation.' }),
+    const body = el('div', { class: 'library-detail' }, el('p', { class: 'help', text: 'Examinez les sections et leurs différences. Choix appliqués ensemble après validation.' }),
       table(review.sections || [], [{ key: 'section', label: 'Section' }, { key: 'current', label: 'Actuel' }, { key: 'incoming', label: 'Partagé' }]),
       table(review.conflicts || [], [{ key: 'section', label: 'Collection' }, { key: 'name', label: 'Élément' }, { label: 'Choix', render: conflict => {
         const choice = select([{ value: 'current', label: 'Conserver l’actuel' }, { value: 'incoming', label: 'Prendre le partagé' }, { value: 'both', label: 'Conserver les deux' }]);

@@ -75,7 +75,7 @@ public sealed partial class PilotApplication
         else
         {
             if (next.Sources.Count >= 100) throw new InvalidDataException("Cent sources au maximum.");
-            source = new SourceProfile { Name = "Ma source" }; next.Sources.Add(source);
+            source = new SourceProfile { Name = "Source GLPI" }; next.Sources.Add(source);
         }
         if (args.TryGetProperty("name", out _)) source.Name = Text(args, "name", 120).Trim();
         if (source.Name.Length == 0) throw new InvalidDataException("Renseignez le nom de la source.");

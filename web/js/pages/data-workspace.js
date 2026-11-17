@@ -20,8 +20,7 @@ export async function renderDataWorkspace(ctx) {
   const selectedSource = state.settings.sources.find(item => item.id === state.settings.activeSourceId);
   const receipt = extractionStatus(state.session);
   const hero = el('section', { class: 'hero workspace-intro data-intro' }, el('div', {},
-    el('p', { class: 'workspace-eyebrow', text: 'DONNÉES ET CONNEXIONS' }), el('h2', { text: simulation ? demo ? 'Les données de votre démonstration' : 'Votre fichier, en simulation' : 'Vos recherches GLPI, à jour' }),
-    el('p', { text: simulation ? demo ? 'Essayez la collecte sur les données fictives. Votre connexion GLPI et vos réglages habituels restent séparés.' : 'Essayez la collecte sur les données du fichier chargé. Vos essais restent dans cet espace de simulation.' : 'Collectez vos tickets directement depuis GLPI. Le fichier CSV / Excel reste disponible pour travailler sur un extrait.' }),
+    el('h2', { text: simulation ? 'Sources de simulation' : 'Sources de données' }),
     state.session.loaded ? el('div', { class: 'data-current-origin', 'data-current-origin': 'true' }, el('span', { text: 'Relevé affiché :' }), badge(receipt.label, receipt.tone), el('span', { text: `${formatNumber(state.session.rows)} lignes · ${formatDate(state.session.date)}` })) : null),
     el('div', { class: 'hero-icon', 'aria-hidden': 'true' }, icon('download')));
   const current = el('section', { class: 'workspace-data-source' }, el('div', {},
@@ -35,7 +34,7 @@ export async function renderDataWorkspace(ctx) {
   const source = select([{ value: '', label: 'Configuration courante' }, ...state.settings.sources.map(item => ({ value: item.id, label: item.name }))], state.settings.activeSourceId);
   source.addEventListener('change', async () => { if (source.value) { await call('sources.select', { id: source.value, revision }); await ctx.refresh(); } });
   const connection = form([
-    { key: 'portalUrl', label: simulation ? 'Adresse de la source simulée' : 'Adresse de la recherche GLPI', required: true, help: simulation ? demo ? 'La collecte utilise le scénario fictif, sans connexion à un portail réel.' : 'La collecte réutilise les lignes du fichier chargé, sans connexion à un portail réel.' : 'Collez l’adresse complète de votre recherche pour conserver ses filtres.' },
+    { key: 'portalUrl', label: simulation ? 'Adresse de la source simulée' : 'Adresse de la recherche GLPI', required: true, help: simulation ? demo ? 'La collecte utilise le scénario fictif, sans connexion à un portail réel.' : 'La collecte réutilise les lignes du fichier chargé, sans connexion à un portail réel.' : 'Adresse complète de la recherche GLPI, filtres compris.' },
     { key: 'browserChannel', label: 'Navigateur', type: 'select', options: browserOptions(state) },
     { key: 'autoMode', label: 'Collecte', type: 'select', options: [{ value: 'native', label: 'Export natif GLPI' }, { value: 'pagination', label: 'Tableau et pagination' }] }
   ], { ...state.settings, portalUrl: simulation ? state.settings.portalUrl || 'https://simulation.glpi.local/front/ticket.php' : state.settings.portalUrl });
@@ -59,16 +58,16 @@ export async function renderDataWorkspace(ctx) {
   const live = card(simulation ? 'Collecter dans la simulation' : 'GLPI en direct', field('Recherche mémorisée', source), connection.element,
     toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => { await saveConnection(); await call('collect.run'); await ctx.refresh(); }, { primary: true, icon: 'download' }),
       button(simulation ? 'Connecter la source simulée' : 'Se connecter', async () => { await saveConnection(); const result = await call('collect.connect'); connectionStatus.textContent = result.status?.message || result.status?.detail || 'Session connectée.'; }, { icon: 'arrow' })),
-    connectionStatus, el('p', { class: 'help data-connection-help', text: simulation ? 'Connexion et téléchargements restent simulés. Vos essais ne modifient pas le profil réel.' : 'La collecte reste discrète. Si le SSO demande une action, le navigateur vous permet de terminer la connexion.' }),
-    toolbar(button('Mes recherches', manageSearches, { icon: 'layers', attributes: { 'data-open-panel': 'sources' } }),
+    connectionStatus, el('p', { class: 'help data-connection-help', text: simulation ? 'Connexion et téléchargements simulés. Profil habituel inchangé.' : 'En cas de demande SSO, terminer la connexion dans le navigateur.' }),
+    toolbar(button('Recherches mémorisées', manageSearches, { icon: 'layers', attributes: { 'data-open-panel': 'sources' } }),
       button('Collecter plusieurs recherches', () => openGroupedCollection(ctx, { beforeOpen: prepareConnection, onSaved: savedSettings, manageSources: () => openTool('sources') }), { icon: 'layers' }),
       button('Inspection et reprise', () => openTool('collect'), { attributes: { 'data-open-panel': 'collect' } })));
   live.classList.add('workspace-live-source'); live.dataset.sourceMethod = simulation ? 'simulation' : 'glpi';
   const alternatives = card('Autres façons de travailler',
     el('div', { class: 'data-alternative', 'data-source-method': 'file' }, el('h3', { text: 'Un extrait CSV / Excel' }),
-      el('p', { class: 'help', text: 'Chargez un fichier lorsque vous disposez déjà d’un extrait. Les indicateurs décriront son contenu, sans actualisation GLPI.' }),
+      el('p', { class: 'help', text: 'Import d’un extrait existant. Indicateurs calculés sur son contenu, sans actualisation GLPI.' }),
       button('Importer CSV / Excel', () => importLocalTestFile(ctx), { icon: 'folder' })),
-    el('p', { class: 'help', text: simulation ? 'Quitter la simulation restaure votre espace habituel.' : 'Votre dernier relevé réussi est aussi conservé sur ce poste pour une consultation hors connexion.' }));
+    el('p', { class: 'help', text: simulation ? 'Quitter la simulation restaure le profil habituel.' : 'Dernier relevé réussi conservé localement pour consultation hors connexion.' }));
   alternatives.classList.add('workspace-source-alternatives');
   grid.append(live, alternatives);
   root.append(current);
@@ -99,7 +98,7 @@ export async function renderDataWorkspace(ctx) {
       toolButton('Sites et détection', 'Noms, alias, communes et coordonnées', 'sites', 'map'),
       navigationVisible('enrichment', state.settings.interface) ? toolButton('Lectures ciblées', 'Compléter explicitement une sélection de fiches', 'enrichment', 'search') : null)));
   const libraryTools = el('section', { class: 'card workspace-library-tools' }, el('div', { class: 'pilot-block-heading' }, el('div', {},
-    el('p', { class: 'workspace-eyebrow', text: 'MÉMOIRE DES TICKETS' }), el('h2', { text: 'Retrouver, comprendre et partager' }),
+    el('h2', { text: 'Bibliothèque de tickets' }),
     el('p', { class: 'help', text: 'Les contenus conservés restent consultables, y compris lorsque le ticket sort du relevé courant.' })),
     button(simulation ? 'Actualiser le cache simulé' : 'Actualiser le cache', async () => { const captureResult = await call('library.capture', { mode: 'incremental' }); await openTool('library', { captureResult }); }, { icon: 'refresh', disabled:isFileSource(state.session)||state.session.cachedSource, title:state.session.cachedSource?'Une nouvelle collecte GLPI est nécessaire pour relire les fiches en ligne.':isFileSource(state.session)?fileSourceDetailHelp:'' })),
     el('div', { class: 'workspace-section-grid' }, toolEntry('Chercher une fiche', 'Explorer les tickets et leurs contenus déjà conservés.', 'library', 'folder'),

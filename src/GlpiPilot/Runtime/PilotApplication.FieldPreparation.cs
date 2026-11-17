@@ -112,8 +112,8 @@ public sealed partial class PilotApplication
     {
         var token = Text(a, "token", 64);
         if (!_fieldDrafts.TryGetValue(token, out var draft) || draft.Expires < DateTimeOffset.UtcNow)
-            throw new InvalidOperationException("Cette préparation doit être rouverte avant enregistrement. Votre saisie n’a pas été envoyée.");
-        if (draft.SourceRevision != Revision) throw new InvalidOperationException("Le relevé ou le contexte a changé. Rouvrez la préparation avant d’enregistrer ; votre saisie est conservée.");
+            throw new InvalidOperationException("Cette préparation doit être rouverte avant enregistrement. Saisie non envoyée.");
+        if (draft.SourceRevision != Revision) throw new InvalidOperationException("Le relevé ou le contexte a changé. Rouvrez la préparation avant d’enregistrer ; saisie conservée.");
         if (draft.Document.Plan.Owner.Kind == "intervention" && draft.SourceRequest is null)
             throw new InvalidOperationException("La visite n’est plus vérifiable dans le planning. Sa préparation reste conservée sans pouvoir être modifiée.");
         if (draft.Document.Plan.State != "planned") throw new InvalidOperationException("Rouvrez d’abord l’intervention dans le planning avant de modifier son matériel.");
@@ -121,7 +121,7 @@ public sealed partial class PilotApplication
         {
             var current = await FieldSourceAsync(source, ct).ConfigureAwait(false);
             if (current.Plan.Id != draft.Document.Plan.Id || current.SourceStamp != draft.Document.SourceStamp)
-                throw new InvalidOperationException("L’intervention ou ses participants ont changé. Rouvrez la visite avant d’enregistrer ; votre saisie est conservée.");
+                throw new InvalidOperationException("L’intervention ou ses participants ont changé. Rouvrez la visite avant d’enregistrer ; saisie conservée.");
         }
         var edit = CalendarArgument<FieldPreparationPlan>(a, "plan"); FieldPreparationService.Validate(edit);
         if (edit.Id != draft.Document.Plan.Id || edit.Owner != draft.Document.Plan.Owner)

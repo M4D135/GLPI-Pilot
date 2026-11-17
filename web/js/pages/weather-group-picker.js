@@ -9,7 +9,7 @@ export function createWeatherGroupTools(ctx, model, business, onChange) {
   const element = card('Groupes GLPI → cartes météo',
     caption('Cochez les groupes du relevé : une carte par groupe, sans recopier les noms. Les espaces sont conservés.'),
     summary, toolbar(open),
-    caption('Les changements restent à enregistrer avec « Enregistrer les paramètres ». Les seuils et l’ordre de vos cartes existantes sont conservés.'));
+    caption('Les changements restent à enregistrer avec « Enregistrer les paramètres ». Les seuils et l’ordre des cartes existantes sont conservés.'));
   element.dataset.weatherGroupTools = 'true';
   const popups = new Set();
   let disposed = false;

@@ -124,7 +124,7 @@ public sealed partial class PilotApplication
     {
         layout.Validate();
         if (layout.Boards.Count != 1 || layout.Boards[0].Id != "business-" + key)
-            throw new InvalidDataException("Une rubrique native conserve son tableau. Créez les tableaux supplémentaires dans Mes tableaux.");
+            throw new InvalidDataException("Une rubrique native conserve son tableau. Créez les tableaux supplémentaires dans Tableaux personnalisés.");
         var before = AnalyticsBusinessLayout(key); var journal = AnalyticsBusinessJournal(key, before);
         var signature = JsonSerializer.Serialize(layout, Json); if (signature == journal.Expected) return;
         var next = Settings.Copy(); next.Dashboard.Business.BoardOverrides.RemoveAll(board => board.Id == "business-" + key);

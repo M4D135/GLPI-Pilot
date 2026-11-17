@@ -41,7 +41,7 @@ export function createFieldFilters({call,run,state,params,onTour,onSelectAll,onC
 export function attachFieldKitPicker({root,api,signal,token,plan,markDirty,renderLines,onError,readOnly}){
  if(readOnly)return;
  const body=el('div',{class:'field-kit-list'}),section=el('details',{class:'field-new-reference'},el('summary',{text:'Reprendre un kit de matériel déjà utilisé'}),
-  el('p',{class:'field-help',text:'Suggestions locales issues des préparations récentes. Rien n’est ajouté sans votre confirmation ; les quantités préparées repartent à zéro.'}),body);
+  el('p',{class:'field-help',text:'Suggestions locales issues des préparations récentes. Aucun ajout sans confirmation ; les quantités préparées repartent à zéro.'}),body);
  let loaded=false;
  section.addEventListener('toggle',async()=>{
   if(!section.open||loaded)return;

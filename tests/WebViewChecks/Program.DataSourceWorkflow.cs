@@ -148,7 +148,7 @@ internal static partial class Program
         Require(await Group().GetByText("Aucune recherche mémorisée", new() { Exact = true }).IsVisibleAsync()
             && !operations.Contains("collect.campaign") && await Group().GetByRole(AriaRole.Alert).CountAsync() == 0,
             "An empty saved-search list opens understandable preparation without attempting a campaign or displaying a backend error.");
-        await Group().GetByRole(AriaRole.Button, new() { Name = "Ouvrir Mes recherches", Exact = true }).ClickAsync();
+        await Group().GetByRole(AriaRole.Button, new() { Name = "Ouvrir Recherches mémorisées", Exact = true }).ClickAsync();
         var sources = page.Locator("dialog[data-workspace-panel=sources]"); await sources.WaitForAsync();
         await sources.GetByLabel("Nom de la source", new() { Exact = true }).FillAsync("Support Marseille");
         await sources.GetByRole(AriaRole.Button, new() { Name = "Créer depuis la configuration actuelle", Exact = true }).ClickAsync();
@@ -163,7 +163,7 @@ internal static partial class Program
         await CloseDialog(sources);
         Require(await page.GetByLabel("Recherche mémorisée", new() { Exact = true }).InputValueAsync() == secondId,
             "Returning from saved-search management updates the connection selector without requiring an unrelated page reload.");
-        await Button("Mes recherches").ClickAsync(); await sources.WaitForAsync();
+        await Button("Recherches mémorisées").ClickAsync(); await sources.WaitForAsync();
         await sources.GetByRole(AriaRole.Button, new() { Name = "Collecter plusieurs recherches", Exact = true }).ClickAsync(); await Group().WaitForAsync();
         await Group().Locator($"[data-grouped-source='{secondId}']").UncheckAsync();
         await Group().GetByRole(AriaRole.Button, new() { Name = "Enregistrer la sélection", Exact = true }).ClickAsync();
@@ -173,7 +173,7 @@ internal static partial class Program
         await sources.GetByRole(AriaRole.Row).Filter(new() { HasText = "Support Marseille" }).GetByText("Active", new() { Exact = true }).WaitForAsync();
         Require(app.Settings.ActiveSourceId == firstId && !app.Settings.Sources.Single(source => source.Id == secondId).IncludedInCampaign
             && await sources.GetByRole(AriaRole.Alert).CountAsync() == 0,
-            "Saving a grouped choice from Mes recherches refreshes its badges and action revision before another saved search is selected.");
+            "Saving a grouped choice from Recherches mémorisées refreshes its badges and action revision before another saved search is selected.");
         await CloseDialog(sources);
         await Button("Collecter plusieurs recherches").ClickAsync(); await Group().WaitForAsync();
         await Group().Locator($"[data-grouped-source='{firstId}']").UncheckAsync();
@@ -328,7 +328,7 @@ internal static partial class Program
         try { await Call(app, "collect.campaign", new { revision = app.Revision }); throw new Exception("The simulated adapter ignored an empty selection."); }
         catch (InvalidDataException) { Require(true, "The simulated grouped adapter also refuses an empty selection instead of inventing a single local search."); }
         await DataPage(); var dataBeforeCampaign = await page.Locator(".data-workspace").ElementHandleAsync();
-        await Button("Mes recherches").ClickAsync(); await sources.WaitForAsync();
+        await Button("Recherches mémorisées").ClickAsync(); await sources.WaitForAsync();
         await sources.GetByRole(AriaRole.Button, new() { Name = "Collecter plusieurs recherches", Exact = true }).ClickAsync(); await Group().WaitForAsync();
         await Group().GetByRole(AriaRole.Button, new() { Name = "Tout sélectionner", Exact = true }).ClickAsync();
         await Capture("grouped-searches-preparation");
@@ -349,7 +349,7 @@ internal static partial class Program
         await CloseDialog(summary); await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
         Require(!await dataBeforeCampaign!.EvaluateAsync<bool>("node=>node.isConnected") && await sources.CountAsync() == 0
             && (await page.Locator("[data-current-origin]").InnerTextAsync()).Contains("60 lignes", StringComparison.Ordinal),
-            "Closing a completed group launched from Mes recherches closes that panel cleanly and refreshes the underlying data provenance and counts.");
+            "Closing a completed group launched from Recherches mémorisées closes that panel cleanly and refreshes the underlying data provenance and counts.");
 
         returnFailedCampaign = true;
         await Button("Collecter plusieurs recherches").ClickAsync(); await Group().WaitForAsync();

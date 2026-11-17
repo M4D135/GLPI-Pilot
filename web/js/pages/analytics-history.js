@@ -156,7 +156,7 @@ export async function renderPopulations(ctx) {
   const host = el('div'); let current = null;
   const add = command(ctx, '+ Période d’effectif', () => edit(null), { primary: true }); add.disabled = true;
   ctx.root.append(caption('Option facultative : renseignez le nombre de personnes ou de postes de chaque site pour les ratios « tickets pour 100 ». Le stock de tickets et la reconnaissance des sites fonctionnent sans ces chiffres.'),
-    caption('Exemple : 10 tickets pour un site de 200 personnes donnent 5 tickets pour 100 personnes. L’effectif doit être valide à la date du relevé ; il provient de votre inventaire, pas du nombre de techniciens attribués aux tickets.'),
+    caption('Exemple : 10 tickets pour un site de 200 personnes donnent 5 tickets pour 100 personnes. L’effectif doit être valide à la date du relevé ; il provient de l’inventaire, pas du nombre de techniciens attribués aux tickets.'),
     toolbar(command(ctx, 'Retour aux sites', () => ctx.navigate('pilot-sites')), add, command(ctx, 'Actualiser', () => load(0)),
     command(ctx, 'Importer un référentiel', async () => {
       const preview = await call(ctx, 'populations.import.preview'); if (preview.cancelled) return;
@@ -177,7 +177,7 @@ export async function renderPopulations(ctx) {
         command(ctx, 'Retirer', async () => {
           if (!await confirm('Retirer cette période', `Retirer l’effectif ${entry.count} ${entry.unitLabel} de ${entry.siteLabel}, du ${entry.fromDate} au ${entry.untilDate} ?`, 'Retirer')) return;
           await call(ctx, 'populations.delete', { entry }); await load(offset);
-        }, { danger: true })) }], { maxRows: 100 }) : empty('Aucun effectif renseigné pour ce contexte', 'Vous pouvez laisser cette option vide. Ajoutez une période uniquement pour utiliser les ratios par personne ou par poste.'),
+        }, { danger: true })) }], { maxRows: 100 }) : empty('Aucun effectif renseigné pour ce contexte', 'Option facultative. Période nécessaire uniquement pour les ratios par personne ou par poste.'),
       pager(ctx, current.total, current.offset, 100, load));
   }
   function edit(previous) {

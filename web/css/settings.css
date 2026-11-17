@@ -157,3 +157,10 @@
   .settings-workspace :is(.cfg-pane-icon, .cfg-rail-item[aria-current=page] .cfg-rail-ico) { color: CanvasText; background: Canvas; border: 1px solid CanvasText; }
   .settings-workspace .cfg-rail-pill { display: none; }
 }
+
+/* Compact functional header, without promotional copy. */
+.settings-workspace .cfg-hero { padding: 20px; gap: 20px; min-height: 0; }
+.settings-workspace .cfg-hero-main > h2 { margin: 0 0 10px; font-size: 22px; }
+.settings-workspace .cfg-search { margin-top: 12px; }
+.settings-workspace .cfg-pulse-tile { min-height: 82px; padding: 10px 12px; }
+.settings-workspace .cfg-pane-head { margin-bottom: 14px; }

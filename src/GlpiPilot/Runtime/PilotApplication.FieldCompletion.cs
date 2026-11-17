@@ -303,6 +303,6 @@ public sealed partial class PilotApplication
                 { ReferenceId = reference.Id, Code = reference.Code, Label = reference.Label, Unit = reference.Unit, Quantity = line.Quantity,
                   Category = catalogue.Catalogue.Categories.Single(category => category.Id == reference.CategoryId).Name, Note = reference.Note }; }).ToArray()
             }).ToArray();
-        return new { suggestions, catalogueRevision = catalogue.Item?.Revision ?? 0, message = "Suggestions locales issues de vos préparations, sans IA distante, sans ajout automatique ni garantie de compatibilité." };
+        return new { suggestions, catalogueRevision = catalogue.Item?.Revision ?? 0, message = "Suggestions locales issues des préparations, sans IA distante, sans ajout automatique ni garantie de compatibilité." };
     }
 }

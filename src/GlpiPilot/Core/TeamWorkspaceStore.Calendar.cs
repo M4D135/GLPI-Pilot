@@ -68,7 +68,7 @@ public sealed partial class TeamWorkspaceStore
         {
             ct.ThrowIfCancellationRequested(); var old = await ReadItem(db, tx, candidate.Item.Id, ct); previous.Add(candidate.Item.Id, old);
             if (old is not null && candidate.ExpectedRevision != old.Revision || old is null && candidate.ExpectedRevision is not (null or 0))
-                throw new InvalidOperationException("Le planning a changé sur ce poste. Rechargez l’intervention avant d’enregistrer ; votre saisie est conservée.");
+                throw new InvalidOperationException("Le planning a changé sur ce poste. Rechargez l’intervention avant d’enregistrer ; saisie conservée.");
             if (old is not null && old.Kind != candidate.Item.Kind) throw new InvalidOperationException("Le type de document de calendrier ne peut pas changer.");
         }
         var saved = new List<TeamWorkspaceItem>(); var writtenIds = new List<string>();

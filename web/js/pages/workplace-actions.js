@@ -20,7 +20,7 @@ export async function renderDraft(ctx, root, ticket) {
     if (draft.value === value) dirty = false; if (!disposed) state.textContent = simulation?'Brouillon enregistré dans la simulation.':'Brouillon enregistré sur ce poste.';
   };
   draft.addEventListener('input', () => { dirty = true; state.textContent = 'Modification en attente d’enregistrement…'; clearTimeout(timer); timer = setTimeout(run(ctx, save), 700); });
-  root.replaceChildren(note('Composez un texte à partir de vos constats et choisissez les faits lus à inclure. Relisez le brouillon avant de le copier ou de préparer son ajout.'),
+  root.replaceChildren(note('Brouillon fondé sur les constats saisis et les faits sélectionnés. Relecture nécessaire avant copie ou ajout.'),
     field('Modèle', template), el('div', { class: 'work-form-grid' }, field('Constat', findings), field('Action réalisée ou prévue', action), field('Suite attendue', next)),
     el('details', {}, el('summary', { text: 'Contexte effectivement lu à inclure' }), ...choices.map(c => c.element)),
     toolbar(button('Composer le brouillon', run(ctx, async () => { remember(); const result = await call(ctx, 'workplace.draft.compose', { ticketKey: key, ...compositions.get(key), contextRows: choices.filter(c => c.control.checked).map(c => c.index) }); draft.value = result.text; dirty = false; state.textContent = 'Brouillon composé et enregistré.'; }), { primary: true })),
@@ -142,7 +142,7 @@ export async function renderActions(ctx, root, ticket, onApplied) {
     } finally { preparing = false; editor.removeAttribute('aria-busy'); }
   }
   replaceChildren(root, hub.element,
-    note(simulation ? 'Simulation locale : les essais ne modifient pas GLPI.' : 'Un formulaire reconnu, un aperçu, puis une confirmation. Les droits restent ceux de votre session GLPI. Aucun envoi automatique ni groupé.'),
+    note(simulation ? 'Simulation locale : les essais ne modifient pas GLPI.' : 'Un formulaire reconnu, un aperçu, puis une confirmation. Droits de la session GLPI conservés. Aucun envoi automatique ni groupé.'),
     !state.canWrite ? note(simulation ? 'Ouvrez une fiche du relevé de simulation pour préparer une action.' : 'Chargez un relevé GLPI actuel et vérifié pour préparer une écriture. Les archives et imports restent en lecture seule.') : null,
     toolbar(button(simulation ? 'Afficher les formulaires simulés' : 'Afficher la fiche GLPI', run(ctx, async () => {
       await call(ctx, 'workplace.ticket.browser', { ticketKey });

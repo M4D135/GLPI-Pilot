@@ -16,7 +16,7 @@ export async function renderFieldPreparation(ctx){
  const {root,api,signal,state,navigate,notify}=ctx;
  let disposed=false,model=null,modal=null,offset=0,loading=0,selectionGeneration=0;
  const selected=new Map(),zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris';
- const scope=options([['all','Préparations de l’équipe connues'],['mine','Mes préparations']],ctx.params?.mine?'mine':'all');
+ const scope=options([['all','Préparations de l’équipe connues'],['mine','Préparations attribuées']],ctx.params?.mine?'mine':'all');
  scope.setAttribute('aria-label','Périmètre');
  const search=el('input',{type:'search',placeholder:'Ticket, site ou matériel…',maxLength:300});
  const from=el('input',{type:'date'}),to=el('input',{type:'date'}),closed=el('input',{type:'checkbox'});
@@ -68,8 +68,8 @@ export async function renderFieldPreparation(ctx){
   replaceChildren(metrics,...[[summary.planCount||0,'Préparations comptées',''],[summary.unspecifiedCount||0,'À renseigner','unspecified'],[summary.toPrepareCount||0,'À préparer','to-prepare'],[summary.partlyPreparedCount||0,'Partiellement préparées','partial'],[summary.readyCount||0,'Prêtes','ready'],[summary.noMaterialsCount||0,'Sans matériel nécessaire','none']].map(([value,label,readiness])=>
    el('button',{type:'button',class:'field-metric','aria-label':`${label} : ${formatNumber(value)}. Filtrer`,onClick:run(async()=>{filters.readiness(readiness);offset=0;await load(true);})},el('strong',{text:formatNumber(value)}),el('span',{text:label}))));
   for(const warning of summary.warnings||[])notices.append(el('div',{class:'notice warning',text:warning}));
-  if(model.identityRequired)notices.append(el('div',{class:'notice info'},el('span',{text:'Choisissez votre identité pour retrouver vos préparations.'}),
-   ctx.chooseIdentity?button('Choisir mon identité',run(()=>ctx.chooseIdentity({params:{...ctx.params,mine:true}})),{icon:'users'}):null));
+  if(model.identityRequired)notices.append(el('div',{class:'notice info'},el('span',{text:'Sélectionner une identité pour filtrer les préparations.'}),
+   ctx.chooseIdentity?button('Choisir l’identité',run(()=>ctx.chooseIdentity({params:{...ctx.params,mine:true}})),{icon:'users'}):null));
   rows.replaceChildren();
   if(!model.rows?.length)rows.append(empty('Aucune préparation enregistrée dans ce périmètre','Choisissez un ticket ou une visite. Une tournée n’est pas obligatoire.'));
   for(const row of model.rows||[]){
@@ -106,7 +106,7 @@ export async function renderFieldPreparation(ctx){
   if(owned.focus?.isConnected)owned.focus.focus({preventScroll:true});
  }
  async function closeDialog(force=false){
-  if(modal?.dirty&&!force&&!await confirm('Fermer sans enregistrer ?','Votre saisie de préparation ou de catalogue serait abandonnée.','Abandonner la saisie'))return false;
+  if(modal?.dirty&&!force&&!await confirm('Fermer sans enregistrer ?','La saisie de préparation ou de catalogue sera abandonnée.','Abandonner la saisie'))return false;
   destroyDialog();return true;
  }
  async function openDialog(title){

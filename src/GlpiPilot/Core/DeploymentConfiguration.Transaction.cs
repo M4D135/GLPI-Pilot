@@ -30,7 +30,7 @@ public static partial class DeploymentConfigurationService
         {
             Recover(root); ct.ThrowIfCancellationRequested();
             var baseline = Fingerprint(current, root);
-            if (expectedFingerprint is not null && expectedFingerprint != baseline) throw new InvalidOperationException("Vos options ont changé depuis l’aperçu. Examinez de nouveau le fichier complet.");
+            if (expectedFingerprint is not null && expectedFingerprint != baseline) throw new InvalidOperationException("Les options ont changé depuis l’aperçu. Examinez de nouveau le fichier complet.");
             var next = configuration.Settings.Copy(); next.Interface.ContrastTheme = current.Interface.ContrastTheme; next.SitePatchAppliedHash = current.SitePatchAppliedHash; next.SiteReferenceImportHash = current.SiteReferenceImportHash;
             var library = configuration.Library.Deserialize<LibraryPreferences>(Json)!;
             var existingLibrary = new LibraryPreferencesStore(Path.Combine(root, "library.local.json")).Load();

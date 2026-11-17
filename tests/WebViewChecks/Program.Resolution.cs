@@ -191,10 +191,10 @@ internal static partial class Program
             await page.SetViewportSizeAsync(1440, 1000);
             await ClickNavigationAsync(page, "records");
             await WaitForNavigationTargetAsync(page, "records");
-            await page.GetByRole(AriaRole.Button, new() { Name = "Mes dossiers", Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Dossiers conservés", Exact = true }).ClickAsync();
             await page.Locator(".tickets-saved-item").Filter(new() { HasText = "#" + source.Ticket.Id }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir le dossier", Exact = true }).ClickAsync();
             await page.Locator(".work-ticket-heading h2").Filter(new() { HasText = "#" + source.Ticket.Id }).WaitForAsync();
-            var notes = page.GetByRole(AriaRole.Textbox, new() { Name = "Mes notes", Exact = true });
+            var notes = page.GetByRole(AriaRole.Textbox, new() { Name = "Notes personnelles", Exact = true });
             const string unsavedNote = "Observation encore en cours de saisie, sans enregistrement.";
             await notes.FillAsync(unsavedNote); var noteNode = await notes.ElementHandleAsync();
             var workButton = page.GetByRole(AriaRole.Button, new() { Name = "Chercher des solutions similaires", Exact = true });
@@ -225,7 +225,7 @@ internal static partial class Program
             Require(closeChecks.Values.All(value => value),
                 "Closing work-ticket predecessors restores the initiating button and the same unsaved personal editor without persisting its draft.");
 
-            await page.GetByRole(AriaRole.Button, new() { Name = "Mes dossiers", Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Dossiers conservés", Exact = true }).ClickAsync();
             await page.Locator(".tickets-saved-item").Filter(new() { HasText = "#" + absent.Ticket.Id }).GetByRole(AriaRole.Button, new() { Name = "Ouvrir le dossier", Exact = true }).ClickAsync();
             // A browser click dispatches the asynchronous open; wait for the new
             // ticket identity before typing, rather than editing the previous DOM.

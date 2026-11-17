@@ -85,7 +85,7 @@ public static class PackComponents
     // Le runtime WebView2 fixe est publié une seule fois pour tous les outils, dans le dépôt Socle Windows. Son ZIP
     // n’a ni component.json ni inventaire : il est reconnu à sa forme (runtime/webview2/ seul) et n’est accepté que si
     // son empreinte est l’une de celles épinglées ici, publiées dans le SHA256SUMS.txt de la release du Socle.
-    public const string SocleSourceInstructions = "Obtenez le ZIP WebView2 du Socle auprès de votre administrateur ou dans le dossier de diffusion";
+    public const string SocleSourceInstructions = "Récupérer le ZIP WebView2 du Socle auprès de l’administrateur ou dans le dossier de diffusion";
     private static readonly Dictionary<string, string> SoclePins = new(StringComparer.Ordinal)
     {
         ["156.0.4314.42"] = "42dc4b13d8a79e7296692d684908c27e32863db432a103e2042b587fb64571b2"

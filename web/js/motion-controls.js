@@ -9,12 +9,12 @@ export function motionStatus(state) {
   const mode = preferences.reduceMotion ? 'reduce' : preferences.followWindowsMotion === false ? 'full' : 'system';
   if (preferences.highContrast || forcedColors.matches || document.documentElement.dataset.theme === 'contrast') return { mode, active: false, label: 'Décors arrêtés pour les contrastes renforcés.',
     detail: 'Le mode de contraste garde une présentation fixe et lisible.' };
-  if (mode === 'reduce') return { mode, active: false, label: 'Animations réduites dans votre profil.',
-    detail: 'Choisissez Expressives pour retrouver le mouvement de Domenia.' };
+  if (mode === 'reduce') return { mode, active: false, label: 'Animations réduites dans ce profil.',
+    detail: 'Mode Expressives : activation des animations.' };
   if (mode === 'system' && reduced.matches) return { mode, active: false, canActivate: true, label: 'Animations en pause à la demande de Windows.',
     detail: 'Expressives permet de les activer dans GLPI Pilot en conservant le réglage Windows.' };
   if (document.hidden) return { mode, active: false, label: 'Animations en pause en arrière-plan.',
-    detail: 'Elles reprennent quand vous revenez dans la fenêtre.' };
+    detail: 'Reprise lorsque la fenêtre redevient active.' };
   return { mode, active: true, label: mode === 'full' ? 'Animations expressives actives.' : 'Animations actives · préférence Windows suivie.',
     detail: 'Reflets, décors, météo et apparitions des cartes s’animent.' };
 }
@@ -41,7 +41,7 @@ export function createMotionPreview(state) {
   const element = el('section', { class: 'motion-preview domenia-motion-surface', 'aria-label': 'Aperçu des animations',
     dataset: { motionVisible: 'true' } }, orbs,
     el('span', { class: 'domenia-glow-ring', 'aria-hidden': 'true' }),
-    el('div', { class: 'motion-preview-copy' }, el('small', { text: 'DOMENIA · APERÇU EN DIRECT' }), status, detail), illustration);
+    el('div', { class: 'motion-preview-copy' }, el('small', { text: 'APERÇU DES ANIMATIONS' }), status, detail), illustration);
   const disposeWatch = watchMotion(state, value => {
     status.textContent = value.label; detail.textContent = value.detail;
     element.dataset.motionActive = String(value.active); element.dataset.motionMode = value.mode;
@@ -81,15 +81,15 @@ export function createMotionButton(ctx, { quickActivate = false } = {}) {
     const controls = toolbar();
     const error = el('p', { class: 'notice danger', role: 'alert', hidden: true });
     const modes = [
-      ['full', 'Activer les animations Domenia', 'spark'],
+      ['full', 'Activer les animations', 'spark'],
       ['system', 'Suivre Windows'],
       ['reduce', 'Réduire les animations']
     ];
     const buttons = modes.map(([mode, label, symbol]) => button(label, () => apply(mode),
       { primary: mode === 'full', icon: symbol, attributes: { 'aria-pressed': 'false', 'data-motion-choice': mode } }));
     controls.append(...buttons);
-    modal = dialog('Animations Domenia', el('div', { class: 'motion-options' },
-      el('p', { text: 'Choisissez le mouvement qui vous convient. Chaque choix prend effet immédiatement et reste mémorisé.' }),
+    modal = dialog('Animations', el('div', { class: 'motion-options' },
+      el('p', { text: 'Application immédiate et enregistrement du mode d’animation.' }),
       preview.element, controls, error), [{ label: 'Fermer', action: close => { if (!pending) close(); } }], { returnFocus: control });
     modal.element.classList.add('motion-dialog');
     const disposeState = watchMotion(ctx.state, value => {

@@ -350,7 +350,7 @@ internal sealed class MainForm : Form, IPilotHost
         try
         {
             await ShutdownAsync();
-            if (!_closed && !status.IsDisposed) status.Text = "Les traitements sont arrêtés. Vous pouvez fermer l’application.";
+            if (!_closed && !status.IsDisposed) status.Text = "Traitements arrêtés. Fermeture de l’application disponible.";
         }
         catch (Exception error)
         {

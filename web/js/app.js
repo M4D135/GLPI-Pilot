@@ -31,7 +31,6 @@ const narrowNavigation=matchMedia('(max-width:800px)');
 let modalEditor=false,dirtyEditor=false,calendarEditor=false,lastEditor=false;
 function reportEditor(){const open=modalEditor||dirtyEditor||calendarEditor||!!document.activeElement?.matches('form input,form textarea,form select');if(open===lastEditor||!api.available)return;lastEditor=open;api.call('host.editor',{open}).catch(error=>notify(error.message,'danger'));}
 const logs=[];let sourceSelector,refreshButton,sourceBusy=false;let root,content,navigation,statusLabel,sourceLabel,pageTitle,groupTitle,sidebar,overlay,cancel,progress,logPanel,testBanner,testFileName,testFileDetails,testExit;
-const descriptions={interventions:'Planifiez les interventions, coordonnez les participants et préparez les visites.',home:'Vos priorités, alertes et interventions du jour.',pilot:'Météo, activité et décisions sur un même périmètre.',data:'Acquérir, vérifier et conserver les données utiles.',collect:'Retrouvez vos recherches GLPI et collectez leurs données.',library:'Conservez les tickets et leurs contenus, puis retrouvez des solutions avec leurs sources.',records:'Explorez le relevé, ses colonnes et les tickets associés.',quality:'Contrôlez la couverture et l’interprétation avant de décider.',mapping:'Reliez les colonnes aux rôles métier et vérifiez les valeurs interprétées.',sources:'Conservez une recette distincte pour chaque recherche GLPI.',settings:'Adaptez les connexions, les exports et votre espace de travail.',automation:'Programmez les collectes et composez des recettes explicites.',alerts:'Suivez les dépassements de seuil et leurs objets contributeurs.',operations:'Retrouvez les résultats des traitements et les diagnostics.','terrain-map':'Localisez les tickets des équipes et techniciens choisis et préparez vos interventions.'};
 function notify(message,tone='success'){if(typeof message==='object')message=message.message||JSON.stringify(message);const toast=el('div',{class:`toast ${tone}`,role:tone==='danger'?'alert':'status'},el('span',{text:message}),button('Fermer',()=>toast.remove(),{icon:'close'}));document.querySelector('#notifications').append(toast);setTimeout(()=>toast.remove(),tone==='danger'?15000:7000);}
 function applyAppearance(){const settings=state.settings;if(!settings)return;const p=settings.interface||{};const preference=themePreference(settings),theme=resolvedTheme(preference);document.documentElement.dataset.theme=theme;document.documentElement.dataset.themePref=preference;syncThemeSwitch();document.documentElement.dataset.density=p.density||'balanced';document.documentElement.dataset.accent=p.accent||'blue';document.documentElement.dataset.contrast=String(theme==='contrast'||!!p.highContrast);const policy=p.reduceMotion?'reduce':p.followWindowsMotion===false?'full':'system';document.documentElement.dataset.motionPolicy=policy;document.documentElement.dataset.motion=policy==='reduce'||(policy==='system'&&matchMedia('(prefers-reduced-motion:reduce)').matches)?'reduce':'normal';document.documentElement.dataset.vision=p.colorVision||'standard';document.body.classList.toggle('focus-mode',!!p.focusMode);syncNavigation();}
 async function appearance(change){await api.call('app.appearance',change);}
@@ -108,7 +107,7 @@ function buildNavigation(){
 }
 function updatePageContext(){
  const page=registry.get(current);if(!page)return;
- if(groupTitle)groupTitle.textContent='Espace de travail';
+ if(groupTitle)groupTitle.textContent='';
  const groupCrumb=document.querySelector('.breadcrumb-home');if(groupCrumb)groupCrumb.textContent='GLPI Pilot';
  const pageCrumb=document.querySelector('#breadcrumb-page');if(pageCrumb)pageCrumb.textContent=navigationLabel(page);
 }
@@ -117,7 +116,7 @@ function customizeNavigation(){
  closeNavigation(true);
  openNavigationEditor({pages,preferences:state.settings.interface||{},save:async preferences=>{
   await appearance({preferences:{...state.settings.interface,...preferences}});
-  notify('Votre menu a été enregistré.');
+  notify('Menu enregistré.');
  }});
 }
 function sourceMode(session=state.session){
@@ -170,7 +169,7 @@ function sessionChanged(){
  }
  if(refreshButton){refreshButton.title='Actualiser cet espace';refreshButton.dataset.actionDetail=sourceMode(session)==='live'?'Collecte GLPI depuis les écrans compatibles':'Rafraîchissement de la vue, sans collecte';}
  statusLabel.textContent=session.status||'Prêt';
- if(testBanner){testBanner.hidden=!session.testMode;testFileName.textContent=session.testFileName||'Données de démonstration';testFileName.title=session.testFileName||'';testFileDetails.textContent=localFileTestSummary(session);testExit.title='Fermer cet espace de simulation et retrouver vos données et réglages habituels';}
+ if(testBanner){testBanner.hidden=!session.testMode;testFileName.textContent=session.testFileName||'Données de démonstration';testFileName.title=session.testFileName||'';testFileDetails.textContent=localFileTestSummary(session);testExit.title='Fermer la simulation et restaurer le profil habituel';}
 }
 async function flushCurrentPage(){
  if(cleanupPending)return cleanupPending;
@@ -209,9 +208,9 @@ function paintIdentity(){
  if(!identityTrigger||!state.settings)return;
  const key=state.settings.dashboard.personalTechnician||'',label=state.identity?.key===key?state.identity.label:'';
  identityTrigger.dataset.selected=String(!!key);
- identityTrigger.title=key?`Changer mon identité${label?' · '+label:''}`:'Choisir mon identité pour mes tickets et mes interventions';
- identityTrigger.setAttribute('aria-label',key?`Mon identité${label?' : '+label:''}`:'Choisir mon identité');
- identityTrigger.replaceChildren(icon('users'),el('span',{class:'identity-full',text:key?label||'Mon identité':'Choisir mon identité'}),el('span',{class:'identity-short',text:key?'Moi':'Identité'}));
+ identityTrigger.title=key?`Changer l’identité${label?' · '+label:''}`:'Choisir l’identité pour mes tickets et mes interventions';
+ identityTrigger.setAttribute('aria-label',key?`Identité${label?' : '+label:''}`:'Choisir l’identité');
+ identityTrigger.replaceChildren(icon('users'),el('span',{class:'identity-full',text:key?label||'Identité':'Choisir l’identité'}),el('span',{class:'identity-short',text:key?'Moi':'Identité'}));
 }
 function refreshIdentity(){
  if(!identityTrigger)return;
@@ -223,12 +222,12 @@ function refreshIdentity(){
    const result=await api.call('identity.get',{currentOnly:true});
    if(generation!==identityRead||workspaceContextKey(state)!==context)return;
    state.identity=result.current;paintIdentity();window.dispatchEvent(new CustomEvent('pilot:identity-display'));
-  }catch(error){if(generation===identityRead&&error.name!=='AbortError')identityTrigger.title='Mon identité · '+error.message;}
+  }catch(error){if(generation===identityRead&&error.name!=='AbortError')identityTrigger.title='Identité · '+error.message;}
  },0);
 }
 async function chooseIdentity(options={}){
  if(identityPickerOpen||changingContext||!state.settings)return null;
- if([...document.querySelectorAll('dialog[open]')].some(node=>!node.classList.contains('command-palette'))){notify('Fermez le panneau ouvert avant de choisir votre identité.','info');return null;}
+ if([...document.querySelectorAll('dialog[open]')].some(node=>!node.classList.contains('command-palette'))){notify('Fermer le panneau ouvert avant de sélectionner une identité.','info');return null;}
  identityPickerOpen=true;closeNavigation(true);
  let resume=null;
  try{
@@ -238,7 +237,7 @@ async function chooseIdentity(options={}){
    if(!['identity.set','identity.create','identity.clear'].includes(operation))return sessionApi.call(operation,args,requestOptions);
    const unsaved=!['records','interventions'].includes(current)&&[...content.querySelectorAll('.form-grid')].some(form=>form.pilotHasUnsavedChanges?form.pilotHasUnsavedChanges():dirtyEditor);
    if(unsaved&&!await confirm('Changer d’identité ?', 'Les modifications non appliquées de cet écran seront abandonnées. Pour les conserver, restez ici et appliquez-les avant de changer d’identité.','Continuer le changement'))
-    throw new DOMException('Vos modifications restent ouvertes.','AbortError');
+    throw new DOMException('Modifications en cours conservées.','AbortError');
    const previous={page:current,params:{...params,...cleanup?.identityParams?.()},scroll:document.querySelector('.workspace')?.scrollTop||0};
    const result=await replaceContext(operation,args,requestOptions,rollback=>{
     previous.views=['home','calendar','map','scope'].map(name=>[name,readWorkspaceView(state,name,null)]).filter(([,value])=>value!==null);
@@ -257,12 +256,12 @@ async function chooseIdentity(options={}){
   for(const key of Object.keys(options.params||{}))delete params[key];
   const workspace=document.querySelector('.workspace');if(workspace)workspace.scrollTop=resume.scroll;
   identityTrigger?.focus({preventScroll:true});
-  notify(result.key?`Identité enregistrée : ${result.label}.`:'Votre identité personnelle a été retirée.');
+  notify(result.key?`Identité enregistrée : ${result.label}.`:'Identité personnelle retirée.');
   return result;
  }catch(error){if(error.name!=='AbortError')notify(error.message,'danger');return null;}
  finally{identityPickerOpen=false;}
 }
-async function exitLocalTest(){const session=await sessionApi.call('records.test.exit');state.session=session;sessionChanged();notify('Simulation terminée. Vos données et réglages habituels sont restaurés.');await navigate(session.loaded?'pilot-weather':'home');}
+async function exitLocalTest(){const session=await sessionApi.call('records.test.exit');state.session=session;sessionChanged();notify('Simulation terminée. Profil habituel restauré.');await navigate(session.loaded?'pilot-weather':'home');}
 function openLog(){logOpen=!logOpen;if(!logOpen){logPanel?.remove();return;}logPanel=el('section',{class:'log-panel','aria-label':'Journal de la session'},el('div',{class:'card-heading'},el('h2',{text:'Journal de la session'}),button('Fermer',openLog,{icon:'close'})),el('div',{class:'log-lines',text:logs.length?logs.join('\n'):'Aucun message pour cette session.'}));document.body.append(logPanel);}
 async function refreshCurrentPage(expectedSignal=null){
  const owner=controller,request=navRequest;
@@ -281,7 +280,7 @@ async function navigate(id,nextParams={},options={}){
  const target=navigationTarget(id,nextParams);id=target.id;nextParams=target.params;
  if(changingContext&&!options.restoreContext)return;
  if(!registry.has(id)){notify('Cet espace n’est pas disponible.','danger');return;}
- const request=++navRequest;try{await flushCurrentPage();}catch(error){if(error.name!=='AbortError')notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation();pageTitle.textContent=navigationLabel(page);updatePageContext();document.title=`${page.title} · GLPI Pilot`;const desc=document.querySelector('#page-description');desc.textContent=descriptions[id]||'';desc.hidden=!descriptions[id];content.setAttribute('aria-busy','true');
+ const request=++navRequest;try{await flushCurrentPage();}catch(error){if(error.name!=='AbortError')notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation();pageTitle.textContent=navigationLabel(page);updatePageContext();document.title=`${page.title} · GLPI Pilot`;content.setAttribute('aria-busy','true');
  const pageRoot=el('div',{class:`page-content${options.preserveScroll?'':' page-enter'}`,dataset:{page:id,workspace:id}});content.replaceChildren(pageRoot);if(!options.preserveScroll)document.querySelector('.workspace').scrollTop=0;document.scrollingElement.scrollTop=0;
  try{
   const pending=Promise.resolve(page.render({root:pageRoot,api:sessionApi,state,signal,navigate,notify,chooseIdentity,refresh:()=>refreshCurrentPage(signal),params:nextParams,pages,exitSimulation:exitLocalTest}));rendering=pending;
@@ -295,7 +294,7 @@ const palette=createCommandPalette({api:sessionApi,navigate,getPageSignal:()=>co
  pages:navigationModel(pages,state.settings?.interface||{},true).map(page=>({id:`page:${page.id}`,label:page.label,keywords:page.description,icon:page.icon,
   active:page.id===current,run:()=>navigate(page.id)})),
  actions:[
-  {id:'action:identity',label:'Choisir ou changer mon identité',icon:'users',keywords:'moi mon profil nom prénom mes tickets interventions',run:()=>chooseIdentity()},
+  {id:'action:identity',label:'Sélectionner une identité',icon:'users',keywords:'moi mon profil nom prénom mes tickets interventions',run:()=>chooseIdentity()},
   {id:'action:fold-navigation',label:navCollapsed?'Déplier le menu':'Replier le menu',icon:'panel',keywords:'menu navigation barre latérale Ctrl B',run:()=>toggleNavigation()},
   {id:'action:navigation',label:'Personnaliser la navigation',icon:'settings',keywords:'menu groupes favoris',run:customizeNavigation},
   {id:'action:resolution',label:'Trouver une solution',icon:'spark',keywords:'bibliothèque tickets résolus similaires',run:()=>navigate('library',{view:'resolution'})},
@@ -313,7 +312,7 @@ async function start(){
  root=document.querySelector('#app');
  if(!api.available){root.className='';root.replaceChildren(el('main',{class:'workspace'},empty('Ouvrez GLPI-Pilot.exe','Cette interface locale utilise le moteur C# de l’application Windows. Le dossier web seul ne peut pas collecter ni modifier des données.')));return;}
  try{Object.assign(state,await api.call('app.bootstrap'));navCollapsed=state.settings.interface?.navigationCollapsed===true;navFold=el('button',{type:'button',class:'nav-fold','aria-controls':'app-sidebar','aria-keyshortcuts':'Control+B',onClick:()=>setNavigationCollapsed(!navCollapsed)},icon('panel'),el('span',{class:'nav-fold-label',text:'Replier le menu'}),el('kbd',{class:'nav-fold-kbd','aria-hidden':'true',text:'Ctrl B'}));railTip=el('div',{class:'rail-tip',role:'tooltip','aria-hidden':'true'});applyAppearance();root.className='';root.removeAttribute('role');navigation=el('nav',{class:'nav','aria-label':'Navigation principale'});sidebar=el('aside',{class:'sidebar',id:'app-sidebar','aria-label':'Navigation principale'},el('div',{class:'brand'},el('div',{class:'brand-mark','aria-hidden':'true'},el('img',{class:'brand-symbol',src:'brand/glpi-pilot-icon.png',alt:'',width:36,height:36,draggable:false})),el('div',{class:'brand-copy'},el('div',{class:'brand-name',text:'GLPI Pilot'}),el('div',{class:'brand-subtitle',text:state.session.administration?'Administration · responsables':'Tickets & interventions'})),button('Fermer',()=>closeNavigation(true),{icon:'close',attributes:{class:'button sidebar-close','aria-label':'Fermer la navigation'}})),navigation,button('Personnaliser',customizeNavigation,{icon:'settings',attributes:{class:'button nav-customize','aria-label':'Personnaliser la navigation','data-tip':'Personnaliser la navigation'}}),el('div',{class:'sidebar-foot'},el('span',{},el('span',{class:'local-dot'}),'Interface locale'),el('span',{text:`v${state.version}`})),navFold);
- sourceLabel=badge('');pageTitle=el('h1',{text:'Accueil'});groupTitle=el('small',{text:'Espace de travail'});content=el('div',{id:'content',tabIndex:-1});statusLabel=el('span',{class:'status-text'});progress=el('progress',{hidden:true,'aria-label':'Traitement en cours'});cancel=button('Annuler',async()=>{api.cancelAll();await api.call('operations.cancel');},{icon:'close'});cancel.hidden=true;overlay=el('div',{class:'nav-overlay','aria-hidden':'true',onClick:()=>closeNavigation(true)});
+ sourceLabel=badge('');pageTitle=el('h1',{text:'Accueil'});groupTitle=el('small',{hidden:true});content=el('div',{id:'content',tabIndex:-1});statusLabel=el('span',{class:'status-text'});progress=el('progress',{hidden:true,'aria-label':'Traitement en cours'});cancel=button('Annuler',async()=>{api.cancelAll();await api.call('operations.cancel');},{icon:'close'});cancel.hidden=true;overlay=el('div',{class:'nav-overlay','aria-hidden':'true',onClick:()=>closeNavigation(true)});
  navToggle=button('Navigation',toggleNavigation,{icon:'menu',title:'Replier la navigation',attributes:{class:'button nav-toggle','aria-label':'Navigation','aria-controls':'app-sidebar','aria-expanded':'true'}});
  identityTrigger=el('button',{type:'button',class:'button identity-trigger',id:'identity-trigger',onClick:()=>chooseIdentity()});paintIdentity();
  sourceSelector=el('select',{class:'source-mode-picker','aria-label':'Source des données',title:'Choisir la source affichée'},
@@ -326,7 +325,7 @@ async function start(){
  const topbar=el('header',{class:'topbar'},el('div',{class:'breadcrumb'},navToggle,el('span',{class:'breadcrumb-home',text:'GLPI Pilot'}),el('span',{class:'breadcrumb-separator',text:'/','aria-hidden':'true'}),el('strong',{id:'breadcrumb-page',text:'GLPI Pilot'})),el('div',{class:'top-actions'},sourceLabel,sourceSelector,identityTrigger,el('button',{type:'button',class:'search-command',onClick:commandPalette,title:'Rechercher un écran, une action ou un ticket (Ctrl K)','aria-label':'Rechercher un écran, une action ou un ticket'},icon('search'),el('span',{text:'Rechercher'}),el('kbd',{text:'Ctrl K'})),el('div',{class:'segmented theme-switch',role:'group','aria-label':'Thème'},...themes.map(theme=>el('button',{type:'button','data-set':theme.id,'aria-pressed':'false','aria-label':theme.label,title:theme.label,onClick:()=>setTheme(theme.id)},icon(theme.icon))))));
  testFileName=el('span',{class:'local-test-file-name'});testFileDetails=el('span',{class:'local-test-details'});testExit=button('Quitter la simulation',exitLocalTest,{icon:'close'});
  testBanner=el('aside',{class:'local-test-banner',hidden:true,'aria-label':'Mode simulation'},icon('folder'),el('div',{class:'local-test-copy'},el('strong',{text:'Démonstration · données fictives'}),testFileName,testFileDetails),testExit);
- root.replaceChildren(el('div',{class:'shell'},sidebar,topbar,el('main',{class:'workspace'},testBanner,el('div',{class:'page-heading'},el('div',{},groupTitle,pageTitle,el('p',{id:'page-description'})),refreshButton),content),el('footer',{class:'statusbar'},el('span',{class:'local-dot'}),statusLabel,progress,cancel,button('Journal',openLog,{icon:'log'}),button('−',()=>changeZoom(-5),{title:'Réduire le zoom',attributes:{'aria-label':'Réduire le zoom'}}),button(`${state.settings.interfaceZoomPercent} %`,()=>changeZoom(0),{title:'Revenir à 100 %',attributes:{id:'zoom-label','aria-label':'Réinitialiser le zoom'}}),button('+',()=>changeZoom(5),{title:'Augmenter le zoom',attributes:{'aria-label':'Augmenter le zoom'}}))),overlay,railTip);
+ root.replaceChildren(el('div',{class:'shell'},sidebar,topbar,el('main',{class:'workspace'},testBanner,el('div',{class:'page-heading'},el('div',{},groupTitle,pageTitle),refreshButton),content),el('footer',{class:'statusbar'},el('span',{class:'local-dot'}),statusLabel,progress,cancel,button('Journal',openLog,{icon:'log'}),button('−',()=>changeZoom(-5),{title:'Réduire le zoom',attributes:{'aria-label':'Réduire le zoom'}}),button(`${state.settings.interfaceZoomPercent} %`,()=>changeZoom(0),{title:'Revenir à 100 %',attributes:{id:'zoom-label','aria-label':'Réinitialiser le zoom'}}),button('+',()=>changeZoom(5),{title:'Augmenter le zoom',attributes:{'aria-label':'Augmenter le zoom'}}))),overlay,railTip);
  sidebar.addEventListener('pointerover',event=>showRailTip(event.target.closest('[data-tip]')));sidebar.addEventListener('pointerleave',hideRailTip);
  sidebar.addEventListener('focusin',event=>{const target=event.target.closest('[data-tip]');if(target?.matches(':focus-visible'))showRailTip(target);else hideRailTip();});sidebar.addEventListener('focusout',hideRailTip);sidebar.addEventListener('click',hideRailTip);navigation.addEventListener('scroll',hideRailTip,{passive:true});
  buildNavigation();sessionChanged();syncThemeSwitch();refreshIdentity();await navigate('home');await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));await api.call('app.ready');document.body.dataset.ready='true';

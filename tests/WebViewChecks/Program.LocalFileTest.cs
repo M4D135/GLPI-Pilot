@@ -576,8 +576,8 @@ internal static partial class Program
             await page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
             await page.Locator(".tickets-detail-pane .work-ticket-heading h2").WaitForAsync();
             await Button("Notes et rappels").ClickAsync();
-            await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync(text);
-            await Button("Enregistrer mon travail").ClickAsync(); await BridgeIdle();
+            await page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync(text);
+            await Button("Enregistrer").ClickAsync(); await BridgeIdle();
             var work = await Call(app, "workplace.get"); var key = work.GetProperty("activeTicketKey").GetString()!;
             if (work.GetProperty("openTickets").EnumerateArray().Single(ticket => ticket.GetProperty("key").GetString() == key).GetProperty("notes").GetString() != text)
                 throw new InvalidOperationException("The real personal editor did not save the context-test note.");
@@ -598,11 +598,11 @@ internal static partial class Program
         async Task<bool> TransitionWithPendingSave(string command, string note)
         {
             await Button("Notes et rappels").ClickAsync();
-            await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync(note);
+            await page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync(note);
             var held = (Started: new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
                 Release: new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
             heldPersonalSave = held;
-            await Button("Enregistrer mon travail").ClickAsync();
+            await Button("Enregistrer").ClickAsync();
             await held.Started.Task.WaitAsync(TimeSpan.FromSeconds(8));
             var oldSource = app.Result; var start = contextCalls.Count;
             try
@@ -633,7 +633,7 @@ internal static partial class Program
         host.NextOpen = csvPath;
         await PaletteAction("demo"); await ConfirmDemonstrationAsync(); await Ready("home");
         await AnnotateReader("Annotation de la démonstration", "Position conservée après annulation");
-        await page.GetByLabel("Mes notes", new() { Exact = true }).FillAsync("Saisie personnelle non enregistrée à conserver");
+        await page.GetByLabel("Notes personnelles", new() { Exact = true }).FillAsync("Saisie personnelle non enregistrée à conserver");
         var sourceBeforeCancel = app.Result; var cancelStart = contextCalls.Count;
         await page.EvaluateAsync("window.__simulationReader=document.querySelector('.tickets-detail-pane')");
         host.NextOpen = null;
@@ -642,7 +642,7 @@ internal static partial class Program
         var cancelDidNotFlush = !contextCalls.Skip(cancelStart).Any(call => call.Operation is "workplace.ticket.position" or "workplace.personal.save");
         await Button("Notes et rappels").ClickAsync();
         Require(ReferenceEquals(app.Result, sourceBeforeCancel) && cancelPreservesDom && cancelDidNotFlush
-            && await page.GetByLabel("Mes notes", new() { Exact = true }).InputValueAsync() == "Saisie personnelle non enregistrée à conserver",
+            && await page.GetByLabel("Notes personnelles", new() { Exact = true }).InputValueAsync() == "Saisie personnelle non enregistrée à conserver",
             "Cancelling the CSV chooser keeps the same live ticket reader, its source and unsaved annotation; no save or cleanup runs and the editor remains usable.");
 
         await Button("Consulter les observations").ClickAsync();

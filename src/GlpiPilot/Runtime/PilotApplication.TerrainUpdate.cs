@@ -76,7 +76,7 @@ public sealed partial class PilotApplication
         if (_terrainPreparedPolicy != TerrainDigest(UpdatePolicy.Load(DataPath("update-policy.json"))))
             throw new InvalidOperationException("La politique de confiance a changé. Vérifiez de nouveau le pack avant installation.");
         if (_terrainTourDirty || _terrainCityDraft is not null && TerrainDigest(_terrainCityDraft) != _terrainCityBaseline)
-            throw new InvalidOperationException("Enregistrez ou abandonnez vos brouillons de référentiel et de tournée avant de fermer l’application pour sa mise à jour.");
+            throw new InvalidOperationException("Enregistrer ou abandonner les brouillons de référentiel et de tournée avant de fermer l’application pour sa mise à jour.");
         ct.ThrowIfCancellationRequested(); SaveSettings();
         UpdateService.LaunchUpdater(prepared); _terrainPreparedUpdate = null;
         Log("MISE À JOUR · pack " + prepared.Package.Version + " vérifié ; fermeture pour installation avec sauvegarde.");

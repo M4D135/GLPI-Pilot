@@ -95,7 +95,7 @@ export async function renderDashboard(ctx) {
   const undoControl = command(ctx, 'Annuler la modification', async () => { const result = await call(ctx, 'dashboard.layout.undo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.undo });
   const redoControl = command(ctx, 'Rétablir la modification', async () => { const result = await call(ctx, 'dashboard.layout.redo', { personal }); go({ boardId: result.boardId }); }, { disabled: !model.layoutHistory.redo });
   const organization = details('Autres actions', toolbar(command(ctx, 'Actualiser', () => go({})), business
-    ? command(ctx, 'Rétablir la présentation de cette rubrique', () => dialog('Rétablir la présentation', caption('La disposition de cette rubrique sera reconstruite avec vos paramètres actuels. Les autres tableaux et les seuils restent conservés.'),
+    ? command(ctx, 'Rétablir la présentation de cette rubrique', () => dialog('Rétablir la présentation', caption('La disposition de cette rubrique sera reconstruite avec les paramètres actuels. Les autres tableaux et les seuils restent conservés.'),
       [{ label: 'Rétablir cette rubrique', action: async close => { await call(ctx, 'dashboard.business.reset'); close(); go({ boardId: undefined }); } }]))
     : command(ctx, '+ Tableau de bord', () => newBoardDialog(ctx, personal, go)), undoControl, redoControl));
   const focusLabels = focusSelection.options.map(item => item.label);
@@ -297,10 +297,10 @@ export async function renderDashboard(ctx) {
     boardHost.classList.toggle('is-editing', editing); boardHost.dataset.density = board.density || 'comfortable';
     if (editing) {
       const transfer = details('Disposition', toolbar(command(ctx, 'Nom et organisation', () => boardDialog()),
-        business ? command(ctx, 'Copier dans Mes tableaux', async () => { const result = await call(ctx, 'dashboard.business.copy'); ctx.navigate('dashboard', { boardId: result.boardId }); }) : command(ctx, 'Importer une disposition', async () => {
+        business ? command(ctx, 'Copier dans Tableaux personnalisés', async () => { const result = await call(ctx, 'dashboard.business.copy'); ctx.navigate('dashboard', { boardId: result.boardId }); }) : command(ctx, 'Importer une disposition', async () => {
           const preview = await call(ctx, 'dashboard.layout.import', { personal }); if (preview.cancelled) return;
           dialog('Vérifier la disposition importée', el('div', {}, caption(`${preview.layout.boards.length} tableau(x) à importer · ${preview.existingBoards} déjà présent(s) dans la disposition ${personal ? 'personnelle' : 'globale'}.`),
-            caption('Ajout recommandé : vos tableaux actuels sont conservés. Les noms déjà utilisés reçoivent un suffixe « importé ». Vous pourrez annuler cet ajout.'),
+            caption('Ajout : tableaux actuels conservés. Les noms déjà utilisés reçoivent un suffixe « importé ». Ajout annulable.'),
             preview.canAppend ? table(preview.addedBoards, [{ key: 'originalName', label: 'Nom dans le fichier' }, { key: 'name', label: 'Nom après ajout' }, { key: 'widgetCount', label: 'Widgets' }])
               : caption(preview.appendReason, 'warning'),
             details('Remplacement complet', caption('Le remplacement retire tous les tableaux de cette disposition et charge ceux du fichier. Les tableaux personnels et globaux sont indépendants.'))),
@@ -488,7 +488,7 @@ export async function renderDashboard(ctx) {
       field('Rappel après un relevé ancien · heures', freshness, 'Vide : aucun rappel. Un rappel ne modifie pas les couleurs météo.'), message), [
       { label: 'Enregistrer', primary: true, action: async close => { board.name = name.value; board.description = description.value; board.density = density.value;
         board.freshnessWarningHours = freshness.value.trim() === '' ? null : Number(freshness.value); await persist(); close(); } },
-      { label: business ? 'Copier dans Mes tableaux' : 'Dupliquer', action: async close => {
+      { label: business ? 'Copier dans Tableaux personnalisés' : 'Dupliquer', action: async close => {
         if (business) { const copy = await call(ctx, 'dashboard.business.copy'); close(); ctx.navigate('dashboard', { boardId: copy.boardId }); return; }
         const copy = clone(board); copy.id = uuid(); copy.name = `${name.value} · copie`.slice(0, 120); copy.widgets.forEach(w => w.id = uuid()); layout.boards.push(copy); layout.activeBoardId = copy.id; await call(ctx, 'dashboard.layout.save', { personal, layout }); close(); go({ boardId: copy.id }); } },
       ...(!business ? [{ label: 'Supprimer ce tableau', danger: true, action: async close => {
@@ -698,7 +698,7 @@ export function comparisonCard(a, b) {
     table(rows, [{ key: 'label', label: 'Indicateur' }, { key: 'a', label: 'A' }, { key: 'b', label: 'B' }, { key: 'difference', label: 'A − B' }, { key: 'samples', label: 'Échantillons A / B' }], { maxRows: 512 })));
 }
 function newBoardDialog(ctx, personal, go) {
-  const name = input('Mon tableau de bord'); const preset = select(Object.entries(presetNames).map(([value, label]) => ({ value, label })), 'empty');
+  const name = input('Tableau de bord personnel'); const preset = select(Object.entries(presetNames).map(([value, label]) => ({ value, label })), 'empty');
   dialog('Créer un tableau de bord', el('div', {}, field('Nom', name), field('Modèle', preset)), [{ label: 'Créer', primary: true, action: async close => {
     const result = await call(ctx, 'dashboard.board.create', { personal, name: name.value, preset: preset.value }); close(); go({ boardId: result.boardId, editing: true });
   } }]);

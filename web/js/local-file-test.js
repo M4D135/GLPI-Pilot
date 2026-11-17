@@ -40,7 +40,7 @@ function chooseTestSheet(ctx,selection) {
       el('p',{text:`Feuille ${profile.parameterSheet||'Paramétrage'} · ${formatNumber(profile.weatherRuleCount)} règles météo, dont ${formatNumber(profile.visibleWeatherRuleCount)} visibles · ${formatNumber(profile.siteCount)} sites · ${formatNumber(profile.aliasCount)} alias.`}),
       profile.freshnessWarningHours?el('p',{class:'help',text:`Rappel de fraîcheur après ${formatNumber(profile.freshnessWarningHours)} heures.`}):null,
       el('label',{class:'library-check'},useProfile,el('span',{text:'Utiliser la météo, les équipes et les sites du classeur pour cette source'})),
-      el('p',{class:'help',text:'Ces réglages servent à interpréter ce fichier. Votre configuration de collecte GLPI reste conservée.'}),
+      el('p',{class:'help',text:'Réglages d’interprétation du fichier. Configuration de collecte GLPI inchangée.'}),
       ...(Array.isArray(profile.notes)?profile.notes:profile.notes?[profile.notes]:[]).map(text=>el('p',{class:'help',text})),
       ...(profile.warnings||[]).map(text=>el('p',{class:'notice warning',text}))));
     for(const warning of selection.warnings||[])content.append(el('p',{class:'notice warning',text:warning}));
@@ -63,11 +63,11 @@ function chooseTestSheet(ctx,selection) {
 
 export function localFileTestCard(ctx) {
   const session=ctx.state.session;
-  return card('Votre espace de simulation',
+  return card('Simulation',
     el('p',{class:'local-test-file-name',text:session.testFileName||(session.demo?'Données fictives':'Fichier local')}),
     el('p',{class:'help',text:localFileTestSummary(session)}),
-    el('p',{class:'help',text:session.demo?'Les calculs portent sur le jeu fictif de démonstration. Vos essais peuvent faire évoluer ses tickets et ses indicateurs.':'Les calculs portent sur ce fichier local. Ils ne confirment ni la recherche ni le périmètre GLPI.'}),
-    el('p',{class:'help',text:'Explorez toutes les rubriques, ouvrez les fiches, préparez vos tournées et essayez les actions, les collectes et le partage. Ces essais utilisent les données de la simulation et restent séparés de votre espace habituel.'}),
+    el('p',{class:'help',text:session.demo?'Calculs sur les données fictives. Les actions peuvent modifier les tickets et les indicateurs de simulation.':'Les calculs portent sur ce fichier local. Ils ne confirment ni la recherche ni le périmètre GLPI.'}),
+    el('p',{class:'help',text:'Tickets, collectes, tournées et partage simulés. Profil habituel inchangé.'}),
     toolbar(button('Pilotage',()=>ctx.navigate('pilot'),{primary:true,icon:'chart'}),
       button('Tickets',()=>ctx.navigate('records'),{icon:'ticket'}),
       button('Terrain',()=>ctx.navigate('terrain-map'),{icon:'map'}),

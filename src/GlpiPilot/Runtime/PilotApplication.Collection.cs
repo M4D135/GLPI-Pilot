@@ -115,7 +115,7 @@ public sealed partial class PilotApplication
     private async Task<object?> RunCampaignAsync(CancellationToken ct)
     {
         var profiles = Settings.Sources.Where(s => s.IncludedInCampaign).Select(s => s.Copy()).ToArray();
-        if (profiles.Length == 0) throw new InvalidDataException("Aucune recherche n’est sélectionnée pour la collecte groupée. Ouvrez Mes recherches pour en mémoriser une, puis choisissez les recherches à collecter.");
+        if (profiles.Length == 0) throw new InvalidDataException("Aucune recherche n’est sélectionnée pour la collecte groupée. Ouvrez Recherches mémorisées pour en mémoriser une, puis choisissez les recherches à collecter.");
         var began = DateTimeOffset.Now; var rows = profiles.Select(p => new CampaignSourceResult { Id = p.Id, Name = p.Name }).ToList(); string path;
         try
         {

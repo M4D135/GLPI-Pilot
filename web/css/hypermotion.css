@@ -357,3 +357,11 @@
 .terrain-map-page .maps-selection-panel .maps-ticket-heading h2 { font-size:15px; }
 .terrain-map-page .maps-selection-panel .maps-location-picker { margin-top:0; }
 .terrain-map-page .maps-selection-panel .maps-city-choice { min-height:32px; padding:6px 10px; }
+
+/* Neutral interface copy: preserve source state and actions, reduce headline space. */
+.home-overview-heading { min-height: 0; padding: 18px 22px; }
+.home-overview-heading h2 { font-size: 24px; margin-bottom: 8px; }
+.home-identity-choice { padding-top: 12px; padding-bottom: 12px; }
+.workspace-intro { min-height: 0; }
+.workspace-intro h2 { font-size: 24px; }
+.settings-workspace .cfg-hero { padding: 20px; min-height: 0; }

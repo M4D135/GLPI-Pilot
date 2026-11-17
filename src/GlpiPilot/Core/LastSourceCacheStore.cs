@@ -56,7 +56,7 @@ public sealed class LastSourceCacheStore
         {
             try { return (ReadIndexFile(BackupIndexPath), true); }
             catch (Exception backupError) when (IsStorageError(backupError))
-            { throw new InvalidDataException("Le cache local est illisible. Importez une nouvelle liste ou effacez uniquement ce cache ; votre base et vos réglages restent conservés."); }
+            { throw new InvalidDataException("Le cache local est illisible. Importez une nouvelle liste ou effacez uniquement ce cache ; base locale et réglages conservés."); }
         }
     }
     internal static bool IsStorageError(Exception error) => error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or InvalidOperationException or ArgumentException;

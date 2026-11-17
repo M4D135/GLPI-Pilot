@@ -17,26 +17,16 @@ import { themeOptions, themePreference, themeChange } from '../theme.js';
 const fold = text => String(text ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr');
 
 const SECTIONS = [
-  { id: 'apparence', label: 'Apparence', desc: 'Thème, zoom, densité, menu', icon: 'monitor', tone: 'accent',
-    lead: 'Le confort de lecture de ce profil : thème, animations, zoom, densité, couleurs, ordre du menu et fonctions visibles.' },
-  { id: 'pilotage', label: 'Pilotage', desc: 'Seuils, météo, sites, alertes', icon: 'sun', tone: 'warn',
-    lead: 'Les règles qui donnent leur sens aux indicateurs : seuils, équipes, météo du service, référentiel des sites et alertes.' },
-  { id: 'collecte', label: 'Collecte', desc: 'Délais, limites, exports, programmation', icon: 'download', tone: 'info',
-    lead: 'Les délais et les limites d’une collecte GLPI, les exports, les repères de votre installation et les collectes programmées.' },
-  { id: 'tickets', label: 'Tickets', desc: 'Sections lues, repères, limites', icon: 'ticket', tone: 'info',
-    lead: 'Ce que GLPI Pilot lit dans la fiche d’un ticket : sections, repères de contenu, colonne de l’identifiant et adresse de la fiche.' },
-  { id: 'historique', label: 'Historique', desc: 'Archives, durée, budget', icon: 'clock', tone: 'ok',
-    lead: 'Les archives des collectes conservées sur ce poste : activation, durée, nombre et budget de stockage.' },
-  { id: 'equipe', label: 'Équipe et partage', desc: 'Partager, fusionner, reprendre', icon: 'users', tone: 'accent',
-    lead: 'Partager certaines sections avec l’équipe, examiner un import avant de l’appliquer, reprendre une version locale ou régler le partage entre postes.' },
-  { id: 'deploiement', label: 'Configuration à diffuser', desc: 'Défaut du pack, export, import', icon: 'folder', tone: 'accent',
-    lead: 'La configuration complète du logiciel : celle que reçoit un profil neuf au premier lancement, son export et l’examen d’un fichier.' },
-  { id: 'entretien', label: 'Mises à jour et journal', desc: 'Pack, diagnostic, journal', icon: 'refresh', tone: 'info',
-    lead: 'Vérifier et installer un pack, lire le journal des opérations et préparer un rapport de diagnostic.' },
-  { id: 'demonstration', label: 'Démonstration', desc: 'Tickets fictifs, espace séparé', icon: 'spark', tone: 'accent',
-    lead: 'Un espace séparé avec 60 tickets fictifs pour découvrir GLPI Pilot sans toucher à vos données ni à vos réglages.' },
-  { id: 'apropos', label: 'À propos et aide', desc: 'Version, guide, raccourcis', icon: 'help', tone: 'info',
-    lead: 'La version installée, la prise en main et les raccourcis clavier.' }
+  { id: 'apparence', label: 'Apparence', desc: 'Thème, zoom, densité, menu', icon: 'monitor', tone: 'accent' },
+  { id: 'pilotage', label: 'Pilotage', desc: 'Seuils, météo, sites, alertes', icon: 'sun', tone: 'warn' },
+  { id: 'collecte', label: 'Collecte', desc: 'Délais, limites, exports, programmation', icon: 'download', tone: 'info' },
+  { id: 'tickets', label: 'Tickets', desc: 'Sections lues, repères, limites', icon: 'ticket', tone: 'info' },
+  { id: 'historique', label: 'Historique', desc: 'Archives, durée, budget', icon: 'clock', tone: 'ok' },
+  { id: 'equipe', label: 'Équipe et partage', desc: 'Partager, fusionner, reprendre', icon: 'users', tone: 'accent' },
+  { id: 'deploiement', label: 'Configuration à diffuser', desc: 'Défaut du pack, export, import', icon: 'folder', tone: 'accent' },
+  { id: 'entretien', label: 'Mises à jour et journal', desc: 'Pack, diagnostic, journal', icon: 'refresh', tone: 'info' },
+  { id: 'demonstration', label: 'Démonstration', desc: 'Tickets fictifs, espace séparé', icon: 'spark', tone: 'accent' },
+  { id: 'apropos', label: 'À propos et aide', desc: 'Version, guide, raccourcis', icon: 'help', tone: 'info' }
 ];
 const sectionIds = new Set(SECTIONS.map(section => section.id));
 // Older names and the contextual panels lead to the section that holds them.
@@ -46,7 +36,7 @@ const PANEL_SECTION = { 'pilot-settings': 'pilotage', sites: 'pilotage', 'alert-
   acquisition: 'collecte', automation: 'collecte', tickets: 'tickets', storage: 'historique', profile: 'equipe', connection: 'equipe',
   updates: 'entretien', operations: 'entretien', help: 'apropos' };
 // Cards of the settings editor shown inline, by title: section and search target.
-const EDITOR_CARDS = { 'Collecte et exports': ['collecte', 'acquisition'], 'Adaptation à votre installation': ['collecte', 'selectors'],
+const EDITOR_CARDS = { 'Collecte et exports': ['collecte', 'acquisition'], 'Repères de l’installation GLPI': ['collecte', 'selectors'],
   'Lecture des tickets': ['tickets', 'ticket-reading'], 'Historique local': ['historique', 'history'], 'Configuration d’équipe': ['equipe', 'team'] };
 // The panels that are now a section of their own: opening them shows the section.
 const INLINE_PANELS = { acquisition: 'acquisition', storage: 'history', tickets: 'ticket-reading', profile: 'team' };
@@ -107,7 +97,7 @@ export async function renderSettingsWorkspace(ctx) {
   const keptSection = kept && performance.now() - kept.at < 10000 ? kept.section : null; kept = null;
   let current = null, deploymentState = null;
 
-  // ----- Hero: title, chips, search of a setting and the state of the installation -----
+  // ----- Settings search and installation state -----
   const search = el('input', { type: 'search', class: 'cfg-search-input', id: 'cfg-search', placeholder: 'Rechercher un réglage…',
     autocomplete: 'off', spellcheck: false, role: 'combobox', 'aria-expanded': 'false', 'aria-controls': 'cfg-search-list',
     'aria-autocomplete': 'list', 'aria-label': 'Rechercher un réglage', 'aria-keyshortcuts': '/' });
@@ -125,8 +115,7 @@ export async function renderSettingsWorkspace(ctx) {
   root.append(el('div', { class: 'cfg-page' },
     el('section', { class: 'hero workspace-intro cfg-hero' },
       el('div', { class: 'cfg-hero-main' },
-        el('p', { class: 'workspace-eyebrow', text: 'VOTRE INSTALLATION' }), el('h2', { text: 'Un outil à votre manière.' }),
-        el('p', { text: 'Apparence, pilotage, collecte, lecture des tickets, historique et configuration à diffuser : les réglages de ce profil, une section à la fois.' }),
+        el('h2', { text: 'Configuration' }),
         el('div', { class: 'workspace-intro-meta cfg-chips' }, badge(mode[0], mode[1]), badge(`GLPI Pilot ${state.version}`, 'info'),
           el('span', { text: 'Préférences du profil utilisateur' })),
         el('div', { class: 'cfg-search', role: 'search' },
@@ -154,7 +143,7 @@ export async function renderSettingsWorkspace(ctx) {
     const grid = el('div', { class: 'cfg-grid' });
     const element = el('section', { class: 'cfg-pane', hidden: true, 'aria-labelledby': `cfg-title-${section.id}`, dataset: { settingsPane: section.id } },
       el('header', { class: 'cfg-pane-head' }, el('span', { class: 'cfg-pane-icon', dataset: { tone: section.tone } }, icon(section.icon)),
-        el('div', { class: 'cfg-pane-titles' }, el('h2', { id: `cfg-title-${section.id}`, text: section.label }), el('p', { text: section.lead }))),
+        el('div', { class: 'cfg-pane-titles' }, el('h2', { id: `cfg-title-${section.id}`, text: section.label }))),
       grid);
     content.append(element);
     return [section.id, { element, grid }];
@@ -171,7 +160,7 @@ export async function renderSettingsWorkspace(ctx) {
   const appearance = form([
     { key: 'theme', label: 'Thème', type: 'select', options: themeOptions },
     { key: 'accent', label: 'Accent', type: 'select', options: [{ value: 'blue', label: 'Bleu' }, { value: 'violet', label: 'Violet' }, { value: 'green', label: 'Vert' }, { value: 'orange', label: 'Ambre' }, { value: 'rose', label: 'Rose' }] },
-    { key: 'motionMode', label: 'Animations', type: 'select', options: [{ value: 'full', label: 'Expressives' }, { value: 'system', label: 'Suivre Windows' }, { value: 'reduce', label: 'Réduites' }], help: 'Expressives active le mouvement de Domenia. Suivre Windows peut le mettre en pause. Le choix prend effet avec Appliquer.' },
+    { key: 'motionMode', label: 'Animations', type: 'select', options: [{ value: 'full', label: 'Expressives' }, { value: 'system', label: 'Suivre Windows' }, { value: 'reduce', label: 'Réduites' }], help: 'Expressives : animations actives. Suivre Windows : préférence système. Appliquer pour enregistrer.' },
     { key: 'density', label: 'Densité', type: 'select', options: [{ value: 'compact', label: 'Compacte' }, { value: 'balanced', label: 'Équilibrée' }, { value: 'comfortable', label: 'Confortable' }] },
     { key: 'interfaceZoomPercent', label: 'Zoom (%)', type: 'number', min: 75, max: 150 },
     { key: 'colorVision', label: 'Perception des couleurs', type: 'select', options: [{ value: 'standard', label: 'Standard' }, { value: 'deuteranopia', label: 'Deutéranopie' }, { value: 'protanopia', label: 'Protanopie' }, { value: 'tritanopia', label: 'Tritanopie' }] },
@@ -195,7 +184,7 @@ export async function renderSettingsWorkspace(ctx) {
     save: async preferences => { await api.call('app.appearance', { preferences: { ...state.settings.interface, ...preferences } }); notify('Menu enregistré.'); } }), { icon: 'layers' });
   menuButton.dataset.setting = 'menu';
   into('apparence',
-    mark(card('Confort et présentation', motionPreview.element, appearance.element,
+    mark(card('Affichage et animations', motionPreview.element, appearance.element,
       toolbar(button('Appliquer', async () => {
         const { theme, interfaceZoomPercent, motionMode, ...preferences } = appearance.read();
         await api.call('app.appearance', { ...themeChange(theme, { ...state.settings.interface, ...preferences,
@@ -203,7 +192,7 @@ export async function renderSettingsWorkspace(ctx) {
         appearance.markSaved();
         notify('Présentation enregistrée.');
       }, { primary: true, icon: 'check' }), screenButton)), 'presentation', 'cfg-main'),
-    mark(card('Menu et fonctions', el('p', { class: 'help', text: 'Rangez les six espaces du menu, épinglez vos favoris et choisissez les fonctions facultatives affichées dans leur contexte.' }),
+    mark(card('Menu et fonctions', el('p', { class: 'help', text: 'Ordre des menus, favoris et fonctions facultatives.' }),
       toolbar(menuButton), optional.element,
       toolbar(button('Appliquer les fonctions visibles', async () => {
         const values = optional.read(), hiddenNavigation = (state.settings.interface.hiddenNavigation || []).filter(key => !Object.hasOwn(values, key));
@@ -379,15 +368,15 @@ export async function renderSettingsWorkspace(ctx) {
   function demonstrationCard() {
     // demoSimulation survives an archive opened inside the demonstration, where the displayed relevé is no longer the demo one.
     const demo = state.session.demoSimulation === true || state.session.demo === true, file = state.session.testMode === true && !demo;
-    const result = card('Espace de démonstration', el('p', { text: 'Explorez GLPI Pilot avec 60 tickets fictifs, dans un espace séparé. La connexion et les téléchargements y restent simulés ; vos données et réglages habituels ne sont pas modifiés.' }),
+    const result = card('Espace de démonstration', el('p', { text: '60 tickets fictifs dans un espace séparé. Connexion et téléchargements simulés ; profil habituel inchangé.' }),
       toolbar(...(demo ? [button('Quitter la démonstration', () => switchDemonstration('exit'), { primary: true, icon: 'close' }),
         button('Réinitialiser les données fictives', () => switchDemonstration('reset'), { icon: 'refresh' })]
         : [button('Ouvrir la démonstration', () => switchDemonstration('enter'), { icon: 'spark' })])));
     result.classList.add('settings-demonstration'); result.dataset.settingsSection = 'demo'; result.dataset.setting = 'demo';
     async function switchDemonstration(change) {
       const [title, message] = {
-        enter: ['Ouvrir la démonstration', `GLPI Pilot ouvre un espace fictif séparé.${file ? ' La source CSV / Excel en simulation est fermée.' : ''} Les saisies non enregistrées de cet écran sont abandonnées. Vos données et réglages habituels sont conservés.`],
-        exit: ['Quitter la démonstration', 'Revenir à votre espace habituel. Les données fictives et les réglages modifiés pendant la démonstration ne sont pas conservés.'],
+        enter: ['Ouvrir la démonstration', `GLPI Pilot ouvre un espace fictif séparé.${file ? ' La source CSV / Excel en simulation est fermée.' : ''} Les saisies non enregistrées de cet écran sont abandonnées. Profil habituel conservé.`],
+        exit: ['Quitter la démonstration', 'Restaurer le profil habituel. Les données fictives et les réglages modifiés pendant la démonstration ne sont pas conservés.'],
         reset: ['Réinitialiser les données fictives', 'Recréer les tickets fictifs de la démonstration. Les changements faits pendant la démonstration sont perdus.']
       }[change];
       if (!await confirm(title, message, title)) return;

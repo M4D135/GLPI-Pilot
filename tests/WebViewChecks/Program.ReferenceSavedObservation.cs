@@ -66,7 +66,7 @@ internal static partial class Program
         ILocator Button(string name) => page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
         ILocator Reference() => page.GetByRole(AriaRole.Dialog, new() { Name = "Référentiel des lieux", Exact = true });
         ILocator SaveReview() => page.GetByRole(AriaRole.Dialog, new() { Name = "Enregistrer le référentiel de travail", Exact = true });
-        string PreservedReferenceNotice(string observation) => $"L’enregistrement de ce référentiel ne recalcule pas {observation}. Les cellules et décisions capturées à l’origine restent conservées. Le référentiel enregistré servira aux prochains imports et collectes et sera inclus dans votre configuration par défaut.";
+        string PreservedReferenceNotice(string observation) => $"L’enregistrement de ce référentiel ne recalcule pas {observation}. Les cellules et décisions capturées à l’origine restent conservées. Le référentiel enregistré servira aux prochains imports et collectes et sera inclus dans la configuration par défaut.";
         async Task Idle() => await WaitForPageAsync(page, "!document.querySelector('.terrain-page[aria-busy=true]')");
         async Task OpenReference()
         {

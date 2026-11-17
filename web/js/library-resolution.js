@@ -13,7 +13,7 @@ export function createTicketResolution({api, signal, state, key, onRead}) {
   const element = el('section', {class: 'library-resolution'},
     el('div', {class: 'library-resolution-intro'}, icon('spark'), el('div', {},
       el('h3', {text: 'Des précédents, avec leurs sources'}),
-      el('p', {text: simulation?'Tickets résolus ou clos de votre bibliothèque de simulation. Les rapprochements utilisent les titres et contenus disponibles dans cet espace.':'Tickets résolus ou clos, complets et confirmés dans votre cache. La recherche reste limitée à la même installation GLPI.'}))),
+      el('p', {text: simulation?'Tickets résolus ou clos de la bibliothèque de simulation. Rapprochements limités aux titres et contenus de cet espace.':'Tickets résolus ou clos, complets et confirmés dans le cache. Recherche limitée à la même installation GLPI.'}))),
     form, feedback, results);
   const abort = () => { disposed = true; generation++; request?.abort(); };
   signal?.addEventListener('abort', abort, {once: true});
@@ -52,7 +52,7 @@ export function createTicketResolution({api, signal, state, key, onRead}) {
       const displayed = `${formatNumber(response.matches?.length)} précédent(s) affiché(s).`;
       replaceChildren(feedback,
         !response.sourceContentConfirmed ? el('p', {class: 'library-resolution-source-warning', text: response.manual
-          ? 'Le contenu de la fiche de départ reste à recontrôler. La recherche utilise vos termes saisis ; les précédents proposés ont leur propre confirmation.'
+          ? 'Contenu de la fiche de départ à recontrôler. Recherche fondée sur les termes saisis ; chaque précédent proposé possède sa propre confirmation.'
           : 'Le contenu de la fiche de départ reste à recontrôler. Seul son titre conservé sert de point de départ ; les précédents proposés ont leur propre confirmation.'}) : null,
         el('p', {text: response.message}),
         response.available ? el('p', {class: 'library-resolution-limits', text: response.limited

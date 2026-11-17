@@ -36,7 +36,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       error: 'Lecture indisponible · dernière observation conservée'
     };
     readIndicator.querySelector('.ticket-live-read-text').textContent = labels[readStatus] || '';
-    readIndicator.title = readStatus === 'error' ? readError?.message || 'Vous pouvez relancer la lecture.' : '';
+    readIndicator.title = readStatus === 'error' ? readError?.message || 'Relance manuelle disponible.' : '';
   }
   function showReadStatus(status, error = null) {
     readStatus = status; readError = error;
@@ -92,7 +92,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   function sourceFacts(ticket) {
     const body = el('div', { class: 'tickets-source-facts' });
-    if (!source) { body.append(note('Dossier conservé. Les valeurs du relevé ne sont pas déduites de vos notes.')); return body; }
+    if (!source) { body.append(note('Dossier conservé. Les notes personnelles ne modifient pas les valeurs du relevé.')); return body; }
     const normalize = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/[^a-z0-9]+/g, ' ').trim();
     const wanted = [['Statut', 'État'], ['Priorité'], ['Attribué à - Technicien', 'Technicien'], ['Attribué à - Groupe de techniciens', 'Groupe'], ['Catégorie'], ["Date d'ouverture", 'Date d’ouverture']];
     for (const names of wanted) {
@@ -191,7 +191,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       replaceChildren(planningHost,el('header',{},el('h3',{text:'Interventions liées'}),button('Planifier',()=>ctx.navigate('interventions',{plan:true,ticketKey:ticket.personal.key}),{icon:'calendar'})),
         ...rows.map(item=>el('article',{class:'tickets-plan-link'},el('div',{},el('strong',{text:item.title}),el('small',{text:`${String(item.startLocal).replace('T',' ')} · ${item.state==='done'?'Effectuée':item.state==='cancelled'?'Annulée':'Prévue'}${item.location?' · '+item.location:''}`})),
           button('Ouvrir',()=>ctx.navigate('interventions',{eventId:item.interventionId,interventionId:item.interventionId,occurrenceKey:item.key,date:item.startLocal?.slice(0,10)}),{icon:'calendar'}))),
-        rows.length?el('small',{class:'help',text:`${planning.total} occurrence(s) dans la période consultée. L’état d’une intervention est indépendant de celui du ticket.`}):el('p',{class:'help',text:'Aucune intervention dans la période consultée. Vous pouvez planifier plusieurs passages pour ce ticket.'}));
+        rows.length?el('small',{class:'help',text:`${planning.total} occurrence(s) dans la période consultée. L’état d’une intervention est indépendant de celui du ticket.`}):el('p',{class:'help',text:'Aucune intervention dans la période consultée. Plusieurs passages peuvent être associés au même ticket.'}));
     }).catch(reason=>{if(!disposed&&reason.name!=='AbortError'){planningHost.hidden=false;planningHost.replaceChildren(el('p',{class:'help',text:'Planning du ticket : '+reason.message}));}});
     const content = await journal(ticket);
     if (!disposed && generation === version && current?.personal.key === ticket.personal.key) journalHost.replaceChildren(content);
@@ -279,7 +279,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
 function ticketPersonalEditor(ctx, personal, templates, onSaved, onRemoved) {
   const simulation = isSimulation(ctx.state.session), draftKey = JSON.stringify([simulation ? ctx.state.settings.exportFolder : 'normal', personal.key]);
   const draft = personalDrafts.get(draftKey), notes = textArea(draft?.notes ?? personal.notes, 8000, 4);
-  const pinned = checkbox(draft?.pinned ?? personal.pinned, 'Épingler ce ticket'), queued = checkbox(draft?.queued ?? personal.queueOrder != null, 'Dans ma file personnelle'), offline = checkbox(draft?.offline ?? personal.offline, 'Conserver les rubriques lues hors connexion');
+  const pinned = checkbox(draft?.pinned ?? personal.pinned, 'Épingler ce ticket'), queued = checkbox(draft?.queued ?? personal.queueOrder != null, 'Dans la file personnelle'), offline = checkbox(draft?.offline ?? personal.offline, 'Conserver les rubriques lues hors connexion');
   const reminder = input(toLocalInput(draft?.reminderAt ?? personal.reminderAt), { type: 'datetime-local' }), snooze = input(toLocalInput(draft?.snoozedUntil ?? personal.snoozedUntil), { type: 'datetime-local' }), reason = input(draft?.snoozeReason ?? personal.snoozeReason ?? '', { maxLength: 1200 });
   const checklist = (draft?.checklist || personal.checklist || []).map(item => ({ ...item })), list = el('div', { class: 'work-checklist' }), status = el('span', { class: 'tickets-save-status', text: draft ? 'Brouillon personnel · à enregistrer' : simulation ? 'Notes privées de simulation' : 'Notes privées sur ce poste' });
   let dirty = !!draft, disposed = false, saving = Promise.resolve();
@@ -309,9 +309,9 @@ function ticketPersonalEditor(ctx, personal, templates, onSaved, onRemoved) {
     field('Rappel personnel', reminder), field('Reporter jusqu’au', snooze), field('Motif du report', reason), offline.element,
     button('Rappel traité', run(ctx, async () => { await call(ctx, 'workplace.personal.save', { ticketKey: personal.key, acknowledge: true }); ctx.notify('Rappel marqué comme traité.'); })),
     button('Retirer le dossier conservé…', run(ctx, async () => { if (!await confirm('Retirer ce dossier ?', 'Les notes, le brouillon, la liste et la copie hors connexion de ce dossier seront retirés. Les reçus d’actions restent conservés.', 'Retirer le dossier')) return; await saving; await call(ctx, 'workplace.personal.remove', { ticketKey: personal.key, confirmed: true }); dirty = false; personalDrafts.delete(draftKey); onRemoved?.(); await ctx.navigate('records'); }), { danger: true }));
-  const element = el('section', { class: 'tickets-personal' }, el('div', { class: 'tickets-panel-section-title' }, el('h3', { text: 'Mon suivi' }), status),
-    toolbar(pinned.element, queued.element), field('Mes notes', notes), advanced,
-    toolbar(button('Enregistrer mon travail', () => save(true), { primary: true, icon: 'check' }), button('Enregistrer et partager la note', run(ctx, async () => { await save(); await publishSharedOperation(ctx, 'workspace.publishPersonalNote', { ticketKey: personal.key }); }), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))));
+  const element = el('section', { class: 'tickets-personal' }, el('div', { class: 'tickets-panel-section-title' }, el('h3', { text: 'Suivi personnel' }), status),
+    toolbar(pinned.element, queued.element), field('Notes personnelles', notes), advanced,
+    toolbar(button('Enregistrer', () => save(true), { primary: true, icon: 'check' }), button('Enregistrer et partager la note', run(ctx, async () => { await save(); await publishSharedOperation(ctx, 'workspace.publishPersonalNote', { ticketKey: personal.key }); }), { icon: 'users' }), button('Voir le travail partagé', () => ctx.navigate('library', { view: 'team' }))));
   for (const control of [notes, pinned.control, queued.control, offline.control, reminder, snooze, reason]) { control.addEventListener('input', changed); control.addEventListener('change', changed); }
   return { element, save, remember, async dispose() { await saving; remember(); disposed = true; } };
 }

@@ -22,7 +22,7 @@ export async function renderTours(ctx) {
   const order = select([{ value: 'saved', label: 'Ordre mémorisé' }, { value: 'alphabetical', label: 'Alphabétique' }, { value: 'priority', label: 'Priorités actives' }, { value: 'due', label: 'Échéances actives' }, { value: 'proximity', label: 'Proximité à vol d’oiseau' }], 'saved');
   const firstCity = referenceField(p, 'Première ville pour la proximité', 'city', '', '', { saved: true });
   const newTour = form([{ key: 'name', label: 'Nom de la tournée', required: true }, { key: 'date', label: 'Premier jour', type: 'date', required: true }], { name: 'Nouvelle tournée', date: new Date().toLocaleDateString('en-CA') });
-  p.body.append(...(ctx.params?.ticketSearch?[toolbar(button('Créer une tournée depuis la recherche',()=>ctx.navigate('interventions',{tab:'map',ticketMap:true,ticketSearch:ctx.params.ticketSearch}),{primary:true,icon:'route'})),el('p',{class:'help',text:'Les tournées ci-dessous contiennent au moins un ticket de votre recherche. Sur la carte, choisissez les tickets et préparez les étapes.'})]:[]),summary, tabs, content);
+  p.body.append(...(ctx.params?.ticketSearch?[toolbar(button('Créer une tournée depuis la recherche',()=>ctx.navigate('interventions',{tab:'map',ticketMap:true,ticketSearch:ctx.params.ticketSearch}),{primary:true,icon:'route'})),el('p',{class:'help',text:'Tournées contenant au moins un ticket de la recherche. Sélection des tickets et préparation des étapes sur la carte.'})]:[]),summary, tabs, content);
 
   function args(extra = {}) { return { revision: state.revision, draftVersion: state.draftVersion, ...extra }; }
   function filterArgs() { return { revision: state.revision, technician: scope.read(), allStatuses: allStatuses.checked }; }
@@ -48,7 +48,7 @@ export async function renderTours(ctx) {
   async function refreshAll() { await refreshState(); paintTabs(); await loadTab(); }
   async function abandonForSwitch() {
     if (!state.dirty && !headerChanged()) return true;
-    return confirm('Changer de tournée', 'Le brouillon de la tournée en cours n’est pas enregistré. Voulez-vous abandonner ses modifications pour ouvrir une autre tournée ?', 'Abandonner le brouillon');
+    return confirm('Changer de tournée', 'Le brouillon de la tournée en cours n’est pas enregistré. Ouvrir une autre tournée abandonne ses modifications.', 'Abandonner le brouillon');
   }
   async function openTour(id) {
     if (!await abandonForSwitch()) return;
@@ -71,7 +71,7 @@ export async function renderTours(ctx) {
         state = await p.call('terrain.tours.create', { ...filterArgs(), ...newTour.read(), discardDraft: true }); headerForm = null; pointForms = null; tab = 'planning'; stopsOffset = 0; scheduleOffset = 0;
         paintSummary(); paintTabs(); await paintEditor();
       }), { primary: true })));
-  } else sections.basket.append(empty('Chargez un relevé pour préparer un panier', 'Vous pouvez consulter vos tournées enregistrées dans l’onglet calendrier.'));
+  } else sections.basket.append(empty('Chargez un relevé pour préparer un panier', 'Tournées enregistrées disponibles dans l’onglet calendrier.'));
   if(state.loaded){
     const [scopeCard,citiesCard,basketCard]=[...sections.basket.children];
     const createButton=newTour.element.nextElementSibling;
@@ -332,7 +332,7 @@ export async function renderTours(ctx) {
     const settings = await p.call('terrain.services.get'); const editor = form([
       { key: 'routingEndpoint', label: 'Adresse de base du serveur routier OSRM v5', help: 'HTTP(S), sans identifiant, paramètre ni fragment. Laissez vide tant que le serveur autorisé n’est pas choisi.' },
       { key: 'routingProfile', label: 'Profil routier', help: 'Profil configuré sur le serveur, par exemple driving.' },
-      { key: 'weatherEndpoint', label: 'Point d’accès météo compatible Open-Meteo', help: 'Adresse complète des prévisions quotidiennes ; renseignez votre service autorisé.' }
+      { key: 'weatherEndpoint', label: 'Point d’accès météo compatible Open-Meteo', help: 'Adresse complète du service de prévisions quotidiennes autorisé.' }
     ], settings);
     const consent = input('', { type: 'checkbox' }); editor.element.addEventListener('input', () => { consent.checked = false; });
     const serviceStatus = el('div', { role: 'status' });
@@ -341,7 +341,7 @@ export async function renderTours(ctx) {
       toolbar(button('Enregistrer les adresses', p.act(async () => { await p.call('terrain.services.save', { settings: editor.read() }); consent.checked = false; p.message('Adresses enregistrées. L’autorisation de transmission n’est pas conservée.'); })),
         button('Calculer les routes de la tournée', p.act(() => request('route')), { disabled: !state.draft || !state.loaded }),
         button('Charger la météo des visites', p.act(() => request('weather')), { disabled: !state.draft || !state.loaded })),
-      serviceStatus, el('p', { class: 'terrain-muted', text: 'Après modification des dates, techniciens, coordonnées ou de l’ordre, les mesures périmées sont ignorées. Une prévision absente reste inconnue. Les résultats sont conservés avec la tournée lorsque vous l’enregistrez.' })),
+      serviceStatus, el('p', { class: 'terrain-muted', text: 'Après modification des dates, techniciens, coordonnées ou de l’ordre, les mesures périmées sont ignorées. Une prévision absente reste inconnue. Les résultats sont conservés à l’enregistrement de la tournée.' })),
       state.draft ? facts([['Tournée ouverte', state.draft.name], ['Segments routiers conservés', state.draft.roadSegments], ['Prévisions conservées', state.draft.weatherObservations]]) : empty('Ouvrez une tournée pour utiliser ces services'));
     async function request(kind) {
       if (!consent.checked) throw new Error('Autorisez l’envoi des coordonnées et dates avant ce calcul.');

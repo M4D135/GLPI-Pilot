@@ -403,7 +403,7 @@ public sealed partial class PilotApplication
     }
     private Task<object?> AnalyticsAppendLayoutAsync(JsonElement args, CancellationToken ct)
     {
-        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Ajoutez les dispositions dans Mes tableaux ; les rubriques natives restent disponibles séparément.");
+        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Ajoutez les dispositions dans Tableaux personnalisés ; les rubriques natives restent disponibles séparément.");
         ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); AnalyticsCheckLayoutFingerprint(args, personal);
         var imported = AnalyticsArgument<DashboardLayoutSettings>(args, "layout"); imported.Validate();
         var merged = DashboardLayoutSettings.AppendBoards(AnalyticsLayout(personal), imported);
@@ -440,9 +440,9 @@ public sealed partial class PilotApplication
     }
     private Task<object?> AnalyticsCreateBoardAsync(JsonElement args, CancellationToken ct)
     {
-        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Créez les tableaux supplémentaires dans Mes tableaux.");
+        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Créez les tableaux supplémentaires dans Tableaux personnalisés.");
         ct.ThrowIfCancellationRequested(); var personal = Flag(args, "personal"); var layout = AnalyticsLayout(personal).Copy(); layout.Normalize();
-        var name = Text(args, "name", 120, "Mon tableau de bord"); var preset = Text(args, "preset", 40, "empty");
+        var name = Text(args, "name", 120, "Tableau de bord personnel"); var preset = Text(args, "preset", 40, "empty");
         if (!new[] { "empty", "overview", "personal", "team", "deadlines", "quality", "geography", "analysis", "operations", "service" }.Contains(preset)) throw new InvalidDataException("Modèle inconnu.");
         var board = DashboardLayoutSettings.CreateBoard(name, preset); layout.Boards.Add(board); layout.ActiveBoardId = board.Id; layout.Validate();
         AnalyticsPersistLayout(personal, layout); return Task.FromResult<object?>(new { boardId = board.Id });
@@ -456,7 +456,7 @@ public sealed partial class PilotApplication
     }
     private async Task<object?> AnalyticsImportLayoutAsync(JsonElement args, CancellationToken ct)
     {
-        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Importez une disposition dans Mes tableaux. Les paramètres du classeur se reprennent depuis Paramètres du pilotage.");
+        if (AnalyticsBusinessKey(args).Length > 0) throw new InvalidDataException("Importez une disposition dans Tableaux personnalisés. Les paramètres du classeur se reprennent depuis Paramètres du pilotage.");
         var path = await Host.OpenFileAsync("Importer une disposition à vérifier", "Disposition JSON (*.json)|*.json");
         if (path is null) return new { cancelled = true };
         if (new FileInfo(path).Length > 2 * 1024 * 1024) throw new InvalidDataException("Disposition limitée à 2 Mio.");

@@ -139,7 +139,7 @@ public static class DeploymentConfigurationInitializer
             var imported = DeploymentConfigurationService.Read(seed, root);
             var decided = receipt.Choices.Any(choice => choice.Sha256 == imported.Sha256 && choice.Version == version);
             return new(DeploymentConfigurationService.FileName, seed, receipt.Status, receipt.Message, receipt.AppliedAt, false,
-                new(!decided, imported.Sha256, version, "Une configuration accompagne cette version. Examinez les différences puis remplacez vos options ou gardez le profil actuel."), defaultPath, defaultHash);
+                new(!decided, imported.Sha256, version, "Une configuration accompagne cette version. Examiner les différences avant remplacement des options, ou conserver le profil actuel."), defaultPath, defaultHash);
         }
         catch (Exception error) when (DeploymentConfigurationService.StorageError(error))
         { return new(DeploymentConfigurationService.FileName, seed, "error", AppPaths.SafeError(error), null, false, new(false), defaultPath, defaultHash); }
@@ -152,7 +152,7 @@ public static class DeploymentConfigurationInitializer
         receipt.Choices.RemoveAll(choice => choice.Sha256 == hash && choice.Version == version); receipt.Choices.Add(new(hash, version, applied ? "applied" : "kept", at));
         receipt.Choices = receipt.Choices.TakeLast(100).ToList();
         if (applied) { receipt.Status = "applied"; receipt.AppliedAt = at; receipt.Message = "Configuration fournie appliquée après examen et sauvegarde."; }
-        else if (defaultSaved) { receipt.Status = "default-saved"; receipt.Message = "Configuration par défaut enregistrée dans le dossier wad du pack. Vos options locales restent inchangées."; }
+        else if (defaultSaved) { receipt.Status = "default-saved"; receipt.Message = "Configuration par défaut enregistrée dans le dossier wad du pack. Options locales inchangées."; }
         SaveReceipt(root, receipt);
     }
 }

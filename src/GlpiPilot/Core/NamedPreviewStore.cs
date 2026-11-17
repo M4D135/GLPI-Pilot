@@ -6,7 +6,7 @@ namespace GlpiPilot.Core;
 public sealed class NamedPreview
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    public string Name { get; set; } = "Ma vue";
+    public string Name { get; set; } = "Vue";
     public string HeaderFingerprint { get; set; } = "";
     public string Search { get; set; } = "";
     public int ColumnsCount { get; set; }

@@ -136,7 +136,7 @@ public sealed partial class PilotApplication
     }
     private async Task<object?> CalendarIdentityAsync(JsonElement a, CancellationToken ct)
     {
-        var key = Text(a, "key", 400); if (key.Length == 0) throw new InvalidDataException("Choisissez votre nom dans les ressources du calendrier.");
+        var key = Text(a, "key", 400); if (key.Length == 0) throw new InvalidDataException("Sélectionner une identité dans les ressources du calendrier.");
         var window = CalendarRange(JsonSerializer.SerializeToElement(new { }, Json)); var resources = await CalendarResourcesAsync(window, Array.Empty<TeamWorkspaceItem>(), ct).ConfigureAwait(false);
         var resource = resources.FirstOrDefault(value => value.Key == key) ?? throw new InvalidDataException("La ressource choisie n’existe plus. Ajoutez-la au calendrier avant de l’utiliser.");
         var id = CalendarWorkspaceDocuments.ResourceId(key);

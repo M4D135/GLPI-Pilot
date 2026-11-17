@@ -15,7 +15,7 @@ const statusChoices = [
 ];
 
 export async function renderTicketMap(ctx) {
-  const p = page(ctx, 'Carte des tickets', 'Choisissez vos lieux, puis retrouvez leurs tickets dans la recherche.');
+  const p = page(ctx, 'Carte des tickets', 'Sélectionner les lieux, puis ouvrir les tickets filtrés.');
   p.root.classList.add('terrain-map-page');
   const simulationText = p.root.querySelector('[data-simulation] p');
   if (simulationText) simulationText.textContent = 'Tickets et tournées restent dans la simulation. Les rues OpenStreetMap utilisent Internet ; un fond local reste disponible hors connexion.';
@@ -112,7 +112,7 @@ export async function renderTicketMap(ctx) {
     const locations=locationChoices().filter(item=>chosenPlaces.has(item.key)),expanded=expandedPlaces();
     const count=locations.length?model.locations.filter(item=>expanded.has(item.key)).reduce((sum,item)=>sum+item.count,0):model.totals.tickets;
     selectionSummary.textContent=`${formatNumber(count)} ${unit(count)} · ${locations.length?`${locations.length} lieu${locations.length>1?'x':''}`:'tout le périmètre'}`;
-    locationTitle.textContent=locations.length?'Votre sélection géographique':'Tous les lieux du périmètre';
+    locationTitle.textContent=locations.length?'Sélection géographique':'Tous les lieux du périmètre';
     viewTickets.querySelector('span').textContent=`Voir les ${formatNumber(count)} ${unit(count)}`;
     viewTickets.disabled=count===0;allPlaces.disabled=locations.length===0;prepare.disabled=count===0;
     locationChips.replaceChildren(...locations.filter(location=>!model.cityGroups?.some(city=>city.key===location.key)).map(location=>button(location.label,()=>{chosenPlaces.delete(location.key);paintLocation();},{icon:'close',title:`Retirer ${location.label}`,attributes:{class:'button maps-location-chip'}})));
@@ -168,8 +168,8 @@ export async function renderTicketMap(ctx) {
     date.addEventListener('change', () => { if (date.value) { filters.visitDate = date.value; void p.run(() => load()); } });
     controls.replaceChildren(
       button('Tous les techniciens', p.act(async () => { filters.mine = false; filters.technicianKeys = []; await load(); }), { primary: !filters.mine && !filters.technicianKeys.length, icon: 'users' }),
-      button('Mes tickets', p.act(async () => { if (!model.choices.personalKey) { if(ctx.chooseIdentity)await ctx.chooseIdentity({params:{mine:true,technicianKeys:[]}});else await ctx.navigate('technicians'); return; } filters.mine = true; filters.technicianKeys = []; await load(); }),
-        { primary: filters.mine, icon: 'ticket', title: model.choices.personalName ? `Tickets attribués à ${model.choices.personalName}` : 'Choisir mon identité pour afficher mes tickets' }),
+      button('Tickets attribués', p.act(async () => { if (!model.choices.personalKey) { if(ctx.chooseIdentity)await ctx.chooseIdentity({params:{mine:true,technicianKeys:[]}});else await ctx.navigate('technicians'); return; } filters.mine = true; filters.technicianKeys = []; await load(); }),
+        { primary: filters.mine, icon: 'ticket', title: model.choices.personalName ? `Tickets attribués à ${model.choices.personalName}` : 'Choisir l’identité pour afficher mes tickets' }),
       button(`Équipes${teamSelection.keys.length ? ` (${teamSelection.keys.length})` : ''}`, () => multiChoice('Équipes', teams, teamSelection.keys, values => { filters.focusKeys = values; }), { icon: 'layers' }),
       button(`Techniciens${filters.technicianKeys.length ? ` (${filters.technicianKeys.length})` : ''}`, () => multiChoice('Techniciens attribués', technicians, filters.technicianKeys,
         values => { filters.technicianKeys = values; filters.mine = false; }), { icon: 'users', disabled: !model.choices.technicianAvailable }),
@@ -273,7 +273,7 @@ export async function renderTicketMap(ctx) {
           button('Voir sur la carte', () => { popup.close(); map?.selectPlace(location.key); }),
           button('Copier les IDs', () => p.run(async () => { const result = await p.call('maps.workspace.copyIds', tokenArgs({ placeKey: location.key })); feedback.textContent = `${result.copied} identifiant${result.copied === 1 ? '' : 's'} copié${result.copied === 1 ? '' : 's'}${result.missing ? ` · ${result.missing} lignes sans ID` : ''}.`; }, errors), { disabled: location.count === 0 }),
           button('Modifier le site', p.act(async () => { popup.close(); await openPanel('reference', { referenceKind: 'site', referenceId: location.key.slice(5) }); }))) }
-      ], { key: 'key', maxRows: 2000, emptyText: 'Aucun site dans le référentiel. Ajoutez les lieux utilisés dans les titres de vos tickets.' })),
+      ], { key: 'key', maxRows: 2000, emptyText: 'Aucun site dans le référentiel. Ajouter les lieux utilisés dans les titres des tickets.' })),
       [{ label: 'Gérer le référentiel', action: async close => { close(); await openPanel('reference', { referenceKind: 'site' }); } }]);
     popup.element.classList.add('maps-site-dialog');
     popup.element.dataset.workspacePanel = 'sites';
@@ -356,7 +356,7 @@ export async function renderTicketMap(ctx) {
   if (loaded) await load();
   else {
     controls.hidden = true; totals.hidden = true; listPanel.hidden = true; scopeSummary.hidden = true;
-    p.body.insertBefore(empty('Votre terrain est prêt', 'Chargez un relevé pour répartir les tickets. Le référentiel et les tournées restent accessibles ici.'), mapHost);
+    p.body.insertBefore(empty('Aucun relevé chargé', 'Chargez un relevé pour répartir les tickets. Le référentiel et les tournées restent accessibles ici.'), mapHost);
     actions.prepend(button('Importer des tickets', () => ctx.navigate('collect'), { primary: true, icon: 'download' }));
     await refreshReferenceMap();
   }
