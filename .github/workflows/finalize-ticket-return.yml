@@ -1,0 +1,90 @@
+name: Finalize guarded ticket return fixes
+on:
+  push:
+    branches: ['codex/glpi-ticket-500ms-kitt-20261116']
+    paths: ['.github/workflows/finalize-ticket-return.yml', '.github/patches/ticket-return.patch']
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: finalize-ticket-return
+  cancel-in-progress: false
+jobs:
+  finalize:
+    if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/codex/glpi-ticket-500ms-kitt-20261116'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Apply only the reviewed patch to the known source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path artifacts/ticket-return-final -Force | Out-Null
+          git merge-base --is-ancestor 1a295637c06b30a966631f56056feccf1dfd9a1a HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Unexpected source ancestry.' }
+          $hash = (git hash-object .github/patches/ticket-return.patch).Trim()
+          if ($hash -ne 'c41d84c961426666e0e46ee87e006e9ba004bddc') { throw 'Reviewed patch hash mismatch.' }
+          git apply --index --whitespace=error .github/patches/ticket-return.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Sources changed; patch refused.' }
+          git diff --cached --check
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid staged patch.' }
+          git diff --cached --stat | Set-Content artifacts/ticket-return-final/changes.log
+          $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe','C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'Real Chromium browser required.' }
+          "GLPI_TEST_CHROMIUM=$browser" >> $env:GITHUB_ENV
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Verify configuration and reader with actual C# handlers
+        run: |
+          dotnet run --project tests/FoundationChecks/FoundationChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/ticket-return-final/foundation.log
+          if ($LASTEXITCODE -ne 0) { throw 'Configuration regression.' }
+          dotnet run --project tests/WorkplaceBridgeChecks/WorkplaceBridgeChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/ticket-return-final/workplace.log
+          if ($LASTEXITCODE -ne 0) { throw 'Reader regression.' }
+      - name: Verify production UI CSP and retain screenshots
+        run: |
+          $driver = Join-Path $PWD 'tests/WorkplaceBridgeChecks/bin/Release/net10.0/.playwright'
+          $node = Join-Path $driver 'node/win32_x64/node.exe'
+          $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+          $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/ticket-return-final/screenshots'
+          Remove-Item Env:GLPI_TEST_OFFLINE_BLOBS -ErrorAction SilentlyContinue
+          & $node --test tests/ErgonomicsChecks/ticket-live-read.test.mjs tests/WorkspaceGridChecks/run.mjs tests/PilotBoardLabelsChecks/run.mjs tests/WeatherGroupPickerChecks/run.mjs 2>&1 | Tee-Object artifacts/ticket-return-final/unit.log
+          if ($LASTEXITCODE -ne 0) { throw 'Unit regression.' }
+          & $node tests/TicketJourneyChecks/run.cjs 2>&1 | Tee-Object artifacts/ticket-return-final/journey.log
+          if ($LASTEXITCODE -ne 0) { throw 'Ticket journey regression.' }
+      - name: Commit tested fixes and remove this one-time integrator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch=codex/glpi-ticket-500ms-kitt-20261116
+          gh auth setup-git
+          current=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          test "$current" = "$GITHUB_SHA"
+          git rm .github/workflows/finalize-ticket-return.yml .github/patches/ticket-return.patch
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Preserve ticket search DOM and scroll on reader return; validate 38 configuration checks'
+          git push origin "HEAD:refs/heads/$branch"
+          git rev-parse HEAD > artifacts/ticket-return-final/commit.txt
+          git archive --format=zip HEAD -o artifacts/ticket-return-final/source.zip
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/windows.yml/dispatches" -f ref="$branch"
+      - name: Retain actual evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ticket-return-final-${{ github.run_id }}
+          path: artifacts/ticket-return-final/
+          retention-days: 14
+          if-no-files-found: warn
