@@ -1,0 +1,33 @@
+name: Qualifier le parcours tickets avant livraison
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/glpi-ticket-500ms-kitt-20261116']
+    paths:
+      - 'src/**'
+      - 'web/**'
+      - 'tests/**'
+      - '.github/workflows/ergonomics-check.yml'
+      - '.github/workflows/qualify-ticket-journey.yml'
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: qualify-ticket-journey-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  qualification:
+    if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/codex/glpi-ticket-500ms-kitt-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lancer la qualification complète, sans fusion ni publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GH_REPO/git/ref/heads/$GITHUB_REF_NAME" --jq .object.sha)
+          test "$current" = "$GITHUB_SHA"
+          gh api --method POST "repos/$GH_REPO/actions/workflows/windows.yml/dispatches" -f ref="$GITHUB_REF_NAME"
+          echo "Qualification complète demandée pour $GITHUB_SHA sur $GITHUB_REF_NAME. Aucun pack n'est publié par ce workflow." >> "$GITHUB_STEP_SUMMARY"
