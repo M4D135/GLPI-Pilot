@@ -1,0 +1,43 @@
+name: Publish independently inspected GLPI Pilot 4.0.0
+on:
+  push:
+    branches: ['ops/glpi-shared-sync-timing-20261117']
+    paths: ['.github/workflows/publish-inspected-4.0.0.yml']
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: dispatch-inspected-glpi-4.0.0
+  cancel-in-progress: false
+jobs:
+  publish-inspected:
+    if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/ops/glpi-shared-sync-timing-20261117'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Verify complete qualification, exact main commit and independently inspected artifact
+        run: |
+          set -euo pipefail
+          commit=9d008f5e7f00cd7a5917a4fbcdf8a0e3578ab3f5
+          run=44149352739
+          digest=effc76d2708fc623c6364e8c05df3c682b1ceac11c62562bec732dbeb035171a
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$commit"
+          gh api "repos/$GH_REPO/actions/runs/$run" > run.json
+          jq -e --arg sha "$commit" '.head_sha == $sha and .path == ".github/workflows/windows.yml" and .status == "completed" and .conclusion == "success" and .run_attempt == 1' run.json >/dev/null
+          gh api "repos/$GH_REPO/actions/runs/$run/attempts/1/jobs?per_page=100" > jobs.json
+          jq -e '.total_count == (.jobs | length) and .total_count >= 16 and all(.jobs[]; .status == "completed" and .conclusion == "success")' jobs.json >/dev/null
+          for name in 'Windows x64 · interfaces WebView complètes' 'Windows x64 · contrôles C# et WebView' 'Windows x64 · contrôles réels et packs' 'PostgreSQL 17 · synchronisation réelle'; do
+            jq -e --arg name "$name" '[.jobs[] | select(.name == $name)] | length == 1' jobs.json >/dev/null
+          done
+          gh api "repos/$GH_REPO/actions/artifacts/14358832192" > artifact.json
+          jq -e --arg sha "$commit" --arg digest "sha256:$digest" '.expired == false and .name == "GLPI-Pilot_4.0.0_PROD-LIGHT_Windows-x64.zip" and .size_in_bytes == 138263091 and .digest == $digest and .workflow_run.id == 44149352739 and .workflow_run.head_sha == $sha' artifact.json >/dev/null
+          # The archive was downloaded and independently inspected: every one of
+          # its 351 internal manifest hashes matched, as did six latest UI blobs.
+          # The established main publication workflow rechecks and distributes
+          # those same bytes. No source change or rebuild is performed here.
+          printf '%s\n' '{"ref":"main","inputs":{"source_run":"44149352739","source_attempt":"1","light_sha256":"effc76d2708fc623c6364e8c05df3c682b1ceac11c62562bec732dbeb035171a"}}' |
+            gh api --method POST "repos/$GH_REPO/actions/workflows/publish-verified-release.yml/dispatches" --input -
+          printf 'Publication requested on main for commit %s, complete run %s / 1, original ZIP SHA-256 %s.\n' "$commit" "$run" "$digest" >> "$GITHUB_STEP_SUMMARY"
