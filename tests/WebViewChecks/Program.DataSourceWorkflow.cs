@@ -233,7 +233,8 @@ internal static partial class Program
             "The restored offline observation offers a prominent way back to GLPI without deleting the cached data.");
         var realSettingsBytes = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
         await OpenDemonstrationFromSettingsAsync(page); await WaitForNavigationTargetAsync(page, "home"); await DataPage();
-        Require(await Button("Collecter la simulation").IsVisibleAsync() && await page.Locator("[data-source-method=glpi]").CountAsync() == 0,
+        Require(await Button("Collecter la simulation").IsVisibleAsync() && await page.Locator("[data-source-method=glpi]").CountAsync() == 0
+            && await page.Locator(".local-test-banner .local-test-copy > strong").InnerTextAsync() == "Démonstration · données fictives",
             "The demo labels its main action as a simulation and never advertises a live GLPI connection.");
         await Button("Connecter la source simulée").ClickAsync(); await Idle();
         Require(await OnPage("data") && operations.Contains("collect.connect"),
@@ -384,9 +385,11 @@ internal static partial class Program
         await File.WriteAllTextAsync(csv, "ID;Titre;Statut\n31103;Extrait de contrôle;Nouveau\n");
         await Call(app, "records.test.import"); await page.ReloadAsync(); await ReadyAsync(page); await DataPage();
         await Button("Collecter plusieurs recherches").ClickAsync(); await Group().WaitForAsync();
-        Require(await page.GetByRole(AriaRole.Heading, new() { Name = "Votre fichier, en simulation", Exact = true }).CountAsync() == 1
+        Require(await page.GetByRole(AriaRole.Heading, new() { Name = "Fichier en simulation", Exact = true }).CountAsync() == 1
             && (await Group().InnerTextAsync()).Contains("Simulation locale : ces collectes réutilisent les données du fichier chargé.", StringComparison.Ordinal)
-            && !(await Group().InnerTextAsync()).Contains("données fictives", StringComparison.Ordinal),
+            && !(await Group().InnerTextAsync()).Contains("données fictives", StringComparison.Ordinal)
+            && await page.Locator(".local-test-banner .local-test-copy > strong").InnerTextAsync() == "Simulation · fichier local"
+            && !(await page.Locator(".local-test-banner").InnerTextAsync()).Contains("fictives", StringComparison.Ordinal),
             "A simulation imported from a local file is described as that file, without relabelling its real contents as fictitious demo data.");
         await CloseDialog(Group()); await Call(app, "records.test.exit");
         Require(errors.IsEmpty && externalRequests == 0 && blockedLiveCalls == 0,

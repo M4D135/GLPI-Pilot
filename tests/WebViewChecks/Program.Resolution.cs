@@ -168,7 +168,7 @@ internal static partial class Program
             await Capture("resolution-light"); await page.SetViewportSizeAsync(600, 850); await Capture("resolution-compact");
             Require(await Modal().EvaluateAsync<bool>("node => node.getBoundingClientRect().left>=0 && node.getBoundingClientRect().right<=innerWidth && node.scrollWidth<=node.clientWidth+1")
                 && await cards.Locator(".library-resolution-ticket-id").Filter(new() { HasText = precedent.Ticket.Id }).EvaluateAsync<bool>("node => {const range=document.createRange();range.selectNodeContents(node);return getComputedStyle(node).whiteSpace==='nowrap' && range.getClientRects().length===1;}")
-                && (await Modal().Locator(".library-resolution-source-warning").InnerTextAsync()).Contains("vos termes saisis")
+                && (await Modal().Locator(".library-resolution-source-warning").InnerTextAsync()).Contains("les termes saisis")
                 && !(await Modal().Locator(".library-resolution-source-warning").InnerTextAsync()).Contains("son titre conservé sert")
                 && await page.EvaluateAsync<bool>("document.documentElement.dataset.motion==='reduce' && !document.getAnimations().some(animation=>animation.playState==='running')")
                 && errors.IsEmpty && externalRequests == 0 && !calls.Any(operation => operation is "library.capture" or "library.sync" or "library.loadRecords"),

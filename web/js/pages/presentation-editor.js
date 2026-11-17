@@ -13,7 +13,7 @@ export function preparePilotPresentation({ ctx, model, board, content, scopeText
       kind: ['metric', 'weather'].includes(setting.kind) ? 'Chiffre clé' : ['attention', 'oldest', 'participation', 'sites'].includes(setting.kind) ? 'Tableau' : setting.kind === 'note' ? 'Texte' : 'Graphique' }));
   const catalog = new Map(available.map(item => [item.id, item]));
   const receipt = extractionStatus(ctx.state.session), observed = model.snapshot.extractedAt || ctx.state.session.date;
-  const sourceKind = ctx.state.session.cachedSource ? 'Dernier relevé conservé' : isSimulation(ctx.state.session) ? 'Démonstration · données fictives'
+  const sourceKind = ctx.state.session.cachedSource ? 'Dernier relevé conservé' : isSimulation(ctx.state.session) ? ctx.state.session.demo ? 'Démonstration · données fictives' : 'Simulation · fichier local'
     : model.historical ? 'Observation archivée' : ctx.state.session.fileSource ? 'Source CSV / Excel' : 'Relevé GLPI';
   const freshness = (Date.now() - Date.parse(observed)) / 3600000;
   const stale = Number.isFinite(freshness) && board.freshnessWarningHours > 0 && freshness > board.freshnessWarningHours;

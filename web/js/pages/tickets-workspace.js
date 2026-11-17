@@ -18,7 +18,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   const receipt = extractionStatus(source);
   const heading = el('header', { class: 'tickets-workspace-heading' },
     el('div', { class: 'tickets-source-summary' },
-      el('p', { text: source.loaded ? `${formatNumber(source.rows)} lignes · ${isSimulation(source) ? 'démonstration fictive' : isFileSource(source) ? 'source CSV / Excel' : source.historical ? 'relevé archivé' : 'relevé courant'}` : 'Aucun relevé chargé.' }),
+      el('p', { text: source.loaded ? `${formatNumber(source.rows)} lignes · ${isSimulation(source) ? source.demo ? 'démonstration fictive' : 'fichier local en simulation' : isFileSource(source) ? 'source CSV / Excel' : source.historical ? 'relevé archivé' : 'relevé courant'}` : 'Aucun relevé chargé.' }),
       source.loaded ? el('div', { class: 'tickets-receipt' }, badge(receipt.receipt, receipt.tone),
         receipt.attention ? el('span', { class: 'tickets-receipt-attention', text: receipt.attention }) : null) : null),
     toolbar(button('Dossiers conservés', () => savedDossiers(), { icon: 'folder', disabled:isFileSource(source), title:isFileSource(source)?fileSourceDetailHelp:'' }), button('Importer un fichier', () => importLocalTestFile(ctx), { icon: 'folder' }),

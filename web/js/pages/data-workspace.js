@@ -20,7 +20,7 @@ export async function renderDataWorkspace(ctx) {
   const selectedSource = state.settings.sources.find(item => item.id === state.settings.activeSourceId);
   const receipt = extractionStatus(state.session);
   const hero = el('section', { class: 'hero workspace-intro data-intro' }, el('div', {},
-    el('h2', { text: simulation ? 'Sources de simulation' : 'Sources de données' }),
+    el('h2', { text: simulation ? demo ? 'Sources de démonstration' : 'Fichier en simulation' : 'Sources de données' }),
     state.session.loaded ? el('div', { class: 'data-current-origin', 'data-current-origin': 'true' }, el('span', { text: 'Relevé affiché :' }), badge(receipt.label, receipt.tone), el('span', { text: `${formatNumber(state.session.rows)} lignes · ${formatDate(state.session.date)}` })) : null),
     el('div', { class: 'hero-icon', 'aria-hidden': 'true' }, icon('download')));
   const current = el('section', { class: 'workspace-data-source' }, el('div', {},
