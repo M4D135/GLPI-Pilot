@@ -218,8 +218,8 @@ internal static partial class Program
         }
 
         await Navigate("terrain-map");
-        if (await page.Locator(".map-management-tools:not([open]) > summary").CountAsync() > 0)
-            await page.Locator(".map-management-tools > summary").ClickAsync();
+        if (await page.Locator(".maps-workspace-actions:not([open]) > summary").CountAsync() > 0)
+            await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.Locator(".maps-terrain-tools > summary").ClickAsync();
         await Button("Effectifs des sites · facultatif").ClickAsync();
         var terrainPanel = page.Locator("dialog.terrain-workspace-panel");
@@ -330,8 +330,8 @@ internal static partial class Program
         await CheckEmbeddedMapOverviewAsync(page, app, Navigate, Capture);
         await CheckEmbeddedMapRendererAsync(page);
         await Navigate("terrain-map");
-        if (await page.Locator(".map-management-tools:not([open]) > summary").CountAsync() > 0)
-            await page.Locator(".map-management-tools > summary").ClickAsync();
+        if (await page.Locator(".maps-workspace-actions:not([open]) > summary").CountAsync() > 0)
+            await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.Locator(".maps-terrain-tools > summary").ClickAsync();
         await Button("Panier et ordre des communes").ClickAsync();
         await terrainPanel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();
