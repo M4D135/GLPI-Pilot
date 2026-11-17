@@ -3,6 +3,7 @@
 // The actual home module plus the production stylesheets, with explicitly
 // synthetic replies. The SSO bridge and source rows are never contacted here.
 module.exports = async ({ page, reset, ok, capture }) => {
+  await require('./weather-scene.cjs')({ page, reset, ok, capture });
   async function home(sourceLoaded) {
     await reset();
     await page.evaluate(async loaded => {
