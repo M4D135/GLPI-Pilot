@@ -1,43 +1,45 @@
-# GLPI Pilot 4.0.0 — HyperMotion (prépublication)
+# GLPI Pilot 4.0.0
 
-Le numéro 4.0.0 désigne la nouvelle interface intégrée au code. Il ne constitue pas une attestation de diffusion PROD. La validation de la dernière révision, puis le contrôle du SSO dans l'environnement métier, précèdent toute publication.
+## Distribution Windows
+
+Pack PROD-LIGHT : `GLPI-Pilot.exe`, `GLPI-Pilot-Admin.exe` et dossier `wad/`. Le runtime WebView2 installé sur Windows est utilisé ; le pack n'embarque pas de runtime WebView2. Aucun environnement de développement ni compilation locale n'est nécessaire.
+
+La publication est conditionnée à une qualification Windows et PostgreSQL complète réussie sur le commit exact et à la vérification de l'archive distribuée. Les contrôles automatisés utilisent des données fictives et ne certifient pas le SSO du portail professionnel. Une vérification sur un poste autorisé reste nécessaire avant un déploiement généralisé.
 
 ## Interface
 
-- Direction artistique inspirée de Domenia v2 : surfaces marine, cyan, violet et menthe, contrastes soignés, cartes et éléments actifs harmonisés.
-- Accueil « Votre journée en un regard » : action prioritaire qui s'adapte à la présence ou non d'un relevé, accès sans détour aux tickets, au planning, à la carte et au pilotage.
-- Conservation de la grille et du dimensionnement des widgets, des filtres métier, du cache et des données réellement observées. Aucun chiffre d'exemple n'est injecté dans l'interface de production.
-- Écrans 1280 × 800, 1366 × 768 et largeur étroite ; l'identité passe en deux lignes sur les petits écrans sans comprimer le texte.
-- Modes clair/sombre, fort contraste, réduction des animations et affichage forcé des couleurs conservés.
+- Présentation inspirée de Domenia v2, thèmes clair/sombre, contraste renforcé et réduction des animations.
+- Libellés fonctionnels et neutres, sans slogans, salutations ni vouvoiement dans les textes de l'application. Les contenus des tickets et les notes saisis ne sont pas réécrits.
+- Aperçus météo des Réglages et de la fenêtre Animations corrigés : couleurs de repli définies, nuages lisibles en mode sombre, adaptations conservées pour le mode clair et les contrastes renforcés.
+- Disposition et dimensionnement des widgets, filtres métier et préférences conservés. Aucun chiffre fictif n'est ajouté à une source de production.
 
-## Tickets
+## Carte et recherche
 
-- Une fiche ouverte montre immédiatement l'observation locale, puis attend 500 ms avant de lancer une lecture GLPI autorisée.
-- Pas de lecture à la simple traversée ou au survol d'une ligne. La sélection suivante annule la demande précédente ; aucune observation obsolète ne remplace la fiche ouverte.
-- Les observations fraîches sont réutilisées pendant 30 secondes ; le bouton « Actualiser la fiche » passe outre ce délai.
-- La lecture automatique est suspendue pendant l'ouverture d'un outil de rédaction. Elle ne se déclenche pas dans une simulation, hors ligne ou sans accès distant.
-- Le liseré de lecture K2000 est discret, explicite l'état et respecte les préférences de mouvement réduit.
+- Rues détaillées OpenStreetMap activées par défaut au lancement. Une ancienne préférence hors ligne ne désactive plus les rues au lancement suivant ; cadrage, zoom et filtres sont conservés.
+- Fond local de secours en cas d'indisponibilité réseau. Les rues nécessitent l'accès réseau au fournisseur cartographique.
+- Sélection de plusieurs villes ou sites, inclusion des sites rattachés à une ville et déduplication des tickets.
+- Un seul tableau de référence : « Voir les tickets » ouvre la recherche existante sur les lignes exactes sélectionnées, avec des filtres géographiques visibles. Les tickets sans coordonnées restent consultables.
+- Description de la demande dans la liste et la fiche ; texte complet disponible dans l'inspecteur. Une description absente reste indiquée comme absente.
+- Recherche, carte, planning, tournées et préparation du matériel partagent leur contexte.
 
-## Qualification
+## Fiches tickets
 
-- Huit tests unitaires ciblés du lecteur différé, couvrant délai, navigation rapide, annulation, fraîcheur, mode hors ligne, pause des outils, actualisation manuelle et erreur réseau.
-- Tests de l'interface réelle avec réponses synthétiques (pas de connexion SSO), génération de captures desktop/mobile en thème clair et sombre.
-- Windows Standard et Admin, démarrage natif, SQLite, PostgreSQL 17, mise à jour et retour arrière sont vérifiés par les workflows de qualification. Leur réussite pour le commit final et l'exécution du parcours métier réel sont **obligatoires avant diffusion**.
+- Observation locale affichée immédiatement, puis lecture GLPI après 500 ms si le ticket reste ouvert. Aucune lecture au simple survol.
+- Annulation lors d'un changement de ticket ; cache récent de 30 secondes et actualisation manuelle immédiate.
+- Indicateur K2000 discret uniquement pendant la lecture effective. Lecture suspendue pendant les outils de rédaction.
+- Navigation précédent/suivant au sein des résultats filtrés, y compris entre les pages, avec boutons latéraux de souris et Alt+flèches. Les saisies et boîtes de dialogue sont protégées.
+- Retour à la liste conservant la recherche, les filtres, le tri, la sélection, le défilement et le focus. Le ticket courant reste repérable.
+- Carte secondaire repliée par défaut et chargée à la demande, sans recalcul caché à chaque fiche.
 
-Le seul pack diffusé officiellement reste **PROD-LIGHT** (EXE Standard + Admin + `wad/`, runtime WebView2 Evergreen ou Socle). Les artefacts de qualification GitHub ne constituent pas une release et expirent.
+## Compatibilité et vérifications
 
-## Parcours carte, recherche et fiche
+- Import des configurations 3.15.1 et 4.0 corrigé ; formats futurs non pris en charge toujours refusés.
+- Qualification des éditions Standard et Admin, des échanges C#/WebView, de SQLite, de PostgreSQL 17, du démarrage natif, de la mise à jour et du retour arrière.
+- Tests de parcours exécutés avec la politique CSP de production et des données fictives. Aucun contrôle synthétique ne vaut validation du SSO privé.
+- Les captures sans accès réseau montrent le fond cartographique local de secours, pas les rues détaillées.
 
-- La carte conserve les repères et la sélection de lieux, sans second tableau de tickets.
-- « Voir les tickets » transmet les lignes exactes à la recherche existante. Une ville comprend ses sites, sans doublon et sans limitation liée au panier de tournée.
-- Description source visible dans la recherche et dans la fiche. Les descriptions absentes ne sont pas inventées ; le texte complet reste consultable.
-- Lieux sélectionnés et ticket courant retrouvés au retour. La navigation précédent/suivant traverse les pages du même résultat filtré.
-- Boutons latéraux de souris et Alt+flèches utilisent le même parcours, sauf dans une saisie ou une fenêtre de dialogue.
-- Les corrections de site individuelles et groupées sont conservées dans la recherche unique, avec l'éditeur de confirmation existant.
-- La petite carte de la fiche reste repliée et n'est chargée qu'à son ouverture.
+## Installation
 
-### Contrôles du parcours
+Extraire l'archive complète dans un dossier local et conserver les deux exécutables avec `wad/`. Si nécessaire, utiliser `wad/support/DEBLOQUER_TOUT.cmd`. Lancer `GLPI-Pilot.exe` pour l'utilisation courante ; réserver `GLPI-Pilot-Admin.exe` aux fonctions d'administration.
 
-`tests/TicketJourneyChecks/run.cjs` pilote les vrais modules et le shell de l'application avec des données fictives. Il produit les captures carte/recherche/fiche. Sans `GLPI_TEST_OFFLINE_BLOBS`, il charge la politique CSP de production ; le mode Blob hors réseau ne qualifie ni cette politique ni l'hôte Windows.
-
-`AnalyticsBridgeChecks --map-journey-only` vérifie les commandes C# réelles, la sélection géographique, les lieux inconnus et les recherches dépassant 2 000 tickets. Les suites Terrain et corrections de localisation utilisent le même parcours centralisé. La qualification complète du commit final reste requise avant publication d'un pack. Aucun contrôle synthétique n'atteste le SSO privé de l'entreprise.
+Pour une mise à jour, conserver les réglages existants lors de l'éventuelle proposition d'import de configuration. Une sauvegarde des données et de la configuration précède toute diffusion sur plusieurs postes.

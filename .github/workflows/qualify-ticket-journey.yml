@@ -7,6 +7,7 @@ on:
       - 'src/**'
       - 'web/**'
       - 'tests/**'
+      - 'docs/RELEASE-4.0.0.md'
       - '.github/workflows/ergonomics-check.yml'
       - '.github/workflows/qualify-ticket-journey.yml'
 permissions:
