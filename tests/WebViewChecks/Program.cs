@@ -320,7 +320,7 @@ internal static partial class Program
         await WaitForNavigationTargetAsync(page, "home");
         var initialHome = page.Locator(".page-content[data-page=home]");
         Require(await initialHome.GetByRole(AriaRole.Heading, new() { Name = "Activité", Exact = true }).IsVisibleAsync()
-            && await initialHome.GetByText("Aucun relevé chargé", new() { Exact = true }).IsVisibleAsync()
+            && await initialHome.GetByRole(AriaRole.Heading, new() { Name = "Aucun relevé chargé", Exact = true, Level = 3 }).IsVisibleAsync()
             && await initialHome.GetByRole(AriaRole.Button, new() { Name = "Collecter depuis GLPI", Exact = true }).IsEnabledAsync()
             && await initialHome.GetByRole(AriaRole.Button, new() { Name = "Planifier", Exact = true }).IsEnabledAsync()
             && application.Result is null && !application.Browser.IsOpen && application.Browser.ActivePage is null && context.Pages.Count == 1,

@@ -92,7 +92,7 @@ internal sealed partial class WindowsWebViewFixture
                 var registeredRoutes = await NavigationRouteIdsAsync(page);
                 Check(await page.Locator(".page-content[data-page=home]").CountAsync() == 1
                     && await page.GetByRole(AriaRole.Heading, new() { Name = "Activité", Exact = true, Level = 2 }).IsVisibleAsync()
-                    && await page.GetByText("Aucun relevé chargé", new() { Exact = true }).IsVisibleAsync()
+                    && await page.GetByRole(AriaRole.Heading, new() { Name = "Aucun relevé chargé", Exact = true, Level = 3 }).IsVisibleAsync()
                     && registeredRoutes.SequenceEqual(new[] { "home", "records", "interventions", "pilot", "data", "settings" })
                     && await page.Locator(".workspace-view,.nav-group-toggle").CountAsync() == 0,
                     "The six common workspaces and the empty-source home load in the pack's WebView2 runtime (fixed or installed) without the old screen inventory or local-view tabs.");
