@@ -16,15 +16,26 @@ module.exports = async ({ page, reset, ok }) => {
     return failing() ? route.abort() : route.fulfill({ contentType: 'image/png', body: png });
   };
   await page.context().route(pattern, tiles);
-  const mount = async (places, view) => {
+  const mount = async (places, view, savedWorkspace = null) => {
     requested = []; refused = []; await reset();
-    await page.evaluate(async ({ places, view }) => {
+    await page.evaluate(async ({ places, view, savedWorkspace }) => {
+      if (savedWorkspace) {
+        const { readWorkspaceView, saveWorkspaceView, workspaceContextKey } = await window.importProduction('/web/js/work-context.js');
+        const state = { settings: { dashboard: { personalTechnician: 'streets-' + crypto.randomUUID() } }, session: {} };
+        const key = `glpi-pilot:view:3:${workspaceContextKey(state)}:${savedWorkspace}`;
+        const saved = savedWorkspace === 'map' ? { viewport: view, filters: { type: 'incident' } } : view;
+        localStorage.setItem(key, JSON.stringify(saved));
+        const restored = readWorkspaceView(state, savedWorkspace);
+        window.streetRemembered = restored;
+        window.streetSettings = { readWorkspaceView, saveWorkspaceView, state, name: savedWorkspace, key };
+        view = savedWorkspace === 'map' ? restored.viewport : restored;
+      }
       const { mountMap } = await window.importProduction('/web/js/pages/maps.js'); window.streetCalls = [];
       window.streetMap = mountMap({ signal: controller.signal, api: { call: async (operation, args) => { window.streetCalls.push(`${operation}:${args.enabled}`); return { enabled: !!args.enabled }; } } }, {
         title: 'Carte synthétique', token: 'fixture', routes: [{ id: 'r', title: 'Lieux fictifs', ordered: false,
           places: places.map(([latitude, longitude], index) => ({ id: 'site:' + index, label: 'Site fictif ' + index, latitude, longitude, precision: 'Site' })) }]
       }, document.querySelector('#root'), view ? { view } : {});
-    }, { places, view });
+    }, { places, view, savedWorkspace });
   };
   const state = text => page.waitForFunction(text => document.querySelector('.maps-state')?.textContent === text, text);
   const tilesMode = () => page.locator('.maps-canvas').getAttribute('data-tiles');
@@ -38,6 +49,24 @@ module.exports = async ({ page, reset, ok }) => {
     await mount([[44, 5], [44.1, 5.1]], { center: [20, 0], zoom: 2, streets: true }); await state('Rues · OpenStreetMap');
     ok(refused.length === 0 && await page.evaluate(() => streetMap.getView().zoom) >= 10,
       'A remembered world placeholder is replaced by a view fitted to the places, with their streets');
+    // Old offline preferences must not hide streets on the next application launch.
+    for (const workspace of ['map', 'calendar-map']) {
+      const view = { center: [44.05, 5.05], zoom: 12, streets: false };
+      await mount([[44, 5], [44.1, 5.1]], view, workspace); await state('Rues · OpenStreetMap');
+      ok(await tilesMode() === 'online' && requested.length > 0 && await page.evaluate(() => streetMap.getView().zoom) === 12,
+        `${workspace}: detailed streets open automatically despite an older offline preference, without losing the zoom`);
+      ok(await page.evaluate(() => {
+        const { readWorkspaceView, saveWorkspaceView, state, name, key } = streetSettings;
+        const value = name === 'map' ? { viewport: { center: [44.05,5.05], zoom: 12, streets: false }, filters: { type: 'incident' } }
+          : { center: [44.05,5.05], zoom: 12, streets: false };
+        saveWorkspaceView(state, name, value);
+        const current = readWorkspaceView(state, name), persisted = JSON.parse(localStorage.getItem(key));
+        const local = name === 'map' ? current.viewport : current, nextLaunch = name === 'map' ? persisted.viewport : persisted;
+        return local.streets === false && nextLaunch.streets === true && nextLaunch.zoom === 12
+          && JSON.stringify(nextLaunch.center) === '[44.05,5.05]' && (name !== 'map' || persisted.filters.type === 'incident');
+      }), `${workspace}: an explicit offline choice survives current-session navigation but never becomes the next launch's default`);
+      await page.evaluate(() => localStorage.removeItem(streetSettings.key));
+    }
     await mount([]);
     ok(await page.evaluate(() => streetMap.getView()) === null && requested.length === 0, 'A map with nothing to place offers no view to remember and requests no tile');
     // One tile missing: the streets stay, the local land shows through.
