@@ -1,0 +1,68 @@
+name: Verify ticket editing and local dialog refresh protection
+on:
+  push:
+    branches: ['ops/glpi-shared-sync-timing-20261117']
+    paths: ['.github/workflows/verify-reader-protection.yml', '.github/patches/protect-reader.py']
+permissions:
+  contents: write
+jobs:
+  protection:
+    runs-on: windows-2025
+    timeout-minutes: 16
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Apply exact reviewed changes to unchanged candidate source
+        run: |
+          python .github/patches/protect-reader.py
+          if ($LASTEXITCODE -ne 0) { throw 'Reviewed patch refused.' }
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Test real reader and local-library dialogs under production CSP
+        run: |
+          $env:GLPI_TEST_CHROMIUM = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe','C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $env:GLPI_TEST_CHROMIUM) { throw 'Real Windows browser required.' }
+          dotnet run --project tests/WebViewChecks/WebViewChecks.csproj -c Release -p:PlaywrightPlatform=win -- --resolution-only --screenshots artifacts/reader-protection/screenshots 2>&1 | Tee-Object artifacts/reader-protection/resolution.log
+          if ($LASTEXITCODE -ne 0) { throw 'Resolution or editing protection failed.' }
+          dotnet run --project tests/WorkplaceBridgeChecks/WorkplaceBridgeChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/reader-protection/workplace.log
+          if ($LASTEXITCODE -ne 0) { throw 'Real reader regression.' }
+          $driver = Join-Path $PWD 'tests/WorkplaceBridgeChecks/bin/Release/net10.0/.playwright'
+          $node = Join-Path $driver 'node/win32_x64/node.exe'
+          $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
+          $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/reader-protection/journey'
+          & $node --test tests/ErgonomicsChecks/ticket-live-read.test.mjs 2>&1 | Tee-Object artifacts/reader-protection/live-read.log
+          if ($LASTEXITCODE -ne 0) { throw 'Delay/cache/cancellation regression.' }
+          & $node tests/TicketJourneyChecks/run.cjs 2>&1 | Tee-Object artifacts/reader-protection/journey.log
+          if ($LASTEXITCODE -ne 0) { throw 'Map/search/reader regression.' }
+      - name: Store verified source blobs only, without changing production refs
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import hashlib,json,pathlib,subprocess
+          folder=pathlib.Path('artifacts/reader-protection');files=json.loads((folder/'files.json').read_text())
+          for item in files:
+            raw=pathlib.Path(item['path']).read_bytes().replace(b'\r\n',b'\n')
+            sha=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+            assert sha==item['sha'],'Tested source changed'
+            payload=json.dumps({'content':raw.decode('utf-8'),'encoding':'utf-8'}).encode()
+            stored=json.loads(subprocess.check_output(['gh','api','--method','POST','repos/M4D135/GLPI-Pilot/git/blobs','--input','-'],input=payload))
+            assert stored['sha']==sha
+          (folder/'verified-blobs.json').write_text(json.dumps({'base_commit':'2ce599f2e15216fca1ebefcb2b02aa665d5680e1','files':files},indent=2))
+      - name: Retain actual verdicts, exact changed sources and captures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: reader-protection-${{ github.run_id }}
+          path: artifacts/reader-protection/
+          retention-days: 14
