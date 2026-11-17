@@ -374,6 +374,36 @@ Check("Configuration: new dashboards, parameters and local preferences round-tri
     Equal("lieu", imported.Queries.Queries.Last().Parameters[0].Key); Equal("compact", imported.Interface.Density); Equal(90, imported.Automation.IntervalMinutes); Equal(120, imported.History.RetentionDays);
     Assert(!File.ReadAllText(path).Contains("ScheduledExtraction"));
 });
+Check("Configuration: 3.15.1 to 4.0 portable migration accepts known releases and rejects future formats", () =>
+{
+    var current = Settings();
+    var original = JsonSerializer.Serialize(current);
+    var path = FilePath();
+    ConfigurationTransferService.Export(path, current);
+    var envelope = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+    Equal(ConfigurationTransferService.Schema, envelope["Schema"]!.GetValue<string>());
+    Equal(ConfigurationTransferService.ApplicationVersion, envelope["AppVersion"]!.GetValue<string>());
+
+    foreach (var compatible in new[] { "1.5", "2.1", "3.11.0", "3.12.0", "3.15.1", "4.0.0" })
+    {
+        envelope["AppVersion"] = compatible;
+        File.WriteAllText(path, envelope.ToJsonString());
+        var imported = ConfigurationTransferService.Import(path, current);
+        Equal(current.PortalUrl, imported.PortalUrl);
+        Equal(original, JsonSerializer.Serialize(current));
+    }
+    foreach (var unsupported in new[] { "3.15.2", "3.16.0", "4.0.1", "4.1.0", "5.0.0", "garbage" })
+    {
+        envelope["AppVersion"] = unsupported;
+        File.WriteAllText(path, envelope.ToJsonString());
+        Reject<InvalidDataException>(() => ConfigurationTransferService.Import(path, current));
+        Equal(original, JsonSerializer.Serialize(current));
+    }
+    envelope["AppVersion"] = "4.0.0";
+    envelope["SchemaVersion"] = ConfigurationTransferService.SchemaVersion + 1;
+    File.WriteAllText(path, envelope.ToJsonString());
+    Reject<InvalidDataException>(() => ConfigurationTransferService.Import(path, current));
+});
 Check("Configuration: unknown nested v2 fields and invalid unnormalized weather rejected", () =>
 {
     foreach (var json in new[] { "{\"Dashboard\":{\"Weather\":{\"OldWeight\":101}}}", "{\"Dashboard\":{\"Weather\":{\"Token\":\"secret\"}}}",

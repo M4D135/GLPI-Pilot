@@ -13,6 +13,22 @@ public static class ConfigurationTransferService
     public static string ApplicationVersion => AppPaths.ApplicationVersion;
     public const int MaximumFileBytes = 16 * 1024 * 1024;
 
+    // SchemaVersion 1 remained portable across the last supported 3.x release and 4.0.
+    // Compare patch levels too: newer, untested application formats must still be refused.
+    private static bool SupportsPortableAppVersion(string? raw)
+    {
+        if (!Version.TryParse(raw, out var version)) return false;
+        var running = Version.Parse(ApplicationVersion);
+        return version.Major switch
+        {
+            1 => version.Minor is >= 0 and <= 5,
+            2 => version.Minor is >= 0 and <= 1,
+            3 => version.CompareTo(running.Major == 3 ? running : new Version(3, 15, 1)) <= 0,
+            4 => running.Major == 4 && version.CompareTo(running) <= 0,
+            _ => false
+        };
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true, MaxDepth = 24 };
     private static readonly HashSet<string> Shareable = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -126,9 +142,8 @@ public static class ConfigurationTransferService
                 if (Find(root, "Schema") is not { ValueKind: JsonValueKind.String } schema || schema.GetString() != Schema ||
                     Find(root, "SchemaVersion") is not { ValueKind: JsonValueKind.Number } schemaVersion || !schemaVersion.TryGetInt32(out int version) || version != SchemaVersion)
                     throw Invalid("Le format ou la version du schéma de configuration n’est pas pris en charge.");
-                // Schema 1 is shared by every 3.x version up to the running one; later minors and majors stay refused.
                 if (Find(root, "AppVersion") is not { ValueKind: JsonValueKind.String } appVersion ||
-                    !Version.TryParse(appVersion.GetString(), out var app) || !((app.Major == 1 && app.Minor is >= 0 and <= 5) || (app.Major == 2 && app.Minor is >= 0 and <= 1) || (app.Major == 3 && app.Minor >= 0 && app.Minor <= Math.Max(11, Version.Parse(ApplicationVersion).Minor))))
+                    !SupportsPortableAppVersion(appVersion.GetString()))
                     throw Invalid("Cette configuration provient d’une version de l’application non prise en charge.");
                 settings = Find(root, "Settings") ?? throw Invalid("La configuration ne contient aucun réglage.");
                 RequireProperties(settings, Shareable);
