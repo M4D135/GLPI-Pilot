@@ -25,19 +25,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Apply only the reviewed patch to the known source
+      - name: Apply exact reviewed Git bytes independently of checkout line endings
+        shell: python
         run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Path artifacts/ticket-return-final -Force | Out-Null
-          git merge-base --is-ancestor 1a295637c06b30a966631f56056feccf1dfd9a1a HEAD
-          if ($LASTEXITCODE -ne 0) { throw 'Unexpected source ancestry.' }
-          $hash = (git hash-object .github/patches/ticket-return.patch).Trim()
-          if ($hash -ne 'c41d84c961426666e0e46ee87e006e9ba004bddc') { throw 'Reviewed patch hash mismatch.' }
-          git apply --index --whitespace=error .github/patches/ticket-return.patch
-          if ($LASTEXITCODE -ne 0) { throw 'Sources changed; patch refused.' }
-          git diff --cached --check
-          if ($LASTEXITCODE -ne 0) { throw 'Invalid staged patch.' }
-          git diff --cached --stat | Set-Content artifacts/ticket-return-final/changes.log
+          import hashlib,pathlib,subprocess
+          pathlib.Path('artifacts/ticket-return-final').mkdir(parents=True,exist_ok=True)
+          subprocess.run(['git','merge-base','--is-ancestor','1a295637c06b30a966631f56056feccf1dfd9a1a','HEAD'],check=True)
+          patch=subprocess.check_output(['git','show','HEAD:.github/patches/ticket-return.patch'])
+          digest=hashlib.sha1(b'blob '+str(len(patch)).encode()+b'\0'+patch).hexdigest()
+          assert digest=='c41d84c961426666e0e46ee87e006e9ba004bddc','Reviewed patch integrity mismatch'
+          subprocess.run(['git','apply','--cached','--whitespace=error','-'],input=patch,check=True)
+          paths=['.github/workflows/ergonomics-check.yml','build-tools/Invoke-WindowsCi.ps1','tests/TicketJourneyChecks/run.cjs','web/js/pages/records.js']
+          staged=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
+          assert set(staged)==set(paths),'Unexpected staged path'
+          subprocess.run(['git','checkout-index','--force','--',*paths],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          pathlib.Path('artifacts/ticket-return-final/changes.log').write_bytes(subprocess.check_output(['git','diff','--cached','--stat']))
+      - name: Select real Windows browser
+        run: |
           $browser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe','C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $browser) { throw 'Real Chromium browser required.' }
           "GLPI_TEST_CHROMIUM=$browser" >> $env:GITHUB_ENV
