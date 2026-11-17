@@ -2,7 +2,7 @@ name: Verify ticket editing and local dialog refresh protection
 on:
   push:
     branches: ['ops/glpi-shared-sync-timing-20261117']
-    paths: ['.github/workflows/verify-reader-protection.yml', '.github/patches/protect-reader.py']
+    paths: ['.github/workflows/verify-reader-protection.yml', '.github/patches/protect-reader.py', '.github/patches/stabilize-read-status.py']
 permissions:
   contents: write
 jobs:
@@ -24,6 +24,8 @@ jobs:
         run: |
           python .github/patches/protect-reader.py
           if ($LASTEXITCODE -ne 0) { throw 'Reviewed patch refused.' }
+          python .github/patches/stabilize-read-status.py
+          if ($LASTEXITCODE -ne 0) { throw 'Reviewed stable-layout patch refused.' }
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: '10.0.402'
