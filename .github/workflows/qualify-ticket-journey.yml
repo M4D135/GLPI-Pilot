@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Qualifier le candidat nettoyé, cache et lecture différée distincts
+      - name: Qualifier le candidat avec navigation avant rafraîchissement vérifiée sous Windows
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
