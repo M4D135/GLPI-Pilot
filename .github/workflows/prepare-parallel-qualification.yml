@@ -1,0 +1,29 @@
+name: Prepare independent full WebView qualification
+on:
+  push:
+    branches: ['ops/glpi-shared-sync-timing-20261117']
+    paths: ['.github/workflows/prepare-parallel-qualification.yml']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Store the exact reviewed workflow without changing any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/patches/parallel-qualification.py
+      - name: Verify that original stages and checks remain mandatory
+        run: |
+          python3 -m unittest discover -s tests/ReleasePublicationChecks -v
+      - name: Preserve prepared workflow evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: parallel-qualification-${{ github.run_id }}
+          path: artifacts/parallel-qualification/
+          retention-days: 14
