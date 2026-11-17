@@ -1,0 +1,61 @@
+name: Measure shared-business Windows execution
+on:
+  push:
+    branches: ['ops/glpi-shared-sync-timing-20261117']
+    paths: ['.github/workflows/measure-shared-business.yml']
+permissions:
+  contents: read
+jobs:
+  measure:
+    runs-on: windows-2025
+    timeout-minutes: 16
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '2ce599f2e15216fca1ebefcb2b02aa665d5680e1'
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Measure unmodified suite with and without build, preserving every verdict
+        shell: python
+        run: |
+          import json,pathlib,queue,subprocess,threading,time
+          output=pathlib.Path('artifacts/shared-timing');output.mkdir(parents=True,exist_ok=True)
+          actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert actual=='2ce599f2e15216fca1ebefcb2b02aa665d5680e1'
+          result=[]
+          for number in (1,2):
+            args=['dotnet','run','--project','tests/SharedBusinessChecks/SharedBusinessChecks.csproj','-c','Release','-p:PlaywrightPlatform=win']
+            if number==2:args.append('--no-build')
+            start=time.monotonic();lines=[];messages=queue.Queue()
+            proc=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace',bufsize=1)
+            def collect():
+              for line in proc.stdout:messages.put((time.monotonic()-start,line.rstrip()))
+              messages.put(None)
+            reader=threading.Thread(target=collect,daemon=True);reader.start();timed_out=False
+            while True:
+              if time.monotonic()-start>360:
+                timed_out=True;subprocess.run(['taskkill','/PID',str(proc.pid),'/T','/F'],check=False);break
+              try:item=messages.get(timeout=1)
+              except queue.Empty:continue
+              if item is None:break
+              elapsed,text=item;lines.append({'seconds':round(elapsed,3),'text':text});print(f'{number} [{elapsed:.3f}s] {text}',flush=True)
+            code=proc.wait(timeout=20);elapsed=round(time.monotonic()-start,3)
+            record={'run':number,'commit':actual,'arguments':args,'exit_code':code,'timed_out':timed_out,'seconds':elapsed,'lines':lines}
+            result.append(record);(output/'timings.json').write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')
+            (output/f'suite-{number}.log').write_text('\n'.join(f"{row['seconds']:.3f}s {row['text']}" for row in lines)+'\n',encoding='utf-8')
+            assert not timed_out and code==0 and any(row['text']=='23/23 shared business checks passed.' for row in lines),'Unmodified suite failed or blocked'
+            print(f'COMPLETE {number}: {elapsed}s',flush=True)
+          assert not subprocess.check_output(['git','status','--porcelain'],text=True).strip(),'Tracked source unexpectedly changed'
+      - name: Retain timing evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: shared-business-timing-${{ github.run_id }}
+          path: artifacts/shared-timing/
+          retention-days: 14
