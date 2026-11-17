@@ -266,6 +266,9 @@ void CheckZoomTransfer()
 void CheckEnvelope()
 {
     // Supported application versions share schema 1; future minor/major versions stay refused.
+    var runningVersion = Version.Parse(ConfigurationTransferService.ApplicationVersion);
+    var futureMajor = new Version(runningVersion.Major + 1, 0, 0).ToString();
+    var futureMinor = new Version(runningVersion.Major, runningVersion.Minor + 1, 0).ToString();
     var current = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.0.0\",\"Settings\":{}}"), Sample());
     Equal(Sample().InterfaceZoomPercent, current.InterfaceZoomPercent);
     var version31 = ConfigurationTransferService.Import(Write("{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3.1.0\",\"Settings\":{}}"), Sample());
@@ -280,8 +283,8 @@ void CheckEnvelope()
     {
         "{\"Schema\":\"wrong\",\"SchemaVersion\":1,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
         "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":2,\"AppVersion\":\"1.2.0\",\"Settings\":{}}",
-        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"4.0.0\",\"Settings\":{}}",
-        "{\"Schema\":\"glpi-pilot.configuration\",\"SchemaVersion\":1,\"AppVersion\":\"3." + (Version.Parse(ConfigurationTransferService.ApplicationVersion).Minor + 1) + ".0\",\"Settings\":{}}",
+        JsonSerializer.Serialize(new { Schema = "glpi-pilot.configuration", SchemaVersion = 1, AppVersion = futureMajor, Settings = new { } }),
+        JsonSerializer.Serialize(new { Schema = "glpi-pilot.configuration", SchemaVersion = 1, AppVersion = futureMinor, Settings = new { } }),
         "{\"PortalUrl\":\"https://glpi.test/front/ticket.php\",\"portalurl\":\"https://other.test\"}",
         "{\"Dashboard\":{\"ColumnMappings\":{\"id\":\"ID\",\"ID\":\"Autre\"}}}"
     }) Throws<InvalidDataException>(() => ConfigurationTransferService.Import(Write(json), Sample()));

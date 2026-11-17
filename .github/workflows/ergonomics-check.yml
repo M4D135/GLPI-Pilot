@@ -70,11 +70,16 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "Existing interface checks failed ($edition $suite)." }
             }
           }
+      - name: Rassembler les captures disponibles sans inventer les tests manquants
+        if: always()
+        run: |
+          if (Test-Path artifacts/field-integrated) {
+            New-Item -ItemType Directory -Path artifacts/ergonomics -Force | Out-Null
+            Copy-Item artifacts/field-integrated artifacts/ergonomics/field-integrated -Recurse -Force
+          }
       - name: Conserver les preuves sans publier de pack
         if: always()
         uses: ./.github/actions/retain-evidence
         with:
           name: ergonomics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            artifacts/ergonomics/
-            artifacts/field-integrated/
+          path: artifacts/ergonomics/

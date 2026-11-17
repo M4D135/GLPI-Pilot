@@ -418,7 +418,7 @@ try {
                 @{ Project = 'FieldTourChecks'; Log = 'field-tours.log'; Summary = '7/7 field tour checks passed.' },
                 @{ Project = 'StartupDiagnosticsChecks'; Log = 'startup-diagnostics-checks.log'; Summary = 'Startup diagnostics: 14 passed, 0 failed.' },
                 @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
-                @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^37/37 Foundation checks passed\.\r?$' },
+                @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^38/38 Foundation checks passed\.\r?$' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '67/67 vérifications de configuration réussies.' },
                 @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '156/156' },

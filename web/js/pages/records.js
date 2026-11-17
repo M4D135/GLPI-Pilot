@@ -112,7 +112,18 @@ export async function renderRecordList(ctx,{onOpenTicket,onRows}={}) {
  const key=event=>{if(event.key==='F2'&&lastCell){event.preventDefault();const row=data.rows.find(r=>r.index===lastCell.row);if(row)inspect(row,lastCell.column);}};root.addEventListener('keydown',key);
  const cleanup=()=>{locationTools.dispose();persistGrid();clearTimeout(searchDelay);clearTimeout(columnDelay);readController?.abort();serial++;resize.disconnect();root.removeEventListener('keydown',key);};
  cleanup.identityParams=()=>{persistGrid();return{mine:view.mine,identityView:{search:search.value,transform:structuredClone(view.transform),mode:view.mode,limit:view.limit,basketOnly:view.basketOnly,focusKeys:[...(view.focusKeys||[])],technicianKeys:[...(view.technicianKeys||[])],scrollTop:view.scrollTop||0,scrollLeft:view.scrollLeft||0}};};
- cleanup.reveal=async index=>{const args={...(committedArgs||scopeArgs()),offset:0,limit:1,locateRow:index};const result=await api.call('records.list',args,{signal});if(result.focusPosition!=null&&result.focusPosition>=0){view.offset=Math.floor(result.focusPosition/view.limit)*view.limit;await load();highlight(index);}};
+ // A ticket already on this page needs focus, not a new list. Rebuilding a hidden
+ // grid loses its DOM identity, scroll position and the original opener element.
+ cleanup.reveal=async index=>{
+  if(data.rows.some(row=>row.index===index)){highlight(index);return;}
+  const args={...(committedArgs||scopeArgs()),offset:0,limit:1,locateRow:index};
+  const result=await api.call('records.list',args,{signal});
+  if(result.focusPosition!=null&&result.focusPosition>=0){
+   const offset=Math.floor(result.focusPosition/view.limit)*view.limit;
+   if(offset!==view.offset){view.offset=offset;await load();}
+   highlight(index);
+  }
+ };
  cleanup.ticketAt=async position=>{if(position<0||position>=data.total)return null;const offset=Math.floor(position/view.limit)*view.limit;if(offset!==view.offset){view.offset=offset;await load();}const row=data.rows[position-offset];return row?{rowIndex:row.index,revision}:null;};
  if(activeRow!=null)await cleanup.reveal(activeRow);
  cleanup.currentRow=()=>activeRow;cleanup.remember=persistGrid;cleanup.suspend=()=>{persistGrid();suspended=true;};cleanup.highlight=highlight;

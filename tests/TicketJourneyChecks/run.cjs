@@ -42,6 +42,36 @@ const {chromium}=require(process.env.GLPI_TEST_PLAYWRIGHT_MODULE||require.resolv
   ok(await page.getByRole('columnheader',{name:'Description de la demande',exact:true}).count()===1,'The source description is displayed in the canonical search');
   ok(await page.locator('.tickets-description-preview').first().innerText()==='L’accès au dossier de l’équipe est indisponible depuis ce matin. Vérifier les droits du groupe et la connexion du poste.','Description comes from the selected row, without invented text');
   await page.screenshot({path:path.join(output,'02-recherche-filtree-sombre.png'),animations:'disabled'});
+  // Keep the existing list and bulk selection while browsing within the same page.
+  await page.getByLabel('Sélectionner la ligne 9',{exact:true}).check();
+  await page.locator('.tickets-list-pane').evaluate(list=>{
+   list.addEventListener('click',event=>{
+    const opener=event.target.closest('button[data-focus-key="open-8"]');if(!opener)return;
+    const grid=list.querySelector('.table-scroll');
+    window.journeyListBefore={grid,opener,search:list.querySelector('[aria-label="Recherche du relevé"]'),
+     top:grid.scrollTop,left:grid.scrollLeft,pagination:list.querySelector('.pagination').textContent,
+     selected:[...list.querySelectorAll('tbody input:checked')].map(node=>node.getAttribute('aria-label'))};
+   },{capture:true});
+  });
+  await page.locator('[data-focus-key="open-8"]').click();await page.locator('.work-ticket-heading h2').waitFor();
+  await page.getByRole('button',{name:'Ticket suivant',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#2410'));
+  await page.getByRole('button',{name:'Ticket précédent',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#2409'));
+  await page.locator('.tickets-personal textarea').first().fill('Brouillon personnel non enregistré');
+  await page.getByRole('button',{name:'Retour à la liste',exact:true}).click();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  ok(await page.evaluate(()=>{
+   const list=document.querySelector('.tickets-list-pane'),before=journeyListBefore,grid=list.querySelector('.table-scroll');
+   return grid===before.grid&&list.querySelector('[aria-label="Recherche du relevé"]')===before.search
+    &&list.querySelector('.pagination').textContent===before.pagination&&Math.abs(grid.scrollTop-before.top)<=1
+    &&Math.abs(grid.scrollLeft-before.left)<=1&&document.activeElement===before.opener
+    &&JSON.stringify([...list.querySelectorAll('tbody input:checked')].map(node=>node.getAttribute('aria-label')))===JSON.stringify(before.selected);
+  }),'Same-page ticket browsing preserves the exact grid DOM, selection, both scroll axes and opener focus');
+  await page.getByRole('button',{name:'Reprendre la fiche',exact:true}).click();
+  ok(await page.locator('.tickets-personal textarea').first().inputValue()==='Brouillon personnel non enregistré','Returning to the reader retains unfinished personal notes');
+  await page.getByRole('button',{name:'Retour à la liste',exact:true}).click();
+  await page.getByRole('button',{name:'Retirer les sélections',exact:true}).click();
   await page.locator('[data-focus-key="open-99"]').click();await page.locator('.work-ticket-heading h2').waitFor();
   ok((await page.locator('.work-ticket-heading h2').innerText()).startsWith('#2500'),'The requested ticket is opened from the filtered search');
   const callsBefore=await page.evaluate(()=>journeyCalls.filter(call=>call.op==='maps.workspace.get').length);
