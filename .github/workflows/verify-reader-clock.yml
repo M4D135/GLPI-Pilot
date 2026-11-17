@@ -37,7 +37,7 @@ jobs:
             s=s.replace(old,new)
           once('bool cacheDetail = true, bool cachedSource = false)', 'bool cacheDetail = true, bool holdLiveReadTimer = false)')
           once('''            // Cached-source navigation must remain network-free regardless of runner speed.
-                      if (cachedSource) await Page.EvaluateAsync("()=>workState.session.cachedSource=true");'''.replace('\n                      ', '\n            '), '''            // These two navigation tests inspect the interval before the 500 ms read.
+                      if (cachedSource) await Page.EvaluateAsync("()=>workState.session.cachedSource=true");''', '''            // These two navigation tests inspect the interval before the 500 ms read.
                       // Hold only that timer, never change source provenance or production code.
                       // The live-read suite separately advances the delay, cache and cancellation.
                       if (holdLiveReadTimer) await Page.EvaluateAsync("""
@@ -50,7 +50,7 @@ jobs:
                             };
                             window.clearTimeout=id=>{if(!workLiveReadTimers.delete(id))cancel(id);};
                           }
-                          """);'''.replace('\n          ', '\n'))
+                          """);''')
           assert s.count('cacheDetail: false, cachedSource: true')==2
           s=s.replace('cacheDetail: false, cachedSource: true','cacheDetail: false, holdLiveReadTimer: true')
           once('WebView cached Tickets retains its queried list and unfinished personal work','WebView Tickets retains its queried list and unfinished work before delayed refresh')
