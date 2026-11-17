@@ -1,0 +1,61 @@
+name: Configuration portability and source evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/glpi-ticket-500ms-kitt-20261116', 'release/**']
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'web/**'
+      - '.github/workflows/configuration-portability-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Archive exact public source evidence
+        shell: bash
+        run: |
+          mkdir -p artifacts/portability
+          git archive --format=zip HEAD -o artifacts/portability/source-evidence.zip
+          git rev-parse HEAD > artifacts/portability/commit.txt
+      - name: Retain source evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: portability-source-${{ github.run_id }}
+          path: |
+            artifacts/portability/source-evidence.zip
+            artifacts/portability/commit.txt
+          retention-days: 3
+          if-no-files-found: error
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+      - name: Configuration round-trip and refusal of unsupported versions
+        shell: bash
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+          DOTNET_NOLOGO: '1'
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/FoundationChecks/FoundationChecks.csproj -c Release -p:PlaywrightPlatform=linux 2>&1 | tee artifacts/portability/foundation.log
+      - name: Retain actual test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: portability-checks-${{ github.run_id }}
+          path: artifacts/portability/*.log
+          retention-days: 7
+          if-no-files-found: warn
