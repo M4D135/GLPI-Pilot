@@ -108,7 +108,9 @@ internal static partial class Program
         var cacheBefore = SavedFiles(Path.Combine(_root, "LastSource")); var historyBefore = SavedFiles(Path.Combine(_root, "History"));
         await OpenReference();
         Require(await Reference().GetByRole(AriaRole.Button, new() { Name = "Enregistrer le référentiel de travail…", Exact = true }).IsVisibleAsync()
-            && (await Reference().InnerTextAsync()).Contains("Vous pouvez enregistrer le référentiel de travail", StringComparison.Ordinal)
+            && await Reference().GetByRole(AriaRole.Button, new() { Name = "Enregistrer le référentiel de travail…", Exact = true }).IsEnabledAsync()
+            && (await Reference().InnerTextAsync()).Contains("Enregistrement du référentiel de travail disponible.", StringComparison.Ordinal)
+            && !(await Reference().InnerTextAsync()).Contains("Vous pouvez", StringComparison.Ordinal)
             && (await Reference().InnerTextAsync()).Contains("L’enregistrement du référentiel ne recalcule pas ce relevé.", StringComparison.Ordinal)
             && (await Reference().InnerTextAsync()).Contains("Une correction manuelle reste possible pour les tickets du cache.", StringComparison.Ordinal)
             && !(await Reference().InnerTextAsync()).Contains("Fermez-la avant", StringComparison.Ordinal),

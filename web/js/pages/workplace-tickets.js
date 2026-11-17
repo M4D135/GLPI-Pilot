@@ -21,22 +21,24 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   let state = await call(ctx, 'workplace.get'), current = null, source = null, opened = null;
   let personal = null, tool = null, disposed = false, version = 0, mapController = null;
   let readStatus = 'idle', readError = null, readIndicator = null;
+  let readSuspended = false, openingTicket = false, localLookup = null;
   const reader = el('section', { class: 'work-ticket-reader tickets-working-panel', 'aria-label': 'Lecture du ticket' });
   ctx.root.replaceChildren(reader);
   function paintReadStatus() {
     if (!readIndicator) return;
-    // Offline/cached sources and a paused specialist editor must not leave an
-    // empty scanner row between the ticket heading and its action buttons.
-    readIndicator.hidden = simulation || !current?.canRead || ['idle', 'paused', 'unavailable'].includes(readStatus);
+    // No scanner for unavailable sources. Keep its geometry while editing so
+    // a focus change cannot move the button between pointer-down and click.
+    readIndicator.hidden = simulation || ctx.state.session?.cachedSource || !current?.canRead || ['idle', 'unavailable'].includes(readStatus);
     readIndicator.dataset.state = readStatus;
     const labels = {
+      paused: 'Actualisation en pause',
       waiting: 'Copie disponible · vérification dans un instant',
       reading: 'Lecture fraîche de la fiche GLPI…',
       fresh: 'Fiche à jour · ' + date(current?.readAt),
       error: 'Lecture indisponible · dernière observation conservée'
     };
     readIndicator.querySelector('.ticket-live-read-text').textContent = labels[readStatus] || '';
-    readIndicator.title = readStatus === 'error' ? readError?.message || 'Relance manuelle disponible.' : '';
+    readIndicator.title = readStatus === 'error' ? readError?.message || 'Relance manuelle disponible.' : labels[readStatus] || '';
   }
   function showReadStatus(status, error = null) {
     readStatus = status; readError = error;
@@ -58,7 +60,51 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     }
   });
   ctx.signal?.addEventListener('abort', () => liveRead.cancel(), { once: true });
-  const eligibleForLiveRead = ticket => !simulation && !!ticket?.canRead && !ctx.state.session?.cachedSource && !tool;
+  const eligibleForLiveRead = ticket => !simulation && !!ticket?.canRead && !ctx.state.session?.cachedSource;
+  const editing = () => reader.contains(document.activeElement)
+    && document.activeElement?.matches('input,textarea,select,[contenteditable=true]');
+  function resumeLiveRead() {
+    if (disposed || readSuspended || openingTicket || !current || ctx.signal?.aborted) return;
+    if (tool || localLookup || editing() || document.querySelector('dialog[open]')) {
+      liveRead.cancel(); showReadStatus('paused'); return;
+    }
+    liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
+  }
+  function pauseForEditor(event) {
+    if (disposed || !current) return;
+    if (event.type === 'pilot:editor' ? event.detail : editing()) {
+      liveRead.cancel(); showReadStatus('paused');
+    } else queueMicrotask(resumeLiveRead);
+  }
+  // A read must not replace an editor, an open dialog, or the button waiting for
+  // a local cache lookup. Pauses end only in the still-visible, current reader.
+  window.addEventListener('pilot:editor', pauseForEditor, { signal: ctx.signal });
+  reader.addEventListener('focusin', pauseForEditor);
+  reader.addEventListener('focusout', () => queueMicrotask(resumeLiveRead));
+  function cancelLocalLookup() {
+    const previous = localLookup; localLookup = null;
+    if (previous) { previous.controller.abort(); previous.modal?.close(); }
+  }
+  async function showPrecedents(event) {
+    if (localLookup || !current || disposed) return;
+    const ticket = current, generation = version;
+    const lookup = { controller: new AbortController(), modal: null };
+    localLookup = lookup; liveRead.cancel(); showReadStatus('paused');
+    const release = () => {
+      if (localLookup !== lookup) return;
+      localLookup = null;
+      if (version === generation && current?.personal.key === ticket.personal.key) resumeLiveRead();
+    };
+    try {
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, lookup.controller.signal]) : lookup.controller.signal;
+      const modal = await openLibraryPrecedents({ api: ctx.api, signal, state: ctx.state, navigate: ctx.navigate },
+        { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget });
+      lookup.modal = modal;
+      if (signal.aborted || disposed || version !== generation || localLookup !== lookup) { modal?.close(); release(); return; }
+      if (modal?.element.isConnected) modal.element.addEventListener('pilot:closed', release, { once: true });
+      else release();
+    } catch (error) { release(); throw error; }
+  }
   const savePosition = async (ticket, patch = {}) => {
     ticket.personal.readingPosition = { ...ticket.personal.readingPosition, pageIndex: 0, ...patch };
     await ctx.api.call('workplace.ticket.position', { ticketKey: ticket.personal.key, position: ticket.personal.readingPosition });
@@ -73,18 +119,19 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     source = data.rows[0] ? { headers: data.headers, row: data.rows[0], revision: data.revision } : null;
   }
   async function open(args) {
-    const generation = ++version;
-    liveRead.cancel(); showReadStatus('idle');
+    const generation = ++version; openingTicket = true; readSuspended = false;
+    cancelLocalLookup(); liveRead.cancel(); showReadStatus('idle');
     await closeTool(); await personal?.dispose(); personal = null;
     const ticket = await call(ctx, 'workplace.ticket.open', args), next = await call(ctx, 'workplace.get');
     if (disposed || ctx.signal?.aborted || generation !== version) return;
     current = ticket; state = next; opened = args; await loadSource(args);
     await draw();
     if (disposed || generation !== version) return;
+    openingTicket = false;
     onTicketOpened?.(current, args);
     if (args.section === 'personal') focusPersonal();
     else if (args.section && args.section !== 'reader') await openTool(args.section);
-    if (!disposed && generation === version) liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
+    if (!disposed && generation === version) resumeLiveRead();
   }
   function focusPersonal() {
     const control = reader.querySelector('.tickets-personal textarea');
@@ -167,7 +214,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
             ...(focused.focusedPlaceKey?{mapPlaceKey:focused.focusedPlaceKey}:{}),mapFocusRow:focused.focusedRow });
         }), { icon: 'map' }),
         button('Ajouter à la tournée', () => ctx.navigate('interventions', searchToolParams(ctx.state, { tab: 'tours', rows: [opened?.rowIndex], revision: ctx.state.session?.revision })), { icon: 'route' })),
-      button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({ api: ctx.api, signal: ctx.signal, state: ctx.state, navigate: ctx.navigate }, { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget })), { icon: 'search' }),
+      button('Chercher des solutions similaires', run(ctx, showPrecedents), { icon: 'search' }),
       mapDisclosure,
       planningHost, el('div',{class:'tickets-detail-content'},journalHost,personal.element));
     paintReadStatus();
@@ -228,7 +275,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
           if (tool === record) {
             tool = null;
             if (!disposed && version === openingVersion && current?.personal.key === ticket.personal.key && !ctx.signal?.aborted)
-              liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
+              resumeLiveRead();
           }
         })
           .catch(error => { content.inert = false; this.closing = null; throw error; });
@@ -266,13 +313,11 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   if (ctx.params?.rowIndex != null) await open({ ...ctx.params, rowIndex: Number(ctx.params.rowIndex), revision: Number(ctx.params.revision) });
   else if (ctx.params?.ticketKey) await open({ ...ctx.params });
-  const cleanup = async () => { liveRead.dispose(); await closeTool(); await personal?.dispose(); personal = null; mapController?.dispose?.(); mapController = null; disposed = true; version++; };
+  const cleanup = async () => { readSuspended = true; cancelLocalLookup(); liveRead.dispose(); window.removeEventListener('pilot:editor', pauseForEditor); await closeTool(); await personal?.dispose(); personal = null; mapController?.dispose?.(); mapController = null; disposed = true; version++; };
   cleanup.openTicket = open;
   cleanup.ticketKey = () => current?.personal.key;
-  cleanup.pauseLiveRead = () => { liveRead.cancel(); showReadStatus('paused'); };
-  cleanup.resumeLiveRead = () => {
-    if (current && !disposed) liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
-  };
+  cleanup.pauseLiveRead = () => { readSuspended = true; cancelLocalLookup(); liveRead.cancel(); showReadStatus('paused'); };
+  cleanup.resumeLiveRead = () => { readSuspended = false; resumeLiveRead(); };
   return cleanup;
 }
 

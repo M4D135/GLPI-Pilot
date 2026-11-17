@@ -26,7 +26,9 @@ La publication est conditionnée à une qualification Windows et PostgreSQL comp
 
 - Observation locale affichée immédiatement, puis lecture GLPI après 500 ms si le ticket reste ouvert. Aucune lecture au simple survol.
 - Annulation lors d'un changement de ticket ; cache récent de 30 secondes et actualisation manuelle immédiate.
-- Indicateur K2000 discret uniquement pendant la lecture effective. Lecture suspendue pendant les outils de rédaction.
+- Indicateur K2000 discret uniquement pendant la lecture effective. Lecture suspendue pendant la saisie, les outils et les dialogues, y compris pendant la recherche locale de solutions avant l'ouverture du panneau.
+- Une réponse tardive annulée ne remplace pas l'éditeur. La reprise reste limitée à la fiche active ; le retour à la liste annule les lectures et les ouvertures de panneau en attente.
+- L'indicateur d'actualisation conserve sa hauteur pendant les changements de focus afin de ne pas déplacer les boutons au clic.
 - Navigation précédent/suivant au sein des résultats filtrés, y compris entre les pages, avec boutons latéraux de souris et Alt+flèches. Les saisies et boîtes de dialogue sont protégées.
 - Retour à la liste conservant la recherche, les filtres, le tri, la sélection, le défilement et le focus. Le ticket courant reste repérable.
 - Carte secondaire repliée par défaut et chargée à la demande, sans recalcul caché à chaque fiche.

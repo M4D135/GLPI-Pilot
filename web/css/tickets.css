@@ -170,3 +170,6 @@
  .tickets-list-footer .pagination { flex-wrap: wrap; }
 }
 :root[data-motion="reduce"] .tickets-compact-grid .data-table tr { transition: none; }
+
+/* A live-read status never shifts controls while focus moves during a click. */
+.ticket-live-read-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

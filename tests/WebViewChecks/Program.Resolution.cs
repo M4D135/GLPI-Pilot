@@ -188,6 +188,23 @@ internal static partial class Program
             catch (InvalidDataException) { invalidReferenceRefused = true; }
             Require(invalidReferenceRefused, "The work-ticket cache lookup refuses an ID paired with another ticket URL before any resolution search.");
 
+            // This cache-only workflow inspects the reader before automatic refresh.
+            // Held timers still exercise production scheduling and cancellation.
+            await page.EvaluateAsync("""
+                () => {
+                  const schedule=window.setTimeout.bind(window),cancel=window.clearTimeout.bind(window);
+                  let serial=0;window.resolutionReadTimers=new Map();
+                  window.setTimeout=(callback,delay,...args)=>{
+                    if(delay!==500)return schedule(callback,delay,...args);
+                    const id=--serial;resolutionReadTimers.set(id,()=>callback(...args));return id;
+                  };
+                  window.clearTimeout=id=>{if(!resolutionReadTimers.delete(id))cancel(id);};
+                  window.flushResolutionReads=()=>{
+                    const callbacks=[...resolutionReadTimers.values()];resolutionReadTimers.clear();
+                    callbacks.forEach(callback=>callback());
+                  };
+                }
+                """);
             await page.SetViewportSizeAsync(1440, 1000);
             await ClickNavigationAsync(page, "records");
             await WaitForNavigationTargetAsync(page, "records");
@@ -196,24 +213,35 @@ internal static partial class Program
             await page.Locator(".work-ticket-heading h2").Filter(new() { HasText = "#" + source.Ticket.Id }).WaitForAsync();
             var notes = page.GetByRole(AriaRole.Textbox, new() { Name = "Notes personnelles", Exact = true });
             const string unsavedNote = "Observation encore en cours de saisie, sans enregistrement.";
+            await page.WaitForFunctionAsync("()=>resolutionReadTimers.size===1");
             await notes.FillAsync(unsavedNote); var noteNode = await notes.ElementHandleAsync();
+            Require(await page.EvaluateAsync<int>("()=>resolutionReadTimers.size") == 0,
+                "Typing in the personal editor cancels the delayed refresh without replacing the editor.");
             var workButton = page.GetByRole(AriaRole.Button, new() { Name = "Chercher des solutions similaires", Exact = true });
             Interlocked.Exchange(ref holdReference, 1);
             await workButton.ClickAsync(); await referenceStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             // A native disabled button can lose focus while its asynchronous
             // cache lookup is pending. Reproduce that outcome on every platform.
             await workButton.EvaluateAsync("node => node.blur()");
+            await page.EvaluateAsync("()=>flushResolutionReads()");
+            Require(await page.EvaluateAsync<int>("()=>resolutionReadTimers.size") == 0
+                && !calls.Contains("workplace.ticket.read"),
+                "The asynchronous local lookup keeps refresh paused even before its dialog exists and after the button loses focus.");
             Require(await workButton.IsDisabledAsync() && await Modal().CountAsync() == 0
                 && !await workButton.EvaluateAsync<bool>("node => node===document.activeElement")
                 && await notes.InputValueAsync() == unsavedNote,
                 "A delayed cache lookup keeps the unsaved editor intact after its disabled initiating button loses focus.");
             referenceRelease.TrySetResult(); await Settled();
+            Require(await page.EvaluateAsync<int>("()=>resolutionReadTimers.size") == 0,
+                "An open solutions dialog cannot be replaced by delayed ticket refresh.");
             Require(await cards.CountAsync() == 2 && await cards.First.GetAttributeAsync("data-resolution-key") == saved.Document.Key
                 && !(await Modal().InnerTextAsync()).Contains("étranger")
                 && await page.EvaluateAsync<bool>("document.querySelector('.page-content')?.dataset.page==='records'")
                 && await notes.InputValueAsync() == unsavedNote && app.Revision == revision && ReferenceEquals(app.Result, receipt),
                 "The real work-ticket button opens the same confirmed predecessors through its validated ID and installation while the work screen, note draft and report remain intact despite a foreign ID collision.");
             await Capture("resolution-work-ticket"); await Button("Fermer").ClickAsync();
+            await page.WaitForFunctionAsync("()=>resolutionReadTimers.size===1");
+            Require(true, "Closing the solutions dialog schedules one fresh delay for the unchanged visible ticket.");
             var closeChecks = new Dictionary<string, bool>
             {
                 ["same editor"] = await page.EvaluateAsync<bool>("node => node.isConnected", noteNode),
@@ -236,6 +264,9 @@ internal static partial class Program
             await workButton.ClickAsync();
             var missingDialog = page.GetByRole(AriaRole.Dialog, new() { Name = "Ticket absent de la bibliothèque", Exact = true });
             await missingDialog.WaitForAsync();
+            await page.EvaluateAsync("()=>flushResolutionReads()");
+            Require(await page.EvaluateAsync<int>("()=>resolutionReadTimers.size") == 0,
+                "The absent-cache dialog protects its note editor and cancels delayed refresh too.");
             var missingChecks = new Dictionary<string, bool>
             {
                 ["own installation"] = (await missingDialog.InnerTextAsync()).Contains("https://library-fixture.invalid"),
@@ -254,6 +285,12 @@ internal static partial class Program
                 && await page.EvaluateAsync<bool>("node => node.isConnected", missingNoteNode)
                 && await notes.InputValueAsync() == "Saisie de la fiche absente conservée.",
                 "Escape from the absent-cache message restores its exact initiating button and preserves the same unsaved editor after focus loss.");
+            await page.WaitForFunctionAsync("()=>resolutionReadTimers.size===1");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Retour à la liste", Exact = true }).ClickAsync();
+            await page.EvaluateAsync("()=>flushResolutionReads()");
+            Require(await page.EvaluateAsync<int>("()=>resolutionReadTimers.size") == 0
+                && !calls.Contains("workplace.ticket.read") && await Modal().CountAsync() == 0,
+                "Returning to the list cancels the resumed delay and cannot reopen a library dialog.");
         }
         finally { slowRelease.TrySetResult(); referenceRelease.TrySetResult(); }
     }
