@@ -60,7 +60,7 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
       window.renderTerrain = async (id, params = {}) => {
         controller?.abort(); cleanup?.(); controller = new AbortController(); document.querySelector('#root').replaceChildren();
         const current = await window.terrainCall('terrain.reference.state', {});
-        const state = { session: { loaded: true, revision: current.revision }, settings: {}, version: 'fixture' };
+        const state = { session: { loaded: true, revision: current.revision }, settings: {}, version: 'fixture' }; window.currentTerrainState=state;
         const ctx = { root: document.querySelector('#root'), state, signal: controller.signal, params,
           api: { call: (op, args = {}) => window.terrainCall(op, args), on: () => () => {} },
           navigate: (next, args) => { window.lastNavigation = { id: next, params: args }; }, notify: () => {}, refresh: () => window.renderTerrain(id, params) };
@@ -162,22 +162,20 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     ok(attached.id === independent.id && attached.parent === 'Alpha', 'site editor attaches a commune later while preserving the original site identity');
 
     await render('terrain-map');
-    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.locator('.maps-selection-panel[data-total="3"]').waitFor();
     await page.getByText('Fond détaillé indisponible · le plan local reste affiché', { exact: true }).waitFor();
     ok(await page.locator('.maps-inline-host .maps-marker').count() === 2
-      && await page.locator('.maps-ticket-rows tbody tr').count() === 3,
+      && await page.locator('.maps-ticket-rows, .terrain-map-page table').count() === 0,
       'central Terrain retains every active ticket and uses the local map automatically when its default detailed tiles are unavailable');
     await capture('terrain-central-map');
     ok(!await page.locator('.maps-place[data-located="true"]').first().isVisible(),
-      'central Terrain starts with its optional place list collapsed while markers and all ticket rows remain available');
+      'central Terrain starts with its optional place list collapsed while markers and the canonical search remain available');
     await page.getByRole('button', { name: 'Afficher la liste', exact: true }).click();
     await page.locator('.maps-workspace[data-map-list="true"] .maps-place[data-located="true"]').first().waitFor({ state: 'visible' });
     await page.locator('.maps-place[data-located="true"]').first().click();
-    await page.locator('.maps-ticket-rows[data-total="1"]').waitFor();
-    ok(await page.locator('.maps-popup').count() === 1 && await page.getByRole('button', { name: 'Sélectionner les tickets de ce lieu', exact: true }).isEnabled(),
-      'selecting a real marker synchronizes its popup, ticket list and whole-place selection action');
-    await page.getByRole('button', { name: 'Sélectionner les tickets de ce lieu', exact: true }).click();
-    await page.getByText('1 ticket sélectionné', { exact: true }).waitFor();
+    await page.locator('.maps-selection-panel[data-total="1"]').waitFor();
+    ok(await page.locator('.maps-popup').count() === 1 && await page.getByRole('button', { name: 'Voir les 1 ticket', exact: true }).isEnabled(),
+      'selecting a real marker synchronizes its popup and exact location search without a duplicate ticket table');
     await page.getByRole('button', { name: 'Préparer une tournée', exact: true }).click();
     await lastDialog().getByLabel('Nom de la tournée', { exact: true }).fill('Intervention depuis Terrain');
     await lastDialog().getByRole('button', { name: 'Voir l’aperçu', exact: true }).click();
@@ -199,26 +197,26 @@ function timeout(promise, milliseconds, label) { let timer; return Promise.race(
     await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
     await panel.waitFor({ state: 'hidden' });
     await page.locator('.maps-inline-host .maps-canvas').waitFor();
-    await page.locator('.maps-ticket-rows[data-total="1"]').waitFor();
+    await page.locator('.maps-selection-panel[data-total="1"]').waitFor();
     await page.locator('.terrain-map-page:not([aria-busy="true"])').waitFor();
     ok((await call('terrain.tours.state')).draft.name === 'Intervention renommée' && await page.locator('.maps-inline-host .maps-canvas').count() === 1
-      && await page.getByRole('button', { name: 'Tous les lieux', exact: true }).isEnabled()
-      && await page.locator('.maps-ticket-rows tbody tr').count() === 1,
+      && await page.getByRole('button', { name: 'Effacer les lieux', exact: true }).isEnabled()
+      && await page.getByRole('button', { name: 'Voir les 1 ticket', exact: true }).isEnabled(),
       'closing a planning panel applies its pending header edits and preserves the selected place on the central map');
-    await page.getByRole('button', { name: 'Tous les lieux', exact: true }).click();
-    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
+    await page.getByRole('button', { name: 'Effacer les lieux', exact: true }).click();
+    await page.locator('.maps-selection-panel[data-total="3"]').waitFor();
+    await page.getByText('Gérer les lieux et les tournées', { exact: true }).click();
     await page.getByRole('button', { name: 'Gérer le référentiel', exact: true }).click();
     await panel.locator('.terrain-function-panel[data-terrain-panel="reference"][data-ready="true"]').waitFor();
     ok(await panel.getByRole('button', { name: 'Ajouter une référence', exact: true }).isEnabled(), 'the complete reference editor remains functional inside the new Terrain panel');
     await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
     await panel.waitFor({ state: 'hidden' });
-    await page.locator('.maps-ticket-rows[data-total="3"]').waitFor();
-    await page.locator('.maps-ticket-rows').getByRole('button', { name: 'Ouvrir', exact: true }).first().click();
-    ok(await page.evaluate(() => window.lastNavigation.id === 'tickets' && Number.isInteger(window.lastNavigation.params.rowIndex)
-      && Number.isInteger(window.lastNavigation.params.revision)), 'a map ticket opens the shared ticket reader with its original row and revision');
+    await page.locator('.maps-selection-panel[data-total="3"]').waitFor();
+    await page.getByRole('button', { name: 'Voir les 3 tickets', exact: true }).click();
+    ok(await page.evaluate(async () => { const context=(await import('/web/js/ticket-search-context.js')).ticketSearchContext(window.currentTerrainState); return window.lastNavigation.id==='records' && window.lastNavigation.params.returnToSearch && context.query.indices.length===3 && context.query.revision===window.lastNavigation.params.revision; }), 'the map transfers all three exact source rows and the revision to the existing search');
     await page.evaluate(() => window.renderTerrain('terrain-map', { technicianKeys: ['ALICE'] }));
-    await page.locator('.maps-ticket-rows[data-total="2"]').waitFor();
-    ok((await page.locator('.maps-scope-summary').innerText()).includes('Alice') && await page.locator('.maps-ticket-rows tbody tr').count() === 2,
+    await page.locator('.maps-selection-panel[data-total="2"]').waitFor();
+    ok((await page.locator('.maps-scope-summary').innerText()).includes('Alice') && await page.getByRole('button', { name: 'Voir les 2 tickets', exact: true }).isEnabled(),
       'opening Terrain from another workspace preserves the explicitly supplied technician scope instead of returning to everyone');
     ok(consoleErrors.length === 0, `no unhandled JavaScript errors: ${consoleErrors.join('; ')}`);
     ok(!calls.some(value => ['update.install', 'terrain.tours.route', 'terrain.tours.weather'].includes(value)), 'all UI tests completed offline without provider or installer execution');

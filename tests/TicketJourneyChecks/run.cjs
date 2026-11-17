@@ -1,0 +1,101 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const project=path.resolve(__dirname,'../..');
+const {chromium}=require(process.env.GLPI_TEST_PLAYWRIGHT_MODULE||require.resolve('playwright',{paths:[path.join(project,'tests/DomChecks')]}));
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.GLPI_TEST_CHROMIUM,args:['--no-sandbox','--disable-dev-shm-usage']});
+ const context=await browser.newContext({viewport:{width:1600,height:1100}}),page=await context.newPage();page.setDefaultTimeout(7000);
+ const errors=[],external=[];page.on('pageerror',error=>errors.push(error.message));
+ let checks=0;const ok=(value,label)=>{assert.ok(value,label);console.log('PASS '+(++checks)+' '+label);};
+ const output=process.env.GLPI_TEST_SCREENSHOTS||path.join(project,'artifacts/ticket-journey');fs.mkdirSync(output,{recursive:true});
+ const origin='https://glpi-journey.test';
+ await context.route('**/*',async route=>{
+  const url=new URL(route.request().url());
+  if(url.origin!==origin){external.push(url.origin);return route.abort();}
+  let file=path.resolve(project,url.pathname==='/'?'web/index.html':url.pathname.startsWith('/web/')?'.'+url.pathname:'web'+url.pathname);
+  if(!file.startsWith(path.join(project,'web')+path.sep)||!fs.existsSync(file))return route.fulfill({status:404,body:'Unknown fixture'});
+  let body=fs.readFileSync(file);
+  if(url.pathname==='/')body=body.toString().replaceAll('href="css/','href="/web/css/').replaceAll('href="vendor/','href="/web/vendor/').replace('src="vendor/','src="/web/vendor/').replace('<script type="module" src="js/app.js"></script>','').replace('<div id="app" class="app-loading" role="status">Ouverture de GLPI Pilot…</div>','<main id="root"></main>');
+  return route.fulfill({body,contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':file.endsWith('.png')?'image/png':'application/octet-stream'});
+ });
+ try{
+  if(process.env.GLPI_TEST_OFFLINE_BLOBS==='1')await require('../ErgonomicsChecks/offline.cjs')(page);
+  else{await page.goto(origin);await page.evaluate(()=>window.importProduction=name=>import(name));}
+  await require('./fixture.cjs')(page);
+  await page.locator('body[data-ready=true]').waitFor();
+  // Same local brand asset; offline about:blank cannot resolve relative image URLs.
+  if(process.env.GLPI_TEST_OFFLINE_BLOBS==='1')await page.locator('.brand-symbol').evaluate((node,data)=>node.src=data,'data:image/png;base64,'+fs.readFileSync(path.join(project,'web/brand/glpi-pilot-icon.png')).toString('base64'));
+  await page.evaluate(()=>emitJourney('app.navigate',{page:'interventions',params:{tab:'map',ticketMap:true}}));
+  await page.locator('.terrain-map-page[data-ready=true]').waitFor();
+  const city=label=>page.getByRole('group',{name:'Villes',exact:true}).getByRole('button',{name:label,exact:true});
+  await city('Nordville').click();
+  ok(await page.getByRole('button',{name:'Voir les 70 tickets',exact:true}).count()===1,'A city includes its child site without separate manual selection');
+  await page.getByText('Choisir plusieurs lieux',{exact:true}).click();
+  ok(await page.getByLabel('Inclure Annexe du Parc',{exact:true}).isChecked()&&await page.getByLabel('Inclure Annexe du Parc',{exact:true}).isDisabled(),'A city-included site is visibly selected and cannot be counted twice');
+  await page.getByText('Choisir plusieurs lieux',{exact:true}).click();
+  await city('Rive-Sud').click();
+  ok(await page.locator('.maps-ticket-rows,.maps-ticket-panel').count()===0&&await page.locator('.terrain-map-page table').count()===0,'The map contains no duplicate ticket table');
+  await page.screenshot({path:path.join(output,'01-carte-selection-sombre.png'),animations:'disabled'});
+  await page.getByRole('button',{name:'Voir les 120 tickets',exact:true}).click();
+  await page.getByLabel('Recherche du relevé',{exact:true}).waitFor();
+  ok(await page.locator('.tickets-record-grid tbody tr').count()===100,'The canonical search shows the first page of the 120 selected tickets');
+  ok(await page.getByRole('columnheader',{name:'Description de la demande',exact:true}).count()===1,'The source description is displayed in the canonical search');
+  ok(await page.locator('.tickets-description-preview').first().innerText()==='L’accès au dossier de l’équipe est indisponible depuis ce matin. Vérifier les droits du groupe et la connexion du poste.','Description comes from the selected row, without invented text');
+  await page.screenshot({path:path.join(output,'02-recherche-filtree-sombre.png'),animations:'disabled'});
+  await page.locator('[data-focus-key="open-99"]').click();await page.locator('.work-ticket-heading h2').waitFor();
+  ok((await page.locator('.work-ticket-heading h2').innerText()).startsWith('#2500'),'The requested ticket is opened from the filtered search');
+  const callsBefore=await page.evaluate(()=>journeyCalls.filter(call=>call.op==='maps.workspace.get').length);
+  ok(!await page.locator('.tickets-context-map').getAttribute('open'),'The secondary ticket map starts collapsed');
+  await page.getByRole('button',{name:'Ticket suivant',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#2501'));
+  ok(await page.evaluate(()=>journeyCalls.some(call=>call.op==='records.list'&&call.args.offset===100&&call.args.indices.length===120)),'Next ticket crosses the pagination boundary inside the exact geographic selection');
+  ok(await page.evaluate(()=>journeyCalls.filter(call=>call.op==='maps.workspace.get').length)===callsBefore,'Ticket changes do not fetch a hidden map');
+  const cdp=await context.newCDPSession(page);
+  const sideButton=async button=>{await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:700,y:450,button,clickCount:1});await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:700,y:450,button,clickCount:1});};
+  await sideButton('back');await page.waitForFunction(()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#2500'));
+  await sideButton('forward');await page.waitForFunction(()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#2501'));
+  ok(true,'Real Chromium mouse back/forward events navigate one ticket per gesture');
+  await page.keyboard.press('Alt+ArrowLeft');await page.waitForFunction(()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#2500'));
+  ok(true,'Alt Left uses the same filtered ticket navigation');
+  const notes=page.locator('.tickets-personal textarea').first();await notes.focus();
+  await page.keyboard.press('Alt+ArrowRight');await page.waitForTimeout(80);
+  ok((await page.locator('.work-ticket-heading h2').innerText()).startsWith('#2500'),'Keyboard navigation does not interrupt the note editor');
+  await page.locator('.work-ticket-heading h2').focus();
+  await page.getByRole('button',{name:'Lire la description complète',exact:true}).click();await page.getByRole('dialog').waitFor();
+  await sideButton('forward');await page.waitForTimeout(80);
+  ok((await page.locator('.work-ticket-heading h2').innerText()).startsWith('#2500'),'A modal description protects the reader from mouse-side navigation');
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>document.querySelector('.workspace').scrollTop=0);
+  await page.screenshot({path:path.join(output,'03-fiche-ticket-sombre.png'),animations:'disabled'});
+  await page.getByRole('button',{name:'Voir sur la carte',exact:true}).click();
+  await page.locator('.terrain-map-page[data-ready=true]').waitFor();
+  ok(await page.evaluate(()=>journeyCalls.filter(call=>call.op==='maps.workspace.get').at(-1).args.ticketSearch.indices.length===154),'Ticket-to-map restores the original geographic base, not only the previous filtered rows');
+  await page.getByRole('button',{name:'Voir les 120 tickets',exact:true}).click();
+  await page.locator('.tickets-record-grid tbody tr').first().waitFor();
+  ok(await page.locator('tr[aria-current=true]').count()===1&&await page.locator('tr[aria-current=true]').getAttribute('data-focus-key')==='row-99','Ticket-to-map-to-search keeps the exact original ticket highlighted');
+  await page.locator('[data-focus-key="open-99"]').click();
+  await page.locator('.work-ticket-heading h2').waitFor();
+  await page.getByRole('button',{name:'Retour à la liste',exact:true}).click();
+  ok(await page.locator('tr[aria-current=true]').count()===1,'Returning to search visibly highlights the current ticket');
+  await page.getByRole('button',{name:'Carte',exact:true}).click();await page.locator('.terrain-map-page[data-ready=true]').waitFor();
+  ok(await city('Nordville').getAttribute('aria-pressed')==='true'&&await city('Rive-Sud').getAttribute('aria-pressed')==='true','Returning to the map restores both selected cities');
+  await city('Val-des-Rives').click();
+  ok(await page.getByRole('button',{name:'Voir les 150 tickets',exact:true}).count()===1,'The previous geographic filter does not prevent adding a new city');
+  await page.getByRole('button',{name:'Effacer les lieux',exact:true}).click();
+  ok(await page.getByRole('button',{name:'Voir les 154 tickets',exact:true}).count()===1,'Clearing places includes tickets without coordinates');
+  await page.getByText('Choisir plusieurs lieux',{exact:true}).click();
+  await page.getByLabel('Inclure Lieu non reconnu',{exact:true}).check();
+  await page.getByRole('button',{name:'Voir les 4 tickets',exact:true}).click();await page.locator('.tickets-description-preview').first().waitFor();
+  ok(await page.locator('.tickets-record-grid tbody tr').count()===4,'Unlocated tickets remain accessible through the canonical search');
+  await page.getByRole('button',{name:'Retirer le filtre des lieux',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.tickets-record-grid tbody tr').length===100);
+  ok(await page.evaluate(()=>journeyCalls.filter(call=>call.op==='records.list').at(-1).args.indices.length===154),'Removing the geographic restriction restores the whole original scope');
+  await page.getByRole('button',{name:'Thème clair',exact:true}).click();
+  await page.evaluate(()=>document.querySelector('.workspace').scrollTop=0);
+  await page.screenshot({path:path.join(output,'04-recherche-claire.png'),animations:'disabled'});
+  for(const width of [1280,1093,390]){await page.setViewportSize({width,height:850});ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`Canonical search fits a ${width}px window`);}
+  ok(errors.length===0,'Production modules produce no unhandled JavaScript errors: '+errors.join(';'));
+  ok(await page.evaluate(()=>fixtureUnexpected.length===0),'All fixture requests are explicit, with no hidden GLPI access');
+  console.log(`${checks}/${checks} ticket journey checks passed. ${process.env.GLPI_TEST_OFFLINE_BLOBS==='1'?'Offline Blob renderer; CSP/native host not exercised.':'Production CSP; synthetic bridge replies.'}`);
+ }catch(error){console.error(error);console.error('Page errors',errors);console.error(await page.evaluate(()=>({unexpected:window.fixtureUnexpected,text:document.body.innerText.slice(-7000)})));await page.screenshot({path:path.join(output,'failure.png')});process.exitCode=1;}
+ finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

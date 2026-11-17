@@ -329,5 +329,9 @@ export function mountMap(ctx, model, host, options = {}) {
   } catch (error) { cleanup(); throw error; }
   return { element: body, dispose: cleanup, fit, // A map with nothing to place has no view worth remembering.
     getView: () => map && !disposed && canLocate() ? {center:[map.getCenter().lat,map.getCenter().lng],zoom:map.getZoom(),streets:streetsWanted} : null,
+    setSelection: ids => {
+      const chosen=new Set(ids);
+      for(const entry of entries){const active=chosen.has(entry.place.id);rows.get(entry.key)?.setAttribute('aria-pressed',String(active));markers.get(entry.key)?.getElement()?.classList.toggle('maps-marker-selected',active);}
+    },
     selectPlace: id => { const entry = entries.find(entry => entry.place.id === id); if (entry) select(entry); } };
 }

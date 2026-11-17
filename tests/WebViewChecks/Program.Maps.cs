@@ -15,6 +15,7 @@ internal static partial class Program
         expanded.Cities.Sites.Add(new SiteDefinition { Name = "Site sans coordonnées", CityId = expanded.Cities.Cities.Single().Id, Address = "Adresse sans géocodage" });
         await Call(app, "settings.save", new { revision = app.Revision, settings = expanded });
         await navigate("home"); await navigate("terrain-map");
+        await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Gérer le référentiel", Exact = true }).ClickAsync();
         var panel = page.Locator("dialog.terrain-workspace-panel");
         await panel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();
@@ -106,6 +107,7 @@ internal static partial class Program
         site.Latitude = 44.1; site.Longitude = 5.1;
         await Call(app, "settings.save", new { revision = app.Revision, settings });
         await navigate("terrain-map");
+        await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Gérer le référentiel", Exact = true }).ClickAsync();
         var panel = page.Locator("dialog.terrain-workspace-panel");
         await panel.Locator(".terrain-function-panel[data-ready=true]").WaitForAsync();

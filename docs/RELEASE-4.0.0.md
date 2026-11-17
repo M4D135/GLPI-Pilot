@@ -25,3 +25,19 @@ Le numéro 4.0.0 désigne la nouvelle interface intégrée au code. Il ne consti
 - Windows Standard et Admin, démarrage natif, SQLite, PostgreSQL 17, mise à jour et retour arrière sont vérifiés par les workflows de qualification. Leur réussite pour le commit final et l'exécution du parcours métier réel sont **obligatoires avant diffusion**.
 
 Le seul pack diffusé officiellement reste **PROD-LIGHT** (EXE Standard + Admin + `wad/`, runtime WebView2 Evergreen ou Socle). Les artefacts de qualification GitHub ne constituent pas une release et expirent.
+
+## Parcours carte, recherche et fiche
+
+- La carte conserve les repères et la sélection de lieux, sans second tableau de tickets.
+- « Voir les tickets » transmet les lignes exactes à la recherche existante. Une ville comprend ses sites, sans doublon et sans limitation liée au panier de tournée.
+- Description source visible dans la recherche et dans la fiche. Les descriptions absentes ne sont pas inventées ; le texte complet reste consultable.
+- Lieux sélectionnés et ticket courant retrouvés au retour. La navigation précédent/suivant traverse les pages du même résultat filtré.
+- Boutons latéraux de souris et Alt+flèches utilisent le même parcours, sauf dans une saisie ou une fenêtre de dialogue.
+- Les corrections de site individuelles et groupées sont conservées dans la recherche unique, avec l'éditeur de confirmation existant.
+- La petite carte de la fiche reste repliée et n'est chargée qu'à son ouverture.
+
+### Contrôles du parcours
+
+`tests/TicketJourneyChecks/run.cjs` pilote les vrais modules et le shell de l'application avec des données fictives. Il produit les captures carte/recherche/fiche. Sans `GLPI_TEST_OFFLINE_BLOBS`, il charge la politique CSP de production ; le mode Blob hors réseau ne qualifie ni cette politique ni l'hôte Windows.
+
+`AnalyticsBridgeChecks --map-journey-only` vérifie les commandes C# réelles, la sélection géographique, les lieux inconnus et les recherches dépassant 2 000 tickets. Les suites Terrain et corrections de localisation utilisent le même parcours centralisé. La qualification complète du commit final reste requise avant publication d'un pack. Aucun contrôle synthétique n'atteste le SSO privé de l'entreprise.

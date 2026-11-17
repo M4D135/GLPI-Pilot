@@ -17,23 +17,24 @@ internal static partial class Program
         settings.Interface.OnboardingCompleted = true;
         var source = Path.Combine(_root, "localisation-source.csv");
         await File.WriteAllTextAsync(source, "ID;Titre;Statut;Type;Attribué à - Technicien;Attribué à - Groupe de techniciens\n"
-            + string.Join("\n", Enumerable.Range(1, 46).Select(i => $"{7000+i};ATX et ANNEXE - Ticket fictif {i};Nouveau;Incident;Technicien fictif;Support"))
+            + string.Join("\n", Enumerable.Range(1, 96).Select(i => $"{7000+i};ATX et ANNEXE - Ticket fictif {i};Nouveau;Incident;Technicien fictif;Support"))
             + "\n8001;ATX et ANNEXE - Demande hors filtre;Nouveau;Demande;Technicien fictif;Support\n8002;ATX et ANNEXE - Ticket clos;Clos;Incident;Technicien fictif;Support\n");
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true, ExecutablePath = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM"), Args = ["--no-sandbox", "--disable-dev-shm-usage"] });
         await using (var ui = await LocationCorrectionUi.CreateAsync(browser, settings, source))
         {
             await ui.Navigate();
-            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Modifier la recherche", Exact = true }).ClickAsync(); await ui.Idle();
+
             await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Outils du tableau", Exact = true }).ClickAsync();
             await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Vue des colonnes", Exact = true }).ClickAsync();
             await ui.Page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).FillAsync("Incident");
             await ui.Page.GetByLabel("Filtrer Statut", new() { Exact = true }).FillAsync("Nouveau");
             await ui.Page.Locator(".ticket-tools-nav [data-calendar-tab=map]").ClickAsync(); await ui.Idle();
-            await ui.Page.GetByLabel("Rechercher dans les tickets du périmètre").FillAsync("ATX");
-            await ui.Page.Locator(".maps-ticket-panel").GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync(); await ui.Idle();
-            Require(await ui.Page.Locator(".maps-ticket-rows").GetAttributeAsync("data-total") == "46"
-                && await ui.Page.Locator("[data-correct-row]").CountAsync() == 40, "Every displayed ambiguous row exposes its direct site correction while the 46-ticket filtered scope remains paginated.");
+            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Voir les 96 tickets", Exact = true }).ClickAsync(); await ui.Idle();
+            await ui.Page.GetByLabel("Recherche du relevé", new() { Exact = true }).FillAsync("ATX");
+            await ui.Page.Locator(".tickets-list-footer select").SelectOptionAsync("50"); await ui.Idle();
+            Require(await ui.Page.Locator(".tickets-record-grid").GetAttributeAsync("data-total") == "96"
+                && await ui.Page.Locator("[data-correct-row]").CountAsync() == 50, "Every displayed ambiguous row exposes its direct site correction while the 96-ticket filtered scope remains paginated.");
             await ui.Page.Locator("[data-correct-row='0']").ClickAsync(); await ui.Editor.WaitForAsync();
             await ui.FindSite("ATX", "Atelier Cobalt");
             Require((await ui.Editor.Locator(".maps-correction-picked").InnerTextAsync()).Contains("Commune fictive Cobalt", StringComparison.Ordinal)
@@ -43,29 +44,28 @@ internal static partial class Program
             await Call(ui.App, "app.appearance", new { theme = "light" }); await ui.Flush();
             await ui.Editor.GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
             Require(!ui.Operations.Any(op => op == "terrain.correction.apply"), "Cancelling the integrated site editor performs no correction.");
-            await ui.Page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 7001", Exact = true }).CheckAsync(); await ui.Idle();
-            await ui.Page.Locator(".maps-ticket-rows").GetByRole(AriaRole.Button, new() { Name = "Suivant", Exact = true }).ClickAsync(); await ui.Idle();
-            await ui.Page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 7046", Exact = true }).CheckAsync(); await ui.Idle();
+            await ui.Page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner la ligne 1", Exact = true }).CheckAsync(); await ui.Idle();
+            await ui.Page.Locator(".tickets-list-footer").GetByRole(AriaRole.Button, new() { Name = "Suivant", Exact = true }).ClickAsync(); await ui.Idle();
+            await ui.Page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner la ligne 96", Exact = true }).CheckAsync(); await ui.Idle();
             await ui.Page.Locator("[data-correct-selection]").ClickAsync(); await ui.Editor.WaitForAsync();
             await ui.Editor.Locator(".maps-correction-tickets summary").ClickAsync();
             Require(await ui.Editor.GetAttributeAsync("data-correction-count") == "2"
                 && (await ui.Editor.Locator(".maps-correction-tickets").InnerTextAsync()).Contains("#7001", StringComparison.Ordinal)
-                && (await ui.Editor.Locator(".maps-correction-tickets").InnerTextAsync()).Contains("#7046", StringComparison.Ordinal), "A correction prepared from checked tickets includes both pages and displays the exact two identities before any write.");
+                && (await ui.Editor.Locator(".maps-correction-tickets").InnerTextAsync()).Contains("#7096", StringComparison.Ordinal), "A correction prepared from checked tickets includes both pages and displays the exact two identities before any write.");
             await ui.FindSite("ATX", "Atelier Cobalt"); await ui.Save("Appliquer aux 2 tickets");
-            Require(await ui.Page.Locator(".maps-ticket-rows").GetAttributeAsync("data-total") == "46"
-                && await ui.Page.GetByLabel("Rechercher dans les tickets du périmètre").InputValueAsync() == "ATX"
-                && (await ui.Page.Locator(".maps-selection-count").InnerTextAsync()).StartsWith("2 ", StringComparison.Ordinal)
-                && (await ui.Page.Locator("[data-correct-row='45']").Locator("..").InnerTextAsync()).Contains("Correction manuelle", StringComparison.Ordinal), "The real C# batch correction immediately refreshes the list, retaining the ticket type, search, page and two-ticket selection.");
+            Require(await ui.Page.Locator(".tickets-record-grid").GetAttributeAsync("data-total") == "96"
+                && await ui.Page.GetByLabel("Recherche du relevé", new() { Exact = true }).InputValueAsync() == "ATX"
+                && await ui.Page.Locator("[data-selected-count=\"2\"]").CountAsync() == 1
+                && (await ui.Page.Locator("[data-correct-row='95']").Locator("..").InnerTextAsync()).Contains("Correction manuelle", StringComparison.Ordinal), "The real C# batch correction immediately refreshes the list, retaining the ticket type, search, page and two-ticket selection.");
             var map = await Call(ui.App, "maps.workspace.get", new { type = "incident" });
             Require(map.GetProperty("locations").EnumerateArray().Any(location => location.GetProperty("count").GetInt32() == 2
                 && location.GetProperty("place").GetProperty("label").GetString()!.Contains("Atelier Cobalt", StringComparison.Ordinal)), "The actual map groups exactly the two corrected tickets under Atelier Cobalt while the other ambiguous tickets remain separate.");
-            await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Modifier la recherche", Exact = true }).ClickAsync(); await ui.Idle();
+
             await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Outils du tableau", Exact = true }).ClickAsync();
             await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Vue des colonnes", Exact = true }).ClickAsync();
             Require(await ui.Page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).InputValueAsync() == "Incident"
                 && await ui.Page.GetByLabel("Filtrer Statut", new() { Exact = true }).InputValueAsync() == "Nouveau", "Returning to search after a site correction preserves both central filters at the new source revision.");
-            await ui.Page.Locator(".ticket-tools-nav [data-calendar-tab=map]").ClickAsync(); await ui.Idle();
-            await ui.Page.Locator("[data-correct-row='45']").ClickAsync(); await ui.FindSite("ANNEXE", "Annexe fictive");
+            await ui.Page.Locator("[data-correct-row='95']").ClickAsync(); await ui.FindSite("ANNEXE", "Annexe fictive");
             var prepared = await Call(ui.App, "terrain.correction.prepare", new { revision = ui.App.Revision, rows = new[] { 0 } });
             await Call(ui.App, "terrain.correction.apply", new { token = prepared.GetProperty("token").GetString(), siteId = site.Id, reason = "Concurrent explicit correction", remove = false });
             await ui.Editor.GetByRole(AriaRole.Button, new() { Name = "Enregistrer la correction", Exact = true }).ClickAsync();
@@ -164,7 +164,7 @@ internal static partial class Program
             var current = await Call(App, "app.bootstrap");
             await Page.EvaluateAsync("async json=>{const state=JSON.parse(json),{readWorkspaceView,saveWorkspaceView}=await import('/js/work-context.js');const view=readWorkspaceView(state,'map');saveWorkspaceView(state,'map',{...view,viewport:{...view.viewport,streets:false}});}", current.GetRawText());
         }
-        public async Task Navigate() { await UseLocalMap(); _bridge.Publish("app.navigate", new { page = "terrain-map" }); await Flush(); await WaitForNavigationTargetAsync(Page, "terrain-map"); await Page.Locator(".terrain-map-page[data-ready=true]").WaitForAsync(); await Idle(); }
+        public async Task Navigate() { await UseLocalMap(); _bridge.Publish("app.navigate", new { page = "records" }); await Flush(); await WaitForNavigationTargetAsync(Page, "records"); await Page.Locator(".tickets-record-grid tbody tr").First.WaitForAsync(); await Idle(); }
         public async Task FindSite(string search, string name)
         {
             await Editor.WaitForAsync(); await Editor.GetByLabel("Rechercher un site", new() { Exact = true }).FillAsync(search);

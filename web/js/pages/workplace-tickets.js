@@ -99,7 +99,13 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       const index = source.headers.findIndex(header => names.some(name => normalize(header) === normalize(name)));
       if (index >= 0) body.append(el('div', {}, el('span', { text: source.headers[index] }), el('strong', { text: source.row.cells[index] || 'Non renseigné' })));
     }
+    const descriptionHeader=ctx.state.settings.dashboard?.columnMappings?.description;
+    const mappedDescription=descriptionHeader?source.headers.indexOf(descriptionHeader):-1;
+    const description=mappedDescription>=0?mappedDescription:source.headers.findIndex(header=>['description','contenu','description de la demande'].includes(normalize(header)));
     const frozen = source;
+    if(description>=0)body.append(el('section',{class:'tickets-request-description'},el('h3',{text:'Description de la demande'}),
+      el('p',{text:source.row.cells[description]||'Non renseignée dans le relevé.'}),
+      button('Lire la description complète',run(ctx,async()=>{const cell=await call(ctx,'records.cell',{revision:frozen.revision,row:frozen.row.index,column:description});dialog(cell.header,pre(cell.raw));}),{icon:'search'})));
     body.append(button('Toutes les données du relevé', () => {
       const content = dataTable(frozen.headers.map((name, index) => ({ name, index, value: frozen.row.cells[index] || '—' })), [
         { key: 'name', label: 'Champ' }, { label: 'Valeur source', render: row => el('div', {}, pre(row.value), button('Lire la valeur complète', run(ctx, async () => {
@@ -134,6 +140,8 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     const refresh = run(ctx, () => liveRead.refresh(ticket.personal.key));
     const facts = sourceFacts(ticket), journalHost = el('div'), planningHost=el('section',{class:'tickets-plan-links',hidden:true,'aria-label':'Interventions liées au ticket'});
     const mapHost = el('div', { class: 'tickets-map-host' });
+    const mapDisclosure=el('details',{class:'tickets-context-map'},el('summary',{text:'Aperçu de la localisation'}),mapHost);
+    let mapLoading=false;
     readIndicator = el('div', { class: 'ticket-live-read', role: 'status', 'aria-live': 'polite', dataset: { state: readStatus } },
       el('span', { class: 'ticket-live-read-track', 'aria-hidden': 'true' }, el('span', { class: 'ticket-live-read-sweep' })),
       el('span', { class: 'ticket-live-read-text' }));
@@ -151,29 +159,31 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
         button('Brouillon de suivi', () => openTool('draft'), { icon: 'log', attributes: { 'aria-haspopup': 'dialog' } }), button('Actions assistées', () => openTool('actions'), { icon: 'check', primary: true, attributes: { 'aria-haspopup': 'dialog' } }),
         button('Autres outils', moreTools, { icon: 'settings' }),
         button('Voir sur la carte', run(ctx, async () => {
-          const ticketSearch = searchForTools(ctx.state);
+          const params=searchToolParams(ctx.state,{tab:'map',ticketMap:true});
+          const ticketSearch=params.ticketSearch;if(ticketSearch)delete ticketSearch.selectedRows;
           const model = await ctx.api.call('maps.workspace.get', ticketSearch ? { ticketSearch } : {});
-          const rows = await ctx.api.call('maps.workspace.rows', { token: model.token, limit: 2000 });
-          const item = (rows.items || []).find(value => value.ticket?.rowIndex === opened?.rowIndex);
-          await ctx.navigate('terrain-map', searchToolParams(ctx.state, item?.ticket?.placeKey ? { placeKey: item.ticket.placeKey } : {}));
+          const focused = await ctx.api.call('maps.workspace.search', { token: model.token, ...(opened?.rowIndex!=null?{rowIndex:opened.rowIndex}:{}) });
+          await ctx.navigate('interventions', { ...params,ticketSearch,
+            ...(focused.focusedPlaceKey?{mapPlaceKey:focused.focusedPlaceKey}:{}),mapFocusRow:focused.focusedRow });
         }), { icon: 'map' }),
         button('Ajouter à la tournée', () => ctx.navigate('interventions', searchToolParams(ctx.state, { tab: 'tours', rows: [opened?.rowIndex], revision: ctx.state.session?.revision })), { icon: 'route' })),
       button('Chercher des solutions similaires', run(ctx, event => openLibraryPrecedents({ api: ctx.api, signal: ctx.signal, state: ctx.state, navigate: ctx.navigate }, { id: ticket.personal.id, url: ticket.personal.url }, { returnFocus: event.currentTarget })), { icon: 'search' }),
-      card('Carte du périmètre', mapHost, el('p', { class: 'help', text: 'Tickets du même périmètre et repères du lieu de ce ticket.' })),
+      mapDisclosure,
       planningHost, el('div',{class:'tickets-detail-content'},journalHost,personal.element));
     paintReadStatus();
     mapController?.dispose?.(); mapController = null;
     const mapGeneration = version;
-    (async () => {
+    mapDisclosure.addEventListener('toggle',async()=>{
+      if(!mapDisclosure.open||mapLoading||mapController)return;
+      mapLoading=true;
       try {
-        const ticketSearch = searchForTools(ctx.state);
-        const model = await ctx.api.call('maps.workspace.get', ticketSearch ? { ticketSearch } : {});
-        if (disposed || version !== mapGeneration || current?.personal.key !== ticket.personal.key) return;
-        mapController = mountMap(ctx, model, mapHost, {});
-      } catch (error) {
-        if (!disposed && version === mapGeneration) mapHost.replaceChildren(empty('Carte indisponible', error.message));
-      }
-    })();
+        const ticketSearch=searchForTools(ctx.state);if(ticketSearch)delete ticketSearch.selectedRows;
+        const model=await ctx.api.call('maps.workspace.get',ticketSearch?{ticketSearch}:{});
+        if(disposed||version!==mapGeneration||current?.personal.key!==ticket.personal.key)return;
+        mapHost.replaceChildren();mapController=mountMap(ctx,model,mapHost,{});
+      } catch(error){if(!disposed&&version===mapGeneration)mapHost.replaceChildren(empty('Carte indisponible',error.message));}
+      finally{mapLoading=false;}
+    });
     if(ctx.state.capabilities?.includes('calendar.forTicket'))void call(ctx,'calendar.forTicket',{ticketKey:ticket.personal.key}).then(planning=>{
       if(disposed||generation!==version||current?.personal.key!==ticket.personal.key)return;
       const rows=[...(planning.upcoming||[]),...(planning.past||[])];

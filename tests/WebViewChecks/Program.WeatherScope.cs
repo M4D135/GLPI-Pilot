@@ -164,7 +164,7 @@ internal static partial class Program
         }
         async Task MapStock(int count)
         {
-            await WaitForPageAsync(page, "count=>document.querySelector('.maps-ticket-rows')?.dataset.total===String(count)&&document.querySelector('.maps-workload-total strong')?.textContent.trim()===String(count)", count);
+            await WaitForPageAsync(page, "count=>document.querySelector('.maps-selection-panel')?.dataset.total===String(count)&&document.querySelector('.maps-workload-total strong')?.textContent.trim()===String(count)", count);
             await Settled();
         }
         async Task<int[]> MapIds()

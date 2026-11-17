@@ -4,9 +4,8 @@ import { mountMap } from './maps.js';
 import { navigationVisible } from '../navigation.js';
 import { teamScopeCatalog, teamScopeSelection } from '../team-scope.js';
 import {workspaceContextKey,readWorkspaceView,saveWorkspaceView,currentScope,rememberScope} from '../work-context.js';
-import { editLocationCorrection } from './terrain-correction.js';
 import { createReadyAction } from '../terrain-activity.js';
-import { ticketSearchContext, publishTicketSearch } from '../ticket-search-context.js';
+import { publishMapTicketSearch } from '../ticket-search-context.js';
 
 const selections=new WeakMap();
 
@@ -16,7 +15,7 @@ const statusChoices = [
 ];
 
 export async function renderTicketMap(ctx) {
-  const p = page(ctx, 'Carte des interventions', 'Localisez les tickets et préparez les visites du périmètre.');
+  const p = page(ctx, 'Carte des tickets', 'Choisissez vos lieux, puis retrouvez leurs tickets dans la recherche.');
   p.root.classList.add('terrain-map-page');
   const simulationText = p.root.querySelector('[data-simulation] p');
   if (simulationText) simulationText.textContent = 'Tickets et tournées restent dans la simulation. Les rues OpenStreetMap utilisent Internet ; un fond local reste disponible hors connexion.';
@@ -34,12 +33,14 @@ export async function renderTicketMap(ctx) {
   const selectionKey=workspaceContextKey(ctx.state);
   const remembered=selectionMemory.get(selectionKey);
   let selected = new Set(remembered?.revision===ctx.state.session.revision?remembered.rows:[]), placeKey = ctx.params?.placeKey || ctx.params?.mapPlaceKey || previous.placeKey || '', offset = previous.offset || 0, generation = 0, viewport=previous.viewport;
+  let chosenPlaces = new Set(ctx.params?.mapPlaceKeys || (remembered?.revision===ctx.state.session.revision?remembered.places||[]:[]));
+  if(ctx.params?.placeKey||ctx.params?.mapPlaceKey)chosenPlaces.add(ctx.params.placeKey||ctx.params.mapPlaceKey);
   let activePanel = null;
   function panelButton(label, name, options = {}) {
     const control = button(label, p.act(() => openPanel(name)), options);
     control.dataset.openPanel = name; return control;
   }
-  const actions = toolbar(
+  const management = toolbar(
     panelButton('Explorer les sites', 'sites', { icon: 'map' }),
     panelButton('Tournées prévues', 'tours', { icon: 'calendar' }),
     panelButton('Continuer le planning', 'planning', { icon: 'route' }),
@@ -50,92 +51,79 @@ export async function renderTicketMap(ctx) {
         navigationVisible('populations', ctx.state.settings?.interface) ? panelButton('Effectifs des sites · facultatif', 'populations') : null,
         panelButton('Panier et ordre des communes', 'projection'),
         panelButton('Services de route et de météo', 'services'))));
-  actions.classList.add('maps-workspace-actions');
+  const actions=el('details',{class:'maps-workspace-actions'},el('summary',{text:'Gérer les lieux et les tournées'}),management);
   const controls = el('div', { class: 'maps-scope-toolbar toolbar',hidden:!!linkedSearch });
   const scopeSummary = el('p', { class: 'maps-scope-summary', role: 'status', 'aria-live': 'polite' });
   const totals = el('div', { class: 'maps-workload-totals' });
   const warnings = el('div', { class: 'maps-workload-warnings' });
   const mapHost = el('div', { class: 'maps-inline-host' });
-  const rowsHost = el('div', { class: 'maps-ticket-rows' });
-  const locationTitle = el('h2', { text: 'Tickets du périmètre' });
-  const search = input(ctx.params?.mapSearchText||'', { type: 'search', placeholder: 'Titre ou identifiant', maxLength: 300, 'aria-label': 'Rechercher dans les tickets du périmètre' });
+  const locationTitle = el('h2', { text: 'Choisir les lieux' });
+  const cityChoices=el('div',{class:'maps-city-choices',role:'group','aria-label':'Villes'});
+  const locationChips=el('div',{class:'maps-selection-chips'});
   const selectionSummary = el('span', { class: 'maps-selection-count', role: 'status', 'aria-live': 'polite' });
-  const correctSelected = button('Corriger le site des tickets sélectionnés', p.act(() => correctRows([...selected])), { icon: 'map', disabled: true });
-  correctSelected.dataset.correctSelection = 'true';
-  const prepare = button('Préparer une tournée', () => prepareTour(), { icon: 'route', primary: true, disabled: true });
-  const plan=button('Planifier une intervention',()=>ctx.navigate('interventions',{plan:true,indices:[...selected],revision:model.revision,date:filters.visitDate}),{icon:'calendar',disabled:true});
-  const allPlaces = button('Tous les lieux', p.act(async () => { placeKey = ''; offset = 0; paintLocation(); await loadRows(); }), { icon: 'map' });
-  const selectLocation = button('Sélectionner les tickets de ce lieu', p.act(() => changeSelection({ placeKeys: [placeKey] })), { disabled: true });
-  const listPanel = card('',
-    el('div', { class: 'maps-ticket-heading' }, locationTitle, allPlaces),
-    toolbar(search, button('Rechercher', p.act(async () => { offset = 0; await loadRows(); }), { icon: 'search' }), selectLocation),
-    toolbar(selectionSummary, plan, prepare, correctSelected,
-      button('Sélectionner tout le périmètre', p.act(() => changeSelection({ all: true }))),
-      button('Vider la sélection', p.act(() => changeSelection({ clear: true })))),
-    el('p', { class: 'help', text: 'Sélectionnez des tickets sur plusieurs pages ou un lieu entier. Une tournée accepte jusqu’à 2 000 tickets ; aucune sélection n’est tronquée.' }), rowsHost);
-  listPanel.classList.add('maps-ticket-panel');
-  p.body.append(actions, controls, scopeSummary, totals, warnings, mapHost, listPanel);
-  search.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void p.run(async () => { offset = 0; await loadRows(); }); } });
+  const viewTickets=button('Voir les tickets',p.act(openSearch),{icon:'search',primary:true});
+  const allPlaces=button('Effacer les lieux',()=>{chosenPlaces.clear();placeKey='';paintLocation();},{icon:'close'});
+  const prepare=button('Préparer une tournée',p.act(async()=>{
+    const scope=await p.call('maps.workspace.search',tokenArgs({placeKeys:[...chosenPlaces]}));
+    if(scope.total>(model.selectionLimit||2000))throw new Error('La recherche conserve tous les tickets. Pour une tournée, réduisez la sélection à '+formatNumber(model.selectionLimit||2000)+' tickets au maximum.');
+    await p.call('maps.workspace.select',tokenArgs({clear:true}));
+    const result=await p.call('maps.workspace.select',tokenArgs(chosenPlaces.size?{placeKeys:[...expandedPlaces()]}:{all:true}));
+    selected=new Set(result.rows);prepareTour();
+  }),{icon:'route'});
+  const locationPicker=el('div',{class:'maps-location-options'});
+  const placeSearch=input('',{type:'search',placeholder:'Rechercher un lieu…','aria-label':'Rechercher un lieu',maxLength:200});
+  const picker=el('details',{class:'maps-location-picker'},el('summary',{text:'Choisir plusieurs lieux'}),placeSearch,locationPicker);
+  placeSearch.addEventListener('input',paintPicker);
+  const listPanel=card('',el('div',{class:'maps-ticket-heading'},locationTitle,selectionSummary),
+    cityChoices,locationChips,toolbar(viewTickets,allPlaces,prepare),picker);
+  listPanel.classList.add('maps-selection-panel');
+  p.body.append(controls, scopeSummary, totals, listPanel, mapHost, warnings, actions);
+
+  async function openSearch(){
+    const result=await p.call('maps.workspace.search',tokenArgs({placeKeys:[...chosenPlaces]}));
+    if(ctx.signal.aborted)return;
+    publishMapTicketSearch(ctx.state,result,linkedSearch||{},ctx.params?.mapFocusRow);
+    await ctx.navigate('records',{returnToSearch:true,revision:result.revision});
+  }
+  function paintPicker(){
+    if(!model)return;
+    const fold=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr');
+    const term=fold(placeSearch.value);
+    locationPicker.replaceChildren(...model.locations.filter(location=>fold(location.place.label).includes(term)).map(location=>{
+      const inherited=!chosenPlaces.has(location.key)&&expandedPlaces().has(location.key);
+      const check=input('',{type:'checkbox',checked:chosenPlaces.has(location.key)||inherited,disabled:inherited,'aria-label':`Inclure ${location.place.label}`,title:inherited?'Inclus par la ville sélectionnée':''});
+      check.addEventListener('change',()=>{check.checked?chosenPlaces.add(location.key):chosenPlaces.delete(location.key);paintLocation();});
+      return el('label',{class:'maps-location-choice'},check,el('span',{text:location.place.label}),badge(formatNumber(location.count)));
+    }));
+  }
 
   function tokenArgs(extra = {}) { return { token: model.token, ...extra }; }
   function unit(count = model.totals.tickets) { return model.grain === 'tickets' ? count === 1 ? 'ticket' : 'tickets' : count === 1 ? 'ligne' : 'lignes'; }
-  function paintSelection() {
-    selectionSummary.textContent = `${formatNumber(selected.size)} ${unit(selected.size)} sélectionné${selected.size === 1 ? '' : 's'}`;
-    prepare.disabled = selected.size === 0;
-    plan.disabled = selected.size === 0;
-    correctSelected.disabled = selected.size === 0 || model.correctionAllowed === false;
-    correctSelected.textContent = selected.size ? `Corriger le site (${formatNumber(selected.size)})` : 'Corriger le site des tickets sélectionnés';
-    correctSelected.title = model.correctionReadOnlyReason || 'Attribuer un site aux tickets cochés, sur toutes les pages de la liste.';
+  function expandedPlaces(){
+    const keys=new Set();
+    for(const key of chosenPlaces){const group=model.cityGroups?.find(city=>city.key===key);for(const placeKey of group?.placeKeys||[key])keys.add(placeKey);}
+    return keys;
   }
+  function locationChoices(){return[...(model.cityGroups||[]),...model.locations.filter(location=>!model.cityGroups?.some(city=>city.key===location.key)).map(location=>({...location,label:location.place.label}))];}
+  function togglePlace(key){chosenPlaces.has(key)?chosenPlaces.delete(key):chosenPlaces.add(key);placeKey=key;paintLocation();}
+  function paintSelection() { paintLocation(); }
   function paintLocation() {
-    const location = model.locations.find(item => item.key === placeKey);
-    locationTitle.textContent = location ? `${location.place.label} · ${formatNumber(location.count)} ${unit(location.count)}` : 'Tickets du périmètre';
-    allPlaces.disabled = !placeKey; selectLocation.disabled = !placeKey;
-  }
-  async function changeSelection(extra) {
-    try {
-      const result = await p.call('maps.workspace.select', tokenArgs(extra));
-      selected = new Set(result.rows); paintSelection(); await loadRows();
-    } catch (error) {
-      // A rejected oversized selection must also restore the checkbox that
-      // initiated it; the server keeps the preceding selection unchanged.
-      try { if (!ctx.signal.aborted) await loadRows(); } catch { /* Keep the original failure. */ }
-      throw error;
-    }
+    if(!model)return;
+    const locations=locationChoices().filter(item=>chosenPlaces.has(item.key)),expanded=expandedPlaces();
+    const count=locations.length?model.locations.filter(item=>expanded.has(item.key)).reduce((sum,item)=>sum+item.count,0):model.totals.tickets;
+    selectionSummary.textContent=`${formatNumber(count)} ${unit(count)} · ${locations.length?`${locations.length} lieu${locations.length>1?'x':''}`:'tout le périmètre'}`;
+    locationTitle.textContent=locations.length?'Votre sélection géographique':'Tous les lieux du périmètre';
+    viewTickets.querySelector('span').textContent=`Voir les ${formatNumber(count)} ${unit(count)}`;
+    viewTickets.disabled=count===0;allPlaces.disabled=locations.length===0;prepare.disabled=count===0;
+    locationChips.replaceChildren(...locations.filter(location=>!model.cityGroups?.some(city=>city.key===location.key)).map(location=>button(location.label,()=>{chosenPlaces.delete(location.key);paintLocation();},{icon:'close',title:`Retirer ${location.label}`,attributes:{class:'button maps-location-chip'}})));
+    cityChoices.replaceChildren(...(model.cityGroups||[]).map(city=>button(city.label,()=>togglePlace(city.key),{attributes:{'aria-label':city.label,'aria-pressed':String(chosenPlaces.has(city.key)),class:'button maps-city-choice'}})));
+    map?.setSelection?.([...expanded]);paintPicker();
+    listPanel.dataset.total=String(count);
   }
   async function choosePlace(place, visit) {
-    if (model.locations.some(location => location.key === place.id)) { placeKey = place.id; offset = 0; paintLocation(); await loadRows(); }
-    else if (visit) p.message(`Visite PRÉVUE le ${visit.date} · ${visit.technician}. Aucun ticket de ce lieu dans le périmètre affiché.`);
-  }
-  async function loadRows() {
-    const sequence = ++generation;
-    const data = await p.call('maps.workspace.rows', tokenArgs({ placeKey, search: search.value, offset, limit: 40 }));
-    if (ctx.signal.aborted || sequence !== generation) return;
-    if (data.total > 0 && data.offset >= data.total) { offset = Math.floor((data.total - 1) / data.limit) * data.limit; await loadRows(); return; }
-    if (!data.total) offset = 0;
-    rowsHost.replaceChildren(table(data.items, [
-      { key: 'selected', label: 'Choix', width: 58, render: row => {
-        const control = input('', { type: 'checkbox', checked: row.selected, 'aria-label': `Sélectionner le ticket ${row.ticket.id || row.ticket.rowIndex + 1}` });
-        control.addEventListener('change', () => { void p.run(() => changeSelection({ rows: [row.ticket.rowIndex], selected: control.checked })); }); return control;
-      } },
-      { key: 'id', label: 'ID', width: 100, render: row => row.ticket.id || 'Non renseigné' },
-      { key: 'title', label: 'Ticket', width: 360, render: row => el('div', { class: 'maps-ticket-title' },
-        el('strong', { text: row.ticket.title || 'Titre non renseigné' }),
-        el('small', { text: `${row.ticket.type || 'Type non renseigné'} · ${row.ticket.status || 'Statut non reconnu'}` })) },
-      { key: 'place', label: 'Localisation', width: 240, render: row => el('div', { class: 'maps-ticket-location' },
-        el('span', { text: row.ticket.placeLabel }), el('small', { text: row.ticket.locationKind === 'city' ? row.ticket.locationReview ? 'Commune connue · plusieurs sites possibles' : 'Commune connue · site à préciser'
-          : row.ticket.locationKind === 'site' ? row.ticket.located ? 'Site' : 'Site · coordonnées à compléter' : 'À vérifier' }),
-        row.ticket.isOverride ? badge('Correction manuelle', 'info') : null,
-        button(row.ticket.isOverride ? 'Modifier la correction' : 'Corriger le site', p.act(() => correctRows([row.ticket.rowIndex])),
-          { disabled: model.correctionAllowed === false, title: model.correctionReadOnlyReason || 'Choisir le site de ce ticket', attributes: { dataset: { correctRow: String(row.ticket.rowIndex) } } }),
-        row.ticket.located ? button('Localiser', () => map?.selectPlace(row.ticket.placeKey), { icon: 'map' }) : null) },
-      { key: 'assigned', label: 'Affectation observée', width: 230, render: row => row.ticket.assignmentKnown
-        ? row.ticket.technicians.length ? row.ticket.technicians.map(person => person.name).join(' · ') : 'Sans technicien attribué'
-        : 'Colonne non disponible' },
-      { key: 'actions', label: 'Fiche', width: 110, render: row => button('Ouvrir', () => ctx.navigate('tickets', { rowIndex: row.ticket.rowIndex, revision: model.revision }), { icon: 'ticket' }) }
-    ], { key: row => row.ticket.rowIndex, maxRows: 40, emptyText: 'Aucun ticket ne correspond à ce lieu ou à cette recherche.' }),
-    pager(data, next => p.run(async () => { offset = next; await loadRows(); })));
-    rowsHost.dataset.total = data.total; rowsHost.dataset.offset = data.offset;
+    if(model.locations.some(location=>location.key===place.id)){
+      togglePlace(place.id);
+    }else if(visit)p.message(`Visite PRÉVUE le ${visit.date} · ${visit.technician}. Aucun ticket de ce lieu dans le périmètre affiché.`);
   }
   function multiChoice(title, choices, current, apply, { allowEmpty = true } = {}) {
     const draft = new Set(current), maximum = 64;
@@ -198,28 +186,15 @@ export async function renderTicketMap(ctx) {
     const facts = [
       ['Stock du périmètre', model.totals.tickets, unit(), 'ticket'], ['Sur la carte', model.totals.placed, `${unit(model.totals.placed)} avec coordonnées`, 'map'],
       ['Localisation approximative', model.totals.approximate, `${unit(model.totals.approximate)} · commune connue, site à préciser`, 'map'],
-      ['Sans coordonnées', model.totals.withoutCoordinates, `${unit(model.totals.withoutCoordinates)} conservé${model.totals.withoutCoordinates === 1 ? '' : 's'} dans la liste`, 'search']
+      ['Sans coordonnées', model.totals.withoutCoordinates, `${unit(model.totals.withoutCoordinates)} conservé${model.totals.withoutCoordinates === 1 ? '' : 's'} dans la recherche`, 'search']
     ];
     totals.replaceChildren(...facts.map(([label, value, detail, symbol]) => el('div', { class: `maps-workload-total tone-${symbol}` },
       el('span', { text: label }), el('strong', { text: formatNumber(value) }), el('small', { text: detail }))));
     warnings.replaceChildren();
     if (!linkedSearch && !model.activeAvailable) warnings.append(el('p', { class: 'notice warning', text: 'Le stock actif ne peut pas être déterminé. Vérifiez la colonne Statut et ses correspondances.' }));
     if (!linkedSearch && model.sourceUnknownStatus) warnings.append(el('p', { class: 'help', text: `${formatNumber(model.sourceUnknownStatus)} lignes au statut non reconnu dans le relevé complet sont exclues du stock actif. Les tickets résolus et clos sont également exclus.` }));
-    if (model.totals.review) warnings.append(el('p', { class: 'help', text: `${formatNumber(model.totals.review)} ${unit(model.totals.review)} avec une localisation à vérifier. La liste conserve toutes les lignes de ce périmètre.` }));
+    if (model.totals.review) warnings.append(el('p', { class: 'help', text: `${formatNumber(model.totals.review)} ${unit(model.totals.review)} avec une localisation à vérifier. La recherche conserve tous ces tickets, même sans coordonnées.` }));
     if (model.visitsWarning) warnings.append(el('p', { class: 'notice warning', text: model.visitsWarning }));
-  }
-  async function correctRows(rows) {
-    const searchContext=ticketSearchContext(ctx.state);
-    await editLocationCorrection(p, { revision: model.revision, rows, onApplied: async result => {
-      // Only a successful correction preserves indices across its known revision change.
-      await load({ correctedRevision: result.revision });
-      if(linkedSearch&&ctx.state.session.revision===result.revision&&workspaceContextKey(ctx.state)===selectionKey){
-        publishTicketSearch(ctx.state,linkedSearch,searchContext?.total??model.totals.tickets,searchContext?.selectedRows||[],searchContext?.labels||[]);
-        ctx.refreshTicketSearch?.();
-      }
-      p.message(result.removed ? `Correction retirée pour ${formatNumber(result.count)} ${unit(result.count)}.`
-        : `Site corrigé pour ${formatNumber(result.count)} ${unit(result.count)}. La carte et la liste sont actualisées.`);
-    } });
   }
   async function load({ correctedRevision = null } = {}) {
     if(model&&linkedSearch&&correctedRevision===null&&linkedSearch.revision!==ctx.state.session.revision){
@@ -234,13 +209,15 @@ export async function renderTicketMap(ctx) {
     map?.dispose(); mapHost.replaceChildren(); generation++;
     model = next; filters = { ...model.filters }; selected = new Set();
     if(placeKey&&!model.locations.some(location=>location.key===placeKey)){placeKey='';offset=0;}
+    if(before&&before.revision!==model.revision&&correctedRevision===null)chosenPlaces.clear();
+    chosenPlaces=new Set([...chosenPlaces].filter(key=>locationChoices().some(location=>location.key===key)));
     if(correctedRevision===null&&oldFilters!==JSON.stringify(model.filters))offset=0;
     if(oldRows.length&&(before?.revision===model.revision||remembered?.revision===model.revision||correctedRevision===model.revision)&&oldFilters===JSON.stringify(model.filters)){
       const kept=await p.call('maps.workspace.select',{token:model.token,rows:oldRows,selected:true});selected=new Set(kept.rows);
     }
     paintControls(); paintTotals(); paintSelection(); paintLocation();
     map = mountMap(ctx, model, mapHost, { onSelect: choosePlace,view:viewport });
-    await loadRows();
+    paintLocation();
     if(!linkedSearch)rememberScope(ctx.state,filters);
     if (oldRows.length&&!selected.size) p.message('Le périmètre a changé. Sélectionnez les tickets à planifier dans cette nouvelle vue.');
     p.root.dataset.ready = 'true';
@@ -387,7 +364,7 @@ export async function renderTicketMap(ctx) {
   p.root.dataset.ready = 'true';
   const cleanup = () => {
     saveWorkspaceView(ctx.state,'map',{filters,placeKey,offset,viewport:map?.getView()||viewport});
-    selectionMemory.set(selectionKey,{revision:model?.revision,rows:[...selected]});
+    selectionMemory.set(selectionKey,{revision:model?.revision,rows:[...selected],places:[...chosenPlaces]});
     generation++; activePanel?.forceClose(); map?.dispose(); p.cleanup();
   };
   cleanup.refresh = p.act(() => loaded ? load() : refreshReferenceMap());

@@ -55,6 +55,11 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--map-journey-only"))
+            {
+                await CheckMapWorkspaceRuntime();
+                Console.WriteLine($"{_passed}/{_passed} map to search journey checks passed."); return;
+            }
             if (args.Contains("--presentation-only"))
             {
                 await CheckPresentationRuntime();

@@ -2,7 +2,7 @@
 module.exports = async ({page,reset,ok,capture}) => {
  await page.setViewportSize({width:1440,height:1000});await reset();
  await page.evaluate(async()=>{
-  const {renderTicketsWorkspace}=await import('/web/js/pages/tickets-workspace.js');
+  const {renderTicketsWorkspace}=await window.importProduction('/web/js/pages/tickets-workspace.js');
   window.searchCalls=[];window.searchNavigations=[];window.searchErrors=[];
   window.searchState={session:{loaded:true,revision:7,rows:150},settings:{dashboard:{},interface:{}},capabilities:[]};
   const source=Array.from({length:150},(_,index)=>({index,key:`ticket-${index}`,cells:[String(index+1),`Réseau ${index+1}`,'Nouveau']}));
@@ -53,17 +53,17 @@ module.exports = async ({page,reset,ok,capture}) => {
  await page.waitForFunction(()=>document.querySelectorAll('.tickets-record-grid tbody tr').length===1);
  await page.getByRole('button',{name:'Planning',exact:true}).click();
  ok(await page.evaluate(()=>!searchNavigations.at(-1).args.ticketSearch.selectedRows),'A changed query removes selections that belonged to the prior query');
- await page.evaluate(async()=>{await searchCleanup();searchCtx.root.replaceChildren();const {publishTicketSearch}=await import('/web/js/ticket-search-context.js');publishTicketSearch(searchState,{search:'Réseau 2'},11);const {renderTicketsWorkspace}=await import('/web/js/pages/tickets-workspace.js');searchCleanup=await renderTicketsWorkspace({...searchCtx,params:{returnToSearch:true}});});
+ await page.evaluate(async()=>{await searchCleanup();searchCtx.root.replaceChildren();const {publishTicketSearch}=await window.importProduction('/web/js/ticket-search-context.js');publishTicketSearch(searchState,{search:'Réseau 2'},11);const {renderTicketsWorkspace}=await window.importProduction('/web/js/pages/tickets-workspace.js');searchCleanup=await renderTicketsWorkspace({...searchCtx,params:{returnToSearch:true}});});
  ok(await page.getByLabel('Recherche du relevé',{exact:true}).inputValue()==='Réseau 2','A new shared search replaces an older saved list query on return');
- await page.evaluate(async()=>{searchState.session.revision=8;const {searchForTools}=await import('/web/js/ticket-search-context.js');window.staleSearch=searchForTools(searchState);});
+ await page.evaluate(async()=>{searchState.session.revision=8;const {searchForTools}=await window.importProduction('/web/js/ticket-search-context.js');window.staleSearch=searchForTools(searchState);});
  ok(await page.evaluate(()=>staleSearch===undefined),'Source revision changes invalidate shared row coordinates');
  await page.evaluate(()=>searchCleanup());
  await reset();
  await page.evaluate(async()=>{
-  const {renderInterventionsWorkspace}=await import('/web/js/pages/interventions-workspace.js');
+  const {renderInterventionsWorkspace}=await window.importProduction('/web/js/pages/interventions-workspace.js');
   window.calendarCalls=[];
   const state={session:{loaded:true,revision:8},settings:{dashboard:{},interface:{}}};
-  const {publishTicketSearch}=await import('/web/js/ticket-search-context.js');publishTicketSearch(state,{search:'Réseau'},120,[],['Statut contient Nouveau']);
+  const {publishTicketSearch}=await window.importProduction('/web/js/ticket-search-context.js');publishTicketSearch(state,{search:'Réseau'},120,[],['Statut contient Nouveau']);
   const api={on:()=>()=>{},call:async(op,args)=>{
    calendarCalls.push({op,args});
    if(op==='calendar.get')return{occurrences:[],resources:[{key:'alex',label:'Alex',active:true},{key:'sam',label:'Sam',active:true}],teams:[],sites:[],cities:[],issues:[],sync:{},summary:{interventions:0,linkedTickets:0,personHours:0},sourceRevision:8,timeZoneId:'Europe/Paris'};
@@ -89,7 +89,7 @@ module.exports = async ({page,reset,ok,capture}) => {
   await page.setViewportSize({width,height:800});
   ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`Shared planning remains within ${width}px viewport`);
  }
- await page.evaluate(async()=>{await calendarCleanup();calendarCtx.root.replaceChildren();const {renderInterventionsWorkspace}=await import('/web/js/pages/interventions-workspace.js');calendarCleanup=await renderInterventionsWorkspace({...calendarCtx,params:{tab:'planning',focusKeys:['team:new-scope']}});});
+ await page.evaluate(async()=>{await calendarCleanup();calendarCtx.root.replaceChildren();const {renderInterventionsWorkspace}=await window.importProduction('/web/js/pages/interventions-workspace.js');calendarCleanup=await renderInterventionsWorkspace({...calendarCtx,params:{tab:'planning',focusKeys:['team:new-scope']}});});
  ok(await page.evaluate(()=>{const q=calendarCalls.findLast(c=>c.op==='calendar.get').args.ticketSearch;return q.focusKeys[0]==='team:new-scope'&&q.search==='';}),'An explicit team deep link replaces the previous shared search');
  await page.evaluate(()=>calendarCleanup());
 };

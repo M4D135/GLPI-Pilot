@@ -77,6 +77,18 @@ internal static partial class Program
             Check(alphaLocation.GetProperty("place").GetProperty("latitude").GetDouble() == 40.1 && gammaLocation.GetProperty("place").GetProperty("latitude").ValueKind == JsonValueKind.Null
                 && locations.Any(item => Str(item, "kind") == "city" && item.GetProperty("place").GetProperty("latitude").GetDouble() == 40),
                 "Standalone site coordinates remain exact, a site without coordinates never borrows the municipality centre, and city-only evidence remains explicitly approximate.");
+            static int[] SearchRows(JsonElement search) => search.GetProperty("indices").EnumerateArray().Select(value => value.GetInt32()).ToArray();
+            var citySearch = await Call(app, "maps.workspace.search", new { token, placeKeys = new[] { "city:" + city.Id } });
+            Check(SearchRows(citySearch).SequenceEqual(new[] { 1, 2, 4, 9 }) && Int(citySearch, "total") == 4,
+                "Choosing a city transfers both its city-only ticket and every child-site ticket, including a site without coordinates.");
+            var overlappingSearch = await Call(app, "maps.workspace.search", new { token, placeKeys = new[] { "city:" + city.Id, "site:" + beta.Id, "city:" + city.Id } });
+            Check(SearchRows(overlappingSearch).SequenceEqual(SearchRows(citySearch)), "Overlapping city and site choices never duplicate a ticket.");
+            var allSearch = await Call(app, "maps.workspace.search", new { token });
+            Check(SearchRows(allSearch).SequenceEqual(new[] { 0, 1, 2, 3, 4, 5, 8, 9 }) && allSearch.GetProperty("baseIndices").GetArrayLength() == 8,
+                "No place restriction retains all source rows including unknown and ambiguous locations.");
+            var unlocatedSearch = await Call(app, "maps.workspace.search", new { token, placeKeys = new[] { "unknown:unmatched", "unknown:ambiguous", "unknown:title-unavailable" } });
+            Check(SearchRows(unlocatedSearch).SequenceEqual(new[] { 3, 5, 8 }), "Unplaced geographic groups can be searched without fabricating coordinates.");
+            await Reject<InvalidDataException>(async () => { await Call(app, "maps.workspace.search", new { token, placeKeys = new[] { "site:missing" } }); }, "Foreign geographic keys are refused instead of widening the search.");
             var first = await Call(app, "maps.workspace.rows", new { token, offset = 0, limit = 3 });
             var second = await Call(app, "maps.workspace.rows", new { token, offset = 3, limit = 3 });
             var third = await Call(app, "maps.workspace.rows", new { token, offset = 6, limit = 3 });
@@ -163,6 +175,11 @@ internal static partial class Program
             Check(host.ClipboardWrites == writesBefore, "Rejected stale map actions preserve the previous clipboard contents.");
             var large = await Call(app, "maps.workspace.get"); var largeToken = Str(large, "token");
             await Reject<InvalidDataException>(async () => { await Call(app, "maps.workspace.select", new { token = largeToken, all = true }); }, "The 2,000-ticket planning limit rejects an oversized whole-scope selection without silent truncation.");
+            var largeSearch = await Call(app, "maps.workspace.search", new { token = largeToken, rowIndex = 2000 });
+            Check(Int(largeSearch, "total") == 2001 && SearchRows(largeSearch).Last() == 2000 && Int(largeSearch, "focusedRow") == 2000,
+                "Search and ticket-to-map focus keep rows beyond the tour basket limit without truncation.");
+            var locatedPage = await Call(app, "records.list", new { revision = app.Revision, indices = SearchRows(largeSearch), locateRow = 2000, limit = 1 });
+            Check(Int(locatedPage, "focusPosition") == 2000, "The source reader can reveal the correct page for a ticket beyond the first 2000 rows.");
             var largeRows = await Call(app, "maps.workspace.rows", new { token = largeToken, offset = 2000, limit = 40 });
             Check(Int(large.GetProperty("totals"), "tickets") == 2001 && Int(largeRows, "total") == 2001 && Int(largeRows, "selected") == 0 && largeRows.GetProperty("items").GetArrayLength() == 1,
                 "Marker totals and paginated details cover all 2,001 source rows even when the separate planning selection is too large.");

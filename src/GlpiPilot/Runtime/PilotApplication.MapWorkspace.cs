@@ -34,6 +34,7 @@ public sealed partial class PilotApplication
     {
         TerrainRegister("maps.workspace.get", MapWorkspaceGet);
         TerrainRegister("maps.workspace.rows", MapWorkspaceRows);
+        TerrainRegister("maps.workspace.search", MapWorkspaceSearch);
         TerrainRegister("maps.workspace.select", MapWorkspaceSelect);
         Register("maps.workspace.copyIds", MapWorkspaceCopyIdsAsync);
         TerrainRegister("maps.workspace.tour.preview", MapWorkspacePrepareTour);
@@ -177,6 +178,10 @@ public sealed partial class PilotApplication
             choices = new { teams, groups = observed.Groups, technicians = roster.Technicians.Select(person => new { person.Key, person.Name }).ToArray(),
                 technicianAvailable = roster.Available, typeAvailable = types?.Available == true, personalKey = personal?.Key ?? "", personalName = personal?.Name ?? "" },
             locations = orderedLocations.Select(location => new { location.Key, place = location.Place, location.Kind, location.Count, location.ReviewCount, location.UnassignedCount, location.Technicians }).ToArray(),
+            cityGroups = reference.Cities.Select(city => new { key = "city:" + city.Id, label = city.Name,
+                placeKeys = orderedLocations.Where(location => location.Key == "city:" + city.Id
+                    || location.Kind == "site" && sites.TryGetValue(location.Key[5..], out var site) && site.CityId == city.Id)
+                    .Select(location => location.Key).ToArray() }).Where(city => city.placeKeys.Length > 0).ToArray(),
             routes = new[] { new EmbeddedMapRoute("tickets", "Localisations du périmètre", false, orderedLocations.Select(location => location.Place).ToArray()) },
             visits, visitsWarning, siteInterventionThreshold = Settings.Dashboard.Business.SiteInterventionThreshold,
             selected = 0, selectionLimit = ScheduledTour.MaximumTickets,

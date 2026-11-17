@@ -152,11 +152,11 @@ internal static partial class Program
         await Button("Outils du tableau").ClickAsync(); await Button("Vue des colonnes").ClickAsync();
         await page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).FillAsync("Incident");
         await page.GetByLabel("Filtrer Statut", new() { Exact = true }).FillAsync("Nouveau");
+        var search = page.GetByLabel("Recherche du relevé", new() { Exact = true });
+        await search.FillAsync("4101");
         await Tab("map").ClickAsync(); await Idle();
-        var search = page.GetByLabel("Rechercher dans les tickets du périmètre", new() { Exact = true });
-        await search.FillAsync("4101"); await search.PressAsync("Enter"); await Idle();
-        await page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 4101", Exact = true }).CheckAsync(); await Idle();
-        await page.Locator(".maps-ticket-rows").GetByRole(AriaRole.Button, new() { Name = "Localiser", Exact = true }).ClickAsync(); await Idle();
+        await page.GetByText("Choisir plusieurs lieux", new() { Exact = true }).ClickAsync();
+        await page.GetByLabel("Inclure " + north.Name, new() { Exact = true }).CheckAsync(); await Idle();
         var canvas = page.Locator(".maps-inline-host .maps-canvas"); await canvas.ScrollIntoViewIfNeededAsync();
         await canvas.GetByTitle("Agrandir la carte", new() { Exact = true }).ClickAsync();
         var box = (await canvas.BoundingBoxAsync())!;
@@ -169,31 +169,20 @@ internal static partial class Program
             && Last("maps.workspace.get").GetProperty("ticketSearch").GetProperty("transform").GetProperty("filters").EnumerateArray()
                 .Select(value => value.GetProperty("value").GetString()).Order().SequenceEqual(new[] { "Incident", "Nouveau" }),
             "Global refresh reloads the actual ticket map exactly once with type and status filters from the shared search.");
-        Require(await search.InputValueAsync() == "4101" && await page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 4101", Exact = true }).IsCheckedAsync()
-            && Last("maps.workspace.rows").GetProperty("search").GetString() == "4101"
-            && Last("maps.workspace.rows").GetProperty("placeKey").GetString() == "site:" + north.Id && await reference.CountAsync() == 0,
-            "The refreshed map retains its real search text, selected ticket and selected place without reopening the reference panel.");
+        Require(Last("maps.workspace.get").GetProperty("ticketSearch").GetProperty("search").GetString() == "4101"
+            && await page.Locator(".maps-selection-panel").GetAttributeAsync("data-total") == "1"
+            && await page.GetByLabel("Inclure " + north.Name, new() { Exact = true }).IsCheckedAsync() && await reference.CountAsync() == 0,
+            "The refreshed map retains the central search and chosen location without recreating a ticket table or reopening the reference panel.");
         Require(viewportBefore.GetProperty("zoom").GetInt32() == viewportAfter.GetProperty("zoom").GetInt32()
             && Math.Abs(viewportBefore.GetProperty("lat").GetDouble() - viewportAfter.GetProperty("lat").GetDouble()) < .00001
             && Math.Abs(viewportBefore.GetProperty("lng").GetDouble() - viewportAfter.GetProperty("lng").GetDouble()) < .00001,
             $"A user-zoomed and panned Leaflet viewport survives the real map refresh ({viewportBefore.GetRawText()} → {viewportAfter.GetRawText()}).");
         await Capture("refresh-map-filters-selection");
         await Call(app, "cache.restore"); File.Delete(csv); await Idle(); await Refresh().ClickAsync(); await Idle();
-        var restoredRows = app.Result; var restoredSearch = await search.InputValueAsync();
-        // Idle() n'attend que la fin des appels au pont, jamais la fin du rendu des lignes : la case pouvait
-        // encore porter la coche de la révision précédente à l'instant où on la lisait, et l'assertion échouait
-        // au hasard du rafraîchissement. On attend l'état réellement attendu, avec un délai borné, pour qu'un
-        // rendu lent passe mais qu'une vraie conservation de la sélection échoue quand même.
-        var selectionBox = page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 4101", Exact = true });
-        var stillSelected = true;
-        for (var attempt = 0; attempt < 100 && stillSelected; attempt++)
-        {
-            stillSelected = await selectionBox.CountAsync() > 0 && await selectionBox.IsCheckedAsync();
-            if (stillSelected) await page.WaitForTimeoutAsync(100);
-        }
-        Require(app.IsCachedSource && restoredRows!.Rows.Count == 3 && !File.Exists(csv) && restoredSearch == "4101" && !stillSelected,
-            "Refreshing the restored offline source rereads the cached rows without the CSV and clears ticket choices made against the old revision "
-            + $"(sourceEnCache={app.IsCachedSource}, lignes={restoredRows?.Rows.Count}, csvSupprime={!File.Exists(csv)}, recherche=\"{restoredSearch}\", selectionGardee={stillSelected}).");
+        var restoredRows = app.Result;
+        Require(app.IsCachedSource && restoredRows!.Rows.Count == 3 && !File.Exists(csv)
+            && await page.GetByRole(AriaRole.Button, new() { Name = "Effacer les lieux", Exact = true }).IsDisabledAsync(),
+            "Refreshing a restored offline source rereads cached data without the missing CSV and clears locations selected against the older revision.");
 
         await Tab("planning").ClickAsync(); await Idle();
         await page.GetByLabel("Date du planning", new() { Exact = true }).FillAsync("2026-11-17");

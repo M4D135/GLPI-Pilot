@@ -169,6 +169,7 @@ internal static partial class Program
             "The ticket editor saves and publishes the exact note through its real action while private checklist, draft and pinning stay on the workstation.");
 
         await Go("terrain-map");
+        await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.Locator(".page-content [data-open-panel='planning']").ClickAsync();
         await page.Locator("dialog[open][data-workspace-panel='planning']").WaitForAsync(); await Idle();
         await page.Locator("dialog[open][data-workspace-panel='planning'] .reading-options > summary").Filter(new() { HasText = "Partager et autres actions" }).ClickAsync();

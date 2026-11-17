@@ -133,8 +133,18 @@ public sealed partial class PilotApplication
         if (Flag(args, "basketOnly")) indices = indices is null ? RecordBasketRows(data, settings) : indices.Intersect(RecordBasketRows(data, settings)).ToArray();
         indices = RecordScopedRows(args, indices, ct);
         var query = _recordQueries.Query(data, Revision, Text(args, "search", 4000), indices, transform, CultureInfo.GetCultureInfo(settings.DateCulture), ct);
+        int? focusPosition = null;
+        if (args.TryGetProperty("locateRow", out var focus))
+        {
+            CheckRevision(args);
+            if (!focus.TryGetInt32(out var row) || row < 0 || row >= data.Rows.Count) throw new InvalidDataException("La ligne du ticket n’existe plus.");
+            focusPosition = -1; var position = 0;
+            foreach (var index in query.SourceIndices) { ct.ThrowIfCancellationRequested(); if (index == row) { focusPosition = position; break; } position++; }
+        }
         var keys = DataObjectIdentity.KeyResolver(data, settings);
-        return Task.FromResult<object?>(new { revision = Revision, headers = data.Headers, rows = query.SourceIndices.Skip(offset).Take(limit).Select(i => new { index = i, key = keys(i), cells = data.Rows[i].Select(cell => cell.Length > 2000 ? cell[..2000] + "…" : cell).ToArray() }), total = query.MatchCount, sourceTotal = data.Rows.Count, offset, limit, complete = data.Complete, columns = PreviewViewPreferences.Load(DataPath("preview-view.json"), data.Headers), session = SessionState() });
+        var locations = Flag(args, "includeLocations") ? TerrainLocations(ct).Matches.ToDictionary(match => match.RowIndex) : null;
+        return Task.FromResult<object?>(new { locationsAvailable = locations is not null, correctionAllowed = TerrainCorrectionReadOnlyReason.Length == 0, focusPosition, revision = Revision, headers = data.Headers, rows = query.SourceIndices.Skip(offset).Take(limit).Select(i => new { index = i, key = keys(i), location = locations?.GetValueOrDefault(i) is { } match
+            ? new { label = match.SiteName.Length > 0 ? match.SiteName : !string.IsNullOrWhiteSpace(match.CityName) ? match.CityName : match.State == CityMatchState.Ambiguous ? "Localisation ambiguë" : "Lieu non reconnu", isOverride = match.IsOverride } : null, cells = data.Rows[i].Select(cell => cell.Length > 2000 ? cell[..2000] + "…" : cell).ToArray() }), total = query.MatchCount, sourceTotal = data.Rows.Count, offset, limit, complete = data.Complete, columns = PreviewViewPreferences.Load(DataPath("preview-view.json"), data.Headers), session = SessionState() });
     }
     private async Task<object?> ExportRecordsAsync(JsonElement args, CancellationToken ct)
     {

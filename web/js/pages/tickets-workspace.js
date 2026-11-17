@@ -2,6 +2,7 @@ import { el, replaceChildren, button, toolbar, badge, empty, dialog, input, isSi
 import { importLocalTestFile } from '../local-file-test.js';
 import { renderRecordList } from './records.js';
 import { renderTicketReader } from './workplace-tickets.js';
+import { bindTicketNavigation } from '../ticket-navigation.js';
 
 // One visible workspace owns the search and its full-page ticket reader. The historical
 // route IDs are only entry points into this same list/selection state.
@@ -58,7 +59,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   function drawPath() {
     const position = sequence?.revision === ctx.state.session?.revision ? sequence.rows.indexOf(activeRow) : -1;
     const absolute=position<0?-1:(sequence.offset||0)+position;
-    const move = delta => { readerCleanup?.pauseLiveRead?.(); return perform(async()=>{const args=await listCleanup.ticketAt(absolute+delta);if(args)await showTicket(args);}); };
+    const move = moveTicket;
     replaceChildren(path, button('Retour à la liste', returnToList, { icon: 'arrow', attributes: { class: 'button tickets-back' } }),
       position >= 0 ? toolbar(badge(`${absolute + 1} / ${sequence.total}`),
         button('Ticket précédent', () => move(-1), { disabled: absolute === 0, icon: 'arrow', attributes: { class: 'button tickets-back' } }),
@@ -66,6 +67,17 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
       button('Mes dossiers',()=>savedDossiers(),{icon:'folder'}),
       button('Préparer le matériel',prepareCurrentTicket,{icon:'layers',attributes:{'data-field-context':'ticket'}}));
   }
+  function moveTicket(delta) {
+    readerCleanup?.pauseLiveRead?.();
+    return perform(async () => {
+      const position=sequence?.revision===ctx.state.session?.revision?sequence.rows.indexOf(activeRow):-1;
+      if(position<0)return;
+      const args=await listCleanup.ticketAt((sequence.offset||0)+position+delta);
+      if(args)await showTicket(args);
+    });
+  }
+  const releaseNavigation=bindTicketNavigation({root:shell,signal:ctx.signal,
+    enabled:()=>showingDetail&&!disposed,move:moveTicket,onError:error=>ctx.notify(error.message,'error')});
   async function prepareCurrentTicket(){
     const args=currentArgs||{};
     let key=args.ticketKey||readerCleanup?.ticketKey?.();
@@ -97,9 +109,9 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
       list.replaceChildren(); listRevision = ctx.state.session?.revision;
       listCleanup = await renderRecordList({ ...ctx, root: list, params: listParams }, {
         onOpenTicket: (args, rows, focusKey) => { if (focusKey) lastFocus = focusKey; return perform(() => showTicket(args, rows)); },
-        onRows: rows => { sequence = rows; }
+        onRows: rows => { sequence = rows; listRevision = rows.revision; }
       });
-      listCleanup?.highlight?.(activeRow);
+      activeRow=activeRow??listCleanup?.currentRow?.()??null;listCleanup?.highlight?.(activeRow);
     }
   }
   async function mountReader(args) {
@@ -118,6 +130,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
       return;
     }
     if (rows) sequence = rows;
+    else if(args.rowIndex!=null){await ensureList();await listCleanup?.reveal?.(args.rowIndex);}
     const reused = readerCleanup && sameTicket(args) && !args.section;
     rememberList(); showingDetail = true; updateLayout(); resumeHost.replaceChildren();
     try {
@@ -160,7 +173,7 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   await showList();
   if (ctx.params?.rowIndex != null || ctx.params?.ticketKey) await showTicket({ ...ctx.params, rowIndex: ctx.params.rowIndex == null ? undefined : Number(ctx.params.rowIndex), revision: ctx.params.revision == null ? undefined : Number(ctx.params.revision) });
   else if (resumeActive || ctx.params?.resumeTicket) { const work = await ctx.api.call('workplace.get', {}, { signal: ctx.signal }); if (work.activeTicketKey) await showTicket({ ticketKey: work.activeTicketKey, section: ctx.params?.section }); }
-  const cleanup=async () => { readerCleanup?.pauseLiveRead?.(); await queue; await readerCleanup?.(); await listCleanup?.(); disposed = true;  if (ctx.root.dataset.workspace === 'records') delete ctx.root.dataset.workspace; };
+  const cleanup=async () => { releaseNavigation();readerCleanup?.pauseLiveRead?.(); await queue; await readerCleanup?.(); await listCleanup?.(); disposed = true;  if (ctx.root.dataset.workspace === 'records') delete ctx.root.dataset.workspace; };
   cleanup.identityParams=()=>({...listCleanup?.identityParams?.(),...(showingDetail?currentArgs:{ticketKey:undefined,rowIndex:undefined,section:undefined,resumeTicket:false})});
   return cleanup;
 }

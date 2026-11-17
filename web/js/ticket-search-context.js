@@ -5,15 +5,28 @@ import {workspaceContextKey} from './work-context.js';
 const contexts=new WeakMap();
 const identity=state=>`${workspaceContextKey(state)}:${state.session?.revision}`;
 export function ticketSearchContext(state){const value=contexts.get(state);return value?.identity===identity(state)?structuredClone(value):null;}
-export function publishTicketSearch(state,args,total,selectedRows=[],labels=[]){
+export function publishTicketSearch(state,args,total,selectedRows=[],labels=[],locationScope=null){
  const query={revision:state.session.revision,search:args.search||'',transform:structuredClone(args.transform||{filters:[],sorts:[]}),
   focusKeys:[...(args.focusKeys||[])],technicianKeys:[...(args.technicianKeys||[])],mine:!!args.mine,basketOnly:!!args.basketOnly};
  if(Array.isArray(args.indices))query.indices=[...args.indices];
- const value={identity:identity(state),query,total,selectedRows:[...selectedRows],labels:[...labels]};
+ const value={identity:identity(state),query,total,selectedRows:[...selectedRows],labels:[...labels],locationScope:locationScope?structuredClone(locationScope):null};
  contexts.set(state,value);return structuredClone(value);
 }
 export function searchForTools(state){const context=ticketSearchContext(state);if(!context)return undefined;return{...context.query,...(context.selectedRows.length?{selectedRows:context.selectedRows}:{})};}
-export function searchToolParams(state,params={}){const ticketSearch=searchForTools(state);return{...(ticketSearch?{ticketSearch}:{}),...params};}
+export function searchToolParams(state,params={}){
+ const context=ticketSearchContext(state),ticketSearch=searchForTools(state);
+ if(params.tab==='map'&&context?.locationScope&&ticketSearch&&!ticketSearch.selectedRows){
+  ticketSearch.indices=[...context.locationScope.baseIndices];
+  return{ticketSearch,mapPlaceKeys:context.locationScope.places.map(place=>place.key),...params};
+ }
+ return{...(ticketSearch?{ticketSearch}:{}),...params};
+}
+export function publishMapTicketSearch(state,result,baseQuery={},focusedRow=null){
+ if(result.revision!==state.session?.revision)throw new Error('Le relevé a changé. Actualisez la carte avant de consulter les tickets.');
+ const places=result.places||[];
+ return publishTicketSearch(state,{...baseQuery,indices:[...result.indices]},result.total,[],
+  places.map(place=>`Lieu : ${place.label}`),{baseIndices:[...result.baseIndices],places:structuredClone(places),focusedRow:result.indices.includes(focusedRow)?focusedRow:null});
+}
 export function ticketToolNavigation(ctx,active='search'){
  const host=el('div',{class:'ticket-tools-context'});
  const paint=()=>{

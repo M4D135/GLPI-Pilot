@@ -303,3 +303,57 @@
   .home-overview-heading::after { animation: none; }
   .home-counter.button,.pilot-widget,.analytics-widget,.tickets-panel-heading,.maps-inline-host { box-shadow: none !important; }
 }
+
+/* One map selection feeds the one canonical ticket search. */
+.maps-selection-panel { position:relative; border-color:var(--hyper-line); }
+.maps-selection-chips { display:flex; flex-wrap:wrap; gap:7px; margin:8px 0; }
+.maps-location-chip { border-radius:999px; background:var(--accent-soft); color:var(--accent); }
+.maps-location-picker { margin-top:12px; }
+.maps-location-picker summary { cursor:pointer; padding:8px 0; font-weight:600; }
+.maps-location-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:6px; max-height:250px; overflow:auto; margin-top:10px; }
+.maps-location-choice { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border); border-radius:10px; cursor:pointer; }
+.maps-location-choice:has(input:checked) { background:var(--accent-soft); border-color:var(--accent); }
+.maps-location-choice > span { flex:1; }
+.tickets-description-preview { width:100%; text-align:left; border:0; background:none; color:var(--text); font:inherit; line-height:1.55; cursor:pointer; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; min-width:130px; max-width:40ch; padding:4px 0; white-space:pre-wrap; }
+.tickets-description-preview:hover { color:var(--accent); }
+.tickets-description-preview:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+@media (max-width:620px) { .maps-location-options { grid-template-columns:1fr; } .maps-selection-panel .toolbar { flex-wrap:wrap; } .maps-ticket-heading { flex-wrap:wrap; } }
+
+.maps-city-choices { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+.maps-city-choice[aria-pressed=true] { color:var(--accent); background:var(--accent-soft); border-color:var(--accent); }
+.tickets-context-map { padding:12px 16px; border:1px solid var(--border); border-radius:12px; }
+.tickets-context-map summary { cursor:pointer; font-weight:600; }
+.tickets-context-map[open] summary { margin-bottom:12px; }
+
+/* Keep the actual map in view: location tools are secondary, selection is a compact dock. */
+.maps-workspace-actions { padding:6px 0; }
+.maps-workspace-actions > summary { cursor:pointer; width:max-content; color:var(--text-muted); font-size:12px; }
+.maps-workspace-actions > .toolbar { margin-top:9px; }
+.terrain-map-page .maps-workload-total { min-height:0; padding:11px 15px; gap:3px; }
+.terrain-map-page .maps-workload-total strong { font-size:25px; line-height:1.15; }
+.terrain-map-page .maps-selection-panel { padding:13px 16px; gap:8px; }
+.terrain-map-page .maps-selection-panel .maps-ticket-heading { margin:0; }
+.terrain-map-page .maps-selection-panel .maps-city-choices { margin:0; }
+.terrain-map-page .maps-selection-panel .maps-selection-chips:empty { display:none; }
+.terrain-map-page .maps-selection-panel .maps-city-choice[aria-pressed=true]::before { content:'✓'; margin-right:5px; }
+.terrain-map-page .maps-inline-host .maps-canvas { height:clamp(320px,46vh,520px); }
+.tickets-source-facts > .tickets-request-description { grid-column:1/-1; padding:14px 16px; }
+.tickets-request-description h3 { margin:0 0 7px; font-size:14px; }
+.tickets-request-description p { margin:0 0 8px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; }
+.tickets-row-place { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
+@media (min-width:1100px) {
+ .terrain-map-page .maps-selection-panel { display:grid; grid-template-columns:minmax(0,1fr) auto; }
+ .terrain-map-page .maps-selection-panel .maps-ticket-heading { grid-column:1/-1; }
+ .terrain-map-page .maps-selection-panel > .toolbar { grid-column:2; grid-row:2; }
+ .terrain-map-page .maps-selection-panel .maps-location-picker { grid-column:1/-1; }
+ .terrain-map-page .maps-selection-panel .maps-selection-chips { grid-column:1/-1; }
+}
+
+.terrain-map-page .maps-workload-total { display:grid; grid-template-columns:minmax(0,1fr) auto; padding:9px 13px; align-items:center; }
+.terrain-map-page .maps-workload-total>small { grid-column:1/-1; }
+.terrain-map-page .maps-workload-total strong { font-size:22px; }
+.terrain-map-page .terrain-body { gap:10px; }
+.terrain-map-page .maps-scope-summary { margin:0; }
+.terrain-map-page .maps-selection-panel .maps-ticket-heading h2 { font-size:15px; }
+.terrain-map-page .maps-selection-panel .maps-location-picker { margin-top:0; }
+.terrain-map-page .maps-selection-panel .maps-city-choice { min-height:32px; padding:6px 10px; }
