@@ -1,0 +1,89 @@
+name: Integrate reviewed ticket journey
+on:
+  push:
+    branches: ['codex/glpi-ticket-500ms-kitt-20261116']
+    paths: ['.github/workflows/integrate-ticket-journey.yml', '.github/patches/ticket-journey-*']
+permissions:
+  contents: write
+concurrency:
+  group: integrate-ticket-journey
+  cancel-in-progress: false
+jobs:
+  integrate:
+    if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/codex/glpi-ticket-500ms-kitt-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Apply exact reviewed file edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/journey-integration
+          python3 - <<'PY'
+          import gzip,hashlib,json,pathlib,subprocess
+          data=b''.join(pathlib.Path('.github/patches/ticket-journey-'+str(i)+'.bin').read_bytes() for i in (1,2,3))
+          assert hashlib.sha256(data).hexdigest()=='66e23f02834f26652bbd099345fc8a5db74f181e357ed2342e756cf041254ce9','Payload integrity mismatch'
+          payload=json.loads(gzip.decompress(data))
+          assert payload['base']=='f80026f1b9432f726f0faa2b9f1ef69d595af5f2'
+          subprocess.run(['git','merge-base','--is-ancestor',payload['base'],'HEAD'],check=True)
+          def sha(raw):return hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          for name,item in payload['files'].items():
+            path=pathlib.Path(name)
+            assert not path.is_absolute() and '..' not in path.parts
+            assert name.startswith(('src/GlpiPilot/Runtime/','web/','tests/')) or name=='docs/RELEASE-4.0.0.md'
+            assert not path.is_symlink()
+            old=path.read_bytes() if path.exists() else None
+            assert (sha(old) if old is not None else None)==item['base'],f'Changed source: {name}'
+            lines=(old or b'').decode('utf-8').splitlines(keepends=True)
+            for start,end,text in reversed(item['edits']):
+              assert 0<=start<=end<=len(lines)
+              lines[start:end]=text.splitlines(keepends=True)
+            new=''.join(lines).encode('utf-8')
+            assert sha(new)==item['sha'],f'Result mismatch: {name}'
+            path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(new)
+            subprocess.run(['git','add','--',name],check=True)
+          changed=set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
+          assert changed==set(payload['files']),'Unexpected staged paths'
+          pathlib.Path('artifacts/journey-integration/files.json').write_text(json.dumps({p:v['sha'] for p,v in payload['files'].items()},indent=2))
+          PY
+          git diff --cached --check
+          git diff --cached --stat | tee artifacts/journey-integration/changes.log
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+      - name: Compile and test the actual map search runtime
+        shell: bash
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+          DOTNET_NOLOGO: '1'
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/AnalyticsBridgeChecks/AnalyticsBridgeChecks.csproj -c Release -p:PlaywrightPlatform=linux -- --map-journey-only 2>&1 | tee artifacts/journey-integration/runtime.log
+      - name: Commit and fast-forward the reviewed feature branch only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch=codex/glpi-ticket-500ms-kitt-20261116
+          gh auth setup-git
+          current=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          test "$current" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Unify geographic selection, canonical search and ticket navigation'
+          git push origin "HEAD:refs/heads/$branch"
+          git rev-parse HEAD | tee artifacts/journey-integration/commit.txt
+          git archive --format=zip HEAD -o artifacts/journey-integration/source.zip
+      - name: Preserve exact integration evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ticket-journey-integration-${{ github.run_id }}
+          path: artifacts/journey-integration/
+          retention-days: 7
+          if-no-files-found: warn
