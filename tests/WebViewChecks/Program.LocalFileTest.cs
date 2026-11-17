@@ -268,7 +268,7 @@ internal static partial class Program
         await mapPreview.Locator(".maps-place[data-located=true]").ClickAsync();
         Require(await mapPreview.Locator(".maps-place[aria-pressed=true]").CountAsync() == 1
             && (await mapPreview.Locator(".maps-popup").InnerTextAsync()).Contains("12 rue de l’Essai, Commune fictive", StringComparison.Ordinal),
-            "Selecting the site synchronizes the map popup, reference address and scoped ticket list.");
+            "Selecting the site synchronizes the map popup, reference address and geographic selection.");
         await mapPreview.Locator(".reading-options:not([open]) > summary").ClickAsync();
         await mapPreview.GetByRole(AriaRole.Button, new() { Name = "Fond hors ligne", Exact = true }).ClickAsync();
         await Navigate("home"); await Navigate("terrain-map");
@@ -346,7 +346,14 @@ internal static partial class Program
         await contextualMap.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await terrainPanel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await terrainPanel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
-        await page.GetByRole(AriaRole.Checkbox, new() { Name = "Sélectionner le ticket 42", Exact = true }).CheckAsync();
+        // The map now selects places; the only ticket grid belongs to Search.
+        if (await Button("Effacer les lieux").IsEnabledAsync()) await Button("Effacer les lieux").ClickAsync();
+        if (await mapPreview.Locator("[data-map-action=list]").GetAttributeAsync("aria-expanded") != "true")
+            await mapPreview.Locator("[data-map-action=list]").ClickAsync();
+        await mapPreview.Locator(".maps-place[data-located=true]").ClickAsync();
+        Require(await page.Locator(".maps-selection-panel").GetAttributeAsync("data-total") == "1"
+            && await page.Locator(".maps-ticket-panel,.maps-ticket-rows").CountAsync() == 0,
+            "Geographic selection retains the single localized ticket without restoring the removed map ticket table.");
         await Button("Préparer une tournée").ClickAsync();
         var tourEditor = page.GetByRole(AriaRole.Dialog, new() { Name = "Préparer une tournée", Exact = true });
         await tourEditor.GetByLabel("Nom de la tournée", new() { Exact = true }).FillAsync("Tournée cartographique fictive");
