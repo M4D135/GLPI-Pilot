@@ -2,13 +2,13 @@ name: Finalize guarded ticket return fixes
 on:
   push:
     branches: ['codex/glpi-ticket-500ms-kitt-20261116']
-    paths: ['.github/workflows/finalize-ticket-return.yml', '.github/patches/ticket-return.patch']
+    paths: ['.github/workflows/finalize-ticket-return.yml', '.github/patches/ticket-return.patch', '.github/patches/configuration-version.patch']
 permissions:
   contents: write
   actions: write
 concurrency:
   group: finalize-ticket-return
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   finalize:
     if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/codex/glpi-ticket-500ms-kitt-20261116'
@@ -31,11 +31,13 @@ jobs:
           import hashlib,pathlib,subprocess
           pathlib.Path('artifacts/ticket-return-final').mkdir(parents=True,exist_ok=True)
           subprocess.run(['git','merge-base','--is-ancestor','1a295637c06b30a966631f56056feccf1dfd9a1a','HEAD'],check=True)
-          patch=subprocess.check_output(['git','show','HEAD:.github/patches/ticket-return.patch'])
-          digest=hashlib.sha1(b'blob '+str(len(patch)).encode()+b'\0'+patch).hexdigest()
-          assert digest=='c41d84c961426666e0e46ee87e006e9ba004bddc','Reviewed patch integrity mismatch'
-          subprocess.run(['git','apply','--cached','--whitespace=error','-'],input=patch,check=True)
-          paths=['.github/workflows/ergonomics-check.yml','build-tools/Invoke-WindowsCi.ps1','tests/TicketJourneyChecks/run.cjs','web/js/pages/records.js']
+          patches={'ticket-return':'c41d84c961426666e0e46ee87e006e9ba004bddc','configuration-version':'c22ade1341e060ba4bb3b44fedf7ce965a69e6ab'}
+          for name,expected in patches.items():
+            patch=subprocess.check_output(['git','show','HEAD:.github/patches/'+name+'.patch'])
+            digest=hashlib.sha1(b'blob '+str(len(patch)).encode()+b'\0'+patch).hexdigest()
+            assert digest==expected,'Reviewed patch integrity mismatch'
+            subprocess.run(['git','apply','--cached','--whitespace=error','-'],input=patch,check=True)
+          paths=['.github/workflows/ergonomics-check.yml','build-tools/Invoke-WindowsCi.ps1','tests/TicketJourneyChecks/run.cjs','web/js/pages/records.js','tests/ConfigurationChecks/Program.cs']
           staged=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
           assert set(staged)==set(paths),'Unexpected staged path'
           subprocess.run(['git','checkout-index','--force','--',*paths],check=True)
@@ -53,7 +55,9 @@ jobs:
       - name: Verify configuration and reader with actual C# handlers
         run: |
           dotnet run --project tests/FoundationChecks/FoundationChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/ticket-return-final/foundation.log
-          if ($LASTEXITCODE -ne 0) { throw 'Configuration regression.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Configuration foundation regression.' }
+          dotnet run --project tests/ConfigurationChecks/ConfigurationChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/ticket-return-final/configuration.log
+          if ($LASTEXITCODE -ne 0) { throw 'Configuration envelope regression.' }
           dotnet run --project tests/WorkplaceBridgeChecks/WorkplaceBridgeChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/ticket-return-final/workplace.log
           if ($LASTEXITCODE -ne 0) { throw 'Reader regression.' }
       - name: Verify production UI CSP and retain screenshots
@@ -77,10 +81,10 @@ jobs:
           gh auth setup-git
           current=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
           test "$current" = "$GITHUB_SHA"
-          git rm .github/workflows/finalize-ticket-return.yml .github/patches/ticket-return.patch
+          git rm .github/workflows/finalize-ticket-return.yml .github/patches/ticket-return.patch .github/patches/configuration-version.patch
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Preserve ticket search DOM and scroll on reader return; validate 38 configuration checks'
+          git commit -m 'Preserve ticket list on reader return and update 4.0 configuration regression checks'
           git push origin "HEAD:refs/heads/$branch"
           git rev-parse HEAD > artifacts/ticket-return-final/commit.txt
           git archive --format=zip HEAD -o artifacts/ticket-return-final/source.zip
