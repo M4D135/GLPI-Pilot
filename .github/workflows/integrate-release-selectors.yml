@@ -1,0 +1,62 @@
+name: Integrate reviewed production qualification selectors
+on:
+  push:
+    branches: ['codex/glpi-ticket-500ms-kitt-20261116']
+    paths: ['.github/workflows/integrate-release-selectors.yml']
+permissions:
+  contents: write
+concurrency:
+  group: integrate-release-selectors
+  cancel-in-progress: false
+jobs:
+  integrate:
+    if: github.repository == 'M4D135/GLPI-Pilot' && github.ref == 'refs/heads/codex/glpi-ticket-500ms-kitt-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Apply only the reviewed selector corrections
+        shell: python
+        run: |
+          import hashlib, pathlib, subprocess
+          expected = {
+            'tests/WebViewChecks/Program.cs': '79b8d2547fcecc816deae8030770ab83f5cdb71b',
+            'tests/WindowsStartupChecks/Program.cs': 'd0e9aba8d9521d11ebde127cb6ae11b249338afe',
+            'tests/WebViewChecks/Program.LocalFileTest.cs': '155ec4bb3239f90e41e84d1324580a21e7c5ccb2'
+          }
+          for name, digest in expected.items():
+            path = pathlib.Path(name)
+            raw = subprocess.check_output(['git','show','HEAD:'+name])
+            assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == digest, 'Source changed: '+name
+            text = raw.decode('utf-8')
+            if name.endswith('Program.LocalFileTest.cs'):
+              old = '        await page.Locator(".maps-terrain-tools > summary").ClickAsync();'
+              new = '        if (await page.Locator(".map-management-tools:not([open]) > summary").CountAsync() > 0)\n            await page.Locator(".map-management-tools > summary").ClickAsync();\n'+old
+              assert text.count(old) == 2
+            else:
+              old = 'GetByText("Aucun relevé chargé", new() { Exact = true })'
+              new = 'GetByRole(AriaRole.Heading, new() { Name = "Aucun relevé chargé", Exact = true, Level = 3 })'
+              assert text.count(old) == 1
+            path.write_bytes(text.replace(old,new).encode('utf-8'))
+          subprocess.run(['git','add','--',*expected],check=True)
+          assert set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()) == set(expected)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+      - name: Verify release guard tests
+        run: python3 -m unittest discover -s tests/ReleasePackChecks -p 'test_*.py'
+      - name: Commit corrected tests without changing application sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch=codex/glpi-ticket-500ms-kitt-20261116
+          gh auth setup-git
+          current=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          test "$current" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Target empty-state headings and open terrain management before nested options'
+          git push origin "HEAD:refs/heads/$branch"
+          echo "Corrected tests committed as $(git rev-parse HEAD). Full Windows qualification remains required." >> "$GITHUB_STEP_SUMMARY"
