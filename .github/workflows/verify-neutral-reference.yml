@@ -1,0 +1,105 @@
+name: Verify neutral reference notice and final UI suites
+on:
+  push:
+    branches: ['ops/glpi-shared-sync-timing-20261117']
+    paths: ['.github/workflows/verify-neutral-reference.yml']
+permissions:
+  contents: read
+jobs:
+  reference:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '2ce599f2e15216fca1ebefcb2b02aa665d5680e1'
+          persist-credentials: false
+      - name: Align the obsolete text expectation and strengthen the enabled-action check
+        shell: python
+        run: |
+          import hashlib,pathlib,subprocess
+          path=pathlib.Path('tests/WebViewChecks/Program.ReferenceSavedObservation.cs')
+          raw=subprocess.check_output(['git','show','HEAD:'+path.as_posix()])
+          def blob(b):return hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
+          assert blob(raw)=='55cf0a14391368c81435858de2e2871a5b9a4033','Unexpected test source'
+          text=raw.decode('utf-8')
+          before='            && (await Reference().InnerTextAsync()).Contains("Vous pouvez enregistrer le référentiel de travail", StringComparison.Ordinal)'
+          after='            && await Reference().GetByRole(AriaRole.Button, new() { Name = "Enregistrer le référentiel de travail…", Exact = true }).IsEnabledAsync()\n            && (await Reference().InnerTextAsync()).Contains("Enregistrement du référentiel de travail disponible.", StringComparison.Ordinal)\n            && !(await Reference().InnerTextAsync()).Contains("Vous pouvez", StringComparison.Ordinal)'
+          assert text.count(before)==1
+          new=text.replace(before,after).encode('utf-8');path.write_bytes(new)
+          evidence=pathlib.Path('artifacts/neutral-reference');evidence.mkdir(parents=True,exist_ok=True)
+          (evidence/'Program.ReferenceSavedObservation.cs').write_bytes(new)
+          (evidence/'source-blob.txt').write_text(blob(new)+'\n')
+          subprocess.run(['git','diff','--check'],check=True)
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Check preserved cache, archive and working-reference behavior through the real bridge
+        shell: pwsh
+        run: |
+          $env:GLPI_TEST_CHROMIUM = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe','C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $env:GLPI_TEST_CHROMIUM) { throw 'A real browser is required.' }
+          dotnet run --project tests/WebViewChecks/WebViewChecks.csproj -c Release -p:PlaywrightPlatform=win -- --reference-saved-observation-only --screenshots artifacts/neutral-reference/screenshots 2>&1 | Tee-Object artifacts/neutral-reference/reference.log
+          if ($LASTEXITCODE -ne 0) { throw 'Reference regression.' }
+      - name: Store only the verified test blob, without modifying any branch
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import hashlib,json,pathlib,subprocess
+          path=pathlib.Path('artifacts/neutral-reference/Program.ReferenceSavedObservation.cs');raw=path.read_bytes()
+          expected=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          payload=json.dumps({'content':raw.decode('utf-8'),'encoding':'utf-8'}).encode()
+          result=json.loads(subprocess.check_output(['gh','api','--method','POST','repos/M4D135/GLPI-Pilot/git/blobs','--input','-'],input=payload))
+          assert result['sha']==expected
+          path.with_name('stored-blob.json').write_text(json.dumps({'path':'tests/WebViewChecks/Program.ReferenceSavedObservation.cs','sha':expected,'base_commit':'2ce599f2e15216fca1ebefcb2b02aa665d5680e1','production_code_changed':False},indent=2))
+          print('Verified test blob: '+expected)
+      - name: Retain source, test verdict and screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: neutral-reference-${{ github.run_id }}
+          path: artifacts/neutral-reference/
+          retention-days: 14
+  remaining-ui:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [source-cache, shared-updates, motion, palette, library-connection, resolution]
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '2ce599f2e15216fca1ebefcb2b02aa665d5680e1'
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.402'
+          architecture: x64
+      - name: Run the unchanged remaining UI assertions
+        shell: pwsh
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          New-Item -ItemType Directory -Path artifacts/final-ui -Force | Out-Null
+          $env:GLPI_TEST_CHROMIUM = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe','C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $env:GLPI_TEST_CHROMIUM) { throw 'A real browser is required.' }
+          dotnet run --project tests/WebViewChecks/WebViewChecks.csproj -c Release -p:PlaywrightPlatform=win -- "--$($env:SUITE)-only" --screenshots artifacts/final-ui/screenshots 2>&1 | Tee-Object artifacts/final-ui/suite.log
+          if ($LASTEXITCODE -ne 0) { throw "Regression in $env:SUITE." }
+      - name: Retain unchanged UI verdicts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: final-ui-${{ matrix.suite }}-${{ github.run_id }}
+          path: artifacts/final-ui/
+          retention-days: 14
