@@ -1,0 +1,27 @@
+name: Requalify inspected production candidate
+on:
+  push:
+    branches: ['ops/glpi-shared-sync-timing-20261117']
+    paths: ['.github/workflows/requalify-inspected-candidate.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  requalify:
+    if: github.repository == 'M4D135/GLPI-Pilot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require the documented timeout and successful unmodified measurements
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/44134328787" > run.json
+          jq -e '.head_sha == "2ce599f2e15216fca1ebefcb2b02aa665d5680e1" and .path == ".github/workflows/windows.yml" and .status == "completed" and .conclusion == "failure" and .run_attempt == 1' run.json >/dev/null
+          gh api "repos/$GH_REPO/actions/runs/44136840467" > measurement.json
+          jq -e '.head_sha == "f7d9d8305200a42b690f0b69008b5acab00d833a" and .status == "completed" and .conclusion == "success"' measurement.json >/dev/null
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/codex/glpi-ticket-500ms-kitt-20261116" --jq .object.sha)" = "2ce599f2e15216fca1ebefcb2b02aa665d5680e1"
+          gh api --method POST "repos/$GH_REPO/actions/runs/44134328787/rerun"
+          echo 'Full run repeated on the unchanged commit after 23/23 isolated checks twice (78.844 s with build, 39.640 s without build). The original 180 s limits and all assertions remain unchanged. No publication is performed here.' >> "$GITHUB_STEP_SUMMARY"
