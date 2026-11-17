@@ -1,0 +1,58 @@
+name: Align cached reader regression fixtures
+on:
+  push:
+    branches: ['codex/glpi-ticket-500ms-kitt-20261116']
+    paths: ['.github/workflows/integrate-cached-reader-checks.yml']
+permissions:
+  contents: write
+concurrency:
+  group: integrate-cached-reader-checks
+  cancel-in-progress: false
+jobs:
+  integrate:
+    if: github.repository == 'M4D135/GLPI-Pilot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Update only the two offline-reader fixtures and preserve their no-network assertions
+        shell: python
+        run: |
+          import hashlib,pathlib,subprocess
+          p=pathlib.Path('tests/WorkplaceBridgeChecks/BrowserChecks.cs')
+          raw=p.read_bytes()
+          assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='5844ee45c0e1c332d0ce06a9a66e054ffe578859','Unexpected source file'
+          s=raw.decode('utf-8')
+          def once(old,new):
+            global s
+            assert s.count(old)==1,old
+            s=s.replace(old,new)
+          once('TicketDetailResult? detail = null, bool cacheDetail = true)', 'TicketDetailResult? detail = null, bool cacheDetail = true, bool cachedSource = false)')
+          once('            await Navigate(page, args);', '            // Cached-source navigation must remain network-free regardless of runner speed.\n            if (cachedSource) await Page.EvaluateAsync("()=>workState.session.cachedSource=true");\n            await Navigate(page, args);')
+          once('        await ui.Start("records", cacheDetail: false);\n        var list = ui.Page.Locator(".tickets-list-pane");\n        await list.GetByLabel("Recherche du relevé"', '        await ui.Start("records", cacheDetail: false, cachedSource: true);\n        var list = ui.Page.Locator(".tickets-list-pane");\n        await list.GetByLabel("Recherche du relevé"')
+          once('        await ui.Start("tickets", cacheDetail: false);', '        await ui.Start("tickets", cacheDetail: false, cachedSource: true);')
+          once('Opening, moving and returning never start a GLPI read, including with the legacy automatic-read setting enabled.', 'Cached-source opening, moving and returning never start a GLPI read, including with the legacy automatic-read setting enabled. Live-source delay and cancellation have separate regression coverage.')
+          once('WebView unified Tickets retains its queried list and unfinished personal work', 'WebView cached Tickets retains its queried list and unfinished personal work')
+          once('WebView saved dossiers and original-row links remain local without automatic reads', 'WebView cached saved dossiers and original-row links remain local without automatic reads')
+          p.write_text(s,encoding='utf-8',newline='\n')
+          subprocess.run(['git','add','--',str(p)],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          assert subprocess.check_output(['git','diff','--cached','--name-only'],text=True).strip()==str(p)
+      - name: Verify the unchanged live-read debounce, cancellation and cache tests
+        run: node --test tests/ErgonomicsChecks/ticket-live-read.test.mjs
+      - name: Commit only regression test source with an unchanged-head guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch=codex/glpi-ticket-500ms-kitt-20261116
+          gh auth setup-git
+          test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Separate cached-reader no-network assertions from delayed live refresh'
+          git push origin "HEAD:refs/heads/$branch"
+          git rev-parse HEAD
+          git diff HEAD^ HEAD --stat
