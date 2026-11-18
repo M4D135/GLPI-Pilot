@@ -51,6 +51,8 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var searchVerified = TargetUrlPolicy.IncludesSearch(page.Url, navigation.PortalUrl);
         Stage("Recherche du tableau mémorisé…", AutomaticRunPhase.Search);
         var table = await browser.WaitForAutoTableAsync(page, navigation, ct);
+        var preparation = await browser.PrepareColumnsAsync(table, settings, progress, ct);
+        table = preparation.Table;
         var scopeEvidence = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
         var observedSort = await browser.ReadObservedSortAsync(table, ct);
         Log?.Invoke($"PÉRIMÈTRE · critères observables={scopeEvidence.Known} ; empreinte conservée, valeurs absentes du journal.");
@@ -227,6 +229,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             ObservedSort = observedSort, Resumed = data.Provenance.Resumed, ResumeStartedAt = data.Provenance.ResumeStartedAt,
             StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
         };
+        ColumnPreparationPolicy.ApplyReceipt(data, preparation.Receipt);
         if (divergences.Count > 0 && data.Quality is { } observedQuality)
         {
             try

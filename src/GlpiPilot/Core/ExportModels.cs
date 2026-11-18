@@ -79,6 +79,20 @@ public sealed class ExtractionProvenance
     public bool Resumed { get; set; }
     public DateTimeOffset? ResumeStartedAt { get; set; }
     public Dictionary<string, double> StageSeconds { get; set; } = new(StringComparer.Ordinal);
+    public ColumnPreparationReceipt? ColumnPreparation { get; set; }
+}
+
+/// <summary>Native column preparation receipt; no ticket values, user IDs or form tokens.</summary>
+public sealed class ColumnPreparationReceipt
+{
+    public string Mode { get; set; } = "current";
+    public string State { get; set; } = "current";
+    public int AddedCount { get; set; }
+    public int ColumnCount { get; set; }
+    public bool SourceChanged { get; set; }
+    public string Message { get; set; } = "";
+    public List<string> MissingRoles { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
 }
 
 public sealed record ExportResult(string Path, int Rows, int Columns, int TruncatedCells);

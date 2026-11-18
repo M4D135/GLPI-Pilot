@@ -219,7 +219,7 @@ export async function renderPilotWorkspace(ctx) {
       const items = board.widgets.filter(item => {
         if (item.section !== section.key || item.hidden) return false;
         const widget = widgets.get(item.id), context = widget?.weatherContext;
-        return editing || context?.applicable !== false && !context?.representedByHero && (!board.hideUnavailableWidgets || widget?.available !== false);
+        return editing || context?.applicable !== false && !context?.representedByHero && (board.hideUnavailableWidgets === false || widget?.available !== false);
       });
       if (!items.length && !editing) continue;
       const scopedWeather = section.key === 'weather' && model.weatherScope && model.weatherScope.mode !== 'service';
@@ -429,7 +429,7 @@ export async function renderPilotWorkspace(ctx) {
   }
   function chooseVisibility() {
     const draft = clone(board);
-    const showUnavailable = checkbox('Conserver les cartes sans donnée calculable', !draft.hideUnavailableWidgets);
+    const showUnavailable = checkbox('Afficher les widgets indisponibles', draft.hideUnavailableWidgets === false);
     const body = el('div', {}, showUnavailable.element, ...draft.sections.map(section => {
       const visible = checkbox(section.title, !section.hidden); visible.control.addEventListener('change', () => section.hidden = !visible.control.checked);
       return el('section', { class: 'workspace-visibility-group' }, visible.element, ...draft.widgets.filter(item => item.section === section.key).map(item => {
@@ -437,7 +437,9 @@ export async function renderPilotWorkspace(ctx) {
       }));
     }));
     dialog('Choisir les informations visibles', body, [{ label: 'Appliquer', primary: true, action: async close => {
-      draft.hideUnavailableWidgets = !showUnavailable.control.checked; await persist(current => Object.assign(current, draft)); close();
+      draft.hideUnavailableWidgets = !showUnavailable.control.checked;
+      if (scope.composition === 'service') draft.unavailableWidgetsPreferenceSet = true;
+      await persist(current => Object.assign(current, draft)); close();
     } }]);
   }
   function addWidget() {

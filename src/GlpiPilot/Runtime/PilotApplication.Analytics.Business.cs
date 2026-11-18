@@ -126,13 +126,16 @@ public sealed partial class PilotApplication
         if (layout.Boards.Count != 1 || layout.Boards[0].Id != "business-" + key)
             throw new InvalidDataException("Une rubrique native conserve son tableau. Créez les tableaux supplémentaires dans Tableaux personnalisés.");
         var before = AnalyticsBusinessLayout(key); var journal = AnalyticsBusinessJournal(key, before);
-        var signature = JsonSerializer.Serialize(layout, Json); if (signature == journal.Expected) return;
+        var signature = JsonSerializer.Serialize(layout, Json); var changed = signature != journal.Expected;
+        var pendingVisibilityPreference = Settings.Dashboard.Business.BoardOverrides
+            .Any(board => board.Id == "business-" + key && !board.UnavailableWidgetsPreferenceSet);
+        if (!changed && !pendingVisibilityPreference) return;
         var next = Settings.Copy(); next.Dashboard.Business.BoardOverrides.RemoveAll(board => board.Id == "business-" + key);
         next.Dashboard.Business.BoardOverrides.Add(layout.Boards[0].Copy());
         next.Dashboard.Layout.CatalogFavorites = new(layout.CatalogFavorites); next.Dashboard.Layout.CatalogRecent = new(layout.CatalogRecent);
         next.Dashboard.Layout.FilterPresets = layout.FilterPresets.Select(preset => preset.Copy()).ToList();
         next.Dashboard.Business.Validate(); CommitSettings(next); _analyticsRun = null;
-        if (remember) { journal.Undo.Add(before); if (journal.Undo.Count > 20) journal.Undo.RemoveAt(0); journal.Redo.Clear(); }
+        if (remember && changed) { journal.Undo.Add(before); if (journal.Undo.Count > 20) journal.Undo.RemoveAt(0); journal.Redo.Clear(); }
         journal.Expected = JsonSerializer.Serialize(AnalyticsBusinessLayout(key), Json);
     }
     private Task<object?> AnalyticsBusinessMoveLayoutAsync(string key, bool redo, CancellationToken ct)

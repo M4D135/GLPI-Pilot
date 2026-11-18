@@ -21,7 +21,7 @@ public static partial class ConfigurationReview
         new(ConfigurationParts.Theme, "Thème clair / sombre", current.Theme, incoming.Theme)
     };
     private static string Address(AppSettings value) => AppPaths.SafeUrl(value.PortalUrl);
-    private static string Extraction(AppSettings value) => $"{value.AutoMode} · {value.MaxPages} pages · {value.MaxRows:N0} lignes max · {value.TimeoutSeconds} s SSO";
+    private static string Extraction(AppSettings value) => $"{value.AutoMode} · colonnes : {value.ColumnPreparationMode switch { "all" => "toutes", "current" => "vue actuelle", _ => "supervision" }} · {value.MaxPages} pages · {value.MaxRows:N0} lignes max · {value.TimeoutSeconds} s SSO";
     private static string Rules(AppSettings value) => $"{value.Dashboard.ColumnMappings.Count} colonnes · {value.Dashboard.DateCulture} · seuils {value.Dashboard.StaleDays}/{value.Dashboard.OldDays} j";
     private static string Boards(AppSettings value) => $"{value.Dashboard.Layout.Boards.Count} globaux / {value.Dashboard.PersonalLayout.Boards.Count} personnels · {value.Dashboard.Business.WeatherRules.Count} règles de pilotage";
     private static bool BusinessConfigured(BusinessDashboardSettings value) => value.WeatherRules.Count > 0 || value.BoardOverrides.Count > 0
@@ -34,7 +34,7 @@ public static partial class ConfigurationReview
         var result = current.Copy();
         if (parts.HasFlag(ConfigurationParts.Extraction))
         {
-            result.AutoMode = incoming.AutoMode; result.AutoSaveXlsx = incoming.AutoSaveXlsx;
+            result.AutoMode = incoming.AutoMode; result.ColumnPreparationMode = incoming.ColumnPreparationMode; result.AutoSaveXlsx = incoming.AutoSaveXlsx;
             result.ReadySelector = incoming.ReadySelector; result.NextSelector = incoming.NextSelector; result.SelectorOrigin = incoming.SelectorOrigin;
             result.TimeoutSeconds = incoming.TimeoutSeconds; result.DownloadTimeoutSeconds = incoming.DownloadTimeoutSeconds;
             result.ListTimeoutSeconds = incoming.ListTimeoutSeconds; result.DetailTimeoutSeconds = incoming.DetailTimeoutSeconds; result.ReconnectAttempts = incoming.ReconnectAttempts; result.ResumePagination = incoming.ResumePagination; result.CheckpointMaximumAgeMinutes = incoming.CheckpointMaximumAgeMinutes; result.MinimumFreeSpaceMb = incoming.MinimumFreeSpaceMb;

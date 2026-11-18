@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>GLPI-Pilot</AssemblyName>
     <RootNamespace>GlpiPilot</RootNamespace>
-    <Version>4.0.2</Version>
+    <Version>4.0.3</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -36,6 +36,7 @@
     <Content Include="../../web/**/*" LinkBase="wad/web" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <EmbeddedResource Include="BrowserScripts/bridge.js" />
     <EmbeddedResource Include="BrowserScripts/native-export.js" />
+    <EmbeddedResource Include="BrowserScripts/native-columns.js" />
     <EmbeddedResource Include="BrowserScripts/ticket-details.js" />
   </ItemGroup>
   <!-- The SDK adds both desktop adapters; this application hosts only WinForms. -->

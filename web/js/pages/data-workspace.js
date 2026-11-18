@@ -36,7 +36,8 @@ export async function renderDataWorkspace(ctx) {
   const connection = form([
     { key: 'portalUrl', label: simulation ? 'Adresse de la source simulée' : 'Adresse de la recherche GLPI', required: true, help: simulation ? demo ? 'La collecte utilise le scénario fictif, sans connexion à un portail réel.' : 'La collecte réutilise les lignes du fichier chargé, sans connexion à un portail réel.' : 'Adresse complète de la recherche GLPI, filtres compris.' },
     { key: 'browserChannel', label: 'Navigateur', type: 'select', options: browserOptions(state) },
-    { key: 'autoMode', label: 'Collecte', type: 'select', options: [{ value: 'native', label: 'Export natif GLPI' }, { value: 'pagination', label: 'Tableau et pagination' }] }
+    { key: 'autoMode', label: 'Collecte', type: 'select', options: [{ value: 'native', label: 'Export natif GLPI' }, { value: 'pagination', label: 'Tableau et pagination' }] },
+    { key: 'columnPreparationMode', label: 'Colonnes avant la collecte', type: 'select', options: [{ value: 'current', label: 'Vue actuelle' }, { value: 'supervision', label: 'Colonnes de supervision' }, { value: 'all', label: 'Toutes les colonnes proposées par GLPI' }], help: simulation ? 'La simulation conserve les colonnes du scénario.' : 'GLPI mémorise les ajouts dans la vue personnelle, sans retirer de colonne ni changer les filtres. Le mode « Toutes » peut prendre plus de temps. Si cette commande n’est pas disponible, la collecte conserve la vue actuelle et le signale.' }
   ], { ...state.settings, portalUrl: simulation ? state.settings.portalUrl || 'https://simulation.glpi.local/front/ticket.php' : state.settings.portalUrl });
   const savedSettings = result => { revision = result.revision; };
   const saveConnection = async () => { const result = await call('settings.save', { revision, settings: { ...state.settings, ...connection.read() } }); savedSettings(result); connection.markSaved(); };
@@ -47,7 +48,7 @@ export async function renderDataWorkspace(ctx) {
     // in place; a locally edited connection keeps its revision and stale guard.
     if (signal.aborted || connection.element.pilotHasUnsavedChanges()) return;
     revision = updated.revision;
-    for (const key of ['portalUrl', 'browserChannel', 'autoMode']) connection.controls.get(key).control.value = updated.settings[key];
+    for (const key of ['portalUrl', 'browserChannel', 'autoMode', 'columnPreparationMode']) connection.controls.get(key).control.value = updated.settings[key];
     connection.markSaved();
     replaceChildren(source, ...[{ value: '', label: 'Configuration courante' }, ...updated.settings.sources.map(item => ({ value: item.id, label: item.name }))]
       .map(item => el('option', { value: item.value, text: item.label })));
@@ -71,6 +72,13 @@ export async function renderDataWorkspace(ctx) {
   alternatives.classList.add('workspace-source-alternatives');
   grid.append(live, alternatives);
   root.append(current);
+  const columnReceipt = state.session.provenance?.columnPreparation;
+  if (columnReceipt) root.append(card('Colonnes de la dernière collecte',
+    el('p', { class: columnReceipt.state === 'unavailable' ? 'notice warning' : 'help', text: columnReceipt.message }),
+    columnReceipt.missingRoles?.length ? el('details', {},
+      el('summary', { text: `${columnReceipt.missingRoles.length} champs de supervision non retrouvés dans cette vue` }),
+      el('p', { class: 'help', text: 'Ces champs ne sont pas proposés par le profil GLPI ou ne correspondent pas aux colonnes reconnues. Les données présentes restent utilisables.' }),
+      el('ul', {}, ...columnReceipt.missingRoles.map(label => el('li', { text: label })))) : null));
   const sourceCache = await sourceCacheCard(ctx); if (signal.aborted) return () => panels.dispose();
   if (sourceCache) root.append(sourceCache);
   if(isFileSource(state.session))root.append(card('Source CSV / Excel',

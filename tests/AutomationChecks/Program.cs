@@ -98,6 +98,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Afficher tout incomplet ou au-delà de la limite : aucun fichier complet", CheckDisplayAllRejected),
     ("Gestion de fenêtre bloquée : délai borné, sémaphore libéré et annulation rapide", CheckWindowManagementTimeout)
 };
+checks.AddRange(ColumnPreparationBrowserChecks.Cases(browser));
 var checkFilter = Environment.GetEnvironmentVariable("GLPI_TEST_FILTER");
 if (!string.IsNullOrWhiteSpace(checkFilter))
 {
@@ -136,6 +137,7 @@ AppSettings Settings(string url = target) => new()
     MaxPages = 10,
     MaxRows = 100,
     AutoMode = "native",
+    ColumnPreparationMode = "current",
     AutoSaveXlsx = true,
     ExportFolder = Path.Combine(temporary, Guid.NewGuid().ToString("N"))
 };

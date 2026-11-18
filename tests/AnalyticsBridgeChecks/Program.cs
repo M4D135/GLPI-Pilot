@@ -55,6 +55,12 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--native-availability-only"))
+            {
+                await CheckNativeAvailabilityRuntime();
+                if (args.Contains("--web")) await CheckWeb(args);
+                Console.WriteLine($"{_passed}/{_passed} native availability checks passed."); return;
+            }
             if (args.Contains("--supervision-only"))
             {
                 await CheckSupervisionCompatibility();
@@ -91,6 +97,7 @@ internal static partial class Program
             await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); await CheckWeatherScopeRuntime(); await CheckSelectionWeatherRuntime(); CheckScopedHistory();
             await CheckStockViewsRuntime();
             await CheckSupervisionCompatibility();
+            await CheckNativeAvailabilityRuntime();
             await CheckUnavailableWidgetFilters();
             await CheckSiteLocationSummaryRuntime();
             await CheckSiteGeographySimulationRuntime();

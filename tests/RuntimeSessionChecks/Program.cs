@@ -73,6 +73,53 @@ Add("Invalid settings never replace valid in-memory or persisted configuration",
     await Refuse(() => f.Call("settings.save", new { settings = next, revision }), "limites");
     Check(JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json) == previous && f.App.Revision == revision && AppSettings.Load().MaxRows > 0);
 });
+Add("Column preparation: changing only the mode retains the observation and invalidates old configuration forms", async f =>
+{
+    var data = f.App.Result!; var source = data.SourceUrl; var revision = f.App.Revision;
+    var previous = f.App.Settings.Copy(); var next = previous.Copy(); next.ColumnPreparationMode = "current";
+    var eventsBefore = f.Events.Count;
+    var response = await f.Call("settings.save", new { settings = next, revision });
+    Check(f.App.Revision > revision && response.GetProperty("revision").GetInt64() == f.App.Revision,
+        "Changing only column preparation did not advance the configuration revision.");
+    Check(ReferenceEquals(data, f.App.Result) && data.SourceUrl == source && f.App.Settings.PortalUrl == SessionFixture.SourceA
+        && f.App.Settings.ActiveSourceId == SessionFixture.ProfileA && response.GetProperty("session").GetProperty("loaded").GetBoolean(),
+        "A display-column preference detached or replaced the current observation.");
+    Check(f.Events.Skip(eventsBefore).Any(e => e.Name == "session.changed"
+        && JsonSerializer.SerializeToElement(e.Data, PilotApplication.Json).GetProperty("revision").GetInt64() == f.App.Revision),
+        "The new collection configuration was not announced to the session.");
+    var savedRevision = f.App.Revision;
+    await Refuse(() => f.Call("settings.save", new { settings = previous, revision }), "changé");
+    Check(f.App.Revision == savedRevision && f.App.Settings.ColumnPreparationMode == "current"
+        && AppSettings.Load().ColumnPreparationMode == "current" && ReferenceEquals(data, f.App.Result),
+        "An obsolete form overwrote the chosen preparation mode.");
+});
+foreach (var mode in new[] { "current", "supervision", "all" })
+    Add("Column preparation: the " + mode + " mode is accepted and persisted", async f =>
+    {
+        var data = f.App.Result; var next = f.App.Settings.Copy(); next.ColumnPreparationMode = mode;
+        var response = await f.Call("settings.save", new { settings = next, revision = f.App.Revision });
+        Check(f.App.Settings.ColumnPreparationMode == mode && AppSettings.Load().ColumnPreparationMode == mode
+            && response.GetProperty("settings").GetProperty("columnPreparationMode").GetString() == mode,
+            "A supported column preparation mode was lost across the actual settings handler or persistence.");
+        Check(ReferenceEquals(data, f.App.Result) && f.App.Result!.SourceUrl == SessionFixture.SourceA,
+            "A supported preparation mode changed the source observation.");
+    });
+foreach (var mode in new[] { "global", "script" })
+    Add("Column preparation: the unsupported " + mode + " mode is rejected without mutation", async f =>
+    {
+        await f.Call("settings.save", new { settings = f.App.Settings.Copy(), revision = f.App.Revision });
+        var data = f.App.Result; var revision = f.App.Revision; var eventsBefore = f.Events.Count;
+        var before = JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json);
+        var savedBytes = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
+        var next = f.App.Settings.Copy(); next.ColumnPreparationMode = mode;
+        await Refuse(() => f.Call("settings.save", new { settings = next, revision }), "colonnes");
+        var retainedBytes = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
+        Check(JsonSerializer.Serialize(f.App.Settings, PilotApplication.Json) == before && f.App.Revision == revision
+            && ReferenceEquals(data, f.App.Result) && savedBytes.SequenceEqual(retainedBytes),
+            "A refused preparation mode changed the configuration, source or persisted file.");
+        Check(!f.Events.Skip(eventsBefore).Any(e => e.Name is "settings.changed" or "session.changed"),
+            "A refused preparation mode was published as a configuration change.");
+    });
 Add("Appearance changes do not obsolete unchanged data coordinates", async f =>
 {
     var revision = f.App.Revision; await f.Call("app.appearance", new { theme = "light", zoom = 125 });
@@ -262,6 +309,7 @@ else Console.WriteLine("SKIP Chromium checks: set GLPI_TEST_CHROMIUM to a local 
 if (args.Contains("--simulation-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Simulation:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--ticket-search-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Ticket search:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--ticket-cache-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Ticket cache:", StringComparison.Ordinal)).ToList();
+if (args.Contains("--column-preparation-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Column preparation:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--maps-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Embedded maps:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--file-source-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("File source:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--site-patch-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Site patch:", StringComparison.Ordinal)).ToList();

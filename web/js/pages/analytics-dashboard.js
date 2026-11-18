@@ -132,7 +132,9 @@ export async function renderDashboard(ctx) {
   const visibilityHost = el('div', { class: 'analytics-visibility no-print' }, showUnavailable.element, availabilitySummary);
   showUnavailable.control.addEventListener('change', () => {
     if (saving) { showUnavailable.control.checked = board.hideUnavailableWidgets === false; return; }
-    board.hideUnavailableWidgets = !showUnavailable.control.checked; persist().catch(reason => error(ctx, reason));
+    board.hideUnavailableWidgets = !showUnavailable.control.checked;
+    if (business) board.unavailableWidgetsPreferenceSet = true;
+    persist().catch(reason => error(ctx, reason));
   });
   const scopeTools = toolbar(cross.element,
     command(ctx, 'Voir les lignes du périmètre', () => rowDialog(ctx, 'dashboard.rows', { ...runArgs, kind: 'scope' })),

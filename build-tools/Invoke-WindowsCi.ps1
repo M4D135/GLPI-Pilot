@@ -420,7 +420,7 @@ try {
                 @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^38/38 Foundation checks passed\.\r?$' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
-                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '67/67 vérifications de configuration réussies.' },
+                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '75/75 vérifications de configuration réussies.' },
                 @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '164/164' },
                 @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '47/47 checks passed.' },
                 @{ Project = 'WorkbookProfileChecks'; Log = 'workbook-profile-checks.log'; Summary = '21/21 workbook profile checks passed.' },
@@ -479,7 +479,7 @@ try {
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
                 -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
-                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '159 native export DOM checks passed.'
+                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '202 native export DOM checks passed.'
         }
         'LibraryAcquisitionChecks' {
             # Own stage since 3.13.3: with its 25 checks, this suite no longer fits the browser stage's budget beside the others.

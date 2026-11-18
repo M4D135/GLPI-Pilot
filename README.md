@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.2 · Windows x64
+# GLPI Pilot 4.0.3 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.2 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.3 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.3 : supervision adaptée aux colonnes et préparation de la vue GLPI
+
+Les tableaux natifs masquent automatiquement les widgets sans données calculables, y compris les dispositions enregistrées par les anciennes versions. Les cartes sont conservées et reviennent quand les colonnes nécessaires sont présentes ; les valeurs calculées à zéro restent affichées. La personnalisation permet de voir les cartes indisponibles et de choisir explicitement leur affichage.
+
+La collecte peut compléter les colonnes de la vue personnelle GLPI avant de récupérer le relevé : vue actuelle, colonnes de supervision ou toutes les colonnes proposées par GLPI. La préparation ajoute les colonnes manquantes par les commandes natives, puis vérifie à nouveau le périmètre et le tableau. Voir les [notes 4.0.3](docs/RELEASE-4.0.3.md).
 
 ## 4.0.2 : indicateur vert après une lecture réussie
 

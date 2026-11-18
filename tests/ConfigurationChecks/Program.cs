@@ -59,6 +59,9 @@ var checks = new List<(string Name, Action Run)>
 var referenceChecks = SiteReferenceInitializerChecks.Cases(temporary).ToList();
 if (args.Contains("--site-reference-only", StringComparer.Ordinal)) checks = referenceChecks;
 else checks.AddRange(referenceChecks);
+var columnChecks = ColumnPreparationChecks.Cases(temporary).ToList();
+if (args.Contains("--column-preparation-only", StringComparer.Ordinal)) checks = columnChecks;
+else checks.AddRange(columnChecks);
 int failures = 0;
 try
 {

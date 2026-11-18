@@ -114,7 +114,7 @@ public static partial class BusinessDashboardTemplates
         var view = Views.FirstOrDefault(view => view.Key == key) ?? throw new System.IO.InvalidDataException("Rubrique de pilotage inconnue.");
         if (settings.Business.BoardOverrides.FirstOrDefault(board => board.Id == "business-" + key) is { } saved)
         {
-            var copy = saved.Copy();
+            var copy = NativeBoardCopy(saved);
             // Upgrade only the two original native summary cards. Keep custom
             // municipality probes, labels, filters and presentation untouched.
             if (key == "sites")
@@ -125,7 +125,8 @@ public static partial class BusinessDashboardTemplates
                 }
             return copy;
         }
-        var board = new DashboardBoardSettings { Id = "business-" + key, Name = view.Title, Description = view.Description, HideUnavailableWidgets = false };
+        var board = new DashboardBoardSettings { Id = "business-" + key, Name = view.Title, Description = view.Description,
+            HideUnavailableWidgets = true, UnavailableWidgetsPreferenceSet = true };
         void Section(string id, string title, string description = "", string accent = "blue") => board.Sections.Add(new() { Key = id, Title = title, Description = description, Accent = accent });
         DashboardWidgetSettings Add(string kind, string source, string title, string section, int span = 4, int height = 320, string accent = "blue")
         {

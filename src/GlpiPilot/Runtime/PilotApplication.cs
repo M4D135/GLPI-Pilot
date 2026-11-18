@@ -289,7 +289,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
         rules = SnapshotStore.RulesFingerprint(settings), settings.TicketDetails, settings.Dashboard.PersonalTechnician, settings.Sources,
         settings.TimeoutSeconds, settings.DownloadTimeoutSeconds, settings.ListTimeoutSeconds, settings.DetailTimeoutSeconds, settings.ReconnectAttempts,
         settings.MaxPages, settings.MaxRows, settings.ExpectedTotal, settings.ResumePagination, settings.CheckpointMaximumAgeMinutes,
-        settings.MinimumFreeSpaceMb, settings.AutoSaveXlsx, settings.ExportFolder, settings.History, settings.Automation,
+        settings.MinimumFreeSpaceMb, settings.AutoSaveXlsx, settings.ColumnPreparationMode, settings.ExportFolder, settings.History, settings.Automation,
         settings.ReadySelector, settings.NextSelector, settings.SelectorOrigin, settings.TableSelector, settings.TableHeaderFingerprint, settings.TableFrameOrigin, settings.TableFrameName, settings.TableTargetUrl,
         settings.NativeSelectorOrigin, settings.NativeMenuSelector, settings.NativeFormatSelector, settings.NativeFormatValue, settings.NativeScopeSelector, settings.NativeScopeValue, settings.NativeSubmitSelector
     }, Json);

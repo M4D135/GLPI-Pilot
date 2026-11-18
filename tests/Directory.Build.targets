@@ -1,0 +1,7 @@
+<Project>
+  <!-- Browser test hosts already embedding the native export adapter also
+       exercise collection preparation. Pure Core hosts need no browser asset. -->
+  <ItemGroup Condition="'@(EmbeddedResource->WithMetadataValue('Filename', 'native-export'))' != ''">
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../src/GlpiPilot/BrowserScripts/native-columns.js" LogicalName="$(AssemblyName).BrowserScripts.native-columns.js" />
+  </ItemGroup>
+</Project>

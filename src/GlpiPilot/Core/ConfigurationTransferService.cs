@@ -32,7 +32,7 @@ public static class ConfigurationTransferService
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true, MaxDepth = 24 };
     private static readonly HashSet<string> Shareable = new(StringComparer.OrdinalIgnoreCase)
     {
-        "PortalUrl", "BrowserChannel", "Theme", "AutoMode", "AutoSaveXlsx", "ReadySelector", "NextSelector", "SelectorOrigin",
+        "PortalUrl", "BrowserChannel", "Theme", "AutoMode", "ColumnPreparationMode", "AutoSaveXlsx", "ReadySelector", "NextSelector", "SelectorOrigin",
         "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "ReconnectAttempts", "ResumePagination", "CheckpointMaximumAgeMinutes", "MinimumFreeSpaceMb", "MaxPages", "MaxRows", "ExpectedTotal", "TableSelector", "TableHeaderFingerprint",
         "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector",
         "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TicketDetails", "Dashboard", "Cities", "Queries", "Sources"
@@ -49,7 +49,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> LayoutProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Version", "ActiveBoardId", "Boards", "CatalogFavorites", "CatalogRecent", "FilterPresets" };
     private static readonly HashSet<string> BoardProperties = new(StringComparer.OrdinalIgnoreCase)
-    { "Id", "Name", "Description", "Density", "HideUnavailableWidgets", "FreshnessWarningHours", "Sections", "Widgets", "Filters", "SavedSelection", "Presentation", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
+    { "Id", "Name", "Description", "Density", "HideUnavailableWidgets", "UnavailableWidgetsPreferenceSet", "FreshnessWarningHours", "Sections", "Widgets", "Filters", "SavedSelection", "Presentation", "CrossFilterOnClick", "ComparisonEnabled", "ComparisonFilters", "CollapsedSections" };
     private static readonly HashSet<string> DashboardSectionProperties = new(StringComparer.OrdinalIgnoreCase) { "Key", "Title", "Description", "Accent", "Hidden" };
     private static readonly HashSet<string> WidgetProperties = new(StringComparer.OrdinalIgnoreCase)
     { "Id", "Kind", "SourceKey", "Title", "Span", "Height", "GridX", "GridY", "AutoHeight", "StartNewRow", "StackedMode", "ParetoThresholdPercent", "ShowMiniHistory", "HistoryPeriodDays", "Style", "Accent", "Presentation", "TopCount", "ShowDescription", "Hidden", "Locked", "Note", "TargetValue", "WarningValue", "CriticalValue", "LowerIsBetter", "Section", "Filters", "HistogramBreaks", "ParticipationRoster", "SelectionThresholds", "WeatherThresholdPolicy" };
@@ -82,7 +82,7 @@ public static class ConfigurationTransferService
     private static readonly HashSet<string> SiteProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "CityId", "Name", "Aliases", "Address", "Latitude", "Longitude", "Openings", "ClosedDates", "Contact", "Equipment" };
     private static readonly HashSet<string> BuildingProperties = new(StringComparer.OrdinalIgnoreCase) { "Id", "SiteId", "Name", "Aliases", "Floor" };
     private static readonly HashSet<string> OpeningProperties = new(StringComparer.OrdinalIgnoreCase) { "Day", "From", "Until" };
-    private static readonly HashSet<string> AcquisitionProperties = new(StringComparer.Ordinal) { "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "ReconnectAttempts", "ResumePagination", "AutoSaveXlsx" };
+    private static readonly HashSet<string> AcquisitionProperties = new(StringComparer.Ordinal) { "ColumnPreparationMode", "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "ReconnectAttempts", "ResumePagination", "AutoSaveXlsx" };
     private static readonly HashSet<string> CredentialParameters = new(StringComparer.OrdinalIgnoreCase)
     {
         "code", "state", "session_state", "access_token", "id_token", "refresh_token", "SAMLResponse", "SAMLRequest", "RelayState",
@@ -308,6 +308,7 @@ public static class ConfigurationTransferService
         settings.BrowserChannel = EnumValue(settings.BrowserChannel, "Navigateur", "msedge", "chrome", "firefox");
         settings.Theme = EnumValue(settings.Theme, "Thème", "dark", "light");
         settings.AutoMode = EnumValue(settings.AutoMode, "Méthode d’extraction", "native", "pagination");
+        settings.ColumnPreparationMode = EnumValue(settings.ColumnPreparationMode, "Colonnes à préparer", "current", "supervision", "all");
         Range(settings.TimeoutSeconds, 1, 1800, "Délai SSO");
         Range(settings.DownloadTimeoutSeconds, 1, 7200, "Délai de téléchargement");
         Range(settings.MaxPages, 1, 10000, "Nombre maximal de pages");
@@ -454,7 +455,8 @@ public static class ConfigurationTransferService
                 {
                     if (property.Value.ValueKind != JsonValueKind.String || property.Value.GetString()!.Length > 8192) throw Invalid("Repère ou délai de source invalide.");
                     var value = property.Value.GetString()!;
-                    if (property.Name is "ResumePagination" or "AutoSaveXlsx") { if (!bool.TryParse(value, out _)) throw Invalid("Option de collecte de source invalide."); }
+                    if (property.Name == "ColumnPreparationMode") _ = EnumValue(value, "Colonnes à préparer", "current", "supervision", "all");
+                    else if (property.Name is "ResumePagination" or "AutoSaveXlsx") { if (!bool.TryParse(value, out _)) throw Invalid("Option de collecte de source invalide."); }
                     else if (property.Name is "TimeoutSeconds" or "DownloadTimeoutSeconds" or "ListTimeoutSeconds" or "DetailTimeoutSeconds" or "MaxPages" or "MaxRows" or "ExpectedTotal" or "ReconnectAttempts")
                     {
                         if (property.Name == "ExpectedTotal" && value.Length == 0) continue;
@@ -597,8 +599,9 @@ public static class ConfigurationTransferService
             JsonText(board, "Description", 600); JsonEnum(board, "Density", "comfortable", "compact");
             if (Find(board, "FreshnessWarningHours") is { ValueKind: not JsonValueKind.Null })
                 JsonRange(board, "FreshnessWarningHours", 1, 8760);
-            if (Find(board, "HideUnavailableWidgets") is { } hideUnavailable && hideUnavailable.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                throw Invalid("La visibilité des widgets indisponibles doit valoir vrai ou faux.");
+            foreach (var property in new[] { "HideUnavailableWidgets", "UnavailableWidgetsPreferenceSet" })
+                if (Find(board, property) is { } option && option.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    throw Invalid("La visibilité des widgets indisponibles doit valoir vrai ou faux.");
             var sectionKeys = new HashSet<string>(StringComparer.Ordinal);
             ValidateObjectList(board, "Sections", 60, DashboardSectionProperties, section =>
             {

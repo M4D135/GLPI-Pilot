@@ -496,6 +496,7 @@ async function run() {
     document.querySelector('#about_modal_100').removeAttribute('role');
   });
   equal((await readPopupProofs()).csvRepresentations, [], 'An incomplete About modal structure is not a version proof');
+  await require('./columns.cjs')({ browser, project, ok, equal });
   log(checks + ' native export DOM checks passed.');
 }
 

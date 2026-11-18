@@ -33,7 +33,9 @@ internal static partial class Program
             """);
         var initial = JsonSerializer.Serialize(new { settings = app.Settings, session = new { loaded = true, revision = app.Revision, rows = source.Rows.Count, complete = true, historical = false, demo = false } }, PilotApplication.Json);
         var harness = """
-            import {api} from '/js/bridge.js'; import {pages} from '/js/pages/analytics.js';
+            import {api} from '/js/bridge.js'; import {pages as analyticsPages} from '/js/pages/analytics.js';
+            import {renderPilotWorkspace} from '/js/pages/pilot-dashboards.js';
+            const pages=[...analyticsPages,{id:'pilot',render:renderPilotWorkspace}];
             const root=document.querySelector('main'), state=INITIAL; let abort,cleanup;
             window.navigationEvents=[];window.notices=[];
             api.on('session.changed', session=>state.session=session); api.on('settings.changed', event=>state.settings=event.settings);
@@ -85,6 +87,13 @@ internal static partial class Program
         }
         async Task CloseDialogs() { while (await page.GetByRole(AriaRole.Dialog).CountAsync() > 0) await page.Keyboard.PressAsync("Escape"); }
         await page.GotoAsync("https://glpi-pilot.local/analytics-check.html"); await Ready("dashboard");
+        if (args.Contains("--native-availability-only"))
+        {
+            await CheckNativeAvailabilityWeb(app, page, Open, args);
+            Check(external.IsEmpty && errors.IsEmpty,
+                "Native availability controls use local production modules without browser errors or external requests.");
+            await delivery; return;
+        }
         await Until("document.querySelectorAll('.analytics-mini-history svg').length>0");
         Check(await page.Locator(".analytics-widget").CountAsync() == 5 && await page.Locator("[data-widget-id=map] svg").CountAsync() >= 1, "The real WebView dashboard renders metrics, comparable mini-curves, map and population widgets.");
         Check(await page.Locator(".analytics-column-chart polyline").CountAsync() == 1 && await page.EvaluateAsync<string>("getComputedStyle(document.querySelector('.analytics-widget')).gridColumnStart") != "auto", "Pareto renders a real cumulative curve and CSSOM spans work under strict CSP.");
@@ -462,6 +471,7 @@ internal static partial class Program
             await Button("Modifier le dashboard").ClickAsync();
             await page.ScreenshotAsync(new() { Path = Path.Combine(output, "analytics-dashboard-editor.png"), FullPage = true });
         }
+        await CheckNativeAvailabilityWeb(app, page, Open, args);
         Check(external.IsEmpty, "Maps, local assistance and reports initiate no external browser requests.");
         Check(errors.IsEmpty, "Analytics modules produce no browser exceptions or strict-CSP violations." + (errors.IsEmpty ? "" : "\n" + string.Join("\n", errors)));
         await delivery;

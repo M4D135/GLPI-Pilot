@@ -269,6 +269,9 @@ public sealed class DashboardBoardSettings
     public string Description { get; set; } = "";
     public string Density { get; set; } = "compact";
     public bool HideUnavailableWidgets { get; set; } = true;
+    // Older native templates forced every unavailable card to be shown. This
+    // marker distinguishes that legacy default from a saved visibility choice.
+    public bool UnavailableWidgetsPreferenceSet { get; set; }
     public int? FreshnessWarningHours { get; set; }
     public List<DashboardSectionSettings> Sections { get; set; } = new();
     public List<DashboardWidgetSettings> Widgets { get; set; } = new();
@@ -280,6 +283,7 @@ public sealed class DashboardBoardSettings
     public List<DashboardScopeFilter> ComparisonFilters { get; set; } = new();
     public List<string> CollapsedSections { get; set; } = new();
     public DashboardBoardSettings Copy() => new() { Id = Id, Name = Name, Description = Description, Density = Density, HideUnavailableWidgets = HideUnavailableWidgets,
+        UnavailableWidgetsPreferenceSet = UnavailableWidgetsPreferenceSet,
         FreshnessWarningHours = FreshnessWarningHours,
         Sections = Sections?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),
         Widgets = Widgets?.Where(x => x is not null).Select(x => x.Copy()).ToList() ?? new(),

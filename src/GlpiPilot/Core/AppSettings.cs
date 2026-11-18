@@ -14,6 +14,7 @@ public sealed class AppSettings
     public string Theme { get; set; } = "dark";
     public int InterfaceZoomPercent { get; set; } = 100;
     public string AutoMode { get; set; } = "native";
+    public string ColumnPreparationMode { get; set; } = "supervision";
     public bool AutoSaveXlsx { get; set; } = true;
     public string ReadySelector { get; set; } = "";
     public string NextSelector { get; set; } = "";
@@ -105,6 +106,7 @@ public sealed class AppSettings
         BrowserChannel ??= "msedge";
         Theme ??= "dark";
         AutoMode ??= "native";
+        if (string.IsNullOrWhiteSpace(ColumnPreparationMode)) ColumnPreparationMode = "supervision";
         ReadySelector ??= "";
         NextSelector ??= "";
         SelectorOrigin ??= "";
@@ -162,7 +164,7 @@ public sealed class SourceProfile
         copy.Interpretation = Interpretation?.Copy(); copy.WorkspaceQueries = WorkspaceQueries?.Copy();
         return copy;
     }
-    private static readonly string[] AcquisitionFields = { "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "ReconnectAttempts", "ResumePagination", "AutoSaveXlsx" };
+    private static readonly string[] AcquisitionFields = { "ColumnPreparationMode", "ReadySelector", "NextSelector", "SelectorOrigin", "TableSelector", "TableHeaderFingerprint", "TableFrameOrigin", "TableFrameName", "TableTargetUrl", "NativeSelectorOrigin", "NativeMenuSelector", "NativeFormatSelector", "NativeFormatValue", "NativeScopeSelector", "NativeScopeValue", "NativeSubmitSelector", "TimeoutSeconds", "DownloadTimeoutSeconds", "ListTimeoutSeconds", "DetailTimeoutSeconds", "MaxPages", "MaxRows", "ExpectedTotal", "ReconnectAttempts", "ResumePagination", "AutoSaveXlsx" };
     public void Capture(AppSettings settings)
     {
         Url = settings.PortalUrl; Browser = settings.BrowserChannel; Mode = settings.AutoMode;

@@ -1,0 +1,188 @@
+using System.Net;
+using System.Text.Json;
+using GlpiPilot.Core;
+using Microsoft.Playwright;
+
+internal static class ColumnPreparationBrowserChecks
+{
+    private const string Origin = "http://glpi.test";
+    private const string Target = Origin + "/glpi/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&criteria%5B0%5D%5Bvalue%5D=1";
+    private static readonly (string Id, string Label, string Group)[] Choices =
+    {
+        ("2", "ID", "Caractéristiques"), ("12", "Statut", "Caractéristiques"), ("3", "Priorité", "Caractéristiques"),
+        ("8", "Groupe de techniciens", "Attribué à"), ("64", "Rédacteur", "Suivis"), ("65", "Rédacteur", "Tâches"),
+        ("900", "Champ complémentaire", "Extension")
+    };
+
+    public static IEnumerable<(string Name, Func<Task> Run)> Cases(IBrowser browser)
+    {
+        yield return ("Colonnes GLPI : activation personnelle legacy, ajouts supervision et tableau régénéré", () => Check(browser, "legacy"));
+        yield return ("Colonnes GLPI : iframe 11 réutilisé, vraie relecture GET et persistance", () => Check(browser, "modern"));
+        yield return ("Colonnes GLPI : mode toutes traite aussi les options sans rôle de supervision", () => Check(browser, "all"));
+        yield return ("Colonnes GLPI : HTTP 200 et DOM optimiste sans persistance sont refusés", () => Check(browser, "not-persisted"));
+        yield return ("Colonnes GLPI : vue globale seule préservée, collecte actuelle explicitement signalée", () => Check(browser, "global-only"));
+        yield return ("Colonnes GLPI : changement de critères arrête les ajouts avant la collecte", () => Check(browser, "scope-change"));
+        yield return ("Colonnes GLPI : annulation entre deux ajouts n’exécute pas le suivant", () => Check(browser, "cancel"));
+        yield return ("Colonnes GLPI : mode vue actuelle n’ouvre aucune préférence", () => Check(browser, "current"));
+    }
+
+    private static void Require(bool value, string message)
+    { if (!value) throw new InvalidOperationException(message); }
+    private sealed class ImmediateProgress(Action<ExtractionProgress> report) : IProgress<ExtractionProgress>
+    { public void Report(ExtractionProgress value) => report(value); }
+
+    private static async Task Check(IBrowser browser, string scenario)
+    {
+        var modern = scenario is "modern" or "all" or "not-persisted";
+        var persisted = new List<string> { "2", "12" };
+        var displayed = persisted.ToList();
+        var active = false;
+        var render = 0; var reads = 0; var mutations = 0; var adds = 0;
+        var methods = new List<string>();
+        var host = await browser.NewContextAsync();
+        await using var service = new BrowserService();
+        service.AttachForTesting(host, Target);
+        var page = await host.NewPageAsync();
+        string Html(string body) => "<!doctype html><html><meta charset='utf-8'><style>body{font:14px sans-serif}iframe{width:900px;height:650px}.modal,.ui-dialog{position:fixed;inset:8px;background:white;z-index:10;padding:12px}button{min-height:28px}td{padding:4px}[hidden]{display:none!important}</style><body>" + body + "</body></html>";
+        string Hidden(string name, string value) => "<input type='hidden' name='" + name + "' value='" + value + "'>";
+        string Identity(string user = "17") => Hidden("itemtype", "Ticket") + Hidden("users_id", user);
+        string Form(string body, string user = "17") => "<form method='post' action='/glpi/front/displaypreference.form.php'>" + Identity(user) + Hidden("_glpi_csrf_token", "synthetic") + body + "</form>";
+        string FullLabel(string id)
+        {
+            var option = Choices.Single(item => item.Id == id);
+            return option.Group == "Caractéristiques" ? option.Label : option.Group + " - " + option.Label;
+        }
+        string Options() => string.Concat(Choices.Where(item => modern || !persisted.Contains(item.Id)).GroupBy(item => item.Group).Select(group =>
+            "<optgroup label='" + group.Key + "'>" + string.Concat(group.Select(item => "<option value='" + item.Id + "' data-full-label='" + FullLabel(item.Id) + "'>" + item.Label + "</option>")) + "</optgroup>"));
+        string Preferences()
+        {
+            if (scenario == "global-only") return Html("<div id='tabsbody'>" + Form("<select name='num'><option value='3'>Priorité</option></select><input name='add' type='submit' value='Ajouter'>", "0") + "</div>");
+            string body;
+            if (!active) body = modern ? Identity() + "<button type='button' name='activate'>Créer la vue personnelle</button>"
+                : Form("<input type='submit' name='activate' value='Créer la vue personnelle'>");
+            else if (modern) body = Identity() + "<select name='num'>" + Options() + "</select><button name='add_opt' type='button'>Ajouter</button><ul class='list-group'>"
+                + "<li data-opt-id='1' data-fixed='true'><span>Titre</span></li>" + string.Concat(persisted.Select(id => "<li data-opt-id='" + id + "'><span class='flex-fill'>" + FullLabel(id) + "</span></li>")) + "</ul>";
+            else body = "<table><tr><th>" + Form("<input name='disable' type='submit' value='Désactiver'>") + "</th></tr><tr><td colspan='4'>"
+                + Form("<select name='num'>" + Options() + "</select><input type='submit' name='add' value='Ajouter'>")
+                + "</td></tr><tr><td>Titre</td><td colspan='3'></td></tr>"
+                + string.Concat(persisted.Select((id, index) => "<tr><td>" + FullLabel(id) + "</td><td>" + Form(Hidden("id", (700 + index).ToString()) + "<button name='purge' type='submit'>Supprimer</button>") + "</td><td></td><td></td></tr>")) + "</table>";
+            var script = modern ? """
+                <script>
+                document.querySelector('[name=activate]')?.addEventListener('click',async()=>{
+                  await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body:new URLSearchParams({activate:'1',itemtype:'Ticket',users_id:'17'})});location.reload();
+                });
+                document.querySelector('[name=add_opt]')?.addEventListener('click',async()=>{
+                  const select=document.querySelector('select[name=num]'), value=select.value;
+                  const li=document.createElement('li');li.dataset.optId=value;
+                  const span=document.createElement('span');span.className='flex-fill';span.textContent=select.selectedOptions[0].dataset.fullLabel;li.append(span);
+                  document.querySelector('.list-group').append(li);
+                  const body=new URLSearchParams({action:'update_order',itemtype:'Ticket',users_id:'17'});
+                  document.querySelectorAll('li[data-opt-id]:not([data-fixed])').forEach(item=>body.append('opts[]',item.dataset.optId));
+                  await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body});
+                });
+                </script>
+                """ : "";
+            return Html("<div id='tabsbody' class='" + (modern ? "display_preference_config" : "") + "'>" + body + "</div>" + script);
+        }
+        string Card()
+        {
+            var number = ++render;
+            var headers = new[] { "Titre" }.Concat(displayed.Select(FullLabel)).ToArray();
+            var values = new[] { "Exemple synthétique" }.Concat(displayed.Select(id => id switch { "2" => "7", "12" => "Nouveau", "3" => "Haute", _ => "Valeur synthétique" }));
+            var table = "<table class='" + (modern ? "search-results" : "tab_cadre_fixehov") + "' id='search_" + number + "'><thead><tr>"
+                + string.Concat(headers.Select(header => "<th>" + header + "</th>")) + "</tr></thead><tbody><tr>" + string.Concat(values.Select(value => "<td>" + value + "</td>")) + "</tr></tbody></table>";
+            return "<div class='search-card'>" + (modern ? "<button type='button' class='show_displaypreference_modal' id='opener'>Colonnes</button>" : "")
+                + "<form id='massformTicket" + number + "' data-search-itemtype='Ticket' data-count='1' data-start='0' data-limit='20'>" + table + "</form></div>";
+        }
+        string ListPage()
+        {
+            var card = Card();
+            var criteria = "<form name='searchformTicket'>" + Hidden("criteria[0][field]", "12") + Hidden("criteria[0][value]", "1") + "</form>";
+            if (!modern) return Html(criteria + card.Replace("class='search-card'", "class='legacy-search'", StringComparison.Ordinal)
+                + "<span class='fa-wrench pointer' onclick=\"$('#search_config_top').dialog('open');\">Colonnes</span><div class='ui-dialog' role='dialog' id='dialog' hidden><button class='ui-dialog-titlebar-close'>Fermer</button><div id='search_config_top'><iframe id='Iframesearch_config_top'></iframe></div></div>"
+                + "<script>window.$=()=>({dialog:()=>{document.querySelector('#dialog').hidden=false;document.querySelector('iframe').src='/glpi/front/displaypreference.form.php?itemtype=Ticket';}});document.querySelector('.ui-dialog-titlebar-close').onclick=()=>location.reload();</script>");
+            return Html(criteria + card + """
+                <script>
+                function bindColumns(){document.querySelector('#opener').onclick=()=>{
+                  let modal=document.querySelector('#displaypreference_modal_sticky');
+                  if(!modal){modal=document.createElement('div');modal.id='displaypreference_modal_sticky';modal.className='modal';modal.setAttribute('role','dialog');
+                    modal.innerHTML='<button type="button" data-bs-dismiss="modal">Fermer</button><iframe src="/glpi/front/displaypreference.form.php?itemtype=Ticket"></iframe>';document.body.append(modal);
+                    modal.querySelector('button').onclick=async()=>{modal.hidden=true;
+                      const result=await fetch('/glpi/ajax/search.php',{method:'POST',body:new URLSearchParams(location.search)});
+                      const fresh=new DOMParser().parseFromString(await result.text(),'text/html');document.querySelector('.search-card').replaceWith(fresh.querySelector('.search-card'));bindColumns();};}
+                  modal.hidden=false;
+                };}bindColumns();
+                </script>
+                """);
+        }
+        await host.RouteAsync("**/*", async route =>
+        {
+            var uri = new Uri(route.Request.Url);
+            if (uri.GetLeftPart(UriPartial.Authority) != Origin) { await route.AbortAsync(); return; }
+            var body = route.Request.PostData ?? "";
+            var pairs = body.Split('&', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Split('=', 2))
+                .Select(parts => (Key: WebUtility.UrlDecode(parts[0]), Value: WebUtility.UrlDecode(parts.Length > 1 ? parts[1] : ""))).ToArray();
+            string Value(string name) => pairs.FirstOrDefault(pair => pair.Key == name).Value ?? "";
+            methods.Add(route.Request.Method + " " + uri.AbsolutePath);
+            if (uri.AbsolutePath.EndsWith("/displaypreference.form.php", StringComparison.Ordinal) || uri.AbsolutePath.EndsWith("/ajax/displaypreference.php", StringComparison.Ordinal))
+            {
+                if (route.Request.Method == "POST")
+                {
+                    Require(Value("itemtype") == "Ticket" && Value("users_id") == "17", "Only native personal Ticket commands may be submitted.");
+                    mutations++;
+                    if (Value("activate").Length > 0) active = true;
+                    else if (modern)
+                    {
+                        Require(Value("action") == "update_order", "Only the native modern add handler may update its order.");
+                        var submitted = pairs.Where(pair => pair.Key == "opts[]").Select(pair => pair.Value).ToList(); adds++;
+                        displayed = submitted;
+                        if (scenario != "not-persisted") persisted = submitted.ToList();
+                    }
+                    else
+                    {
+                        var value = Value("num"); Require(Value("add").Length > 0 && Choices.Any(item => item.Id == value) && !persisted.Contains(value), "Only an offered, missing column may be added.");
+                        persisted.Add(value); displayed = persisted.ToList(); adds++;
+                    }
+                    if (scenario == "scope-change" && adds == 1)
+                        await page.Locator("input[name='criteria[0][value]']").EvaluateAsync("input => input.value='5'");
+                }
+                else reads++;
+                await route.FulfillAsync(new() { ContentType = modern && route.Request.Method == "POST" ? "application/json" : "text/html; charset=utf-8", Body = modern && route.Request.Method == "POST" ? "{}" : Preferences() });
+            }
+            else if (uri.AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal))
+                await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Html(Card()) });
+            else if (uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal))
+                await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = ListPage() });
+            else await route.AbortAsync();
+        });
+        await page.GotoAsync(Target);
+        var settings = new AppSettings { PortalUrl = Target, AutoMode = "pagination", ListTimeoutSeconds = 5, TimeoutSeconds = 5 };
+        if (scenario == "all") settings.ColumnPreparationMode = "all";
+        if (scenario == "current") settings.ColumnPreparationMode = "current";
+        var original = await service.ChooseAutoTableAsync(page, settings, CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        var progress = new ImmediateProgress(value => { if (scenario == "cancel" && value.Message.StartsWith("Ajout de colonne 2", StringComparison.Ordinal)) cancellation.Cancel(); });
+        try
+        {
+            var result = await service.PrepareColumnsAsync(original, settings, progress, cancellation.Token);
+            if (scenario is "not-persisted" or "scope-change" or "cancel") throw new Exception("The unsafe or cancelled preparation should have stopped.");
+            if (scenario == "current") Require(mutations == 0 && reads == 0 && result.Receipt.State == "current", "Current view must not open or modify preferences.");
+            else if (scenario == "global-only") Require(mutations == 0 && result.Receipt.State == "unavailable" && result.Receipt.Warnings.Count == 1, "Global-only scope must be preserved with an explicit fallback.");
+            else
+            {
+                var count = scenario == "all" ? 5 : 4;
+                Require(result.Receipt.State == "ready" && result.Receipt.AddedCount == count && adds == count && mutations == count + 1, "Every native addition and activation must be verified once.");
+                Require(result.Table.Selector != original.Selector && result.Table.Headers.Count == 3 + count, "Native reload must replace the table choice even when its random ID changes.");
+                Require(persisted.Take(2).SequenceEqual(new[] { "2", "12" }) && ColumnPreparationPolicy.PreservesHeaders(original.Headers, result.Table.Headers), "Existing columns and their order must be retained.");
+                Require(!result.Receipt.SourceChanged && page.Url == Target, "Preparation must preserve ticket sample and filters.");
+                if (modern) Require(reads >= 3, "A reused optimistic iframe must be read through the observed native GET before certification.");
+            }
+            Require(!methods.Any(method => method.Contains("massiveaction", StringComparison.Ordinal)), "No business or global action may be submitted.");
+        }
+        catch (OperationCanceledException) when (scenario == "cancel") { Require(adds == 1, "Cancellation must stop before the second native addition."); }
+        catch (InvalidOperationException error) when (scenario == "not-persisted")
+        { Require(error.Message.Contains("confirmées après relecture", StringComparison.Ordinal) && reads >= 3, "Optimistic HTTP200 must fail on the server-rendered persistence proof: " + error.Message); }
+        catch (InvalidOperationException error) when (scenario == "scope-change")
+        { Require(error.Message.Contains("critères", StringComparison.Ordinal) && adds == 1, "A changed search must stop the next addition."); }
+    }
+}

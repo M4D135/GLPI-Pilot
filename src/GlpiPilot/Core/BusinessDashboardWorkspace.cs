@@ -9,13 +9,13 @@ public static partial class BusinessDashboardTemplates
     {
         if (settings.Business.BoardOverrides.FirstOrDefault(board => board.Id == "business-workspace") is { } saved)
         {
-            var copy = saved.Copy(); copy.Widgets.RemoveAll(widget => CanOmitGeneratedTeamPlaceholder(widget, copy)); return copy;
+            var copy = NativeBoardCopy(saved); copy.Widgets.RemoveAll(widget => CanOmitGeneratedTeamPlaceholder(widget, copy)); return copy;
         }
 
         var profile = Profile(settings, observed);
         var result = new DashboardBoardSettings
         {
-            Id = "business-workspace", Name = "Pilotage du service", HideUnavailableWidgets = false,
+            Id = "business-workspace", Name = "Pilotage du service", HideUnavailableWidgets = true, UnavailableWidgetsPreferenceSet = true,
             Description = "Météo, activité, répartition, charge et priorités sur un même périmètre.",
             FreshnessWarningHours = profile.FreshnessWarningHours,
             Sections = new()
@@ -84,6 +84,19 @@ public static partial class BusinessDashboardTemplates
         // Validate before normalization: never silently drop a configured card.
         layout.Validate();
         return result;
+    }
+
+    private static DashboardBoardSettings NativeBoardCopy(DashboardBoardSettings saved)
+    {
+        var copy = saved.Copy();
+        if (!copy.UnavailableWidgetsPreferenceSet)
+        {
+            // Migrate the native display default only. The stored board and all
+            // widget definitions remain intact until the next explicit save.
+            copy.HideUnavailableWidgets = true;
+            copy.UnavailableWidgetsPreferenceSet = true;
+        }
+        return copy;
     }
 
     private static bool CanOmitGeneratedTeamPlaceholder(DashboardWidgetSettings widget, DashboardBoardSettings board) => widget.Kind == "note"

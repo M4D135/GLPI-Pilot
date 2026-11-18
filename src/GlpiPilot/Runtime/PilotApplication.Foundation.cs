@@ -109,6 +109,7 @@ public sealed partial class PilotApplication
     }
     private static void ValidateSettingsInput(AppSettings settings)
     {
+        if (settings.ColumnPreparationMode is not ("current" or "supervision" or "all")) throw new InvalidDataException("Le mode de préparation des colonnes n’est pas valide.");
         if (settings.ListTimeoutSeconds is < 5 or > 600 || settings.DetailTimeoutSeconds is < 5 or > 600 || settings.ReconnectAttempts is < 0 or > 5 || settings.MaxRows is < 1 or > 1_000_000 || settings.MaxPages is < 1 or > 10000) throw new InvalidDataException("Les limites de collecte ne sont pas valides.");
         DashboardService.ValidateSettings(settings.Dashboard); settings.Cities.Validate(); settings.Queries.Validate();
         if (settings.PortalUrl.Length > 0) _ = TargetUrlPolicy.PersistedTarget(settings.PortalUrl);
