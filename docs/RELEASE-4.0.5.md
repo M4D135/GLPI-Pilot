@@ -10,7 +10,9 @@ Le téléchargement accepté doit correspondre à la destination et au mode CSV 
 
 ## Annulation et diagnostic
 
-Si la réception est interrompue après l’envoi d’une commande, le téléchargement éventuel est annulé et l’onglet de cette collecte ainsi que ses popups identifiés sont fermés. La prochaine collecte utilise un nouvel onglet, afin qu’un ancien téléchargement tardif ne puisse pas lui être attribué. Les autres onglets sont conservés.
+Si la réception est interrompue après l’envoi d’une commande, le téléchargement éventuel est annulé et la fermeture de l’onglet de cette collecte ainsi que de ses popups identifiés est demandée. La prochaine collecte utilise un nouvel onglet, afin qu’un ancien téléchargement tardif ne puisse pas lui être attribué. Les autres onglets sont conservés.
+
+La fermeture est attendue au maximum quatre secondes. Si le navigateur tarde à la terminer, l’erreur d’export ou l’annulation est rendue sans attendre davantage ; la tentative reste isolée et sa fermeture peut se terminer ensuite. Le journal distingue une fermeture confirmée d’une fermeture encore en attente.
 
 La progression distingue l’export demandé, le fichier détecté et son chargement. Le journal indique l’étape de la commande et l’observation effective du téléchargement ; le diagnostic inclut le mode de préparation des colonnes et le délai de liste, sans contenu de tickets ni paramètres de recherche.
 

@@ -139,7 +139,7 @@ internal sealed class NativeExportAttempt : IDisposable
         {
             if (_disposed || _failed || response.Status < 400 || !_requests.TryGetValue(response.Request, out var chain)) return;
             chain.Failure = response.Status is 401 or 403
-                ? $"GLPI a refusé l’export (HTTP {response.Status}). Vérifiez la connexion et les droits d’export dans le navigateur."
+                ? $"GLPI a refusé l’export (HTTP {response.Status}). Vérifier la connexion et les droits d’export dans le navigateur."
                 : $"GLPI n’a pas pu produire l’export (HTTP {response.Status}). Aucun fichier n’a été validé.";
             CheckState();
         }
@@ -156,7 +156,7 @@ internal sealed class NativeExportAttempt : IDisposable
             if (failure.Contains("ERR_ABORTED", StringComparison.OrdinalIgnoreCase)
                 || failure.Contains("NS_BINDING_ABORTED", StringComparison.OrdinalIgnoreCase)
                 || failure.Contains("NS_ERROR_ABORT", StringComparison.OrdinalIgnoreCase)) return;
-            chain.Failure = "La requête d’export GLPI a échoué avant le téléchargement. Vérifiez la connexion puis relancez la collecte.";
+            chain.Failure = "La requête d’export GLPI a échoué avant le téléchargement. Vérifier la connexion puis relancer la collecte.";
             CheckState();
         }
     }

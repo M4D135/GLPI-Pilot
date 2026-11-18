@@ -124,17 +124,26 @@ internal sealed partial class WindowsWebViewFixture
         if (!Path.IsPathFullyQualified(path) || path.Length > 32767 || path.Any(char.IsControl))
             throw new InvalidOperationException("Native file input requires a bounded absolute path without control characters.");
         IntPtr dialog = IntPtr.Zero;
-        await Until(() =>
+        LogNativeFileDialogWindows(process, "before dialog lookup");
+        try
         {
-            DialogNative.EnumWindows((window, _) =>
+            await Until(() =>
             {
-                DialogNative.GetWindowThreadProcessId(window, out var owner);
-                if (owner == process.Id && DialogNative.IsWindowVisible(window) && DialogNative.Class(window) == "#32770")
-                { dialog = window; return false; }
-                return true;
-            }, IntPtr.Zero);
-            return dialog != IntPtr.Zero;
-        });
+                DialogNative.EnumWindows((window, _) =>
+                {
+                    DialogNative.GetWindowThreadProcessId(window, out var owner);
+                    if (owner == process.Id && DialogNative.IsWindowVisible(window) && DialogNative.Class(window) == "#32770")
+                    { dialog = window; return false; }
+                    return true;
+                }, IntPtr.Zero);
+                return dialog != IntPtr.Zero;
+            });
+        }
+        catch
+        {
+            LogNativeFileDialogWindows(process, "failed initial dialog lookup");
+            throw;
+        }
         LogNativeFileDialogEdits(process, dialog, "before filename lookup");
         var edit = IntPtr.Zero; var candidateCount = 0;
         try
@@ -289,6 +298,33 @@ internal sealed partial class WindowsWebViewFixture
         if (!DialogNative.PostMessage(confirm, 0x00F5, IntPtr.Zero, IntPtr.Zero)) // BM_CLICK
             throw new InvalidOperationException("The native file dialog could not click its confirmation button.");
         await Until(() => !DialogNative.IsWindowVisible(dialog));
+    }
+
+    private void LogNativeFileDialogWindows(Process process, string stage)
+    {
+        // Read-only evidence from the isolated application PID, including hidden
+        // dialogs. Do not enumerate controls or captions from unrelated windows.
+        var windows = new List<object>(); var total = 0;
+        var foreground = DialogNative.GetForegroundWindow();
+        DialogNative.EnumWindows((window, _) =>
+        {
+            var thread = DialogNative.GetWindowThreadProcessId(window, out var owner);
+            if (owner != process.Id) return true;
+            total++;
+            if (windows.Count >= 20) return true;
+            var state = new DialogNative.GuiThreadInfo { Size = Marshal.SizeOf<DialogNative.GuiThreadInfo>() };
+            var hasState = DialogNative.GetGUIThreadInfo(thread, ref state);
+            windows.Add(new
+            {
+                hwnd = window.ToInt64().ToString("X"), className = DialogNative.Class(window),
+                visible = DialogNative.IsWindowVisible(window), enabled = DialogNative.IsWindowEnabled(window),
+                foreground = window == foreground, parent = DialogNative.GetParent(window).ToInt64().ToString("X"),
+                active = hasState ? state.Active.ToInt64().ToString("X") : "unknown",
+                focus = hasState ? state.Focus.ToInt64().ToString("X") : "unknown"
+            });
+            return true;
+        }, IntPtr.Zero);
+        Log("Native file dialog window inventory: " + JsonSerializer.Serialize(new { stage, pid = process.Id, total, truncated = total > windows.Count, windows }));
     }
 
     private void LogNativeFileDialogEdits(Process process, IntPtr dialog, string stage)

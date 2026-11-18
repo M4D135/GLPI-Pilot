@@ -77,7 +77,7 @@ public sealed partial class BrowserService
 
     private async Task<SessionProbe?> ProbeAsync(IPage page, AppSettings settings, CancellationToken ct)
     {
-        if (page.IsClosed || Origin(page.Url).Length == 0) return null;
+        if (!CanUseCollectionPage(page) || Origin(page.Url).Length == 0) return null;
         var probe = await ProbeFrameAsync(page.MainFrame, settings, ct);
         if (probe == null || Origin(page.Url) != Origin(settings.PortalUrl)) return probe;
         foreach (var frame in page.Frames.ToArray())
@@ -117,6 +117,7 @@ public sealed partial class BrowserService
     private async Task NavigateTargetAsync(IPage page, string url, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        if (!CanUseCollectionPage(page)) throw new InvalidOperationException("L’onglet de cette collecte a été retiré. La recherche doit être ouverte dans un nouvel onglet.");
         Log?.Invoke("CIBLE · navigation vers " + AppPaths.SafeUrl(url) + $" (paramètres de recherche conservés : {(new Uri(url).Query.Length > 0 ? "oui" : "aucun")}).");
         // Finish the bounded browser action before releasing the operation gate.
         // WaitAsync(ct) alone would leave an old navigation running into the next run.
@@ -157,14 +158,15 @@ public sealed partial class BrowserService
         var bestScore = int.MinValue;
         foreach (var page in _context.Pages.ToArray())
         {
-            if (IsTicketDetailPage(page)) continue;
+            if (!CanUseCollectionPage(page)) continue;
             var probe = await ProbeAsync(page, settings, ct);
-            if (probe == null) continue;
+            if (probe == null || !CanUseCollectionPage(page)) continue;
             var score = PageScore(page, probe, settings, preferred);
             if (score > bestScore) { best = page; bestScore = score; }
         }
-        best ??= preferred is { IsClosed: false } && !IsTicketDetailPage(preferred) ? preferred : ActivePage ?? _context.Pages.FirstOrDefault(p => !p.IsClosed && !IsTicketDetailPage(p));
-        if (best != null && Origin(best.Url) != Origin(settings.PortalUrl) && preferred is { IsClosed: false } && !IsTicketDetailPage(preferred))
+        if (best != null && !CanUseCollectionPage(best)) best = null;
+        best ??= preferred is not null && CanUseCollectionPage(preferred) ? preferred : ActivePage ?? _context.Pages.FirstOrDefault(CanUseCollectionPage);
+        if (best != null && Origin(best.Url) != Origin(settings.PortalUrl) && preferred is not null && CanUseCollectionPage(preferred))
             best = preferred; // Keep following the original SSO tab if its probe is temporarily unavailable.
         if (best != null) SetActivePage(best);
         return best;
@@ -181,7 +183,7 @@ public sealed partial class BrowserService
         if (_context is null) return null;
         foreach (var candidate in _context.Pages.ToArray())
         {
-            if (ReferenceEquals(candidate, source) || candidate.IsClosed || IsTicketDetailPage(candidate)) continue;
+            if (ReferenceEquals(candidate, source) || !CanUseCollectionPage(candidate)) continue;
             if (_navigationTimes.TryGetValue(candidate, out var since) && (DateTimeOffset.UtcNow - since).TotalMilliseconds < 600) continue;
             try
             {
@@ -192,7 +194,7 @@ public sealed partial class BrowserService
                     parent = await parent.OpenerAsync().WaitAsync(ct);
                     if (ReferenceEquals(parent, source)) { related = true; break; }
                 }
-                if (related && (await ProbeAsync(candidate, settings, ct))?.Challenge == true) return candidate;
+                if (related && (await ProbeAsync(candidate, settings, ct))?.Challenge == true && CanUseCollectionPage(candidate)) return candidate;
             }
             catch (PlaywrightException) { /* A popup can close while SSO redirects. */ }
         }
@@ -239,9 +241,9 @@ public sealed partial class BrowserService
             ct.ThrowIfCancellationRequested();
             if (_context == null) throw new InvalidOperationException("Le navigateur a été fermé pendant la connexion.");
             var page = await FindBestPageAsync(settings, ActivePage, ct);
-            if (page == null) { await Task.Delay(350, ct); continue; }
+            if (page == null || !CanUseCollectionPage(page)) { await Task.Delay(350, ct); continue; }
             var probe = await ProbeAsync(page, settings, ct);
-            if (probe == null) { await Task.Delay(350, ct); continue; }
+            if (probe == null || !CanUseCollectionPage(page)) { await Task.Delay(350, ct); continue; }
             RecordStage(probe.Challenge ? "validation humaine" : probe.Login ? "authentification" : Origin(page.Url) != Origin(target) ? "redirection" : probe.Readable ? "recherche" : "chargement");
             if (probe.Login || probe.Challenge) _authenticationNavigationObserved = true;
             if (!ReferenceEquals(stablePage, page) || stableUrl != page.Url)

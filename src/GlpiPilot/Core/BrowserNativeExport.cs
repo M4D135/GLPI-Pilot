@@ -140,7 +140,7 @@ public sealed partial class BrowserService
                 // A cancelled action can precede delivery of its Request event.
                 // Never reuse its page for a new receiver, even when no request
                 // was confirmed before this attempt failed.
-                _freshCollectionPageRequired = true;
+                RetireNativeExportPageFamily(table.Page!);
                 if (attempt.RequestObserved || exportToken.IsCancellationRequested)
                     await StopPendingNativeExportAsync(table.Page!);
             },

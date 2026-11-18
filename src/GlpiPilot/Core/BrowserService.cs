@@ -34,7 +34,7 @@ public sealed partial class BrowserService : IAsyncDisposable
     public event Action<string>? Log;
     public event Action? PagesChanged;
     public bool IsOpen => _context != null;
-    public IPage? ActivePage => _activePage is { IsClosed: false } && !IsTicketDetailPage(_activePage) ? _activePage : null;
+    public IPage? ActivePage => _activePage is { } page && CanUseCollectionPage(page) ? page : null;
     public long PagesRevision => Interlocked.Read(ref _pagesRevision);
 
     public BrowserService(string? bridge = null, PaginationCheckpointStore? checkpoints = null)
@@ -147,9 +147,9 @@ public sealed partial class BrowserService : IAsyncDisposable
         _openedAt = DateTimeOffset.UtcNow;
         _targetUrl = uri.AbsoluteUri;
         _authenticationNavigationObserved = false;
-        var page = _freshCollectionPageRequired ? await _context.NewPageAsync()
-            : ActivePage ?? _context.Pages.FirstOrDefault(p => !p.IsClosed && !IsTicketDetailPage(p) && TargetUrlPolicy.SamePage(p.Url, _targetUrl))
-            ?? _context.Pages.FirstOrDefault(p => !p.IsClosed && !IsTicketDetailPage(p)) ?? await _context.NewPageAsync();
+        var page = _freshCollectionPageRequired ? await NewCollectionPageAsync(_context)
+            : ActivePage ?? _context.Pages.FirstOrDefault(p => CanUseCollectionPage(p) && TargetUrlPolicy.SamePage(p.Url, _targetUrl))
+            ?? _context.Pages.FirstOrDefault(CanUseCollectionPage) ?? await NewCollectionPageAsync(_context);
         _freshCollectionPageRequired = false;
         SetActivePage(page);
         if (BackgroundMode) await SetPageWindowAsync(page, false, cancellationToken);
@@ -161,13 +161,15 @@ public sealed partial class BrowserService : IAsyncDisposable
     {
         context.SetDefaultTimeout(10000);
         context.SetDefaultNavigationTimeout(30000);
-        context.Close += (_, _) => { if (ReferenceEquals(_context, context)) { _context = null; _activePage = null; _profileLease?.Dispose(); _profileLease = null; } _downloadWaiter?.TrySetException(new InvalidOperationException("Le navigateur a été fermé.")); NotifyPagesChanged(); };
+        context.Close += (_, _) => { ForgetCollectionContext(context); if (ReferenceEquals(_context, context)) { _context = null; _activePage = null; _profileLease?.Dispose(); _profileLease = null; } _downloadWaiter?.TrySetException(new InvalidOperationException("Le navigateur a été fermé.")); NotifyPagesChanged(); };
         context.Page += (_, page) => HookPage(page);
         foreach (var page in context.Pages) HookPage(page, initial: true);
     }
 
     private void HookPage(IPage page, bool initial = false)
     {
+        page.Popup += (_, popup) => RecordCollectionOpener(popup, page);
+        TrackCollectionPage(page);
         _navigationTimes[page] = DateTimeOffset.UtcNow;
         if (!initial) _ = KeepPageInBackgroundAsync(page);
         page.FrameNavigated += (_, frame) =>
@@ -227,7 +229,7 @@ public sealed partial class BrowserService : IAsyncDisposable
     private void NotifyPagesChanged() { Interlocked.Increment(ref _pagesRevision); PagesChanged?.Invoke(); }
     private void SetActivePage(IPage page)
     {
-        if (IsTicketDetailPage(page)) return;
+        if (!CanUseCollectionPage(page)) return;
         if (ReferenceEquals(_activePage, page)) return;
         _activePage = page;
         var source = AppPaths.SafeUrl(page.Url);
@@ -268,7 +270,7 @@ public sealed partial class BrowserService : IAsyncDisposable
     public async Task<SessionStatus> SessionAsync(IPage? selectedPage, AppSettings settings)
     {
         if (_context == null) return new("Navigateur fermé", false, false);
-        if (selectedPage != null && IsTicketDetailPage(selectedPage)) selectedPage = null;
+        if (selectedPage != null && !CanUseCollectionPage(selectedPage)) selectedPage = null;
         var selectedProbe = selectedPage is { IsClosed: false } ? await ProbeAsync(selectedPage, settings, CancellationToken.None) : null;
         var page = selectedProbe?.Readable == true ? selectedPage : await FindBestPageAsync(settings, selectedPage, CancellationToken.None);
         if (page != null) SetActivePage(page);
@@ -298,6 +300,7 @@ public sealed partial class BrowserService : IAsyncDisposable
 
     public async Task<List<TableChoice>> InspectAsync(IPage page, CancellationToken ct, bool quiet = false)
     {
+        if (!CanUseCollectionPage(page)) throw new InvalidOperationException("Cet onglet appartient à une collecte interrompue ou ne peut pas être repris. Relancer la collecte dans un nouvel onglet.");
         if (page.IsClosed || Origin(page.Url).Length == 0) throw new InvalidOperationException("Sélectionne un onglet web ouvert sur GLPI.");
         var result = new List<TableChoice>();
         foreach (var frame in page.Frames.ToArray())
@@ -330,6 +333,7 @@ public sealed partial class BrowserService : IAsyncDisposable
     private async Task<IFrame> ResolveFrameAsync(TableChoice table, CancellationToken ct)
     {
         if (table.Page == null || table.Page.IsClosed) throw new InvalidOperationException("L’onglet a été fermé.");
+        if (!CanUseCollectionPage(table.Page)) throw new InvalidOperationException("L’onglet de cette collecte a été retiré. Relancer la collecte dans un nouvel onglet.");
         if (Origin(table.Page.Url) != table.TopOrigin) throw new InvalidOperationException("La page a quitté le portail. La session a peut-être expiré.");
         var frame = table.Frame;
         if (frame == null || frame.IsDetached)
@@ -622,9 +626,31 @@ public sealed partial class BrowserService : IAsyncDisposable
         // A download has no Request identity. A late attachment from a cancelled
         // navigation must never satisfy a later run with the same URL. Retire
         // this export page and use a fresh page next time, preserving other tabs.
-        _freshCollectionPageRequired = true;
+        RetireNativeExportPageFamily(source);
+        // Closing a Chromium target can remain pending during a failed native
+        // navigation. Cleanup must not hide the export's actual HTTP error or
+        // hold cancellation indefinitely. The snapshot and source below belong
+        // only to this retired attempt, even if its close completes later.
+        var pages = _context?.Pages.ToArray() ?? Array.Empty<IPage>();
+        Log?.Invoke("EXPORT · fermeture des onglets du transfert interrompu demandée.");
+        var cleanup = CloseNativeExportPagesAsync(source, pages);
+        _ = cleanup.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        try { await cleanup.WaitAsync(TimeSpan.FromSeconds(4)); }
+        catch (TimeoutException)
+        {
+            Log?.Invoke("EXPORT · fermeture encore en attente ; cette tentative est isolée et la prochaine collecte utilisera un nouvel onglet.");
+        }
+        catch (PlaywrightException)
+        {
+            Log?.Invoke("EXPORT · fermeture non confirmée par le navigateur ; la prochaine collecte utilisera un nouvel onglet.");
+        }
+    }
+
+    private async Task CloseNativeExportPagesAsync(IPage source, IReadOnlyList<IPage> pages)
+    {
         var descendants = new List<IPage>();
-        foreach (var candidate in _context?.Pages.ToArray() ?? Array.Empty<IPage>())
+        foreach (var candidate in pages)
         {
             if (candidate.IsClosed || ReferenceEquals(candidate, source)) continue;
             try

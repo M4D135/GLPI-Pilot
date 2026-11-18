@@ -23,6 +23,7 @@ internal static class NativeExportTimingBrowserChecks
         yield return ("Attente export GLPI : annulation puis relance identique, ancien fichier isolé", () => CheckCancelThenRetry(browser));
         yield return ("Attente export GLPI : refus HTTP403 natif, erreur explicite sans nouvel envoi", () => Check(browser, "http403"));
         yield return ("Attente export GLPI : téléchargement étranger ignoré avant le bon fichier natif", () => Check(browser, "foreign"));
+        yield return ("Attente export GLPI : page retirée encore lisible et popups exclus pendant la relance", () => CheckRetiredPageSelection(browser));
     }
 
     private static void Require(bool condition, string message)
@@ -331,6 +332,75 @@ internal static class NativeExportTimingBrowserChecks
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
             Trace("directory cleanup complete; check complete");
         }
+    }
+
+    private static async Task CheckRetiredPageSelection(IBrowser browser)
+    {
+        const string loadingTarget = Target + "&synthetic=loading";
+        var context = await browser.NewContextAsync();
+        var service = new BrowserService();
+        var logs = new ConcurrentQueue<string>();
+        service.Log += logs.Enqueue;
+        service.AttachForTesting(context, Target);
+        try
+        {
+            await context.RouteAsync("**/*", async route =>
+            {
+                if (route.Request.Url == loadingTarget)
+                    await route.FulfillAsync(new()
+                    {
+                        ContentType = "text/html; charset=utf-8",
+                        Body = "<!doctype html><title>GLPI — Recherche en chargement</title><a href='/glpi/logout.php'>Déconnexion</a><p id='loading' aria-busy='true'>Chargement de la nouvelle recherche</p>"
+                    });
+                else if (route.Request.Url == Target)
+                    await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Fixture("selection") });
+                else await route.AbortAsync();
+            });
+            var source = await context.NewPageAsync();
+            await source.GotoAsync(Target);
+            async Task<IPage> OpenOwnedPopupAsync()
+            {
+                var popup = await source.RunAndWaitForPopupAsync(() => source.EvaluateAsync("url => { window.open(url, '_blank'); }", Target));
+                await popup.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+                return popup;
+            }
+            var existingPopup = await OpenOwnedPopupAsync();
+            var settings = Settings(Path.GetTempPath());
+            Require(ReferenceEquals(await service.FindBestPageAsync(settings, source, CancellationToken.None), source)
+                && await source.Locator("#ticket-table tbody tr").CountAsync() == 1
+                && await existingPopup.Locator("#ticket-table tbody tr").CountAsync() == 1,
+                "The old source and its owned popup must contain real readable search tables before retirement.");
+
+            // Exercise the same retirement transition as the export cleanup,
+            // while deliberately leaving its actual pages open and readable.
+            service.RetireNativeExportPageFamily(source);
+            var loadingSettings = Settings(Path.GetTempPath());
+            loadingSettings.PortalUrl = loadingTarget;
+            await service.OpenAsync(loadingSettings, CancellationToken.None);
+            var fresh = service.ActivePage ?? throw new InvalidOperationException("No fresh collection page was selected after retirement.");
+            Require(!source.IsClosed && !existingPopup.IsClosed
+                && !ReferenceEquals(fresh, source) && !ReferenceEquals(fresh, existingPopup)
+                && await fresh.Locator("#loading").CountAsync() == 1
+                && await fresh.Locator("table").CountAsync() == 0,
+                "The fresh search must still be loading while both retired pages remain available to the browser.");
+            Require(ReferenceEquals(await service.FindBestPageAsync(settings, fresh, CancellationToken.None), fresh)
+                && ReferenceEquals(await service.FindBestPageAsync(settings, source, CancellationToken.None), fresh)
+                && ReferenceEquals(await service.FindBestPageAsync(settings, existingPopup, CancellationToken.None), fresh),
+                "Readable retired pages must never outrank or replace the fresh loading page, including preferred-page fallbacks.");
+
+            var latePopup = await OpenOwnedPopupAsync();
+            Require(await latePopup.Locator("#ticket-table tbody tr").CountAsync() == 1
+                && ReferenceEquals(await service.FindBestPageAsync(settings, latePopup, CancellationToken.None), fresh)
+                && ReferenceEquals(service.ActivePage, fresh) && fresh.Url == loadingTarget
+                && !source.IsClosed && !existingPopup.IsClosed && !latePopup.IsClosed,
+                "A real popup opened later by the retired source must also remain excluded without closing or replacing the independent fresh page.");
+        }
+        catch
+        {
+            foreach (var line in logs.TakeLast(30)) Console.Error.WriteLine("TRACE retired export page selection: " + line);
+            throw;
+        }
+        finally { await service.DisposeAsync(); }
     }
 
     private static async Task CheckCancelThenRetry(IBrowser browser)

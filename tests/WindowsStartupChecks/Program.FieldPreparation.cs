@@ -58,11 +58,42 @@ internal sealed partial class WindowsWebViewFixture
         Check((await page.Locator(".field-report").InnerTextAsync()).Contains(referenceLabel, StringComparison.Ordinal),
             "Native " + edition + " preview contains the actual selected preparation and its saved material.");
         var output = Path.Combine(_output, "field-native-" + edition + ".html");
-        await page.Locator("dialog.field-modal").GetByRole(AriaRole.Button, new() { Name = "Exporter en HTML", Exact = true }).ClickAsync();
-        await CompleteFileDialogAsync(process, output, new Regex(@"\AGLPI-Pilot-preparation-[0-9]{8}-[0-9]{6}(?:\.html)?\z", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)));
-        await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
-        Check(File.Exists(output) && (await File.ReadAllTextAsync(output, _deadline.Token)).Contains("Liste de départ", StringComparison.Ordinal),
-            "Native " + edition + " export uses the genuine Windows Save dialog and writes the selected HTML sheets.");
+        var exportButton = page.Locator("dialog.field-modal").GetByRole(AriaRole.Button, new() { Name = "Exporter en HTML", Exact = true });
+        await exportButton.EvaluateAsync("""
+            async button=>{
+              const {api}=await import('/js/bridge.js');
+              const started=performance.now(),trace={clicks:[],operations:[],pendingBefore:api.pending};
+              const click=event=>{if(trace.clicks.length<4)trace.clicks.push({atMs:Math.round(performance.now()-started),trusted:event.isTrusted});};
+              button.addEventListener('click',click,true);
+              const stop=api.on('operation.state',state=>{
+                if(state.operation==='field.export'&&trace.operations.length<8)
+                  trace.operations.push({atMs:Math.round(performance.now()-started),busy:state.busy});
+              });
+              window.__nativeFieldExportTrace=trace;
+              window.__nativeFieldExportCleanup=()=>{stop();button.removeEventListener('click',click,true);delete window.__nativeFieldExportTrace;delete window.__nativeFieldExportCleanup;};
+            }
+            """);
+        try
+        {
+            await exportButton.ClickAsync();
+            await LogNativeFieldExportStateAsync(page, edition, "after single export click");
+            await CompleteFileDialogAsync(process, output, new Regex(@"\AGLPI-Pilot-preparation-[0-9]{8}-[0-9]{6}(?:\.html)?\z", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)));
+            await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
+            Check(File.Exists(output) && (await File.ReadAllTextAsync(output, _deadline.Token)).Contains("Liste de départ", StringComparison.Ordinal),
+                "Native " + edition + " export uses the genuine Windows Save dialog and writes the selected HTML sheets.");
+            await LogNativeFieldExportStateAsync(page, edition, "export completed");
+        }
+        catch
+        {
+            await LogNativeFieldExportStateAsync(page, edition, "export failed");
+            throw;
+        }
+        finally
+        {
+            try { await page.EvaluateAsync("()=>window.__nativeFieldExportCleanup?.()").WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch (Exception error) when (error is PlaywrightException or TimeoutException)
+            { Log("Native field export witness cleanup unavailable: " + error.GetType().Name); }
+        }
         await page.ScreenshotAsync(new() { Path = Path.Combine(_output, "field-native-" + edition + ".png"), FullPage = true });
         await page.Locator(".field-modal-heading").GetByRole(AriaRole.Button, new() { Name = "Fermer le panneau", Exact = true }).ClickAsync();
         Check(await page.EvaluateAsync<bool>("""
@@ -85,5 +116,26 @@ internal sealed partial class WindowsWebViewFixture
         await row.GetByText("Annulée", new() { Exact = true }).WaitForAsync();
         Check(await row.IsVisibleAsync(), "Native " + edition + " preparation refresh follows a real calendar cancellation without deleting the recorded sheet.");
         await NavigateAsync(page, "home");
+    }
+
+    private async Task LogNativeFieldExportStateAsync(IPage page, string edition, string stage)
+    {
+        try
+        {
+            var state = await page.EvaluateAsync<JsonElement>("""
+                async()=>{
+                  const {api}=await import('/js/bridge.js');
+                  const dialog=document.querySelector('dialog.field-modal');
+                  const button=[...(dialog?.querySelectorAll('button')||[])].find(node=>node.textContent.trim()==='Exporter en HTML');
+                  return {trace:window.__nativeFieldExportTrace||null,pending:api.pending,dialogOpen:dialog?.open??false,
+                    buttonPresent:!!button,buttonDisabled:button?.disabled??null,buttonBusy:button?.getAttribute('aria-busy')??null,
+                    busy:[...document.querySelectorAll('[data-busy]')].slice(0,4).map(node=>({id:node.id,value:node.dataset.busy})),
+                    errors:[...document.querySelectorAll('.field-errors [role="alert"]')].slice(0,4).map(node=>node.textContent.slice(0,600))};
+                }
+                """).WaitAsync(TimeSpan.FromSeconds(2));
+            Log($"Native field export state: edition={edition}; stage={stage}; {state.GetRawText()}");
+        }
+        catch (Exception error) when (error is PlaywrightException or TimeoutException)
+        { Log($"Native field export state unavailable: edition={edition}; stage={stage}; {error.GetType().Name}"); }
     }
 }
