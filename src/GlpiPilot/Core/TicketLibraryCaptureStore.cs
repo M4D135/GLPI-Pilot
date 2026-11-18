@@ -60,7 +60,9 @@ public sealed partial class TicketLibraryStore
                 VALUES($id,$date,'running',$mode,$installation,$context,$reader,$parent,$process,$start)
                 """, ("$id", id), ("$date", DateTimeOffset.UtcNow.ToString("O")), ("$mode", mode), ("$installation", context.Installation),
                 ("$context", context.Fingerprint), ("$reader", context.ReaderSignature), ("$parent", parentRunId), ("$process", CaptureProcessId), ("$start", CaptureProcessStart));
-            Execute(c, tx, "DELETE FROM ticket_library_capture_runs WHERE run_id IN (SELECT run_id FROM ticket_library_capture_runs ORDER BY CASE WHEN run_id IN ($current,$parent) THEN 0 ELSE 1 END,started_at DESC,run_id DESC LIMIT -1 OFFSET $limit)",
+            // A scheduled scope can outlive many narrowed retries. Keep the original immutable worklist its settings reference.
+            Execute(c, tx, CollectionSchema);
+            Execute(c, tx, "DELETE FROM ticket_library_capture_runs WHERE run_id IN (SELECT run_id FROM ticket_library_capture_runs ORDER BY CASE WHEN run_id IN ($current,$parent) THEN 0 ELSE 1 END,started_at DESC,run_id DESC LIMIT -1 OFFSET $limit) AND run_id NOT IN (SELECT COALESCE(json_extract(state_json,'$.scopeRunId'),'') FROM ticket_library_collection)",
                 ("$limit", CaptureHistoryLimit), ("$current", id), ("$parent", parentRunId));
             Execute(c, tx, "DELETE FROM ticket_library_capture_pending WHERE NOT EXISTS(SELECT 1 FROM ticket_library_capture_runs r WHERE r.run_id=ticket_library_capture_pending.run_id)");
             ct.ThrowIfCancellationRequested(); ActiveCaptures[id] = 0;

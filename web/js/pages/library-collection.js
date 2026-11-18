@@ -1,4 +1,5 @@
 import { el, icon, button, toolbar, field, input, confirm, formatNumber, formatDate, showError, isSimulation, isFileSource } from '../ui.js';
+import { createCollectionScope } from '../collection-scope.js';
 
 const activeStates = new Set(['running', 'pausing', 'stopping']);
 const heldStates = new Set(['paused', 'stopped', 'interrupted', 'attention', 'budget']);
@@ -18,12 +19,18 @@ export async function renderLibraryCollection(ctx) {
     root.replaceChildren(el('section', { class: 'card' }, el('h2', { text: 'Collecte GLPI réelle' }), el('p', { text: 'Choisissez une source GLPI active. Les imports CSV/Excel et la simulation ne déclenchent aucune collecte réelle.' }), button('Retour à la bibliothèque', () => navigate('library'))));
     return () => {};
   }
-  let disposed = false, pending = false, settingsDirty = false, settingsRevision = 0, activity = {}, activityRevision = 0, model = null, generation = 0, polling = false;
+  let disposed = false, pending = false, settingsDirty = false, settingsRevision = 0, activity = {}, activityRevision = 0, model = null, generation = 0, polling = false, newScope = false;
   let journalOffset = 0, journalIdentity = '', journalGeneration = 0, journalRequest = null, journalPage = null, journalOpenedFor = '';
   let retryOffset = 0, retryGeneration = 0;
   const call = (op, args = {}) => api.call(op, args, { signal });
   const safe = fn => async (...args) => { try { await fn(...args); } catch (error) { if (!disposed && error?.name !== 'AbortError') showError(errors, error); } };
   const errors = el('div', { class: 'collection-errors', 'aria-live': 'polite' });
+  const scope = createCollectionScope({
+    preview: selected => call('library.collection.preview', { scope: selected }),
+    search: args => call('library.collection.scope', args),
+    onChange: () => { if (!disposed) paint(); },
+    onError: error => { if (!disposed && error?.name !== 'AbortError') showError(errors, error); }
+  });
   const modelError = el('p', { class: 'notice warning collection-model-error', role: 'status', 'aria-live': 'polite', hidden: true,
     text: 'Le bilan et les réglages locaux de collecte n’ont pas pu être chargés. Le journal de cette tentative reste consultable. Vérifiez le dossier local de la bibliothèque avant de réessayer.' });
   const heading = el('h2', { id: 'collection-state-title', role: 'status', 'aria-live': 'polite' });
@@ -50,7 +57,9 @@ export async function renderLibraryCollection(ctx) {
   const pause = controlButton('Pause', safe(() => control('pause')), { primary: true });
   const stop = controlButton('Arrêter', safe(() => control('stop')));
   const retry = controlButton('Reprendre les erreurs', safe(() => collect('retry')));
-  const actions = toolbar(start, resume, pause, stop); actions.classList.add('collection-actions');
+  const prepare = controlButton('Préparer un autre périmètre', safe(async () => { newScope = true; scope.beginDraft(); paint(); }));
+  const returnToRun = controlButton('Revenir à la reprise', safe(async () => { newScope = false; scope.restoreSaved(); paint(); }));
+  const actions = toolbar(start, resume, pause, stop, prepare, returnToRun); actions.classList.add('collection-actions');
   const statusCard = el('section', { class: 'card collection-status', 'aria-label': 'État de la collecte' },
     el('div', { class: 'collection-status-heading' }, el('span', { class: 'collection-state-mark', 'aria-hidden': 'true' }, icon('layers')),
       el('div', {}, el('p', { class: 'collection-eyebrow', text: 'BIBLIOTHÈQUE DE TICKETS' }), heading)),
@@ -63,8 +72,8 @@ export async function renderLibraryCollection(ctx) {
   const transfer = el('details', { class: 'card collection-disclosure' }, el('summary', { text: 'Transférer une bibliothèque préparée' }), transferHost);
   const shell = el('section', { class: 'collection-workspace', 'aria-label': 'Collecte des tickets' },
     el('header', { class: 'collection-header' }, button('Bibliothèque', () => navigate('library'), { icon: 'layers' }), el('h1', { text: 'Collecte des tickets' })),
-    el('p', { class: 'collection-intro', text: 'Collecte initiale, puis mise à jour des contenus nouveaux ou modifiés. Une reprise vérifie l’index et conserve les fiches valides.' }),
-    errors, modelError, statusCard, journal, retries, settings, transfer);
+    el('p', { class: 'collection-intro', text: 'Choisir les tickets à partir du relevé chargé, vérifier le volume, puis collecter seulement les contenus manquants ou à actualiser.' }),
+    errors, modelError, scope.element, statusCard, journal, retries, settings, transfer);
   root.replaceChildren(shell);
   function controlButton(label, handler, options) {
     // The generic button restores its pre-click disabled value; collection state
@@ -80,7 +89,7 @@ export async function renderLibraryCollection(ctx) {
   function paint() {
     // Activity is contextualized by the engine. A terminal event also wins when
     // preparation failed before a new durable run could replace the old one.
-    const { running, state, report, resumeId } = collectionView();
+    const { running, state, report, resumeId, runId } = collectionView();
     heading.textContent = state === 'completed' && report?.retryCount > 0 ? 'Passage à compléter' : labels[state] || state;
     statusCard.dataset.state = state;
     shell.dataset.collectionState = state;
@@ -91,14 +100,25 @@ export async function renderLibraryCollection(ctx) {
       : report ? `${formatNumber(report.read)} contenus lus · ${formatNumber(report.reused)} réutilisés · ${formatNumber(report.retryCount)} à reprendre ou confirmer` : activity.sessionId ? `${formatNumber(activity.processed || 0)} tickets examinés pendant cette tentative · ${formatNumber(activity.requests || 0)} navigations déclenchées` : 'Les contenus sauvegardés sont conservés même en cas d’interruption.';
     progress.hidden = !running; progress.max = Math.max(1, activity.total || 1);
     if (activity.total > 0) progress.value = activity.processed || 0; else progress.removeAttribute('value');
-    next.textContent = running ? `Dernière activité : ${formatDate(activity.updatedAt)}` : model?.state?.nextAt ? `Prochain passage au plus tôt : ${formatDate(model.state.nextAt)} · application ouverte et plage autorisée.` : 'Aucune relance automatique programmée.';
+    next.textContent = running ? `Dernière activité : ${formatDate(activity.updatedAt)}`
+      : model?.automaticBlocked ? 'Programmation suspendue : lancer une première collecte ciblée pour enregistrer le périmètre.'
+        : model?.state?.nextAt ? `Prochain passage au plus tôt : ${formatDate(model.state.nextAt)} · application ouverte et plage autorisée.` : 'Aucune relance automatique programmée.';
     const held = heldStates.has(state), resumable = held && !!resumeId;
     recovery.hidden = !held;
     recovery.textContent = resumable
-      ? `${state === 'attention' && report?.observed === 0 ? 'L’index n’a pas permis d’identifier de fiches à reprendre. ' : ''}${['attention', 'interrupted'].includes(state) ? 'Consultez le journal, puis utilisez « Reprendre » après avoir vérifié la cause de l’arrêt.' : 'Utilisez « Reprendre » lorsque vous souhaitez continuer.'} La reprise vérifie d’abord l’index et conserve les contenus valides.`
-      : 'Consultez le journal avant de relancer une mise à jour. Les contenus déjà enregistrés restent disponibles.';
-    start.hidden = running || resumable; resume.hidden = running || !resumable; pause.hidden = !running; stop.hidden = !running;
-    start.disabled = pending || running || !model;
+      ? `${['attention', 'interrupted'].includes(state) ? 'Vérifier la cause de l’arrêt dans le journal avant de reprendre. ' : ''}${model?.scope?.enabled || model?.state?.scope?.enabled ? 'La reprise conserve les tickets du périmètre et les contenus déjà enregistrés.' : 'La reprise vérifie l’index et conserve les contenus valides.'}`
+      : 'Vérifier le journal avant de relancer une collecte. Les contenus déjà enregistrés restent disponibles.';
+    start.hidden = running || resumable && !newScope; resume.hidden = running || !resumable || newScope; pause.hidden = !running; stop.hidden = !running;
+    prepare.hidden = running || !resumable || newScope;
+    returnToRun.hidden = running || !resumable || !newScope;
+    const liveCoverage = activity.runId && activity.runId === runId ? activity.coverage : null;
+    const storedCoverage = runId && model?.state?.runId === runId ? model?.coverage : null;
+    scope.setState({ locked: running || pending || resumable && !newScope, held: resumable && !newScope,
+      coverage: running || resumable && !newScope ? liveCoverage || storedCoverage || null : null,
+      coverageVerifiedAt: liveCoverage ? activity.coverageVerifiedAt : storedCoverage ? model?.inventory?.verifiedAt : null });
+    start.disabled = pending || running || !model || !scope.ready();
+    prepare.disabled = pending || running;
+    returnToRun.disabled = pending || running;
     resume.disabled = pending || running || !resumeId || !held;
     retry.disabled = pending || running || !report?.retryCount;
     pause.disabled = !running || !activity.sessionId || state !== 'running';
@@ -140,18 +160,26 @@ export async function renderLibraryCollection(ctx) {
     if (disposed || stamp !== generation) return;
     modelError.hidden = true;
     model = data; if (modelActivityRevision === activityRevision) { activity = data.activity || current; activityRevision++; }
+    scope.setModel(data, { preserveSaved: heldStates.has(collectionView().state) && !newScope });
     if (!settingsDirty) drawSettings(); drawTransfer(); paint(); drawJournalReport();
     if (journal.open) await loadJournal();
     if (retries.open) await loadRetries();
   }
   async function collect(mode) {
     if (pending || activeStates.has(activity.state)) return;
+    const scopeArgs = mode === 'incremental' ? scope.args() : {};
+    if (!scopeArgs) return;
     const missingJournal = mode === 'incremental' && model?.state?.state === 'interrupted' && !model.state.runId;
     if (missingJournal && !await confirm('Reprendre à partir des contenus conservés ?', 'Le journal ancien n’est plus disponible. Un nouvel index sera lu, sans réaspirer les contenus complets toujours valides.', 'Reprendre depuis la bibliothèque')) return;
     pending = true; errors.replaceChildren(); journalOffset = 0; journal.open = true; paint();
     try {
-      const result = await call('library.capture', { mode, runId: collectionView().resumeId || '', confirmedNewCycle: missingJournal });
+      const result = await call('library.capture', { mode, runId: mode === 'incremental' ? '' : collectionView().resumeId || '',
+        confirmedNewCycle: missingJournal || newScope, ...scopeArgs });
+      newScope = false;
       if (!disposed) notify(labels[result?.collectionState] || result?.message || 'Point de reprise conservé.', result?.collectionState === 'attention' ? 'warning' : 'info');
+    } catch (error) {
+      if (mode === 'incremental') scope.invalidatePreview();
+      throw error;
     } finally { pending = false; if (!disposed) await reload(); }
   }
   async function control(action) {
@@ -173,7 +201,8 @@ export async function renderLibraryCollection(ctx) {
   }
   function drawSettings() {
     const options = model.state.options; settingsRevision = model.state.revision;
-    const automatic = el('input', { type: 'checkbox', checked: options.automatic });
+    const canSchedule = model?.state?.scope?.enabled === true && !!model?.state?.runId;
+    const automatic = el('input', { type: 'checkbox', checked: options.automatic, disabled: !canSchedule && !options.automatic });
     const form = el('form', { class: 'collection-settings-form' });
     const numbers = {};
     const numeric = (key, title, min, max, help) => {
@@ -187,7 +216,9 @@ export async function renderLibraryCollection(ctx) {
         numeric('maximumMinutes', 'Budget par passage (minutes)', 1, 1440), numeric('consecutiveErrorLimit', 'Arrêt après erreurs consécutives', 1, 10),
         field('Début du créneau automatique', from), field('Fin du créneau automatique', to), field('Fuseau horaire', zone)));
     form.append(el('p', { text: 'Désignez un seul poste collecteur par périmètre. Les autres postes peuvent importer la bibliothèque et synchroniser le partage sans solliciter GLPI. Ces réglages ne changent pas la fréquence du partage entre postes.' }),
-      field('Ce poste effectue les mises à jour automatiques', automatic),
+      field('Ce poste effectue les mises à jour automatiques', automatic, canSchedule
+        ? 'La programmation utilise le dernier périmètre lancé. Modifier les filtres de l’aperçu ne change pas ce périmètre.'
+        : 'Lancer une première collecte ciblée pour enregistrer son périmètre avant de programmer les suivantes.'),
       el('div', { class: 'collection-fields' },
         numeric('intervalMinutes', 'Intervalle entre passages (minutes)', 5, 10080),
         numeric('delayMilliseconds', 'Délai minimal entre navigations (millisecondes)', 1000, 60000, '3 000 ms = 3 secondes. Une seule lecture à la fois ; ce délai ne limite pas les sous-requêtes HTTP du navigateur.'),
@@ -341,7 +372,7 @@ export async function renderLibraryCollection(ctx) {
       if (journal.open && journalOffset === 0 && (activeStates.has(data.state) || wasActive)) await loadJournal();
     }).catch(error => { if (!disposed && revision === activityRevision && error?.name !== 'AbortError') detail.textContent = 'État de la collecte non confirmé. Aucun nouvel envoi demandé.'; }).finally(() => { polling = false; });
   }, 2000);
-  const dispose = () => { if (disposed) return; disposed = true; generation++; journalGeneration++; retryGeneration++; clearInterval(timer); unsubscribe?.(); };
+  const dispose = () => { if (disposed) return; disposed = true; generation++; journalGeneration++; retryGeneration++; scope.dispose(); clearInterval(timer); unsubscribe?.(); };
   signal?.addEventListener('abort', dispose, { once: true });
   paint();
   try { await reload(); } catch (error) { if (!disposed) showError(errors, error); }

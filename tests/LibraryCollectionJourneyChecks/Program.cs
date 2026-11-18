@@ -13,6 +13,12 @@ try
         try { await test().WaitAsync(TimeSpan.FromMinutes(3)); passed++; Console.WriteLine("PASS " + name); }
         catch (Exception error) { Console.Error.WriteLine("FAIL " + name + "\n" + error); }
     });
+    await TargetedCollectionJourneyChecks.RunAsync(root, async (name, test) =>
+    {
+        total++;
+        try { await test().WaitAsync(TimeSpan.FromMinutes(3)); passed++; Console.WriteLine("PASS " + name); }
+        catch (Exception error) { Console.Error.WriteLine("FAIL " + name + "\n" + error); }
+    });
 }
 finally
 {

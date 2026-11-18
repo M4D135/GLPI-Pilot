@@ -1,6 +1,6 @@
 namespace GlpiPilot.Core;
 
-/// <summary>Observed tickets in the active GLPI entity scope, with no ticket search restriction.</summary>
+/// <summary>Observed tickets in the active GLPI entity scope; a targeted index covers only its requested identities.</summary>
 public sealed class TicketLibraryIndex
 {
     public string SourceUrl { get; set; } = "";
@@ -10,6 +10,8 @@ public sealed class TicketLibraryIndex
     public List<TicketLibrarySeed> Tickets { get; set; } = new();
     public int? ExpectedTotal { get; set; }
     public int PagesRead { get; set; }
+    public bool IsTargeted { get; set; }
+    public int RequestedCount { get; set; }
     public bool AllStatuses { get; set; }
     public bool Complete { get; set; }
     public bool SearchRestored { get; set; }

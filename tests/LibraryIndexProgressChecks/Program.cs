@@ -58,6 +58,17 @@ var checks = new (string Name, Action Run)[]
             Require(LibraryIndexRequestPolicy.IsNative(source, endpoint + "?action=" + action + "&field=12&itemtype=Ticket", "GET", "fetch", false, null));
         }
     }),
+    ("Targeted ID rendering accepts only its observed native field, without assuming field 2", () =>
+    {
+        var source = new Uri("https://glpi.test/support/front/ticket.php"); var endpoint = "https://glpi.test/support/ajax/search.php";
+        Require(LibraryIndexRequestPolicy.IsNative(source, endpoint, "POST", "xhr", false,
+            "action=display_searchoption&field=92&itemtype=Ticket", "92"));
+        foreach (var field in new[] { "2", "12", "19" })
+            Require(!LibraryIndexRequestPolicy.IsNative(source, endpoint, "POST", "xhr", false,
+                "action=display_searchoption&field=" + field + "&itemtype=Ticket", "92"));
+        Require(!LibraryIndexRequestPolicy.IsNative(source, endpoint, "POST", "xhr", false,
+            "action=display_searchoption&field=92&field=92&itemtype=Ticket", "92"));
+    }),
     ("Polling, preferences writes, other item types, ambiguous parameters and sibling installations do not extend waiting", () =>
     {
         var source = new Uri("https://glpi.test/support/front/ticket.php"); var endpoint = "https://glpi.test/support/ajax/search.php";

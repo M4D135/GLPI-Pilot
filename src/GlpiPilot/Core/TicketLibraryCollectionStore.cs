@@ -19,6 +19,10 @@ public sealed partial class TicketLibraryStore
             using var query = Command(c, tx, "SELECT state_json FROM ticket_library_collection WHERE context_hash=$context", ("$context", contextHash));
             var state = query.ExecuteScalar() is string json ? JsonSerializer.Deserialize<LibraryCollectionState>(json, TicketLibraryRules.Json) ?? throw new InvalidDataException("État de collecte illisible.") : new LibraryCollectionState();
             state.Options.Validate();
+            if (state.Scope is null) throw new InvalidDataException("Périmètre de collecte illisible.");
+            state.Scope.Validate();
+            if (state.ScopeRunId is null || state.ScopeRunId.Length > 0 && !Guid.TryParseExact(state.ScopeRunId, "N", out _))
+                throw new InvalidDataException("Référence du périmètre de collecte illisible.");
             if (state.RunId.Length > 0 && ScalarLong(c, tx, "SELECT COUNT(*) FROM ticket_library_capture_runs WHERE run_id=$run", ("$run", state.RunId)) == 0)
             {
                 state.RunId = ""; state.State = "interrupted"; state.NextAt = null; state.Revision++;
@@ -35,8 +39,11 @@ public sealed partial class TicketLibraryStore
     public Task<LibraryCollectionState> SaveCollectionStateAsync(string contextHash, LibraryCollectionState state, long expectedRevision, CancellationToken ct = default)
     {
         ValidateCollectionContext(contextHash); state = TicketLibraryRules.Copy(state); state.Options.Validate();
+        if (state.Scope is null) throw new InvalidDataException("Périmètre de collecte invalide.");
+        state.Scope.Validate();
         if (expectedRevision < 0 || state.State is not ("idle" or "running" or "paused" or "stopped" or "interrupted" or "attention" or "completed" or "budget")
-            || state.RunId.Length != 0 && !Guid.TryParseExact(state.RunId, "N", out _)) throw new InvalidDataException("Point de reprise de collecte invalide.");
+            || state.RunId.Length != 0 && !Guid.TryParseExact(state.RunId, "N", out _)
+            || state.ScopeRunId is null || state.ScopeRunId.Length != 0 && !Guid.TryParseExact(state.ScopeRunId, "N", out _)) throw new InvalidDataException("Point de reprise de collecte invalide.");
         return Run(c =>
         {
             using var tx = c.BeginTransaction(); Execute(c, tx, CollectionSchema);

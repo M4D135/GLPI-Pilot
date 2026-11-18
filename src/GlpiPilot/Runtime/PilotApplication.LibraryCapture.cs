@@ -13,7 +13,10 @@ public sealed partial class PilotApplication
     private sealed class CollectionPreparationException(string message) : InvalidOperationException(message);
     private async Task<object?> CaptureLibraryAsync(JsonElement args, CancellationToken ct)
     {
-        var entry = _journal.Start("Collecte globale des tickets", Settings.PortalUrl);
+        var targeted = args.TryGetProperty("scope", out var scope) && scope.ValueKind == JsonValueKind.Object && Flag(scope, "enabled");
+        var title = targeted ? "Collecte ciblée des tickets"
+            : Text(args, "mode", 30) is "resume" or "retry" || Flag(args, "automatic") ? "Collecte des tickets" : "Collecte globale des tickets";
+        var entry = _journal.Start(title, Settings.PortalUrl);
         string previousSessionId; lock (_collectionGate) previousSessionId = _collectionActivity.SessionId;
         try
         {

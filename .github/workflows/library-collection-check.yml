@@ -55,8 +55,8 @@ jobs:
           $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
           $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/library-collection/screenshots'
           Remove-Item Env:GLPI_TEST_OFFLINE_BLOBS -ErrorAction SilentlyContinue
-          & $node --test tests/LibraryCollectionChecks/journal.test.mjs 2>&1 | Tee-Object artifacts/library-collection/journal.log
-          if ($LASTEXITCODE -ne 0) { throw 'Collection journal lifecycle checks failed.' }
+          & $node --test tests/LibraryCollectionChecks/journal.test.mjs tests/LibraryCollectionChecks/scope.test.mjs 2>&1 | Tee-Object artifacts/library-collection/journal.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection journal and scope lifecycle checks failed.' }
           & $node tests/LibraryCollectionChecks/ui.cjs 2>&1 | Tee-Object artifacts/library-collection/ui.log
           if ($LASTEXITCODE -ne 0) { throw 'Collection interface checks failed.' }
           & $node tests/TicketControlChecks/run.cjs 2>&1 | Tee-Object artifacts/library-collection/tickets.log

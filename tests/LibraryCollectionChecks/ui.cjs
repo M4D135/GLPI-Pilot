@@ -28,13 +28,24 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       const root = document.querySelector('#root'); Object.assign(root.style, { height: '100dvh', overflow: 'auto', padding: '16px' });
       const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js');
       window.calls = []; window.callbacks = new Map(); window.state = { revision: 1, state: 'idle', runId: '', nextAt: null, options: { version: 1, automatic: false, intervalMinutes: 120, delayMilliseconds: 3000, batchSize: 25, batchPauseSeconds: 30, maximumMinutes: 60, consecutiveErrorLimit: 3, startMinute: 0, endMinute: 1440, timeZone: 'UTC' } }; window.activity = { state: 'idle' }; window.collectionEvents = []; window.reportOverride = null;
+      window.collectionScope = { version: 1, enabled: true, dateRole: 'created', fromDate: '', toDate: '', ticketIds: [], text: '', similarSubject: '', fields: [] };
+      window.collectionCatalog = { sourceFingerprint: 'fixture-source-a', sourceUrl: 'https://fixture.invalid/glpi/front/ticket.php', observedAt: '2026-11-18T10:00:00Z', inventoryComplete: true, inventoryCount: 180000, titleAvailable: true,
+        dateRoles: [{ role: 'created', label: 'Date de création', column: 'Date de création', available: true }, { role: 'updated', label: 'Dernière modification', column: 'Dernière modification', available: true }],
+        fields: [{ column: 'Groupe attribué', role: 'group', label: 'Groupe attribué', valuesLoaded: true, truncated: false, values: [{ value: 'Support', count: 10000 }, { value: 'Réseau', count: 5000 }] },
+          { column: 'Demandeur', role: 'requester', label: 'Demandeur', valuesLoaded: true, truncated: false, values: [{ value: 'Utilisateur de test', count: 12 }] }] };
+      window.collectionInventory = { sourceFingerprint: 'fixture-source-a', sourceUrl: collectionCatalog.sourceUrl, observedAt: collectionCatalog.observedAt, count: 180000, complete: true };
+      window.scopeCoverage = { selected: 50, complete: 30, missing: 15, partial: 3, changed: 2, unconfirmed: 0, toRead: 20 };
+      window.scopeModel = () => ({ scope: structuredClone(collectionScope), catalog: structuredClone(collectionCatalog), available: true, inventory: structuredClone(collectionInventory),
+        teams: [{ key: 'team:test', label: 'Assistance', groups: ['Support', 'Réseau'] }] });
       const signal = new AbortController().signal;
       const api = { on: (name, callback) => { callbacks.set(name, callback); return () => callbacks.delete(name); }, call: async (op, args = {}) => {
         calls.push({ op, args: structuredClone(args) });
         if (op === 'library.collection.status') return structuredClone(activity);
-        if (op === 'library.collection.get') return { state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi' };
+        if (op === 'library.collection.get') return { ...scopeModel(), state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi', coverage: state.runId ? structuredClone(scopeCoverage) : null };
+        if (op === 'library.collection.scope') return scopeModel();
+        if (op === 'library.collection.preview') return { ...scopeModel(), scope: structuredClone(args.scope), previewToken: 'f'.repeat(32), coverage: structuredClone(scopeCoverage), warnings: [] };
         if (op === 'library.collection.events') return { runId: args.runId, total: collectionEvents.length, offset: args.offset, limit: args.limit, persisted: true, items: structuredClone(collectionEvents.slice(args.offset, args.offset + args.limit)) };
-        if (op === 'library.capture') { state.runId ||= 'a'.repeat(32); collectionEvents.unshift({ sequence: collectionEvents.length + 1, at: new Date().toISOString(), level: 'info', stage: 'Lecture de l’index', code: 'index.started', message: 'Lecture de la liste accessible démarrée.' }); activity = { state: 'running', sessionId: 'b'.repeat(32), runId: state.runId, total: 50, processed: 10, reused: 7, requests: 12, phase: 'Lecture', updatedAt: new Date().toISOString() }; callbacks.get('library.collection.progress')(activity); return new Promise(resolve => { window.finishCollection = resolve; }); }
+        if (op === 'library.capture') { if (args.mode === 'incremental') { if (!args.previewToken || !args.scope?.enabled) throw new Error('A targeted preview is required'); state.scope = collectionScope = structuredClone(args.scope); } state.runId ||= 'a'.repeat(32); collectionEvents.unshift({ sequence: collectionEvents.length + 1, at: new Date().toISOString(), level: 'info', stage: 'Lecture de l’index', code: 'index.started', message: 'Lecture de la liste accessible démarrée.' }); activity = { state: 'running', sessionId: 'b'.repeat(32), runId: state.runId, total: 50, processed: 10, reused: 7, requests: 12, phase: 'Lecture', updatedAt: new Date().toISOString(), coverage: structuredClone(scopeCoverage), coverageVerifiedAt: '2026-11-18T11:00:00Z' }; callbacks.get('library.collection.progress')(activity); return new Promise(resolve => { window.finishCollection = resolve; }); }
         if (op === 'library.collection.control') { assertSession(args.sessionId); state.state = args.action === 'pause' ? 'paused' : 'stopped'; activity = { ...activity, state: state.state }; callbacks.get('library.collection.progress')(activity); finishCollection({ collectionState: state.state }); return { requested: true }; }
         if (op === 'library.collection.settings') { state.options = args.options; state.revision++; return state; }
         if (op === 'library.capture.entries') return { total: 0, items: [] };
@@ -50,9 +61,26 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
     });
     ok(await page.evaluate(() => calls.every(c => c.op !== 'library.capture')), 'Opening the dedicated menu never starts a collection');
     ok(await page.locator('.collection-actions .primary:visible').count() === 1 && await page.locator('.collection-disclosure[open]').count() === 0, 'One primary action and optional settings remain collapsed on entry');
+    ok(await page.getByRole('button', { name: 'Mettre à jour', exact: true }).isDisabled(), 'A source with 180000 tickets requires a reviewed scope before starting');
+    await page.getByLabel('Historique à partir du', { exact: true }).fill('2026-01-01');
+    await page.getByRole('button', { name: 'Ajouter un filtre', exact: true }).click();
+    await page.getByLabel('Groupe attribué : Support', { exact: true }).check();
+    ok(await page.evaluate(() => !calls.some(c => ['library.capture', 'library.collection.preview'].includes(c.op))), 'Changing history and group filters performs no collection and no unsolicited preview');
+    await page.getByRole('button', { name: 'Prévisualiser le périmètre', exact: true }).click();
+    ok(await page.getByRole('button', { name: 'Mettre à jour', exact: true }).isEnabled() && await page.locator('.collection-scope-coverage-heading').innerText().then(text => text.includes('60 %')), 'The reviewed scope displays 30 of 50 complete tickets rather than using the global inventory size');
+    ok(await page.evaluate(() => { const scope = calls.find(c => c.op === 'library.collection.preview').args.scope; return scope.fromDate === '2026-01-01' && scope.fields[0].column === 'Groupe attribué' && scope.fields[0].values[0] === 'Support'; }), 'The preview applies the exact history and group selection');
+    for (const [width, height] of [[1280, 800], [1093, 614], [390, 800]]) {
+      await page.setViewportSize({ width, height });
+      ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Scope fields and coverage remain bounded at ${width}x${height}`);
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    if (process.env.GLPI_TEST_SCREENSHOTS) { fs.mkdirSync(process.env.GLPI_TEST_SCREENSHOTS, { recursive: true }); await page.locator('.collection-scope').screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-scope-preview.png') }); }
     await page.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
     await page.waitForFunction(() => !!window.finishCollection);
     ok(await page.getByRole('button', { name: 'Pause', exact: true }).isEnabled() && await page.getByRole('button', { name: 'Arrêter', exact: true }).isEnabled(), 'Pause and stop remain available during the long capture call');
+    ok(await page.getByLabel('Historique à partir du', { exact: true }).isDisabled() && await page.getByRole('button', { name: 'Prévisualiser le périmètre', exact: true }).isDisabled(), 'The accepted scope stays frozen during collection');
+    ok(await page.getByLabel('Contenus complets dans le périmètre', { exact: true }).evaluate(node => node.value === 30 && node.max === 50)
+      && await page.getByLabel('Tickets examinés pendant ce passage', { exact: true }).evaluate(node => node.value === 10), 'Coverage and attempt progress remain separate meters');
     await page.locator('.collection-event').first().waitFor({ state: 'visible' });
     ok(await page.locator('[data-collection-panel=journal][open]').count() === 1 && await page.evaluate(() => calls.some(c => c.op === 'library.collection.events') && !calls.some(c => c.op === 'library.capture.entries')), 'The operational journal opens and remains readable during capture independently of ticket retry entries');
     await page.evaluate(() => collectionEvents.unshift({ sequence: 2, at: new Date().toISOString(), level: 'info', stage: 'Lecture de l’index', code: 'index.progress', message: 'Deuxième page de l’index reçue.' }));
@@ -110,8 +138,9 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-journal-initial-failure.png') });
     }
     await page.evaluate(async () => { cleanup(); ({ state, activity, collectionEvents } = savedCollectionScenario); reportOverride = null; collectionContext.root.replaceChildren(); const { renderDataWorkspace } = await importProduction('/web/js/pages/data-workspace.js'); window.workspaceCleanup = await renderDataWorkspace(collectionContext); });
-    await page.locator('[data-open-panel=collection]').click();
-    ok(await page.locator('[data-workspace-panel=collection] .collection-workspace').count() === 1 && await page.getByRole('button', { name: 'Reprendre', exact: true }).isVisible(), 'The production data workspace opens the collector with its saved resumable state');
+    await page.getByRole('button', { name: 'Choisir les tickets à collecter', exact: true }).click();
+    ok(await page.locator('[data-workspace-panel=collection] .collection-workspace').count() === 1 && await page.getByRole('button', { name: 'Reprendre', exact: true }).isVisible()
+      && await page.evaluate(() => calls.filter(c => c.op === 'library.capture').length === 2), 'The production data workspace collection entry opens the saved scope without starting a global collection');
     await page.locator('[data-workspace-panel=collection] > .modal-heading button').click();
     await page.locator('[data-workspace-panel=collection]').waitFor({ state: 'detached' });
     await page.locator('[data-open-panel=collection]').click();

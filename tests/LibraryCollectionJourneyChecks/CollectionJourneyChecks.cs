@@ -73,7 +73,7 @@ internal static class CollectionJourneyChecks
             var options = page.GetProperty("state").GetProperty("options").Deserialize<LibraryCollectionOptions>(PilotApplication.Json)!;
             options.DelayMilliseconds = 1000; options.BatchPauseSeconds = 0; options.MaximumMinutes = 5;
             await Call(app, "library.collection.settings", new { revision = page.GetProperty("state").GetProperty("revision").GetInt64(), options });
-            var result = await Call(app, "library.capture", new { mode = "incremental" }); runId = result.GetProperty("runId").GetString()!;
+            var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true }); runId = result.GetProperty("runId").GetString()!;
             Require(result.GetProperty("collectionState").GetString() == "paused" && reads.GetValueOrDefault("41") == 1 && reads.GetValueOrDefault("42") == 0, "Pause did not preserve the first-only read boundary.");
         });
         await check("Reopening the production controller resumes the same run without rereading the saved body", async () =>
@@ -88,9 +88,9 @@ internal static class CollectionJourneyChecks
         await check("Incremental production acquisition reads only one modified ticket and one new ticket", async () =>
         {
             await using var app = await Open();
-            await Call(app, "library.capture", new { mode = "incremental" });
+            await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
             Require(reads.GetValueOrDefault("41") == 1 && reads.GetValueOrDefault("42") == 1, "Unchanged content was downloaded again.");
-            expanded = true; var result = await Call(app, "library.capture", new { mode = "incremental" });
+            expanded = true; var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
             Require(result.GetProperty("read").GetInt32() == 2 && result.GetProperty("reused").GetInt32() == 1 && result.GetProperty("retryCount").GetInt32() == 0, "Wrong delta scope or incomplete confirmation.");
             Require(reads.GetValueOrDefault("41") == 1 && reads.GetValueOrDefault("42") == 2 && reads.GetValueOrDefault("43") == 1, "New/changed content boundary was not preserved.");
         });
@@ -99,7 +99,7 @@ internal static class CollectionJourneyChecks
             string refreshRun;
             await using (var app = await Open("pause"))
             {
-                var result = await Call(app, "library.capture", new { mode = "all" });
+                var result = await Call(app, "library.capture", new { mode = "all", confirmedGlobal = true });
                 refreshRun = result.GetProperty("runId").GetString()!;
                 Require(result.GetProperty("collectionState").GetString() == "paused" && reads.GetValueOrDefault("41") == 2
                     && reads.GetValueOrDefault("42") == 2 && reads.GetValueOrDefault("43") == 1, "Forced refresh did not stop after its first fresh read.");
@@ -125,7 +125,7 @@ internal static class CollectionJourneyChecks
         await check("A later incremental cycle does not inherit the previous forced refresh", async () =>
         {
             await using var app = await Open();
-            var result = await Call(app, "library.capture", new { mode = "incremental" });
+            var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
             Require(result.GetProperty("read").GetInt32() == 0 && result.GetProperty("reused").GetInt32() == 3
                 && reads.GetValueOrDefault("41") == 2 && reads.GetValueOrDefault("42") == 3 && reads.GetValueOrDefault("43") == 2,
                 "Forced refresh leaked into the next incremental cycle.");
@@ -134,7 +134,7 @@ internal static class CollectionJourneyChecks
         {
             await using (var app = await Open("stop"))
             {
-                var result = await Call(app, "library.capture", new { mode = "incremental" });
+                var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
                 Require(result.GetProperty("collectionState").GetString() == "stopped", "Stop was not persisted.");
             }
             var local = new TicketLibraryStore(preferences.DatabasePath); var fingerprint = TicketLibraryCaptureContext.FromSettings(settings, preferences).Fingerprint;
@@ -165,7 +165,7 @@ internal static class CollectionJourneyChecks
             var page = await Call(app, "library.collection.get", new { });
             await Call(app, "library.collection.settings", new { revision = page.GetProperty("state").GetProperty("revision").GetInt64(),
                 options = new LibraryCollectionOptions { DelayMilliseconds = 1000, BatchPauseSeconds = 0, MaximumMinutes = 5 } });
-            var result = await Call(app, "library.capture", new { mode = "incremental" });
+            var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
             Require(result.GetProperty("read").GetInt32() == 3 && result.GetProperty("reused").GetInt32() == 0
                 && result.GetProperty("retryCount").GetInt32() == 0 && before.All(pair => reads[pair.Key] == pair.Value + 1),
                 "The production collector reused expired content despite the periodic freshness limit.");
@@ -178,7 +178,7 @@ internal static class CollectionJourneyChecks
             {
                 indexFailureStatus = 403;
                 JsonElement result;
-                try { result = await Call(app, "library.capture", new { mode = "incremental" }); }
+                try { result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true }); }
                 finally { indexFailureStatus = 0; }
                 failedRun = result.GetProperty("runId").GetString()!;
                 Require(result.GetProperty("collectionState").GetString() == "attention" && result.GetProperty("observed").GetInt32() == 0
@@ -202,7 +202,7 @@ internal static class CollectionJourneyChecks
             preferences.LocalFolder = Path.Combine(root, "live-journal-journey-library"); new LibraryPreferencesStore().Save(preferences);
             await using var app = await Open(); var before = reads.Values.Sum();
             indexReached = new(TaskCreationOptions.RunContinuationsAsynchronously); releaseIndex = new(TaskCreationOptions.RunContinuationsAsynchronously); gateUsed = 0;
-            var capture = Call(app, "library.capture", new { mode = "incremental" });
+            var capture = Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
             try
             {
                 await indexReached.Task.WaitAsync(TimeSpan.FromSeconds(10));

@@ -157,7 +157,7 @@ export async function renderLibrary(ctx) {
     const modeLabel=syncMode==='folder'?'Dossier réseau partagé':syncMode==='postgres'?'Partage PostgreSQL':'Sur ce poste uniquement';
     if (!overviewDetails) {
       overviewDetails=el('div');storageDetails=el('div');
-      cacheControl=action('',()=>perform(model.stats?.ticketCount>0?'Mise à jour du cache…':'Collecte des tickets et de leurs contenus…','library.capture',{mode:'incremental'}),{primary:true,icon:'download'});
+      cacheControl=action('',()=>simulation?perform(model.stats?.ticketCount>0?'Mise à jour du cache…':'Collecte des tickets et de leurs contenus…','library.capture',{mode:'incremental'}):navigate('data',{panel:'collection'}),{primary:true,icon:'download'});
       syncControl=action(simulation?'Synchroniser le partage simulé':'Synchroniser',()=>perform(simulation?'Échange dans la simulation…':model.settings?.syncMode==='folder'?'Synchronisation avec le dossier partagé…':'Synchronisation avec PostgreSQL…','library.sync'),{icon:'refresh'});
       header.append(el('section',{class:'card library-overview'},overviewDetails,toolbar(cacheControl)));
       storage.append(el('section',{class:'card library-storage','aria-label':'Stockage et synchronisation'},storageDetails,
@@ -166,7 +166,7 @@ export async function renderLibrary(ctx) {
     }
     // Refresh facts without replacing focused/pressed controls. A refresh between
     // pointerdown and pointerup must not discard the user's pending click.
-    cacheControl.querySelector('span').textContent=hasTickets?'Mettre à jour le cache':'Aspirer tous les tickets';
+    cacheControl.querySelector('span').textContent=simulation?(hasTickets?'Mettre à jour le cache':'Aspirer tous les tickets'):'Choisir les tickets à collecter';
     const nextIcon=hasTickets?'refresh':'download';
     if(cacheIcon!==nextIcon){cacheControl.querySelector('svg')?.replaceWith(icon(nextIcon));cacheIcon=nextIcon;}
     actionButtons.find(entry=>entry.control===syncControl).disabled=!shared;
@@ -324,10 +324,10 @@ export async function renderLibrary(ctx) {
           button('Choisir le dossier', async () => { const result = await call('library.folder.pick'); const folder = result.folder ?? result.path; if (folder) controls.localFolder.value = folder; }, { icon: 'folder' }),
           field('Fuseau des dates GLPI', controls.sourceTimeZone, 'Choisissez le fuseau d’affichage de GLPI. Sans ce choix, la collecte reste possible ; une date sans décalage horaire ne permet pas de réutiliser un contenu sans le relire.'),
           field('Format des dates GLPI', controls.sourceDateOrder, 'Choisissez l’ordre affiché dans GLPI. En détection prudente, une date telle que 05/06 reste ambiguë et le contenu sera relu.'),
-          field('Recontrôler les contenus après (jours)', controls.maxAgeDays, 'Une relecture périodique complète le contrôle incrémental de la date de modification.'),
+          field('Recontrôler les contenus après (jours)', controls.maxAgeDays, 'Pour la collecte sans filtre. Dans un périmètre ciblé, les contenus complets sont réutilisés lorsque leur version est confirmée inchangée.'),
           field('Nom affiché dans l’espace d’équipe', controls.displayName),
           el('p', { class: 'library-setting-note', text: 'Les pièces jointes sont conservées sous forme de références. La bibliothèque recueille les onglets de consultation accessibles ; elle conserve les limites et les lectures partielles.' }),
-          action('Relire tous les contenus', () => perform('Relecture de tous les contenus accessibles…', 'library.capture', { mode: 'all' }), { icon: 'refresh',disabled:isFileSource(ctx.state.session),title:isFileSource(ctx.state.session)?fileSourceDetailHelp:'' }),
+          action(simulation?'Relire tous les contenus':'Ouvrir la collecte', () => simulation?perform('Relecture de tous les contenus accessibles…', 'library.capture', { mode: 'all' }):navigate('data',{panel:'collection'}), { icon: 'refresh',disabled:isFileSource(ctx.state.session),title:isFileSource(ctx.state.session)?fileSourceDetailHelp:'' }),
           model.administration?el('section',{class:'library-administration'},el('h3',{text:'Administration locale'}),el('p',{class:'help',text:'Une sauvegarde vérifiée est créée avant l’effacement. Les données distantes et les fichiers personnels sont conservés.'}),toolbar(button('Réinitialiser les tickets locaux',()=>resetLocal(false),{danger:true}),button('Réinitialiser toute la base locale',()=>resetLocal(true),{danger:true}))):null),
         el('section', { class: 'library-settings-section library-sharing-settings' }, el('h2', { text: 'Partage entre postes · facultatif' }),field('Mode de partage',mode),modeDescription,local,folder,pg,sharedOptions,
           simulation?el('p',{class:'notice info',text:'Dans cette simulation, le partage et les tests restent locaux. Le dossier réseau et le serveur réels ne sont pas contactés.'}):null,

@@ -15,6 +15,7 @@ public sealed partial class BrowserService
         private readonly object _gate = new();
         private GlpiLibraryIndexException? _failure;
         private string _phase = "open-list";
+        private string _nativeField = "12";
         private bool _searchMayHaveChanged;
         private bool _disposed;
 
@@ -29,6 +30,15 @@ public sealed partial class BrowserService
         public string Phase { get { lock (_gate) return _phase; } }
         public bool HasPendingRequest { get { lock (_gate) return _state.HasPendingRequest; } }
         public bool SearchMayHaveChanged { get { lock (_gate) return _searchMayHaveChanged; } }
+
+        // The targeted reader obtains this value from the native ID option.
+        // Only that observed criterion's asynchronous rendering may extend the wait.
+        public void ObserveNativeField(string value)
+        {
+            if (value.Length is 0 or > 20 || value.Any(c => c is < '0' or > '9'))
+                throw new GlpiLibraryPageException("Le critère d’identifiant natif n’a pas une valeur exploitable.");
+            lock (_gate) _nativeField = value;
+        }
 
         public void BeginPhase(string phase)
         {
@@ -75,7 +85,7 @@ public sealed partial class BrowserService
             try
             {
                 return request.Frame == _frame && request.Frame.Page == _page
-                    && LibraryIndexRequestPolicy.IsNative(_source, request.Url, request.Method, request.ResourceType, request.IsNavigationRequest, request.PostData);
+                    && LibraryIndexRequestPolicy.IsNative(_source, request.Url, request.Method, request.ResourceType, request.IsNavigationRequest, request.PostData, _nativeField);
             }
             catch (PlaywrightException) { return false; }
         }

@@ -64,7 +64,7 @@ internal static class LibraryCaptureRuntimeChecks
         glpi.FailDetails.Add("42"); glpi.PartialDetails.Add("43");
         await using var f = new SessionFixture(glpi.Service); f.App.Settings.ListTimeoutSeconds = 5; f.App.Settings.DetailTimeoutSeconds = 5;
         await ConfigureFixturePacing(f);
-        var first = await f.Call("library.capture", new { mode = "all" }); var run = first.GetProperty("runId").GetString();
+        var first = await f.Call("library.capture", new { mode = "all", confirmedGlobal = true }); var run = first.GetProperty("runId").GetString();
         Require(first.GetProperty("observed").GetInt32() == 3 && first.GetProperty("read").GetInt32() == 2 && first.GetProperty("failed").GetInt32() == 1 && first.GetProperty("partial").GetInt32() == 1);
         Require(first.GetProperty("retryCount").GetInt32() == 2 && first.GetProperty("finalScopeVerified").GetBoolean());
         var before = glpi.DetailRequests.Count; glpi.FailDetails.Clear(); glpi.PartialDetails.Clear(); glpi.TicketIds.Remove("42");
@@ -82,7 +82,7 @@ internal static class LibraryCaptureRuntimeChecks
         await using var glpi = await TicketLibraryCaptureBrowserFixture.OpenAsync(_browser!, SessionFixture.SourceA); glpi.FailIndexNumber = 2;
         await using var f = new SessionFixture(glpi.Service); f.App.Settings.ListTimeoutSeconds = 5; f.App.Settings.DetailTimeoutSeconds = 5;
         await ConfigureFixturePacing(f);
-        var result = await f.Call("library.capture", new { mode = "all" }); var run = result.GetProperty("runId").GetString();
+        var result = await f.Call("library.capture", new { mode = "all", confirmedGlobal = true }); var run = result.GetProperty("runId").GetString();
         Require(result.GetProperty("read").GetInt32() == 3 && result.GetProperty("unconfirmed").GetInt32() == 3 && !result.GetProperty("finalScopeVerified").GetBoolean());
         var store = Store(); Require((await store.SearchAsync(new() { ResolvedOnly = true })).Total == 0);
         Require((await new TicketLibraryStore(store.DatabasePath).LatestCaptureAsync())!.RunId == run);
@@ -96,7 +96,7 @@ internal static class LibraryCaptureRuntimeChecks
         var closing = new System.Collections.Concurrent.ConcurrentQueue<string>(); glpi.Service.Log += message => { if (message.StartsWith("FICHE · fermeture", StringComparison.Ordinal)) closing.Enqueue(message); };
         await using var f = new SessionFixture(glpi.Service); f.App.Settings.ListTimeoutSeconds = 5; f.App.Settings.DetailTimeoutSeconds = 5;
         await ConfigureFixturePacing(f);
-        var capture = f.Call("library.capture", new { mode = "all" }); await glpi.WaitForIndexAsync(2);
+        var capture = f.Call("library.capture", new { mode = "all", confirmedGlobal = true }); await glpi.WaitForIndexAsync(2);
         await f.Call("operations.cancel");
         try { await capture; throw new InvalidOperationException("Expected capture cancellation."); } catch (OperationCanceledException) { }
         var report = await f.Call("library.capture.latest");

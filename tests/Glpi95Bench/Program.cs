@@ -100,7 +100,7 @@ else
     if (phase == "collect")
     {
         var clock = Stopwatch.StartNew();
-        var first = await Call("library.capture", new { mode = "incremental" }); var firstSeconds = clock.Elapsed.TotalSeconds;
+        var first = await Call("library.capture", new { mode = "incremental", confirmedGlobal = true }); var firstSeconds = clock.Elapsed.TotalSeconds;
         report["firstPass"] = Summary(first, firstSeconds);
         Check(first.GetProperty("collectionState").GetString() == "paused" && first.GetProperty("read").GetInt32() == pauseAfter, $"La pause demandée après {pauseAfter} tickets est respectée ({first.GetProperty("read").GetInt32()} lus).");
         clock.Restart();
@@ -112,7 +112,7 @@ else
             $"Les {tickets} tickets sont observés et chaque fiche est ouverte une seule fois malgré la pause ({opened.Count} fiches, {opened.Values.Sum()} ouvertures).");
         opened.Clear();
         clock.Restart();
-        var unchanged = await Call("library.capture", new { mode = "incremental" }); var unchangedSeconds = clock.Elapsed.TotalSeconds;
+        var unchanged = await Call("library.capture", new { mode = "incremental", confirmedGlobal = true }); var unchangedSeconds = clock.Elapsed.TotalSeconds;
         report["unchangedPass"] = Summary(unchanged, unchangedSeconds);
         Check(unchanged.GetProperty("read").GetInt32() == 0 && unchanged.GetProperty("reused").GetInt32() == tickets && unchanged.GetProperty("collectionState").GetString() == "completed" && opened.IsEmpty,
             $"Un passage sans changement n’ouvre aucune fiche ({unchanged.GetProperty("reused").GetInt32()} réutilisés, {opened.Count} ouvertures, {unchangedSeconds:N0} s).");
@@ -121,7 +121,7 @@ else
     {
         var changed = int.Parse(args[3]);
         var clock = Stopwatch.StartNew();
-        var after = await Call("library.capture", new { mode = "incremental" }); var seconds = clock.Elapsed.TotalSeconds;
+        var after = await Call("library.capture", new { mode = "incremental", confirmedGlobal = true }); var seconds = clock.Elapsed.TotalSeconds;
         report["changedPass"] = Summary(after, seconds);
         Check(after.GetProperty("read").GetInt32() == changed && after.GetProperty("reused").GetInt32() == tickets - changed && after.GetProperty("collectionState").GetString() == "completed" && opened.Count == changed,
             $"Seuls les {changed} tickets modifiés dans GLPI sont relus ({after.GetProperty("read").GetInt32()} lus, {after.GetProperty("reused").GetInt32()} réutilisés, {seconds:N0} s).");

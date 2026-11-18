@@ -33,6 +33,13 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Index : redirection de session refusée sans poursuivre hors du périmètre", IndexSessionRedirect),
     ("Index : blocage sans progression arrêté même si un polling étranger reste actif", IndexNoProgress),
     ("Index : annulation pendant la restauration ferme sa requête et ne retourne pas un succès", CancelDuringRestore),
+    ("Index ciblé : sélection bornée parmi 180 000 tickets, identifiant natif observé et filtre restauré", TargetedIndex),
+    ("Index ciblé : plusieurs lots sans lecture des autres tickets", TargetedBatches),
+    ("Index ciblé : sélection vide et URL étrangère ne déclenchent aucune navigation", TargetedInputGuard),
+    ("Index ciblé : champ ID absent ou critère détourné refusé sans recherche globale", TargetedCriterionGuard),
+    ("Index ciblé : cible absente demeure explicitement indisponible", TargetedMissing),
+    ("Index ciblé : changement de périmètre entre lots interdit une confirmation complète", TargetedChangedScope),
+    ("Index ciblé : refus de session et annulation conservent la recherche", TargetedSessionAndCancel),
     ("Détails : tous les onglets sûrs, description, suivis, tâches et solution", AllTabs),
     ("Détails : historique paginé lu jusqu’au total, aucune ligne perdue", HistoryPages),
     ("Détails : références des documents sans téléchargement binaire", DocumentReferences),
@@ -64,9 +71,11 @@ static string Query(Uri uri, string name) => TicketReferenceResolver.ParseQuery(
 
 string ListHtml(Uri uri, FixtureOptions options)
 {
+    if (options.NativeIdField.Length > 0 && Query(uri, "criteria[0][field]") == options.NativeIdField)
+        return TargetedListHtml(uri, options);
     var all = Query(uri, "criteria[0][value]") == "all";
     var start = int.TryParse(Query(uri, "start"), out var parsed) ? parsed : 0;
-    var count = options.Empty ? 0 : all ? 3 : 1;
+    var count = options.Empty ? 0 : options.NativeIdField.Length > 0 ? 180000 : all ? 3 : 1;
     var items = options.Empty ? Array.Empty<int>() : !all ? new[] { 41 } : start == 0 ? new[] { 41, 42 } : new[] { options.Duplicate ? 42 : 43 };
     var value = all ? "all" : "notold";
     var fields = options.NoModification ? "" : "<th data-searchopt-id='19'>Dernière modification</th>";
@@ -87,10 +96,10 @@ string ListHtml(Uri uri, FixtureOptions options)
     next.Query = string.Join("&", pairs.Select(pair => Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)));
     var pager = all && start == 0 && count > 2 ? "<div class='search-pager'><p class='page-infos'>1-2/3</p><a class='page-link-next' data-start='2' href='" + Escape(next.Uri.AbsoluteUri) + "'>Suivant</a></div>" : "";
     return $$"""
-        <!doctype html><html lang="fr"><meta charset="utf-8"><title>GLPI bibliothèque synthétique</title>{{(needsStatus && options.DeferredStatusHandler ? "<script defer src='/glpi/js/library-search-fixture.js'></script>" : "")}}<body><div class="page"><header class="navbar">Entité {{(options.ChangeScope && start > 0 ? "B" : "A")}}</header></div>
+        <!doctype html><html lang="fr"><meta charset="utf-8"><title>GLPI bibliothèque synthétique</title>{{(needsStatus && options.DeferredStatusHandler ? "<script defer src='/glpi/js/library-search-fixture.js'></script>" : "")}}<body><div class="page"><header class="navbar">Entité {{(options.ChangeScope && start > 0 ? "B" : options.CurrentEntity)}}</header></div>
         <a href="/glpi/front/logout.php">Déconnexion</a>
         <form name="searchformticket" class="search-form-container" method="get" action="/glpi/front/ticket.php">
-          <select id="criterion-field" name="criteria[0][field]"><option value="12" {{(needsStatus ? "" : "selected")}}>Statut</option><option value="19" {{(needsStatus ? "selected" : "")}}>Dernière modification</option></select>
+          <select id="criterion-field" name="criteria[0][field]"><option value="12" {{(needsStatus ? "" : "selected")}}>Statut</option><option value="19" {{(needsStatus ? "selected" : "")}}>Dernière modification</option>{{(options.NativeIdField.Length > 0 ? "<option value='" + Escape(options.NativeIdField) + "'>ID</option>" : "")}}</select>
           <span id="native-status-fields">{{statusControls}}</span>
           <input type="hidden" name="is_deleted" value="0"><input type="hidden" name="as_map" value="0"><input type="hidden" name="browse" value="0">
           <a class="search-reset" href="/glpi/front/ticket.php?reset=reset">Vider</a><button type="submit" name="search">Rechercher</button>
@@ -99,10 +108,34 @@ string ListHtml(Uri uri, FixtureOptions options)
           <table class="search-results"><thead><tr><th data-searchopt-id="1">Titre</th><th data-searchopt-id="12">Statut</th>{{fields}}<th data-searchopt-id="7">Catégorie</th></tr></thead><tbody>{{rows}}</tbody></table>{{pager}}
         </form>
         <script>
-          {{(needsStatus && !options.DeferredStatusHandler ? "document.getElementById('criterion-field').addEventListener('change',async()=>{document.getElementById('native-status-fields').innerHTML=await(await fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_searchoption&field=12&itemtype=Ticket'})).text()});" : "")}}
+          {{(needsStatus && !options.DeferredStatusHandler && options.NativeIdField.Length == 0 ? "document.getElementById('criterion-field').addEventListener('change',async()=>{document.getElementById('native-status-fields').innerHTML=await(await fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_searchoption&field=12&itemtype=Ticket'})).text()});" : "")}}
+          {{(options.NativeIdField.Length > 0 ? "document.getElementById('criterion-field').addEventListener('change',async e=>{document.getElementById('native-status-fields').innerHTML=await(await fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_searchoption&field='+encodeURIComponent(e.target.value)+'&itemtype=Ticket'})).text()});" : "")}}
           {{(all && start == 0 && options.ResultDelayMilliseconds > 0 ? "const results=document.querySelector('form[data-search-itemtype]');results.setAttribute('aria-busy','true');fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_results&itemtype=Ticket'}).then(r=>r.text()).then(()=>results.removeAttribute('aria-busy'));" : "")}}
           {{(all && options.StalledIndex ? "document.querySelector('form[data-search-itemtype]').setAttribute('aria-busy','true');setInterval(()=>fetch('/glpi/ajax/search.php?action=fold_search&itemtype=Ticket'),150);" : "")}}
         </script></body></html>
+        """;
+}
+
+string TargetedListHtml(Uri uri, FixtureOptions options)
+{
+    var criteria = TicketReferenceResolver.ParseQuery(uri).Where(p => p.Key.EndsWith("[field]", StringComparison.Ordinal)).ToList();
+    var requested = criteria.Select(p => Query(uri, p.Key.Replace("[field]", "[value]", StringComparison.Ordinal))).ToList();
+    var items = requested.Where(id => id != options.MissingTargetId).ToList();
+    if (options.OutsideTarget && items.Count > 0) items[0] = "999999";
+    var form = string.Join("", requested.Select((id, i) => "<select name='criteria[" + i + "][field]'><option value='12'>Statut</option><option value='" + options.NativeIdField + "' selected>ID</option></select>"
+        + "<select name='criteria[" + i + "][searchtype]'><option value='equals'>est</option></select><input name='criteria[" + i + "][value]' value='" + (options.DriftTargetCriterion ? "999998" : Escape(id)) + "'>"
+        + (i == 0 ? "" : "<select name='criteria[" + i + "][link]'><option value='OR'>OU</option></select>")));
+    var rows = string.Join("", items.Select(id => "<tr><td><a href='/glpi/front/ticket.form.php?id=" + Escape(id) + "'>Ticket sélectionné " + Escape(id) + "</a></td><td>Clos</td><td>" + Escape(options.Modified) + "</td><td>Catégorie fictive</td></tr>"));
+    if (items.Count == 0) rows = "<tr><td colspan='4'>Aucun élément trouvé</td></tr>";
+    return $$"""
+        <!doctype html><html lang="fr"><meta charset="utf-8"><body><div class="page"><header class="navbar">Entité {{(options.ChangeTargetScope && requested.Contains("30") ? "B" : options.CurrentEntity)}}</header></div>
+        <a href="/glpi/front/logout.php">Déconnexion</a>
+        <form name="searchformticket" method="get" action="/glpi/front/ticket.php">{{form}}
+          <input type="hidden" name="is_deleted" value="0"><input type="hidden" name="as_map" value="0"><input type="hidden" name="browse" value="0">
+          <a class="search-reset" href="/glpi/front/ticket.php?reset=reset">Vider</a></form>
+        <form data-search-itemtype="Ticket" data-start="0" data-count="{{items.Count}}" data-limit="25">
+          <table class="search-results"><thead><tr><th data-searchopt-id="1">Titre</th><th data-searchopt-id="12">Statut</th><th data-searchopt-id="19">Dernière modification</th><th data-searchopt-id="7">Catégorie</th></tr></thead><tbody>{{rows}}</tbody></table></form>
+        </body></html>
         """;
 }
 
@@ -155,6 +188,7 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
     var options = configuration ?? new();
     var context = await browser.NewContextAsync();
     var requests = new ConcurrentQueue<string>();
+    var targetRequests = 0;
     await context.RouteAsync("**/*", async route =>
     {
         var uri = new Uri(route.Request.Url); requests.Enqueue(uri.AbsoluteUri);
@@ -163,7 +197,11 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
         {
             if (uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal))
             {
-                if (Query(uri, "criteria[0][value]") == "all")
+                var targeted = options.NativeIdField.Length > 0 && Query(uri, "criteria[0][field]") == options.NativeIdField;
+                if (targeted) targetRequests++;
+                if (options.ChangeBetweenTargetBatches && !targeted && Query(uri, "reset") == "reset" && targetRequests > 0)
+                    options.CurrentEntity = "B";
+                if (Query(uri, "criteria[0][value]") == "all" || targeted)
                 {
                     if (options.IndexStatus >= 400) { await route.FulfillAsync(new() { Status = options.IndexStatus, Body = "NEVER_INDEX_ERROR_CONTENT" }); return; }
                     if (options.AbortIndex) { await route.AbortAsync("connectionfailed"); return; }
@@ -175,7 +213,7 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
                     if (options.RestoreStatus >= 400) { await route.FulfillAsync(new() { Status = options.RestoreStatus, Body = "NEVER_RESTORE_ERROR_CONTENT" }); return; }
                     if (options.RestoreDelayMilliseconds > 0) await Task.Delay(options.RestoreDelayMilliseconds);
                 }
-                if (options.DelayIndex && Query(uri, "criteria[0][value]") == "all") await Task.Delay(1500);
+                if (options.DelayIndex && (Query(uri, "criteria[0][value]") == "all" || targeted)) await Task.Delay(1500);
                 await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = ListHtml(uri, options) });
             }
             else if (uri.AbsolutePath.EndsWith("/js/library-search-fixture.js", StringComparison.Ordinal))
@@ -190,6 +228,12 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
                 if (action == "display_searchoption")
                 {
                     await Task.Delay(options.StatusDelayMilliseconds);
+                    var field = Query(new Uri("http://body.test/?" + route.Request.PostData), "field");
+                    if (options.NativeIdField.Length > 0 && field == options.NativeIdField)
+                    {
+                        await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><input name='criteria[0][value]' value=''>" });
+                        return;
+                    }
                     await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><select name='criteria[0][value]'><option value='1'>Nouveau</option><option value='5'>Résolu</option><option value='6'>Clos</option><option value='notold' selected>Non résolu</option><option value='all'>Tous</option></select>" });
                 }
                 else { await Task.Delay(action == "display_results" ? options.ResultDelayMilliseconds : 700); await route.FulfillAsync(new() { Body = "" }); }
@@ -217,6 +261,140 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
 
 Task<TicketLibraryIndex> Index(FixtureSession s, CancellationToken ct = default) => s.Service.ReadTicketLibraryIndexAsync(s.Settings, null, ct);
 Task<TicketLibraryDetailRead> Detail(FixtureSession s, CancellationToken ct = default) => s.Service.ReadTicketLibraryDetailsAsync(new("42", ticketUrl), s.Settings, null, ct);
+static TicketReference Target(string id) => new(id, "http://glpi-library.test/glpi/front/ticket.form.php?id=" + id);
+Task<TicketLibraryIndex> Subset(FixtureSession s, IEnumerable<string> ids, CancellationToken ct = default) =>
+    s.Service.ReadTicketLibrarySubsetIndexAsync(s.Settings, ids.Select(Target).ToArray(), null, ct);
+static List<Uri> TargetQueries(FixtureSession s) => s.Requests.Select(url => new Uri(url))
+    .Where(uri => uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal) && Query(uri, "criteria[0][field]") == "92").ToList();
+static void NoGlobalQuery(FixtureSession s) => Require(!s.Requests.Select(url => new Uri(url)).Any(uri => Query(uri, "criteria[0][value]") == "all"),
+    "La collecte ciblée a lancé une recherche globale Tous.");
+
+async Task TargetedIndex()
+{
+    await using var s = await Setup(new() { NativeIdField = "92" });
+    var original = await s.Search.ContentAsync();
+    var result = await Subset(s, new[] { "42", "43" });
+    Require(result.IsTargeted && result.RequestedCount == 2 && result.ExpectedTotal == 2 && result.Complete && result.AllStatuses,
+        "Sélection ciblée non confirmée : " + string.Join(" | ", result.Limitations));
+    Require(result.PagesRead == 1 && result.Tickets.Select(t => t.Ticket.Id).SequenceEqual(new[] { "42", "43" })
+        && result.Tickets.All(t => t.LastModifiedReliable && t.StatusCode == 6) && result.ScopeFingerprint.Length > 0,
+        "Métadonnées ciblées absentes, non fiables ou identités différentes.");
+    Require(result.SearchRestored && s.Search.Url == source && await s.Search.ContentAsync() == original
+        && s.Context.Pages.Count == 1 && s.Service.ActivePage == s.Search, "Recherche affichée ou session non restaurée.");
+    Require(TargetQueries(s).Count == 1 && !s.Requests.Any(url => url.Contains("ticket.form.php", StringComparison.Ordinal)),
+        "Les contenus ou plusieurs recherches ont été ouverts pendant l’index ciblé.");
+    NoGlobalQuery(s);
+    await using var nonStatus = await Setup(new() { NativeIdField = "92", NeedsStatus = true });
+    var observedStatuses = await Subset(nonStatus, new[] { "42", "43" });
+    Require(observedStatuses.Complete && observedStatuses.Tickets.All(t => t.StatusCode == 6),
+        "Les codes de statut n’ont pas été observés avant la recherche ID lorsque le filtre initial portait sur un autre champ.");
+    NoGlobalQuery(nonStatus);
+}
+
+async Task TargetedBatches()
+{
+    await using var s = await Setup(new() { NativeIdField = "92" });
+    var requested = Enumerable.Range(1, 30).Select(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+    var result = await Subset(s, requested);
+    Require(result.Complete && result.AllStatuses && result.RequestedCount == 30 && result.Tickets.Count == 30 && result.PagesRead == 2,
+        "Lots ciblés incomplets : " + string.Join(" | ", result.Limitations));
+    var queries = TargetQueries(s);
+    Require(queries.Count == 2 && queries.All(uri => TicketReferenceResolver.ParseQuery(uri).Count(p => p.Key.EndsWith("[field]", StringComparison.Ordinal)) <= 25),
+        "Les recherches ne sont pas bornées à 25 identifiants.");
+    var sent = queries.SelectMany(uri => TicketReferenceResolver.ParseQuery(uri).Where(p => p.Key.EndsWith("[value]", StringComparison.Ordinal)).Select(p => p.Value));
+    Require(sent.SequenceEqual(requested) && result.SearchRestored, "Cible omise, dupliquée, ajoutée ou filtre non restauré entre lots.");
+    NoGlobalQuery(s);
+}
+
+async Task TargetedInputGuard()
+{
+    await using var s = await Setup(new() { NativeIdField = "92" }); var before = s.Requests.Count;
+    var empty = await Subset(s, Array.Empty<string>());
+    Require(empty.IsTargeted && empty.Complete && empty.RequestedCount == 0 && empty.ExpectedTotal == 0
+        && empty.ScopeFingerprint.Length == 0 && s.Requests.Count == before, "Une sélection vide a ouvert GLPI ou inventé un périmètre de session.");
+    try
+    {
+        await s.Service.ReadTicketLibrarySubsetIndexAsync(s.Settings,
+            new[] { Target("42"), new TicketReference("43", "http://foreign.test/glpi/front/ticket.form.php?id=43") }, null, CancellationToken.None);
+        throw new Exception("Une référence d’une autre installation a été acceptée.");
+    }
+    catch (InvalidOperationException) { }
+    Require(s.Requests.Count == before, "Une navigation a été envoyée avant la validation de toutes les cibles.");
+}
+
+async Task TargetedCriterionGuard()
+{
+    foreach (var options in new[] { new FixtureOptions(), new FixtureOptions { NativeIdField = "92", DriftTargetCriterion = true },
+        new FixtureOptions { NativeIdField = "92", OutsideTarget = true } })
+    {
+        await using var s = await Setup(options);
+        try { await Subset(s, new[] { "42", "43" }); throw new Exception("Critère absent/détourné ou ticket hors sélection accepté."); }
+        catch (GlpiLibraryIndexException) { }
+        Require(!s.Requests.Any(url => url.Contains("ticket.form.php", StringComparison.Ordinal)), "Une fiche a été lue malgré un index non vérifié.");
+        NoGlobalQuery(s);
+    }
+}
+
+async Task TargetedMissing()
+{
+    await using var s = await Setup(new() { NativeIdField = "92", MissingTargetId = "43" });
+    var result = await Subset(s, new[] { "42", "43" });
+    Require(result.Complete && result.RequestedCount == 2 && result.ExpectedTotal == 1 && result.Tickets.Single().Ticket.Id == "42"
+        && result.Limitations.Any(x => x.Contains("sans confirmation", StringComparison.Ordinal)),
+        "Une cible absente a été déclarée présente ou son absence n’est pas signalée.");
+    NoGlobalQuery(s);
+}
+
+async Task TargetedChangedScope()
+{
+    await using var s = await Setup(new() { NativeIdField = "92", ChangeTargetScope = true });
+    try
+    {
+        await Subset(s, Enumerable.Range(1, 30).Select(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        throw new Exception("Le changement de périmètre a rendu un index partiel réutilisable sous une autre session.");
+    }
+    catch (GlpiLibraryIndexException error)
+    {
+        Require(error.Category == "index-scope" && error.Phase == "scope", "La dérive de périmètre n’est pas identifiée explicitement.");
+    }
+    Require(!s.Requests.Any(url => url.Contains("ticket.form.php", StringComparison.Ordinal)),
+        "Une fiche a été ouverte après changement de périmètre.");
+    NoGlobalQuery(s);
+    await using var between = await Setup(new() { NativeIdField = "92", ChangeBetweenTargetBatches = true });
+    await between.Search.CloseAsync();
+    try
+    {
+        await Subset(between, Enumerable.Range(1, 30).Select(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        throw new Exception("Deux lots individuellement valides sous des périmètres différents ont été fusionnés.");
+    }
+    catch (GlpiLibraryIndexException error)
+    {
+        Require(error.Category == "index-scope" && error.Phase == "scope", "La dérive entre deux lots n’a pas arrêté leur agrégation.");
+    }
+    Require(TargetQueries(between).Count == 2 && !between.Requests.Any(url => url.Contains("ticket.form.php", StringComparison.Ordinal)),
+        "La dérive entre lots n’a pas été contrôlée avant toute lecture de fiche.");
+    NoGlobalQuery(between);
+}
+
+async Task TargetedSessionAndCancel()
+{
+    await using (var s = await Setup(new() { NativeIdField = "92", IndexStatus = 403 }))
+    {
+        try { await Subset(s, new[] { "42" }); throw new Exception("Le refus de session a été ignoré."); }
+        catch (GlpiLibraryIndexException error) { Require(error.Category == "index-session", "Le refus HTTP n’est pas identifié comme session/droits."); }
+        Require(s.Search.Url == source && s.Context.Pages.Count == 1, "La recherche a été changée ou une fenêtre d’échec est restée ouverte.");
+        NoGlobalQuery(s);
+    }
+    await using (var s = await Setup(new() { NativeIdField = "92", DelayIndex = true }))
+    {
+        using var cancel = new CancellationTokenSource(600);
+        try { await Subset(s, new[] { "42" }, cancel.Token); throw new Exception("Annulation de la sélection ignorée."); }
+        catch (OperationCanceledException) { }
+        Require(s.Search.Url == source && s.Context.Pages.Count == 1 && s.Service.ActivePage == s.Search,
+            "Une requête ciblée annulée reste ouverte ou la recherche affichée a changé.");
+        NoGlobalQuery(s);
+    }
+}
 
 // Real pages saved from a throwaway GLPI 9.5.13 with fictitious tickets (tests/Glpi95Fixtures), scripts removed.
 async Task Glpi95Index()
@@ -549,6 +727,13 @@ async Task PrivateLogs()
 
 sealed class FixtureOptions
 {
+    public string NativeIdField { get; init; } = "";
+    public string MissingTargetId { get; init; } = "";
+    public bool DriftTargetCriterion { get; init; }
+    public bool OutsideTarget { get; init; }
+    public bool ChangeTargetScope { get; init; }
+    public bool ChangeBetweenTargetBatches { get; init; }
+    public string CurrentEntity { get; set; } = "A";
     public bool MissingAll { get; init; }
     public bool NoModification { get; init; }
     public bool DuplicateModification { get; init; }

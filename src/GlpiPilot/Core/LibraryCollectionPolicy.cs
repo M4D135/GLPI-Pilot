@@ -41,8 +41,10 @@ public sealed class LibraryCollectionState
 {
     public long Revision { get; set; }
     public LibraryCollectionOptions Options { get; set; } = new();
+    public LibraryCollectionScope Scope { get; set; } = new();
     public string State { get; set; } = "idle";
     public string RunId { get; set; } = "";
+    public string ScopeRunId { get; set; } = "";
     public DateTimeOffset? NextAt { get; set; }
     public DateTimeOffset? LastSuccess { get; set; }
     public bool Held => State is "paused" or "stopped" or "interrupted" or "attention";

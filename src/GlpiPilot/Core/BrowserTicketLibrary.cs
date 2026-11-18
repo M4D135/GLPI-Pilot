@@ -23,7 +23,7 @@ public sealed partial class BrowserService
           const text = e => visible(e) ? (e.innerText || '').trim() : '';
           const css = e => { if(e.id && document.querySelectorAll('#'+CSS.escape(e.id)).length===1)return '#'+CSS.escape(e.id); const p=[]; for(let n=e;n instanceof Element;n=n.parentElement){const peers=n.parentElement?[...n.parentElement.children].filter(x=>x.localName===n.localName):[n];p.unshift(n.localName+':nth-of-type('+(peers.indexOf(n)+1)+')');}return p.join(' > '); };
           let restoreUrl='';const state=[document.readyState];
-          const fail = (reason,terminal=false) => ({ready:false,reason,restoreUrl,terminal,progress:JSON.stringify(state),documentReady:document.readyState!=='loading'});
+          const fail = (reason,terminal=false,category='index-session') => ({ready:false,reason,restoreUrl,terminal,category,progress:JSON.stringify(state),documentReady:document.readyState!=='loading'});
           if(location.origin!==arg.origin || location.pathname!==arg.path) return fail('La page de recherche appartient à une autre installation.',true);
           if([...document.querySelectorAll('input[type=password],input[autocomplete=one-time-code]')].some(visible))return fail('Une authentification est demandée.',true);
           const forms=[...document.querySelectorAll('form[name="searchformticket"],form[name="searchformTicket"],form.search-form-container')].filter(f=>{
@@ -45,18 +45,33 @@ public sealed partial class BrowserService
             for(const e of controls){const values=e instanceof HTMLSelectElement?[...e.selectedOptions].map(o=>o.value):[e.value];for(const v of values)restore.searchParams.append(e.name,v)}
             if(restore.href.length<=8192)restoreUrl=restore.href;
           }
-          const fields=allFields.filter(e=>e instanceof HTMLSelectElement && /^criteria\[\d+\]\[field\]$/.test(e.name) && [...e.options].some(o=>o.value==='12'));
-          const selected=fields.find(e=>e.value==='12') || fields[0];
+          const targets=Array.isArray(arg.targetIds)?arg.targetIds:[],targeted=targets.length>0;
+          const fieldControls=allFields.filter(e=>e instanceof HTMLSelectElement && /^criteria\[\d+\]\[field\]$/.test(e.name));
+          const statusField=fieldControls.find(e=>e.value==='12')||fieldControls.find(e=>[...e.options].some(o=>o.value==='12'));
+          const statusValues=statusField?[...form.elements].filter(e=>e.name===statusField.name.replace(/\[field\]$/,'[value]')):[];
+          const statusOptions=statusField?.value==='12'&&statusValues.length===1&&statusValues[0] instanceof HTMLSelectElement
+            ? [...statusValues[0].options].filter(o=>/^[1-6]$/.test(o.value)&&o.textContent.trim().length>0).map(o=>({code:Number(o.value),label:o.textContent.trim()})):[];
+          // An ID field number is not assumed: use the unique native option explicitly named ID.
+          const idFields=[...new Set(fieldControls.flatMap(e=>[...e.options].filter(o=>/^\d{1,20}$/.test(o.value)&&/^(id|identifiant|identifier|ticket id)$/.test(o.textContent.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase())).map(o=>o.value)))];
+          if(targeted&&idFields.length!==1)return fail('Le critère Identifiant natif est absent ou ambigu.',true,'index-page');
+          const nativeField=targeted?idFields[0]:'12';
+          const fields=fieldControls.filter(e=>[...e.options].some(o=>o.value===nativeField));
+          const selected=fields.find(e=>e.value===nativeField) || fields[0];
           if(!selected)return fail('Le critère Statut natif n’est pas disponible.');
           const prefix=selected.name.replace(/\[field\]$/,''), named=suffix=>[...form.elements].filter(e=>e.name===prefix+suffix);
           const types=named('[searchtype]'), values=named('[value]');
           const type=types.length===1?types[0]:null,value=values.length===1?values[0]:null;
-          state.push(selected.value,types.length,values.length,type instanceof HTMLSelectElement?type.value:'',selected.value==='12'&&value instanceof HTMLSelectElement?value.value:'',type?.options?.length||0,value?.options?.length||0);
-          const observed=selected.value==='12' && type instanceof HTMLSelectElement && [...type.options].some(o=>o.value==='equals') && value instanceof HTMLSelectElement && [...value.options].some(o=>o.value==='all') && resets.length===1;
+          state.push(selected.value,types.length,values.length,type instanceof HTMLSelectElement?type.value:'',selected.value===nativeField?value?.value||'':'',type?.options?.length||0,value?.options?.length||0);
+          const observed=selected.value===nativeField && type instanceof HTMLSelectElement && [...type.options].some(o=>o.value==='equals') && resets.length===1 && (targeted
+            ? value instanceof HTMLInputElement && ['text','search','number'].includes(value.type)
+            : value instanceof HTMLSelectElement && [...value.options].some(o=>o.value==='all'));
           const selectedPairs=allFields.filter(e=>!['checkbox','radio'].includes(e.type)||e.checked).map(e=>[e.name,e.value]);
-          const expected=new Map([[prefix+'[field]','12'],[prefix+'[searchtype]','equals'],[prefix+'[value]','all']]);
+          const expected=new Map();
+          if(targeted){for(let i=0;i<targets.length;i++){const key='criteria['+i+']';expected.set(key+'[field]',nativeField);expected.set(key+'[searchtype]','equals');expected.set(key+'[value]',targets[i]);if(i>0)expected.set(key+'[link]','OR');}}
+          else {expected.set(prefix+'[field]','12');expected.set(prefix+'[searchtype]','equals');expected.set(prefix+'[value]','all');}
           const flagsOk=['is_deleted','as_map','browse'].every(name=>{const controls=[...form.elements].filter(e=>e.name===name);return controls.length<=1&&controls.every(e=>e.value==='0')});
-          const exact=observed && flagsOk && selectedPairs.length>=3 && selectedPairs.length<=4 && expected.size===3 && [...expected].every(([k,v])=>selectedPairs.filter(p=>p[0]===k&&p[1]===v).length===1) && selectedPairs.every(([k,v])=>expected.get(k)===v || k===prefix+'[link]'&&v==='AND');
+          const optionalLink=targeted?'criteria[0][link]':prefix+'[link]';
+          const exact=observed && flagsOk && selectedPairs.length>=expected.size && selectedPairs.length<=expected.size+1 && [...expected].every(([k,v])=>selectedPairs.filter(p=>p[0]===k&&p[1]===v).length===1) && selectedPairs.every(([k,v])=>expected.get(k)===v || k===optionalLink&&v==='AND');
           const action=new URL(form.getAttribute('action'),document.baseURI);
           if(observed){action.searchParams.set('reset','reset');for(const [k,v] of expected)action.searchParams.set(k,v);for(const key of ['is_deleted','as_map','browse'])action.searchParams.set(key,'0');}
           const queryOk=[...new URL(location.href).searchParams].every(([k,v])=>{
@@ -69,8 +84,9 @@ public sealed partial class BrowserService
           const scopeControls=[...document.querySelectorAll('select[name],input[name]')].filter(e=>/^(active_entity|entities_id|newprofile|profiles_id)$/.test(e.name));
           const scope=JSON.stringify({context:scopeControls.map(e=>[e.name,e.value]).sort(),header:[...document.querySelectorAll('body > .page > header.navbar,body > .page > aside.navbar,#header_top,#c_ssmenu2')].map(text)});
           if(scope.length>64000 || scopeControls.length>100)return fail('Le périmètre de session ne peut pas être borné.');
-          const response={ready:true,reason:'',formSelector:css(form),fieldSelector:css(selected),statusSelected:selected.value==='12',allUrl:observed?action.href:'',allStatuses:exact&&queryOk,scope,restoreUrl,progress:JSON.stringify(state),documentReady:document.readyState!=='loading'};
+          const response={ready:true,reason:'',formSelector:css(form),fieldSelector:css(selected),statusFieldSelector:statusField?css(statusField):'',statusOptions,nativeField,statusSelected:selected.value===nativeField,allUrl:observed?action.href:'',allStatuses:exact&&queryOk,scope,restoreUrl,progress:JSON.stringify(state),documentReady:document.readyState!=='loading'};
           if(arg.mode!=='read')return response;
+          if(targeted&&!response.allStatuses)return fail('La recherche ne confirme pas les seuls identifiants sélectionnés sans autre filtre.',true,'index-scope');
           if(!response.allStatuses)return fail('La recherche ne confirme pas Statut = Tous sans autre filtre.');
           // GLPI 10 marks its result container; GLPI 9.5 puts the native table in its mass-action form and writes the range in its pager.
           let owners=[...document.querySelectorAll('form[data-search-itemtype="Ticket"]')].filter(visible);
@@ -122,7 +138,8 @@ public sealed partial class BrowserService
             characters+=values.reduce((n,v)=>n+v.length,0);
             if(link.title.length>10000||values.some(v=>v.length>500000)||characters>4000000)return fail('Le contenu de la page dépasse la limite de lecture de l’index.');
             const stat=status>=0?(values[status]||[...cells[status].querySelectorAll('[title]')].filter(visible).map(e=>e.getAttribute('title')).filter(Boolean).join(' ')):'';
-            const codes=value instanceof HTMLSelectElement?[...value.options].filter(o=>/^[1-6]$/.test(o.value)&&o.textContent.trim()===stat).map(o=>Number(o.value)):[];
+            const knownStatuses=targeted&&Array.isArray(arg.statusOptions)?arg.statusOptions:statusOptions;
+            const codes=knownStatuses.filter(o=>Number.isInteger(o.code)&&o.code>=1&&o.code<=6&&o.label===stat).map(o=>o.code);
             rows.push({id:link.id,url:link.url,title:link.title,status:stat,statusCode:codes.length===1?codes[0]:null,category:category>=0?values[category]:'',modified:modification>=0?values[modification]:'',modificationProven:modification>=0&&visible(cells[modification]),headers,values});
           }
           if(legacy){
@@ -144,10 +161,14 @@ public sealed partial class BrowserService
         [JsonPropertyName("ready")] public bool Ready { get; set; }
         [JsonPropertyName("documentReady")] public bool DocumentReady { get; set; }
         [JsonPropertyName("terminal")] public bool Terminal { get; set; }
+        [JsonPropertyName("category")] public string Category { get; set; } = "";
         [JsonPropertyName("progress")] public string Progress { get; set; } = "";
         [JsonPropertyName("reason")] public string Reason { get; set; } = "";
         [JsonPropertyName("formSelector")] public string FormSelector { get; set; } = "";
         [JsonPropertyName("fieldSelector")] public string FieldSelector { get; set; } = "";
+        [JsonPropertyName("statusFieldSelector")] public string StatusFieldSelector { get; set; } = "";
+        [JsonPropertyName("statusOptions")] public List<LibraryStatusOption> StatusOptions { get; set; } = new();
+        [JsonPropertyName("nativeField")] public string NativeField { get; set; } = "";
         [JsonPropertyName("statusSelected")] public bool StatusSelected { get; set; }
         [JsonPropertyName("allUrl")] public string AllUrl { get; set; } = "";
         [JsonPropertyName("restoreUrl")] public string RestoreUrl { get; set; } = "";
@@ -160,6 +181,12 @@ public sealed partial class BrowserService
         [JsonPropertyName("nextUrl")] public string NextUrl { get; set; } = "";
         [JsonPropertyName("nextStart")] public int? NextStart { get; set; }
         [JsonPropertyName("rows")] public List<LibraryIndexRow> Rows { get; set; } = new();
+    }
+
+    private sealed class LibraryStatusOption
+    {
+        [JsonPropertyName("code")] public int Code { get; set; }
+        [JsonPropertyName("label")] public string Label { get; set; } = "";
     }
 
     private sealed class LibraryIndexRow
@@ -176,8 +203,13 @@ public sealed partial class BrowserService
         [JsonPropertyName("values")] public List<string> Values { get; set; } = new();
     }
 
-    public async Task<TicketLibraryIndex> ReadTicketLibraryIndexAsync(AppSettings settings,
-        IProgress<ExtractionProgress>? progress, CancellationToken ct, string sourceDateOrder = "", Action<LibraryIndexProgress>? diagnostic = null)
+    public Task<TicketLibraryIndex> ReadTicketLibraryIndexAsync(AppSettings settings,
+        IProgress<ExtractionProgress>? progress, CancellationToken ct, string sourceDateOrder = "", Action<LibraryIndexProgress>? diagnostic = null) =>
+        ReadTicketLibraryIndexCoreAsync(settings, progress, ct, sourceDateOrder, diagnostic);
+
+    private async Task<TicketLibraryIndex> ReadTicketLibraryIndexCoreAsync(AppSettings settings,
+        IProgress<ExtractionProgress>? progress, CancellationToken ct, string sourceDateOrder, Action<LibraryIndexProgress>? diagnostic,
+        IReadOnlyList<string>? targetIds = null, int? pageLimit = null, int? rowLimit = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (sourceDateOrder is not ("" or "dmy" or "mdy" or "ymd"))
@@ -185,7 +217,13 @@ public sealed partial class BrowserService
         var source = TicketReferenceResolver.ReadHttpUrl(settings.PortalUrl, "L’adresse de la liste des tickets");
         if (!source.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal))
             throw new GlpiLibraryIndexException("session", "index-page", "La bibliothèque requiert la liste native /front/ticket.php de cette installation GLPI.");
-        var result = new TicketLibraryIndex { SourceUrl = source.GetLeftPart(UriPartial.Path) };
+        var targeted = targetIds is { Count: > 0 };
+        var result = new TicketLibraryIndex
+        {
+            SourceUrl = source.GetLeftPart(UriPartial.Path), IsTargeted = targeted, RequestedCount = targetIds?.Count ?? 0,
+            ScopeDescription = targeted ? "Tickets sélectionnés, tous statuts hors corbeille, dans le périmètre d’entités actif de la session GLPI"
+                : "Tous les statuts hors corbeille, dans le périmètre d’entités actif de la session GLPI"
+        };
         await _ticketReadGate.WaitAsync(ct);
         IPage? page = null;
         LibraryIndexActivity? activity = null;
@@ -229,7 +267,7 @@ public sealed partial class BrowserService
                     if (previous.Ready && previous.DocumentReady) scope = previous.Scope;
                 }
                 catch (PlaywrightException)
-                { Report(new("session", "restore-unconfirmed", "Le filtre affiché n’est pas encore lisible ; il sera observé dans la page dédiée avant la recherche Tous.")); }
+                { Report(new("session", "restore-unconfirmed", "Le filtre affiché n’est pas encore lisible ; il sera observé dans la page dédiée avant la collecte.")); }
             }
             var pending = _context.NewPageAsync();
             try { page = await pending.WaitAsync(ct); }
@@ -237,41 +275,83 @@ public sealed partial class BrowserService
             OwnTicketPage(page);
             activity = new(page, source, settings.ListTimeoutSeconds, Report);
             await NavigateLibraryListAsync(page, source.AbsoluteUri, "open-list", activity, ct);
-            var form = await WaitLibraryIndexDomAsync(page, source, "form", activity, ct);
+            var form = await WaitLibraryIndexDomAsync(page, source, "form", activity, ct, targetIds);
             if (scope is not null && scope != form.Scope)
             {
                 restoreAllowed = false;
-                throw new GlpiLibraryIndexException("open-list", "index-scope", "Le profil ou le périmètre d’entités a changé avant la recherche Tous. L’index n’a pas été collecté.");
+                throw new GlpiLibraryIndexException("open-list", "index-scope", "Le profil ou le périmètre d’entités a changé avant la recherche. L’index n’a pas été collecté.");
             }
             scope = form.Scope;
             if (restoreUrl.Length == 0) restoreUrl = form.RestoreUrl;
+            if (targeted && form.StatusOptions.Count == 0)
+            {
+                // Preserve the same native status codes as the global reader.
+                // Otherwise ID-only searches would change a seed from code 6 to
+                // null and create a false same-version conflict in an old cache.
+                if (form.StatusFieldSelector.Length == 0)
+                    throw new GlpiLibraryPageException("Le critère Statut natif n’est pas disponible pour vérifier les codes des tickets sélectionnés.");
+                await LibraryCollectionPacer.BeforeNavigationAsync(ct).ConfigureAwait(false);
+                var verifiedStatus = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, "form", ct, targetIds), ct);
+                if (!verifiedStatus.Ready || verifiedStatus.FormSelector != form.FormSelector || verifiedStatus.StatusFieldSelector != form.StatusFieldSelector)
+                    throw new GlpiLibraryPageException("Le formulaire de recherche a changé pendant la temporisation. Aucun critère n’a été modifié.");
+                if (verifiedStatus.Scope != scope)
+                {
+                    restoreAllowed = false;
+                    throw new GlpiLibraryIndexException("open-list", "index-scope", "Le profil ou le périmètre d’entités a changé pendant la temporisation. Aucun critère n’a été modifié.");
+                }
+                activity.ObserveNativeField("12"); activity.BeginPhase("status");
+                await activity.AwaitAsync(page.Locator(form.StatusFieldSelector).SelectOptionAsync("12", new() { Force = true, Timeout = 0 }), ct);
+                _ = await WaitLibraryIndexDomAsync(page, source, "status", activity, ct);
+                form = await WaitLibraryIndexDomAsync(page, source, "form", activity, ct, targetIds);
+                if (form.Scope != scope)
+                {
+                    restoreAllowed = false;
+                    throw new GlpiLibraryIndexException("status", "index-scope", "Le profil ou le périmètre d’entités a changé pendant l’observation des statuts.");
+                }
+            }
+            IReadOnlyList<LibraryStatusOption>? statusOptions = targeted ? form.StatusOptions : null;
+            if (targeted && statusOptions!.Count == 0)
+                throw new GlpiLibraryPageException("Les codes de statut natifs n’ont pas pu être observés. Aucun contenu n’a été relu.");
             if (!form.StatusSelected)
             {
                 await LibraryCollectionPacer.BeforeNavigationAsync(ct).ConfigureAwait(false);
-                var verifiedForm = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, "form", ct), ct);
-                if (!verifiedForm.Ready || verifiedForm.FormSelector != form.FormSelector || verifiedForm.FieldSelector != form.FieldSelector)
+                var verifiedForm = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, "form", ct, targetIds), ct);
+                if (!verifiedForm.Ready || verifiedForm.FormSelector != form.FormSelector || verifiedForm.FieldSelector != form.FieldSelector || verifiedForm.NativeField != form.NativeField)
                     throw new GlpiLibraryPageException("Le formulaire de recherche a changé pendant la temporisation. Aucun critère n’a été modifié.");
-                activity.BeginPhase("status");
-                await activity.AwaitAsync(page.Locator(form.FieldSelector).SelectOptionAsync("12", new() { Force = true, Timeout = 0 }), ct);
-                form = await WaitLibraryIndexDomAsync(page, source, "status", activity, ct);
+                if (verifiedForm.Scope != scope)
+                {
+                    restoreAllowed = false;
+                    throw new GlpiLibraryIndexException("open-list", "index-scope", "Le profil ou le périmètre d’entités a changé pendant la temporisation. Aucun critère n’a été modifié.");
+                }
+                activity.ObserveNativeField(form.NativeField);
+                activity.BeginPhase(targeted ? "ticket-id" : "status");
+                await activity.AwaitAsync(page.Locator(form.FieldSelector).SelectOptionAsync(form.NativeField, new() { Force = true, Timeout = 0 }), ct);
+                form = await WaitLibraryIndexDomAsync(page, source, "status", activity, ct, targetIds);
             }
             if (!form.Ready || form.AllUrl.Length == 0)
-                throw new GlpiLibraryPageException("L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI. Aucun périmètre complet n’est déclaré.");
+                throw new GlpiLibraryPageException(targeted
+                    ? "Le critère Identifiant et son opérateur d’égalité n’ont pas été observés. Aucune recherche globale n’a été lancée."
+                    : "L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI. Aucun périmètre complet n’est déclaré.");
             ValidateLibraryListUrl(form.AllUrl, source, allowReset: true);
-            await NavigateLibraryListAsync(page, form.AllUrl, "all-status", activity, ct);
+            await NavigateLibraryListAsync(page, form.AllUrl, targeted ? "targeted" : "all-status", activity, ct);
             var ids = new HashSet<string>(StringComparer.Ordinal);
             var expectedStart = 0;
-            var maxPages = Math.Clamp(settings.MaxPages, 1, 10000);
-            var maxRows = Math.Clamp(settings.MaxRows, 1, 1000000);
+            var maxPages = Math.Min(Math.Clamp(settings.MaxPages, 1, 10000), pageLimit ?? 10000);
+            var maxRows = Math.Min(Math.Clamp(settings.MaxRows, 1, 1000000), rowLimit ?? 1000000);
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var snapshot = await WaitLibraryIndexDomAsync(page, source, "read", activity, ct);
+                var snapshot = await WaitLibraryIndexDomAsync(page, source, "read", activity, ct, targetIds, statusOptions);
                 ValidateLibraryListUrl(page.Url, source, allowReset: true);
-                if (!snapshot.AllStatuses) throw new GlpiLibraryPageException("Le filtre Tous a changé pendant la lecture de la bibliothèque.");
+                if (!snapshot.AllStatuses) throw new GlpiLibraryPageException("Le filtre attendu a changé pendant la lecture de la bibliothèque.");
+                if (targeted && snapshot.Count > targetIds!.Count)
+                    throw new GlpiLibraryPageException("Le total GLPI dépasse la liste d’identifiants demandée. La recherche ciblée n’a pas été confirmée.");
                 if (scope != snapshot.Scope)
                 {
                     restoreAllowed = false;
+                    if (targeted)
+                        throw new GlpiLibraryIndexException("scope", "index-scope",
+                            "Le profil ou le périmètre d’entités a changé pendant la recherche ciblée. La collecte a été arrêtée avant toute lecture de contenu.");
                     result.Limitations.Add("Le périmètre d’entités ou le profil GLPI a changé pendant la lecture."); break;
                 }
                 result.ScopeFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.GetLeftPart(UriPartial.Path) + "\n" + scope)));
@@ -286,6 +366,8 @@ public sealed partial class BrowserService
                 foreach (var row in snapshot.Rows)
                 {
                     var reference = ValidateTicketReference(new(row.Id, row.Url), settings);
+                    if (targeted && !targetIds!.Contains(reference.Id, StringComparer.Ordinal))
+                        throw new GlpiLibraryPageException("GLPI a renvoyé un ticket extérieur à la sélection. Aucun contenu de cette recherche n’a été lu.");
                     if (!ids.Add(reference.Id)) { result.Limitations.Add("Un ticket a été rencontré plusieurs fois pendant la pagination."); continue; }
                     if (result.Tickets.Count >= maxRows) { result.Limitations.Add("La limite de tickets configurée a été atteinte."); break; }
                     var modification = ReadLibraryModification(row.Modified, row.ModificationProven, sourceDateOrder);
@@ -302,7 +384,8 @@ public sealed partial class BrowserService
                     result.Tickets.Add(seed);
                 }
                 result.PagesRead++;
-                progress?.Report(new(result.PagesRead, result.Tickets.Count, result.ExpectedTotal, "Indexation des tickets de tous les statuts…"));
+                progress?.Report(new(result.PagesRead, result.Tickets.Count, result.ExpectedTotal,
+                    targeted ? "Vérification des tickets sélectionnés…" : "Indexation des tickets de tous les statuts…"));
                 if (result.Limitations.Count > 0) break;
                 if (snapshot.NextUrl.Length == 0)
                 {
@@ -457,22 +540,27 @@ public sealed partial class BrowserService
         }
     }
 
-    private Task<LibraryIndexDom> ReadLibraryIndexDomAsync(IPage page, Uri source, string mode, CancellationToken ct) =>
+    private Task<LibraryIndexDom> ReadLibraryIndexDomAsync(IPage page, Uri source, string mode, CancellationToken ct,
+        IReadOnlyList<string>? targetIds = null, IReadOnlyList<LibraryStatusOption>? statusOptions = null) =>
         ReadJsonAsync<LibraryIndexDom>(page.MainFrame, LibrarySearchDomScript,
-            new { mode, origin = source.GetLeftPart(UriPartial.Authority), path = source.AbsolutePath, detailPath = source.AbsolutePath.Replace("/front/ticket.php", "/front/ticket.form.php", StringComparison.Ordinal) }, ct);
+            new { mode, targetIds, statusOptions = statusOptions?.Select(o => new { code = o.Code, label = o.Label }).ToArray(),
+                origin = source.GetLeftPart(UriPartial.Authority), path = source.AbsolutePath, detailPath = source.AbsolutePath.Replace("/front/ticket.php", "/front/ticket.form.php", StringComparison.Ordinal) }, ct);
 
     // Only fixed reasons written by LibrarySearchDomScript leave the reader.
     private static readonly HashSet<string> IndexReasons = Regex.Matches(LibrarySearchDomScript, @"fail\('([^']+)'").Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
     internal static string KnownIndexReason(string? reason) =>
         reason is { Length: > 0 } && IndexReasons.Contains(reason) ? reason : "La recherche GLPI ne présente pas une structure de liste prise en charge.";
 
-    private async Task<LibraryIndexDom> WaitLibraryIndexDomAsync(IPage page, Uri source, string mode, LibraryIndexActivity activity, CancellationToken ct)
+    private async Task<LibraryIndexDom> WaitLibraryIndexDomAsync(IPage page, Uri source, string mode, LibraryIndexActivity activity, CancellationToken ct,
+        IReadOnlyList<string>? targetIds = null, IReadOnlyList<LibraryStatusOption>? statusOptions = null)
     {
         LibraryIndexDom? last = null;
         GlpiLibraryIndexException Stalled()
         {
             var reason = mode == "status" && last?.Ready == true
-                ? "L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI."
+                ? targetIds is { Count: > 0 }
+                    ? "L’opérateur d’égalité du critère Identifiant n’a pas été observé dans le formulaire GLPI."
+                    : "L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI."
                 : KnownIndexReason(last?.Reason);
             return new(activity.Phase, "index-stalled",
                 reason + " Aucune progression ni requête native en cours ; l’index n’est pas confirmé.");
@@ -484,10 +572,11 @@ public sealed partial class BrowserService
             {
                 // Inactivity can expire while the next DOM read is in flight.
                 // Keep the last observed reason in that path as well.
-                last = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, mode, ct), ct, Stalled);
+                last = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, mode, ct, targetIds, statusOptions), ct, Stalled);
                 activity.Observe(last.Progress);
                 if (last.Terminal)
-                    throw new GlpiLibraryIndexException(activity.Phase, "index-session", KnownIndexReason(last.Reason));
+                    throw new GlpiLibraryIndexException(activity.Phase,
+                        last.Category is "index-page" or "index-scope" ? last.Category : "index-session", KnownIndexReason(last.Reason));
                 if ((mode == "restore" ? last.RestoreUrl.Length > 0 : last.Ready) && last.DocumentReady && !activity.HasPendingRequest
                     && (mode != "status" || last.StatusSelected && last.AllUrl.Length > 0))
                 { activity.CompletePhase(); return last; }

@@ -31,6 +31,11 @@ try
         await Task.Delay(Timeout.Infinite);
         return 1;
     }
+    var scopeChecks = await LibraryCollectionScopeChecks.RunAsync(root); passed += scopeChecks.Passed; total += scopeChecks.Total;
+    var windowChecks = await LibraryCollectionWindowChecks.RunAsync(root); passed += windowChecks.Passed; total += windowChecks.Total;
+#if !COLLECTION_CORE_ONLY
+    await CollectionScopeRuntimeChecks.RunAsync(root, Check);
+#endif
     await Check("Options default to explicit manual collection, distinct from shared synchronization", () =>
     { var options = new LibraryCollectionOptions(); options.Validate(); Require(!options.Automatic && options.DelayMilliseconds >= 1000); return Task.CompletedTask; });
     await Check("Unbounded pace and malformed schedules are refused", async () =>
@@ -309,7 +314,7 @@ try
         {
             File.WriteAllText(folder, "Synthetic storage obstruction.");
             await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });
-            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental" }); });
+            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental", confirmedGlobal = true }); });
             var activity = await RuntimeCall(app, "library.collection.status", new { });
             var events = await RuntimeCall(app, "library.collection.events", new { });
             Require(activity.GetProperty("state").GetString() == "attention" && activity.GetProperty("errorCode").GetString() == "local-storage"
@@ -326,7 +331,7 @@ try
         {
             using var held = new FileStream(Path.Combine(AppPaths.DataRoot, "library.local.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });
-            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental" }); });
+            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental", confirmedGlobal = true }); });
             var activity = await RuntimeCall(app, "library.collection.status", new { });
             var events = await RuntimeCall(app, "library.collection.events", new { });
             var history = await RuntimeCall(app, "operations.list", new { });
@@ -344,7 +349,7 @@ try
         {
             await using var held = await LibraryCollectorLease.AcquireAsync(preferences, installation, "", default);
             await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });
-            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental" }); });
+            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental", confirmedGlobal = true }); });
             var activity = await RuntimeCall(app, "library.collection.status", new { });
             var events = await RuntimeCall(app, "library.collection.events", new { });
             var history = await RuntimeCall(app, "operations.list", new { });

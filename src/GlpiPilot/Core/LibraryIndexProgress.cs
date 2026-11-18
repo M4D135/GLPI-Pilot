@@ -9,6 +9,9 @@ public sealed record LibraryIndexProgress(string Phase, string Category, string 
         "session" => "Vérification de la session GLPI",
         "open-list" => "Ouverture de la liste des tickets",
         "status" => "Préparation du critère Statut",
+        "ticket-id" => "Préparation du critère Identifiant",
+        "targeted" => "Recherche des tickets sélectionnés",
+        "scope" => "Vérification du périmètre GLPI",
         "all-status" => "Recherche de tous les statuts",
         "page" => "Lecture de la pagination des tickets",
         "restore" => "Restauration du filtre précédent",
@@ -70,7 +73,7 @@ internal static class LibraryIndexRequestPolicy
 {
     // GLPI 9.5/10 ajax/search.php and Search::displaySearchoption. Only the
     // observed native request is classified; no endpoint is called here.
-    public static bool IsNative(Uri source, string url, string method, string resourceType, bool navigation, string? postData)
+    public static bool IsNative(Uri source, string url, string method, string resourceType, bool navigation, string? postData, string nativeField = "12")
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var target) || target.UserInfo.Length != 0
             || target.Scheme is not ("https" or "http")
@@ -93,6 +96,6 @@ internal static class LibraryIndexRequestPolicy
             else { field = value; fieldsSeen++; }
         }
         return actions == 1 && itemtypes == 1 && itemtype == "Ticket"
-            && (action == "display_results" || action is "display_searchoption" or "display_searchoption_value" && fieldsSeen == 1 && field == "12");
+            && (action == "display_results" || action is "display_searchoption" or "display_searchoption_value" && fieldsSeen == 1 && field == nativeField);
     }
 }

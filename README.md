@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.8 · Windows x64
+# GLPI Pilot 4.0.9 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.8 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.9 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,14 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.9 : collecte ciblée et couverture du périmètre
+
+Le menu de collecte prépare une sélection à partir du relevé GLPI déjà chargé. Une date de début d’historique, une date de fin, des numéros de ticket, le sujet, les groupes, les équipes configurées et les autres colonnes disponibles peuvent être combinés. L’aperçu indique le nombre de tickets retenus, les contenus complets disponibles et les fiches manquantes, modifiées, partielles ou à confirmer. La couverture est calculée sur cette sélection, avec la date et les limites du relevé de départ.
+
+La collecte ciblée vérifie dans GLPI les seules références sélectionnées, par petits lots, avant et après les lectures. Elle évite ainsi les deux parcours de la liste globale. Les contenus complets et confirmés dont la version GLPI est inchangée sont réutilisés, même si leur lecture dépasse l’ancien délai de cache. Un changement de filtre nécessite un nouvel aperçu ; une pause ou un redémarrage conserve la liste exacte du passage. La programmation utilise le dernier périmètre ciblé enregistré. La collecte globale reste un choix explicite dans les options avancées.
+
+Voir le [guide de collecte ciblée](docs/Collecte-ciblee.md) et les [notes 4.0.9](docs/RELEASE-4.0.9.md).
 
 ## 4.0.8 : collecte globale, journal durable et corpus SQL
 

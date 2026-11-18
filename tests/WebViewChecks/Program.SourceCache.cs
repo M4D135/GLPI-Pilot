@@ -80,7 +80,7 @@ internal static partial class Program
         await cells.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await ClickNavigationAsync(page, "data"); await WaitForNavigationTargetAsync(page, "data");
         await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
-        Require(await Button("Actualiser le cache").IsDisabledAsync(), "Offline consultation disables the online ticket-library refresh.");
+        Require(await Button("Choisir les tickets à collecter").IsDisabledAsync(), "Offline consultation disables the online ticket-library refresh.");
         await OpenDemonstrationFromSettingsAsync(page); await WaitForNavigationTargetAsync(page, "home");
         Require(app.IsTestMode && await page.Locator("[data-source-cache=true]").CountAsync() == 0,
             "The synthetic demonstration does not expose the real last-import cache.");
