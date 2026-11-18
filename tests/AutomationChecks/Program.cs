@@ -211,6 +211,7 @@ async Task CheckDashboardReturn()
     // This case checks the SSO route, not the platform's window manager.
     // Match the other passive SSO fixtures; native window behaviour has its own checks.
     var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    const string rendererReadyUrl = "http://glpi.test/__fixture/renderer-ready";
     var traceClock = Stopwatch.StartNew();
     void Trace(string step) => Console.Error.WriteLine($"TRACE dashboard-return +{traceClock.Elapsed.TotalMilliseconds:F0} ms: {step}");
     bool authenticated = false;
@@ -220,7 +221,9 @@ async Task CheckDashboardReturn()
     {
         var uri = new Uri(route.Request.Url);
         Trace("route received: " + uri.AbsolutePath);
-        if (uri.AbsolutePath == "/glpi/front/computer.php")
+        if (uri.AbsolutePath == "/__fixture/renderer-ready")
+            await Html(route, "<!doctype html><html><body><p id='fixture-ready'>Prêt</p><script>setTimeout(()=>document.querySelector('#fixture-ready').dataset.initialized='yes',0)</script></body></html>");
+        else if (uri.AbsolutePath == "/glpi/front/computer.php")
         {
             targetQueries.Enqueue(uri.Query);
             if (!authenticated) await Redirect(route, "/login.php");
@@ -237,6 +240,18 @@ async Task CheckDashboardReturn()
         Trace("route fulfilled: " + uri.AbsolutePath);
     }, focus: focus);
     Trace("Create complete");
+    // The first scenario also starts Chromium's renderer for this origin. Require
+    // an initialized document, a real timer callback and visible layout before
+    // measuring SSO; cold renderer startup must not consume its unchanged 12 s.
+    // This neutral page neither authenticates the fixture nor requests the target.
+    Trace("Renderer preparation begin");
+    await h.Page.GotoAsync(rendererReadyUrl, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 10000 });
+    await using (await h.Page.WaitForFunctionAsync("""
+        () => document.readyState !== 'loading' &&
+          document.querySelector('#fixture-ready')?.dataset.initialized === 'yes' &&
+          document.querySelector('#fixture-ready').getClientRects().length > 0
+        """, null, new() { Timeout = 10000 })) { }
+    Trace("Renderer preparation complete");
     h.Service.Log += line => Trace("service: " + line);
     IPage result;
     Trace("OpenTarget begin");
