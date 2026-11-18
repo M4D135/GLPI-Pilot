@@ -40,6 +40,10 @@ public sealed partial class BrowserService
     private static bool PersonalColumnScope(NativeColumnPreferences preferences) => preferences.Supported && preferences.PersonalScope
         && preferences.ItemType == "Ticket" && long.TryParse(preferences.UsersId, out var id) && id > 0;
 
+    private static bool PersonalColumnTabAvailable(NativeColumnPreferences preferences) => preferences.Supported
+        && preferences.Proof == "native-personal-tab"
+        && (preferences.PersonalTabSelector.Length > 0 || preferences.PersonalTabSelectSelector.Length > 0);
+
     private static string ColumnIdentity(NativeSelectedColumn column) => column.Value.Length > 0 ? column.Value
         : column.PreferenceId + "|" + DashboardService.Normalize(column.Label);
 
@@ -55,8 +59,8 @@ public sealed partial class BrowserService
         expected.Value == observed.Value && DashboardService.Normalize(ColumnPreparationPolicy.Header(expected))
             == DashboardService.Normalize(ColumnPreparationPolicy.Header(observed));
 
-    // This exception is restricted to failures before the native add/activate
-    // click. A response or persistence failure must never enter the fallback.
+    // This exception is restricted to failures before a native control is
+    // invoked. A mutation response or persistence failure must never enter the fallback.
     private sealed class ColumnOptionUnavailableException(string message) : InvalidOperationException(message);
     private sealed record ColumnCommandResult(NativeColumnPreferences Preferences, bool Added);
 
@@ -91,12 +95,25 @@ public sealed partial class BrowserService
         if (!window.Supported) return (null, new() { Reason = window.Reason });
         if (window.OpenerSelector.Length > 0)
         {
-            // The selector is re-observed immediately before clicking. Only the
-            // adapter's reviewed native opener can reach this operation.
+            // Revalidate the native meaning, not the generated locator. GLPI
+            // may renew the opener or finish opening its modal between reads.
             var fresh = await InspectColumnsAsync(frame, table.FrameOrigin, table.Selector, ct);
-            if (!fresh.Supported || fresh.Proof != window.Proof || fresh.OpenerSelector != window.OpenerSelector)
-                throw new InvalidOperationException("La commande des colonnes a changé avant son ouverture.");
-            await ClickColumnControlAsync(frame, table.FrameOrigin, fresh.OpenerSelector, ct);
+            if (!fresh.Supported) return (null, new() { Reason = fresh.Reason });
+            if (fresh.IframeSelector.Length == 0)
+            {
+                if (fresh.Proof != window.Proof || fresh.OpenerSelector.Length == 0)
+                    return (null, new() { Reason = "La commande personnelle des colonnes n’est plus disponible avant son ouverture." });
+                try { await ClickColumnControlAsync(frame, table.FrameOrigin, fresh.OpenerSelector, ct, optionalCommand: true); }
+                catch (ColumnOptionUnavailableException)
+                { return (null, new() { Reason = "La commande personnelle des colonnes a disparu avant son ouverture." }); }
+                catch (Exception error) when (error is PlaywrightException or TimeoutException)
+                {
+                    // Opening the native preferences only reads them. The
+                    // modal may already be loading after an action timeout;
+                    // inspect it below without clicking the opener again.
+                    Log?.Invoke("COLONNES · ouverture en cours ; relecture de la fenêtre native sans nouveau clic.");
+                }
+            }
         }
         var timer = Stopwatch.StartNew();
         IFrame? preferencesFrame = null;
@@ -110,7 +127,9 @@ public sealed partial class BrowserService
             if (window.IframeSelector.Length > 0)
             {
                 var locator = frame.Locator(window.IframeSelector);
-                if (await locator.CountAsync() != 1) throw new InvalidOperationException("La fenêtre native des colonnes est ambiguë.");
+                var frameCount = await locator.CountAsync();
+                if (frameCount > 1) throw new InvalidOperationException("La fenêtre native des colonnes est ambiguë.");
+                if (frameCount == 0) { await Task.Delay(120, ct); continue; }
                 var element = await locator.ElementHandleAsync();
                 preferencesFrame = element is null ? null : await element.ContentFrameAsync();
                 if (preferencesFrame is { IsDetached: false } && Origin(preferencesFrame.Url).Length > 0)
@@ -120,23 +139,58 @@ public sealed partial class BrowserService
                     try { preferences = await InspectColumnPreferencesAsync(preferencesFrame, table.FrameOrigin, ct); }
                     catch (PlaywrightException) { await Task.Delay(120, ct); continue; }
                     if (PersonalColumnScope(preferences)) return (preferencesFrame, preferences);
-                    if (!personalTabRequested && preferences.Supported && (preferences.PersonalTabSelector.Length > 0 || preferences.PersonalTabSelectSelector.Length > 0))
+                    if (!personalTabRequested && PersonalColumnTabAvailable(preferences))
                     {
-                        var fresh = await InspectColumnPreferencesAsync(preferencesFrame, table.FrameOrigin, ct);
-                        if (fresh.PersonalTabSelector.Length > 0 && fresh.PersonalTabSelector == preferences.PersonalTabSelector)
-                            await ClickColumnControlAsync(preferencesFrame, table.FrameOrigin, fresh.PersonalTabSelector, ct);
-                        else if (fresh.PersonalTabSelectSelector.Length > 0 && fresh.PersonalTabSelectSelector == preferences.PersonalTabSelectSelector
-                            && fresh.PersonalTabValue == preferences.PersonalTabValue)
-                            await SelectNativeOptionAsync(preferencesFrame, fresh.PersonalTabSelectSelector, fresh.PersonalTabValue, false, ct);
-                        else throw new InvalidOperationException("L’onglet personnel des colonnes a changé avant sa sélection.");
-                        personalTabRequested = true;
+                        NativeColumnPreferences fresh;
+                        try { fresh = await InspectColumnPreferencesAsync(preferencesFrame, table.FrameOrigin, ct); }
+                        catch (PlaywrightException) { await Task.Delay(120, ct); continue; }
+                        // The initial AJAX load can finish between these two
+                        // reads. A ready personal view needs no further tab action.
+                        if (PersonalColumnScope(fresh)) return (preferencesFrame, fresh);
+                        if (!PersonalColumnTabAvailable(fresh)) return (preferencesFrame, fresh);
+                        if (fresh.PersonalTabSelector != preferences.PersonalTabSelector
+                            || fresh.PersonalTabSelectSelector != preferences.PersonalTabSelectSelector
+                            || fresh.PersonalTabValue != preferences.PersonalTabValue)
+                            Log?.Invoke("COLONNES · onglet personnel renouvelé ; sa cible native a été revalidée.");
+                        preferences = fresh;
+                        try
+                        {
+                            if (fresh.PersonalTabSelector.Length > 0)
+                                await ClickColumnControlAsync(preferencesFrame, table.FrameOrigin, fresh.PersonalTabSelector, ct, optionalCommand: true);
+                            else
+                            {
+                                var select = preferencesFrame.Locator(fresh.PersonalTabSelectSelector);
+                                if (await select.CountAsync() != 1 || !await select.IsVisibleAsync() || !await select.IsEnabledAsync())
+                                    throw new ColumnOptionUnavailableException("Le menu personnel a changé avant sa sélection.");
+                                await select.SelectOptionAsync(new SelectOptionValue { Value = fresh.PersonalTabValue }, new() { Timeout = 5000 }).WaitAsync(ct);
+                                // The native change may replace the compact
+                                // menu. Read the resulting personal view below,
+                                // never wait for the old control's InputValue.
+                                ct.ThrowIfCancellationRequested();
+                            }
+                            personalTabRequested = true;
+                        }
+                        catch (ColumnOptionUnavailableException)
+                        {
+                            // No native action was invoked. The next bounded
+                            // read may discover a fresh link or compact menu.
+                            preferences = new() { Reason = "L’onglet personnel n’est plus disponible avant sa sélection." };
+                        }
+                        catch (Exception error) when (error is PlaywrightException or TimeoutException)
+                        {
+                            // A navigation action may have reached GLPI. Do
+                            // not repeat it; wait for its visible result only.
+                            personalTabRequested = true;
+                            Log?.Invoke("COLONNES · chargement de la vue personnelle en cours ; attente sans nouvelle sélection.");
+                        }
                     }
                     else if (!preferences.Supported && preferences.Reason.Length > 0 && !personalTabRequested) return (preferencesFrame, preferences);
                 }
             }
             await Task.Delay(120, ct);
         }
-        return (preferencesFrame, new() { Reason = preferences.Reason.Length > 0 ? preferences.Reason : "La vue personnelle n’est pas devenue disponible dans le délai prévu." });
+        return (preferencesFrame, new() { Reason = personalTabRequested ? "La vue personnelle n’est pas devenue disponible dans le délai prévu."
+            : preferences.Reason.Length > 0 ? preferences.Reason : "La vue personnelle n’est pas devenue disponible dans le délai prévu." });
     }
 
     private async Task<ColumnCommandResult> SubmitColumnControlAsync(IFrame frame, string origin, NativeColumnPreferences before,
@@ -390,6 +444,9 @@ public sealed partial class BrowserService
         }
         // Legacy closes reload the document too. Even with zero additions, do
         // not return the still-visible old table before that reload completes.
+        // This also covers an unavailable tab before the first personal
+        // mutation: closing must not erase unsent changed search criteria.
+        await CheckPreparationScopeAsync();
         await CloseColumnPreferencesAsync(table, ct, waitForRefresh: true, timeout);
         table = await RefreshPreparedTableAsync(original, before.Headers.Count + added.Count, timeout, ct);
         if (opened.Frame is not null && preferences.Layout == "modern" && satisfied.Count > 0)
@@ -410,6 +467,7 @@ public sealed partial class BrowserService
             if (confirmation.Frame != persisted.Frame || !PersonalColumnScope(confirmation.Preferences) || confirmation.Preferences.UsersId != preferences.UsersId
                 || !confirmation.Preferences.SelectedIdsKnown || !SelectedColumnsPreserved(preferences, confirmation.Preferences))
                 throw new InvalidOperationException("Les colonnes ajoutées ne sont pas confirmées après relecture de la vue personnelle GLPI. Aucun relevé complet n’est publié.");
+            await CheckPreparationScopeAsync();
             await CloseColumnPreferencesAsync(table, ct, waitForRefresh: true, timeout);
             table = await RefreshPreparedTableAsync(table, table.Headers.Count, timeout, ct);
         }

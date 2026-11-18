@@ -473,7 +473,7 @@ try {
                         Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
                         foreach ($group in @(
                             @{ Name = 'core'; Count = 52 },
-                            @{ Name = 'columns'; Count = 20 },
+                            @{ Name = 'columns'; Count = 32 },
                             @{ Name = 'native-timing'; Count = 11 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name
@@ -513,7 +513,7 @@ try {
             $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
             Invoke-CheckedProcess -Executable (Join-Path $driver 'node/win32_x64/node.exe') `
                 -Arguments @('tests/NativeDomChecks/run.cjs', (Join-Path $logs 'native-dom-detail.log')) `
-                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '206 native export DOM checks passed.'
+                -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '215 native export DOM checks passed.'
         }
         'LibraryAcquisitionChecks' {
             # Own stage since 3.13.3: with its 25 checks, this suite no longer fits the browser stage's budget beside the others.

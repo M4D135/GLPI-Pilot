@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.5 · Windows x64
+# GLPI Pilot 4.0.6 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.5 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.6 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.6 : renouvellement des repères pendant la préparation des colonnes
+
+Le chargement de la vue personnelle peut remplacer les contrôles et les identifiants HTML du tableau. La collecte revalide ces repères dans le même contexte GLPI avant de poursuivre. Une préparation devenue indisponible avant tout ajout permet de fermer la fenêtre native, puis de reprendre avec les colonnes relues et les mêmes critères de recherche.
+
+Les situations ambiguës et les modifications de périmètre restent bloquantes. Voir les [notes 4.0.6](docs/RELEASE-4.0.6.md).
 
 ## 4.0.5 : réception des exports après une réponse GLPI lente
 

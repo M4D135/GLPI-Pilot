@@ -8,6 +8,7 @@ namespace GlpiPilot.Core;
 public sealed partial class BrowserService
 {
     private string? _nativeScript;
+    private sealed record ResolvedNativeInspection(TableChoice Table, NativeExportInspection Inspection);
 
     private void LogNativeInspection(NativeExportInspection inspection)
     {
@@ -28,7 +29,16 @@ public sealed partial class BrowserService
             _nativeScript = reader.ReadToEnd();
         }
         await frame.EvaluateAsync(_nativeScript).WaitAsync(ct);
-        return await ReadJsonAsync<NativeExportInspection>(frame, "selector => window.__glpiPilotNative.inspect(selector)", table.Selector, ct);
+        // Re-select and inspect in one DOM turn: closing column preferences or
+        // an asynchronous list refresh can replace the table between host calls.
+        var current = await ReadJsonAsync<ResolvedNativeInspection>(frame, """
+            args => {
+              const table = window.__glpiPilot.resolveTableChoice(args.selector, args.fingerprint);
+              return { Table: table, Inspection: window.__glpiPilotNative.inspect(table.selector) };
+            }
+            """, new { selector = table.Selector, fingerprint = table.HeaderFingerprint }, ct);
+        RememberCurrentTableReference(table, current.Table);
+        return current.Inspection;
     }
 
     public async Task<NativeDownloadResult> ExportAllNativeAsync(TableChoice table, AppSettings settings, CancellationToken ct,

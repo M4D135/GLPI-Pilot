@@ -281,6 +281,42 @@ async function run() {
   equal(requests.length, 5, 'Only five explicitly executed fixture exports caused a download request');
 
   const tableScript = fs.readFileSync(path.join(project, 'src/GlpiPilot/BrowserScripts/bridge.js'), 'utf8');
+  await legacyFixture();
+  await page.evaluate(tableScript);
+  const initialTable = await page.evaluate(() => window.__glpiPilot.inspect().tables.find(table => table.selector === '#legacy-results'));
+  await page.evaluate(() => {
+    const previous = document.querySelector('#legacy-results');
+    const replacement = previous.cloneNode(true); replacement.id = 'renewed-results'; previous.replaceWith(replacement);
+  });
+  const renewed = await page.evaluate(initial => {
+    const table = window.__glpiPilot.resolveTableChoice(initial.selector, initial.headerFingerprint);
+    return { table, native: window.__glpiPilotNative.inspect(table.selector) };
+  }, initialTable);
+  equal(renewed.table.selector, '#renewed-results', 'The same column fingerprint renews a replaced table selector before native export inspection');
+  ok(renewed.table.key !== initialTable.key, 'A replacement table receives its current document key instead of retaining the detached key');
+  ok(renewed.native.supported && renewed.native.plans.length === 1, 'Atomic table renewal keeps the unique native all-pages export associated with the current results');
+  equal(requests.length, 5, 'Table renewal and export inspection do not trigger a download or business request');
+  await page.evaluate(() => {
+    const duplicate = document.querySelector('#renewed-results').cloneNode(true); duplicate.id = 'other-results';
+    document.body.append(duplicate);
+  });
+  equal(await page.evaluate(table => window.__glpiPilot.resolveTableChoice(table.selector, table.headerFingerprint).selector, renewed.table),
+    '#renewed-results', 'An exact still-visible selection remains selected when another table has the same columns');
+  const refusedRenewal = table => page.evaluate(table => {
+    try { window.__glpiPilot.resolveTableChoice(table.selector, table.headerFingerprint); return false; }
+    catch { return true; }
+  }, table);
+  ok(await refusedRenewal(initialTable), 'A vanished selector with two identical column candidates is refused without choosing the first');
+  await page.evaluate(() => {
+    document.querySelector('#other-results').remove();
+    document.querySelector('#renewed-results th').textContent = 'Changed column';
+  });
+  ok(await refusedRenewal(initialTable), 'A replacement with changed columns cannot silently renew the selected table');
+  ok(await refusedRenewal({ selector: '#renewed-results', headerFingerprint: '' }), 'A missing column fingerprint cannot authorize table renewal');
+  await legacyFixture();
+  await page.evaluate(tableScript);
+  await page.evaluate(() => { const password = document.createElement('input'); password.type = 'password'; document.body.append(password); });
+  ok(await refusedRenewal(initialTable), 'A visible authentication field stops table renewal before native export');
   const setVersion = version => page.evaluate(version => {
     document.querySelector('body > div.page')?.remove();
     if (!version) return;

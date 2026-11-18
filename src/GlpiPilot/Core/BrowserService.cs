@@ -347,20 +347,34 @@ public sealed partial class BrowserService : IAsyncDisposable
         return frame;
     }
 
+    private sealed record ResolvedTableRead(TableChoice Table, TableSnapshot Snapshot);
+
+    private static void RememberCurrentTableReference(TableChoice original, TableChoice current)
+    {
+        // The DOM resolver has revalidated the same columns in the already
+        // trusted frame. Keep that frame, origin and column identity intact.
+        original.Key = current.Key;
+        original.Selector = current.Selector;
+        original.RowCount = current.RowCount;
+        original.ColumnCount = current.ColumnCount;
+    }
+
     private async Task<(IFrame Frame, TableSnapshot Snapshot, string Key)> ReadAsync(TableChoice original, string nextSelector, CancellationToken ct, bool withRepresentations = false)
     {
         var frame = await ResolveFrameAsync(original, ct);
-        var inspection = await ReadJsonAsync<Inspection>(frame, "() => window.__glpiPilot.inspect()", null, ct);
-        if (inspection.HasPasswordField) throw new InvalidOperationException("Authentification demandée : extraction arrêtée. Termine le SSO dans le navigateur.");
-        var matching = inspection.Tables.Where(t => t.HeaderFingerprint == original.HeaderFingerprint).ToList();
-        var exact = matching.Where(t => t.Selector == original.Selector).ToList();
-        var table = exact.Count == 1 ? exact[0] : matching.Count == 1 ? matching[0] : null;
-        if (table == null) throw new InvalidOperationException("Le tableau a changé ou plusieurs tableaux correspondent. Analyse et sélectionne à nouveau le tableau.");
-        var snapshot = await ReadJsonAsync<TableSnapshot>(frame, "args => window.__glpiPilot.readTable(args.key, args.withRepresentations)", new { key = table.Key, withRepresentations }, ct);
+        var current = await ReadJsonAsync<ResolvedTableRead>(frame, """
+            args => {
+              const table = window.__glpiPilot.resolveTableChoice(args.selector, args.fingerprint);
+              const snapshot = window.__glpiPilot.readTable(table.key, args.withRepresentations);
+              if (args.nextSelector) snapshot.next = window.__glpiPilot.getNext(table.key, args.nextSelector);
+              return { Table: table, Snapshot: snapshot };
+            }
+            """, new { selector = original.Selector, fingerprint = original.HeaderFingerprint, withRepresentations,
+                nextSelector = nextSelector?.Trim() ?? "" }, ct);
+        var snapshot = current.Snapshot;
         if (snapshot.Headers.Count == 0) throw new InvalidOperationException("Le tableau n’a pas de colonnes exploitables.");
-        if (!string.IsNullOrWhiteSpace(nextSelector))
-            snapshot.Next = await ReadJsonAsync<NextControl?>(frame, "args => window.__glpiPilot.getNext(args.key, args.selector)", new { key = table.Key, selector = nextSelector }, ct);
-        return (frame, snapshot, table.Key);
+        RememberCurrentTableReference(original, current.Table);
+        return (frame, snapshot, current.Table.Key);
     }
 
     public async Task HighlightAsync(TableChoice table, CancellationToken ct)

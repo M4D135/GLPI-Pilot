@@ -88,7 +88,7 @@ classes, nested lists, `ins`, isolated `li`, block breaks inside inline
 formatting and repeated format nesting produce no proof. Each cell is bounded to 4,096 visited nodes,
 depth 64 and 262,144 source/output characters; a table carries at most 512
 proofs and 4,194,304 combined source/output characters. Reaching a proof limit
-does not truncate the ordinary cell. The adapter version is 1.1.4. These
+does not truncate the ordinary cell. The adapter version is 1.1.5. These
 fixtures establish a bounded supported subset, not equivalence for every
 GLPI export or resolution of an unprovided private CSV.
 

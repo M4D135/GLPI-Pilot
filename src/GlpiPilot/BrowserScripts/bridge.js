@@ -2,7 +2,7 @@
   'use strict';
 
   // Reinstalling after every command is safe; a full navigation creates fresh state.
-  const VERSION = '1.1.4';
+  const VERSION = '1.1.5';
   if (window.__glpiPilot?.version === VERSION) return VERSION;
   try { window.__glpiPilot?.cancelPick(); } catch (_) { /* Previous document adapter. */ }
 
@@ -582,6 +582,20 @@
     return { ...parseTable(table, withRepresentations), key: keyFor(table), selector: uniqueSelector(table), label: labelFor(table), next: getNext(keyFor(table)), expectedTotal: expectedCount(table), pageText: pageSummary(table) };
   }
 
+  function resolveTableChoice(selector, headerFingerprint) {
+    const current = inspect();
+    if (current.hasPasswordField) throw new Error('Authentification demandée : extraction arrêtée. Terminer le SSO dans le navigateur.');
+    // Native refreshes can replace a randomized ID or a structural selector.
+    // Reuse the selected columns only in this document, and never choose the
+    // first of several matching tables. A key belongs to one document lifetime.
+    const matches = typeof headerFingerprint === 'string' && headerFingerprint.length
+      ? current.tables.filter(table => table.headerFingerprint === headerFingerprint) : [];
+    const exact = matches.filter(table => table.selector === selector);
+    const table = exact.length === 1 ? exact[0] : matches.length === 1 ? matches[0] : null;
+    if (!table) throw new Error('Le tableau a changé ou plusieurs tableaux correspondent. Analyser et sélectionner à nouveau le tableau.');
+    return table;
+  }
+
   function clearHighlight() {
     if (!highlight) return;
     clearTimeout(highlight.timer);
@@ -668,7 +682,7 @@
     return true;
   }
 
-  window.__glpiPilot = { version: VERSION, inspect, readTable, getNext, highlightTable, pick, cancelPick };
+  window.__glpiPilot = { version: VERSION, inspect, resolveTableChoice, readTable, getNext, highlightTable, pick, cancelPick };
   window.__glpiPilotPick = null;
   return VERSION;
 })();

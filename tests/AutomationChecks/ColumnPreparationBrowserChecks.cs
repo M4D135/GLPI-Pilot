@@ -36,6 +36,7 @@ internal static class ColumnPreparationBrowserChecks
         yield return ("Colonnes GLPI : identité personnelle modifiée avant clic, aucun repli", () => Check(browser, "user-change"));
         yield return ("Colonnes GLPI : annulation au moment du repli, aucun faux succès", () => Check(browser, "missing-cancel"));
         yield return ("Colonnes GLPI : refus avant clic préservé par l’attente native sans envoi", () => CheckBeforeClickWaiter(browser));
+        foreach (var check in CollectionRecoveryBrowserChecks.Cases(browser)) yield return check;
     }
 
     private static void Require(bool value, string message)

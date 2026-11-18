@@ -42,7 +42,12 @@ Every native export plan has these fields:
 The host should follow this sequence:
 
 1. Use the selected frame and revalidate its GLPI origin.
-2. Call `inspect(savedTableSelector)`, with a unique saved selector where available.
+2. Revalidate the table with the bridge's `resolveTableChoice(savedTableSelector,
+   headerFingerprint)`, then call `inspect(currentTable.selector)` in the same DOM
+   turn. Keep the resolved selector and document key in the host's table choice.
+   A changed HTML ID may be recovered only from a unique identical column
+   fingerprint in the already selected frame; ambiguous or changed columns stop
+   collection. The export adapter itself does not guess a replacement selector.
 3. For `menu`, click the visible toggle using Playwright and inspect again. Limit
    opening retries. An initially empty recognized menu may have `allPages:false`;
    this authorizes inspection of the opened menu, not an export.

@@ -59,3 +59,13 @@ Dans les sources officielles [GLPI 9.5.13, `inc/search.class.php`](https://githu
 U+000B et U+000C sont donc ici des cas de robustesse supplémentaires. Leur présence n’est pas affirmée dans le fichier de l’utilisateur. Les journaux reçus établissent un rejet trop strict de l’import, mais ne permettent pas d’identifier son caractère exact ni la version exacte du serveur. Les tests utilisent exclusivement des données synthétiques.
 
 Ces contrôles ne remplacent pas la validation finale du SSO et de l’interface Windows dans l’environnement de l’utilisateur.
+
+## Reprise des colonnes et du tableau après renouvellement natif
+
+Le groupe `columns` comprend 32 contrôles, dont 12 régressions de reprise dans `CollectionRecoveryBrowserChecks.cs`. Les groupes obligatoires `core` (52) et `native-timing` (11) portent le total à 95. La qualification Windows exécute chaque groupe dans son propre processus, avec les délais existants de 35 secondes par scénario et 360 secondes par groupe. Aucun navigateur n’est exécuté localement pour cette qualification.
+
+Les fixtures de reprise font évoluer le véritable DOM entre deux lectures de l’adaptateur : nouveau lien personnel, contenu personnel déjà chargé, passage au menu compact puis retrait du menu lors du changement. Un dialogue déjà ouvert après un échec est réutilisé. Chaque parcours aboutit à une seule requête GET d’export natif, dont le CSV est importé et conservé.
+
+Si le lien personnel disparaît, devient global ou change d’origine, aucun clic correspondant ni ajout de colonne n’est permis. La fermeture native recharge la liste, puis la collecte utilise les colonnes réellement affichées avec un reçu de préparation indisponible. Une modification des critères avant ce repli arrête le parcours avant fermeture : le formulaire modifié et le dialogue restent visibles, sans export ni état prêt.
+
+Quatre autres scénarios remplacent le tableau par un nouvel identifiant. La lecture par empreinte doit mettre à jour le sélecteur partagé ; l’inspection native doit aussi pouvoir retrouver seule l’unique tableau de même empreinte dans le cadre initial. Deux remplaçants identiques ou des colonnes différentes arrêtent l’export avant toute requête ou création de fichier.
