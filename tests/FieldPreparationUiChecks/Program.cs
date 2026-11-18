@@ -34,7 +34,10 @@ foreach (var check in checks)
     try
     {
         // Match the desktop's secure virtual host and leave its strict CSP intact.
-        await page.GotoAsync("https://field-ui.test/fixture.html");
+        // Initial renderer startup and ES module imports use the application-ready
+        // barrier; the unchanged 10 s timeout remains for the interactions below.
+        await page.GotoAsync("https://field-ui.test/fixture.html", new() { WaitUntil = WaitUntilState.Commit });
+        await using (await page.WaitForFunctionAsync("() => window.test?.ready === true", null, new() { Timeout = 45000 })) { }
         await page.Locator("[data-field-plan]").First.WaitForAsync();
         await check.Run(page);
         FieldUiTests.Check(await page.EvaluateAsync<bool>("() => { const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode()){if(n.parentElement?.closest('.field-workspace,.field-modal')&&/^(null|undefined)$/.test(n.textContent.trim()))return false;}return true; }"), "An optional UI child was rendered as null or undefined.");
