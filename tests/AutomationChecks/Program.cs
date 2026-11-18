@@ -98,8 +98,19 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Afficher tout incomplet ou au-delà de la limite : aucun fichier complet", CheckDisplayAllRejected),
     ("Gestion de fenêtre bloquée : délai borné, sémaphore libéré et annulation rapide", CheckWindowManagementTimeout)
 };
-checks.AddRange(ColumnPreparationBrowserChecks.Cases(browser));
-checks.AddRange(NativeExportTimingBrowserChecks.Cases(browser));
+var columnChecks = ColumnPreparationBrowserChecks.Cases(browser).ToList();
+var nativeTimingChecks = NativeExportTimingBrowserChecks.Cases(browser).ToList();
+var checkGroup = Environment.GetEnvironmentVariable("GLPI_TEST_GROUP")?.Trim().ToLowerInvariant();
+switch (checkGroup)
+{
+    case null or "" or "all": checks.AddRange(columnChecks); checks.AddRange(nativeTimingChecks); break;
+    case "core": break;
+    case "columns": checks = columnChecks; break;
+    case "native-timing": checks = nativeTimingChecks; break;
+    default:
+        Console.Error.WriteLine("GLPI_TEST_GROUP doit être all, core, columns ou native-timing.");
+        Directory.Delete(temporary, true); return 2;
+}
 var checkFilter = Environment.GetEnvironmentVariable("GLPI_TEST_FILTER");
 if (!string.IsNullOrWhiteSpace(checkFilter))
 {
@@ -200,11 +211,15 @@ async Task CheckDashboardReturn()
     // This case checks the SSO route, not the platform's window manager.
     // Match the other passive SSO fixtures; native window behaviour has its own checks.
     var focus = new FocusCallTrace { ReportedWindowState = "minimized" };
+    var traceClock = Stopwatch.StartNew();
+    void Trace(string step) => Console.Error.WriteLine($"TRACE dashboard-return +{traceClock.Elapsed.TotalMilliseconds:F0} ms: {step}");
     bool authenticated = false;
     var targetQueries = new ConcurrentQueue<string>();
+    Trace("Create begin");
     await using var h = await Create(async route =>
     {
         var uri = new Uri(route.Request.Url);
+        Trace("route received: " + uri.AbsolutePath);
         if (uri.AbsolutePath == "/glpi/front/computer.php")
         {
             targetQueries.Enqueue(uri.Query);
@@ -219,10 +234,15 @@ async Task CheckDashboardReturn()
             await Html(route, "<html><title>GLPI</title><body><a href='/logout.php'>Déconnexion</a><h1>Tableau de bord</h1></body></html>");
         }
         else await route.FulfillAsync(new() { Status = 404 });
+        Trace("route fulfilled: " + uri.AbsolutePath);
     }, focus: focus);
+    Trace("Create complete");
+    h.Service.Log += line => Trace("service: " + line);
     IPage result;
+    Trace("OpenTarget begin");
     try { result = await h.Service.OpenTargetAsync(Settings(), CancellationToken.None); }
-    catch { foreach (var line in h.Logs) Console.Error.WriteLine("TRACE dashboard-return " + line); throw; }
+    catch (Exception error) { Trace("OpenTarget failed: " + error.GetType().Name); throw; }
+    Trace("OpenTarget complete");
     Equal(target, result.Url);
     Equal(2, targetQueries.Count);
     True(targetQueries.All(query => query == new Uri(target).Query), "Le retour après SSO doit reprendre tous les paramètres de recherche.");
@@ -978,7 +998,12 @@ async Task CheckCustomSafety()
 {
     // A customized menu selector must not turn a business submit button into an export menu.
     string menuHtml = fixture10.Replace("type=\"button\" id=\"dropdown-export\"", "type=\"submit\" id=\"dropdown-export\"", StringComparison.Ordinal);
-    await using (var h = await Create(route => Html(route, menuHtml), target))
+    int menuBusinessRequests = 0;
+    await using (var h = await Create(route =>
+    {
+        if (new Uri(route.Request.Url).AbsolutePath.EndsWith("/massiveaction.php", StringComparison.Ordinal)) menuBusinessRequests++;
+        return Html(route, menuHtml);
+    }, target))
     {
         var settings = Settings();
         settings.MaxRows = 2000;
@@ -988,6 +1013,7 @@ async Task CheckCustomSafety()
         await MustRejectCustom(h, settings);
         Equal(0, await h.Page.EvaluateAsync<int>("() => window.menuClicks"));
         Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
+        Equal(0, menuBusinessRequests);
     }
     // The action on the submit button overrides its parent form in the browser.
     // It must be checked even if the surrounding form looks like report.dynamic.php.
@@ -1021,7 +1047,7 @@ async Task MustRejectCustom(Harness h, AppSettings settings)
     }
     catch (InvalidOperationException e)
     {
-        True(e.Message.Contains("commande d’export", StringComparison.Ordinal), "Le refus doit désigner le contrôle non reconnu comme export.");
+        True(e.Message.Contains("commande d’export", StringComparison.Ordinal), "Le refus doit désigner le contrôle non reconnu comme export. Message reçu : " + AppPaths.SafeError(e));
     }
     Equal(0, Directory.GetFiles(settings.ExportFolder).Length);
 }

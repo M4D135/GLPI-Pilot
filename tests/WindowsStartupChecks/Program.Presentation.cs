@@ -124,6 +124,7 @@ internal sealed partial class WindowsWebViewFixture
         if (!Path.IsPathFullyQualified(path) || path.Length > 32767 || path.Any(char.IsControl))
             throw new InvalidOperationException("Native file input requires a bounded absolute path without control characters.");
         IntPtr dialog = IntPtr.Zero;
+        var discovery = Stopwatch.StartNew();
         LogNativeFileDialogWindows(process, "before dialog lookup");
         try
         {
@@ -141,9 +142,11 @@ internal sealed partial class WindowsWebViewFixture
         }
         catch
         {
+            Log($"Native file dialog discovery: pid={process.Id}; visible=false; elapsedMs={discovery.ElapsedMilliseconds}.");
             LogNativeFileDialogWindows(process, "failed initial dialog lookup");
             throw;
         }
+        Log($"Native file dialog discovery: pid={process.Id}; visible=true; elapsedMs={discovery.ElapsedMilliseconds}.");
         LogNativeFileDialogEdits(process, dialog, "before filename lookup");
         var edit = IntPtr.Zero; var candidateCount = 0;
         try

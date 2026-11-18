@@ -199,9 +199,10 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
 
       - name: Vérifier le navigateur et les exports sur des pages synthétiques
-        # Quatre suites en série, chacune avec son build puis sa propre garde de 180 s dans Invoke-WindowsCi.ps1.
-        # Le plafond de l'étape doit donc dépasser la somme des gardes internes, sinon il tue un run qui avance.
-        timeout-minutes: 30
+        # Les trois groupes d'automatisation sont obligatoires et gardent chacun leur limite de 360 s,
+        # avec 35 s par cas. Les builds et les suites navigateur, fiches et DOM ont leurs gardes séparées.
+        # Cette enveloppe couvre leur somme ; aucune limite interne n'est augmentée.
+        timeout-minutes: 40
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
 
       - name: Vérifier la lecture des fiches pour la bibliothèque sur des pages synthétiques

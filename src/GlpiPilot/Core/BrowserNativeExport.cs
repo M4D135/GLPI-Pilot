@@ -175,7 +175,7 @@ public sealed partial class BrowserService
             """, new { kind = plan.Kind, directSelector = plan.DirectSelector, submitSelector = plan.SubmitSelector,
                 formatSelector = plan.FormatSelector, formatValue = plan.FormatValue, scopeSelector = plan.ScopeSelector, scopeValue = plan.ScopeValue, origin }).WaitAsync(ct);
         if (destination.Length != 2)
-            throw new InvalidOperationException("La destination native CSV Toutes les pages n’est plus identifiable avant la commande. Inspecter à nouveau la recherche GLPI.");
+            throw new InvalidOperationException("La commande d’export GLPI CSV Toutes les pages n’est pas vérifiable : sa destination native n’est plus identifiable. Inspecter à nouveau la recherche GLPI.");
         return destination;
     }
 

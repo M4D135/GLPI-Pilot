@@ -50,9 +50,15 @@ internal sealed partial class WindowsWebViewFixture
                 throw new FileNotFoundException(_lightPack ? "The light pack must not carry a bundled runtime." : "The fixed WebView2 runtime is not in the pack.");
             var siteCsvPath = Path.Combine(folder, "wad", "sites.csv");
             if (File.Exists(siteCsvPath)) throw new InvalidOperationException("This fixture requires the generic pack without wad/sites.csv; it creates its own synthetic CSV only in the temporary installation.");
+            // Match the configured local export destination before the first native
+            // Save dialog; an absent InitialDirectory otherwise leaves Shell to choose.
+            var exportFolder = Path.Combine(_sandbox, "exports");
+            Directory.CreateDirectory(exportFolder);
+            if (!Directory.Exists(exportFolder)) throw new DirectoryNotFoundException("The isolated fixture export directory was not created.");
+            Log("Native export directory: fixture=exports; exists=true before application launch.");
             var retainedSiteId = Guid.NewGuid().ToString("N");
             var initial = JsonSerializer.Serialize(new { PortalUrl = "https://glpi.example.invalid/front/ticket.php", Theme = "dark", InterfaceZoomPercent = 100,
-                ExportFolder = Path.Combine(_sandbox, "exports"), Interface = new { OnboardingCompleted = true },
+                ExportFolder = exportFolder, Interface = new { OnboardingCompleted = true },
                 Cities = new { Enabled = true, Sites = new[] { new { Id = retainedSiteId, Name = "Site fictif Nord", Aliases = new[] { "Repère local Nord" }, Address = "Adresse fictive conservée" } } },
                 Automation = new { ScheduledExtraction = false, ResumeAfterReconnect = false }, History = new { RestoreLastOnStartup = false } });
             var settingsPath = Path.Combine(_state, "settings.json"); File.WriteAllText(settingsPath, initial, new UTF8Encoding(false));

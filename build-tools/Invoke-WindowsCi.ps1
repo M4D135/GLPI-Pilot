@@ -461,15 +461,45 @@ try {
                     -LogName ($suite.ToLowerInvariant() + '-build.log') -TimeoutSeconds 120
                 $assembly = Join-Path $repository "tests/$suite/bin/Release/net10.0/$suite.dll"
                 if (-not (Test-Path -LiteralPath $assembly -PathType Leaf)) { throw "Missing browser test assembly: $suite." }
-                # Mesuré sur le runner qualifié : AutomationChecks a rendu ses 40/40 vérifications puis a dépassé
-                # le plafond de 180 s avant de rendre la main. Ces deux suites pilotent un vrai WebView2 et un vrai
-                # navigateur, comme les voisines déjà plafonnées à 300 s ; le même budget leur est appliqué.
-                # Export timing regressions deliberately retain native responses beyond 7/10 s.
-                # Keep the existing browser budget; give only this enlarged automation suite
-                # the additional minute consumed by its real delayed transfers.
-                $browserBudget = if ($suite -eq 'AutomationChecks') { 360 } else { 300 }
-                Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
-                    -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds $browserBudget -ExpectedPattern '(?m)^([1-9]\d*)/\1 vérifications[^\r\n]*réussies\.\r?$'
+                if ($suite -eq 'AutomationChecks') {
+                    # All 83 cases remain mandatory. Real delayed exports and
+                    # column preparation have their own browser process so they
+                    # cannot consume the core suite's existing 360 s budget.
+                    # The 35 s deadline inside each individual case is unchanged.
+                    $previousGroup = $env:GLPI_TEST_GROUP
+                    $previousFilter = $env:GLPI_TEST_FILTER
+                    $automationFailures = [Collections.Generic.List[string]]::new()
+                    try {
+                        Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
+                        foreach ($group in @(
+                            @{ Name = 'core'; Count = 52 },
+                            @{ Name = 'columns'; Count = 20 },
+                            @{ Name = 'native-timing'; Count = 11 }
+                        )) {
+                            $env:GLPI_TEST_GROUP = $group.Name
+                            try {
+                                Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
+                                    -LogName "automationchecks-$($group.Name).log" -TimeoutSeconds 360 `
+                                    -ExpectedSummary "$($group.Count)/$($group.Count) vérifications d’automatisation réussies."
+                            }
+                            catch {
+                                $automationFailures.Add($group.Name)
+                                Write-Host "Automation group $($group.Name) failed: $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                    finally {
+                        $env:GLPI_TEST_GROUP = $previousGroup
+                        $env:GLPI_TEST_FILTER = $previousFilter
+                    }
+                    if ($automationFailures.Count -gt 0) {
+                        throw "Mandatory automation groups failed: $($automationFailures -join ', ')."
+                    }
+                }
+                else {
+                    Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
+                        -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 vérifications[^\r\n]*réussies\.\r?$'
+                }
             }
             # Same rule as the neighbours: cold compilation must not eat the browser process's deadline.
             $detailProject = 'tests/TicketDetailChecks/TicketDetailChecks.csproj'

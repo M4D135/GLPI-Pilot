@@ -33,6 +33,9 @@ public sealed partial class BrowserService
     private async Task<SessionProbe?> ProbeFrameAsync(IFrame frame, AppSettings settings, CancellationToken ct)
     {
         if (frame.IsDetached || Origin(frame.Url).Length == 0) return null;
+        var probeClock = Stopwatch.StartNew();
+        var probeStage = "lecture de la page";
+        var unavailable = false;
         try
         {
             var probe = await ReadJsonAsync<SessionProbe>(frame, """
@@ -62,13 +65,24 @@ public sealed partial class BrowserService
                 """, null, ct).WaitAsync(TimeSpan.FromSeconds(3), ct);
             if (!string.IsNullOrWhiteSpace(settings.ReadySelector) && settings.SelectorOrigin == Origin(frame.Url))
             {
+                probeStage = "repère de connexion mémorisé";
                 var ready = frame.Locator(settings.ReadySelector);
                 probe.ExplicitReady = await ready.CountAsync() == 1 && await ready.IsVisibleAsync();
                 if (probe.ExplicitReady && !probe.Challenge) probe.Login = false;
             }
             return probe;
         }
-        catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { return null; }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+        {
+            unavailable = true;
+            Log?.Invoke($"SSO · sonde indisponible après {probeClock.Elapsed.TotalSeconds:F1} s ; étape={probeStage}, cause={(ex is TimeoutException ? "délai dépassé" : "document en cours de navigation ou indisponible")}.");
+            return null;
+        }
+        finally
+        {
+            if (!unavailable && probeClock.Elapsed >= TimeSpan.FromSeconds(2))
+                Log?.Invoke($"SSO · sonde lente : {probeClock.Elapsed.TotalSeconds:F1} s ; étape={probeStage}.");
+        }
     }
 
     private static bool TrustedTableOrigin(string origin, AppSettings settings) =>
