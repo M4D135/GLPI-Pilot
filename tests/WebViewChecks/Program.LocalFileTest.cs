@@ -27,6 +27,7 @@ internal static partial class Program
         var personalSaves = new ConcurrentQueue<(string Notes, bool Simulation)>();
         (TaskCompletionSource Started, TaskCompletionSource Release)? heldPersonalSave = null;
         (TaskCompletionSource Started, TaskCompletionSource Release)? heldMapLease = null;
+        TaskCompletionSource? nextDemonstration = null;
         string? changeFileBeforeCommit = null;
         page.PageError += (_, error) => errors.Enqueue(error);
         await context.RouteAsync("**/*", async route =>
@@ -88,7 +89,23 @@ internal static partial class Program
             if (app.IsTestMode && op.StartsWith("library.", StringComparison.Ordinal)) offlineLibraryRequests.Enqueue(op);
             if (op == "app.ready") return new { ready = true };
             if (op == "host.editor") { app.EditorOpen = data.GetProperty("open").GetBoolean(); return new { updated = true }; }
-            var result = await app.ExecuteAsync(op, data, ct);
+            // A confirmation click starts real storage work before navigation.
+            // Observe that exact operation, including its failure, separately
+            // from the existing 20-second DOM/navigation assertion.
+            var demonstration = op == "app.demo" ? Interlocked.Exchange(ref nextDemonstration, null) : null;
+            var demoTimer = demonstration is null ? null : System.Diagnostics.Stopwatch.StartNew();
+            object? result;
+            try
+            {
+                result = await app.ExecuteAsync(op, data, ct);
+                demonstration?.TrySetResult();
+            }
+            catch (Exception error) { demonstration?.TrySetException(error); throw; }
+            finally
+            {
+                if (demoTimer is not null)
+                    Console.WriteLine($"TRACE import demonstration settled after {demoTimer.ElapsedMilliseconds} ms; simulation={app.IsTestMode}; cancelled={ct.IsCancellationRequested}");
+            }
             if (op == "maps.tiles" && data.TryGetProperty("enabled", out var tileEnabled) && tileEnabled.ValueKind == JsonValueKind.True
                 && heldMapLease is { } mapLease)
             {
@@ -578,7 +595,27 @@ internal static partial class Program
             var card = page.Locator("[data-settings-section=demo]"); await card.WaitForAsync();
             await card.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la démonstration", Exact = true }).ClickAsync();
             var confirmation = page.GetByRole(AriaRole.Dialog, new() { Name = "Ouvrir la démonstration", Exact = true }); await confirmation.WaitForAsync();
-            await confirmation.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la démonstration", Exact = true }).ClickAsync();
+            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (Interlocked.CompareExchange(ref nextDemonstration, completed, null) is not null)
+                throw new InvalidOperationException("A demonstration operation is already being awaited.");
+            var before = contextCalls.Count(call => call.Operation == "app.demo");
+            try
+            {
+                await confirmation.GetByRole(AriaRole.Button, new() { Name = "Ouvrir la démonstration", Exact = true }).ClickAsync();
+                // The fixture's C# operation budget matches RuntimeSessionChecks.
+                // Ready(home) still has its independent 20-second navigation
+                // deadline after the native operation completes; no retry runs.
+                await completed.Task.WaitAsync(TimeSpan.FromSeconds(45));
+                if (contextCalls.Count(call => call.Operation == "app.demo") != before + 1)
+                    throw new InvalidOperationException("One confirmation must invoke exactly one real demonstration operation.");
+            }
+            catch (TimeoutException) when (!completed.Task.IsCompleted)
+            {
+                Console.WriteLine($"TRACE demonstration operation deadline: busy={app.IsBusy}; operation={app.CurrentOperation}; simulation={app.IsTestMode}; requests={contextCalls.Count(call => call.Operation == "app.demo") - before}");
+                await Capture("simulation-demo-operation-timeout");
+                throw;
+            }
+            finally { Interlocked.CompareExchange(ref nextDemonstration, null, completed); }
         }
         async Task BridgeIdle() => await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending");
         async Task<string> AnnotateReader(string text, string readingFilter)
