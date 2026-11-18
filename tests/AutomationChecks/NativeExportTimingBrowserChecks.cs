@@ -82,8 +82,16 @@ internal static class NativeExportTimingBrowserChecks
 
     private static async Task Check(IBrowser browser, string scenario)
     {
+        var traceClock = Stopwatch.StartNew();
+        void Trace(string step)
+        {
+            if (scenario == "http403")
+                Console.Error.WriteLine($"TRACE native HTTP403 +{traceClock.Elapsed.TotalMilliseconds:F0} ms: {step}");
+        }
         var folder = Path.Combine(Path.GetTempPath(), "GLPI-export-timing-" + Guid.NewGuid().ToString("N"));
+        Trace("NewContext begin");
         var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
+        Trace("NewContext complete");
         var service = new BrowserService();
         var requests = new ConcurrentQueue<(string Method, Uri Url)>();
         var responseDurations = new ConcurrentQueue<TimeSpan>();
@@ -98,7 +106,7 @@ internal static class NativeExportTimingBrowserChecks
         var saved = 0; var ready = 0; var foreignRequests = 0; var foreignDownloads = 0;
         var foreignVerified = false; var foreignFailure = "";
         Task<AutomaticRunResult>? pendingRun = null;
-        service.Log += logs.Enqueue;
+        service.Log += line => { logs.Enqueue(line); Trace("service: " + line); };
         service.AttachForTesting(context, Target); // Includes the production 10 s default locator timeout.
         try
         {
@@ -111,6 +119,7 @@ internal static class NativeExportTimingBrowserChecks
                     if (uri.AbsolutePath == "/glpi/front/report.dynamic.php")
                     {
                         requests.Enqueue((route.Request.Method, uri));
+                        Trace("native route received");
                         firstRequest.TrySetResult();
                         var responseClock = Stopwatch.StartNew();
                         if (scenario == "cancel") await Task.Delay(Timeout.InfiniteTimeSpan, stopResponses.Token);
@@ -126,7 +135,9 @@ internal static class NativeExportTimingBrowserChecks
                         responseDurations.Enqueue(responseClock.Elapsed);
                         if (scenario == "http403")
                         {
+                            Trace("Fulfill HTTP403 begin");
                             await route.FulfillAsync(new() { Status = 403, ContentType = "text/html; charset=utf-8", Body = "<!doctype html><title>Export refusé</title><p>Refus synthétique de la commande native.</p>" });
+                            Trace("Fulfill HTTP403 complete");
                             return;
                         }
                         await route.FulfillAsync(new()
@@ -158,7 +169,9 @@ internal static class NativeExportTimingBrowserChecks
             {
                 var task = Handle(route); routeTasks.Add(task); return task;
             });
+            Trace("NewPage begin");
             var page = await context.NewPageAsync();
+            Trace("NewPage complete");
             async Task VerifyForeignDownloadAsync(IDownload download)
             {
                 try
@@ -187,19 +200,26 @@ internal static class NativeExportTimingBrowserChecks
                     downloadChecks.Add(VerifyForeignDownloadAsync(download));
                 }
             };
+            Trace("initial navigation begin");
             await page.GotoAsync(Target);
+            Trace("initial navigation complete");
             var settings = Settings(folder);
+            Trace("table selection begin");
             var original = await service.ChooseAutoTableAsync(page, settings, CancellationToken.None);
+            Trace("table selection complete; export inspection begin");
             var inspection = await service.InspectNativeExportAsync(original, CancellationToken.None);
+            Trace("export inspection complete");
             Require(inspection.Supported && inspection.Plans.Count == 1
                 && inspection.Plans[0] is { Kind: "form", Format: "csv", AllPages: true, FormatValue: "-4" },
                 "The fixture must expose one reviewed native GET form with the All pages CSV option before testing timing.");
             if (scenario == "popup-slow") Require(await page.Locator("#native-export").GetAttributeAsync("target") == "_blank",
                 "The delayed popup fixture must use the observed native form target rather than a synthetic download event.");
             var automatic = new AutomaticExtractionService(service);
-            automatic.NativeFileSaved += _ => Interlocked.Increment(ref saved);
-            automatic.PhaseChanged += phase => { if (phase == AutomaticRunPhase.Ready) Interlocked.Increment(ref ready); };
+            automatic.NativeFileSaved += _ => { Interlocked.Increment(ref saved); Trace("NativeFileSaved"); };
+            automatic.PhaseChanged += phase => { if (phase == AutomaticRunPhase.Ready) Interlocked.Increment(ref ready); Trace("phase: " + phase); };
+            Trace("RunAsync invoke");
             var runTask = pendingRun = automatic.RunAsync(settings, null, cancellation.Token);
+            Trace("RunAsync task returned: " + runTask.Status);
             if (scenario == "cancel")
             {
                 var first = await Task.WhenAny(firstRequest.Task, runTask).WaitAsync(TimeSpan.FromSeconds(10));
@@ -232,11 +252,14 @@ internal static class NativeExportTimingBrowserChecks
             else if (scenario == "http403")
             {
                 Exception? failure = null;
+                Trace("RunAsync await begin");
                 try { await runTask; }
-                catch (Exception error) { failure = error; }
+                catch (Exception error) { failure = error; Trace("RunAsync caught " + error.GetType().Name + ": " + error.Message); }
+                Trace($"RunAsync await complete; assert begin: requests={requests.Count}, saved={saved}, ready={ready}, failure={failure?.GetType().Name ?? "none"}");
                 Require(failure is InvalidOperationException && failure.Message.Contains("403", StringComparison.Ordinal)
                     && requests.Count == 1 && saved == 0 && ready == 0 && !Directory.EnumerateFiles(folder).Any(),
                     "A native HTTP403 must be reported explicitly without retry, saved file, successful receipt or silent fallback.");
+                Trace("HTTP403 assertion complete");
             }
             else
             {
@@ -287,17 +310,26 @@ internal static class NativeExportTimingBrowserChecks
         }
         finally
         {
+            Trace("finally entered; stopResponses.Cancel begin");
             stopResponses.Cancel();
+            Trace("stopResponses.Cancel complete; cancellation.Cancel begin");
             cancellation.Cancel();
+            Trace("cancellation.Cancel complete; service.DisposeAsync begin");
             await service.DisposeAsync();
+            Trace($"service.DisposeAsync complete; route/download drain begin: routes={routeTasks.Count}, completed={routeTasks.Count(task => task.IsCompleted)}, checks={downloadChecks.Count}");
             await Task.WhenAll(routeTasks.Concat(downloadChecks)).WaitAsync(TimeSpan.FromSeconds(5));
+            Trace("route/download drain complete");
             if (pendingRun is not null)
             {
                 // A failed foreign fixture proof can end the check before the
                 // production run. Closing its context must also drain that run.
+                Trace("pendingRun drain begin: " + pendingRun.Status);
                 try { await pendingRun; } catch (Exception) { }
+                Trace("pendingRun drain complete");
             }
+            Trace("directory cleanup begin");
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            Trace("directory cleanup complete; check complete");
         }
     }
 

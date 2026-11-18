@@ -118,12 +118,12 @@ jobs:
           $browser = $browsers | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $browser) { throw 'No Chromium browser on runner' }
           $env:GLPI_TEST_CHROMIUM = $browser
-          $env:GLPI_TEST_FILTER = 'Colonnes GLPI'
-          dotnet run --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
-          if ($LASTEXITCODE -ne 0) { throw 'Native column preparation regression checks failed' }
           $env:GLPI_TEST_FILTER = 'Attente export GLPI'
-          dotnet run --no-build --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
+          dotnet run --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
           if ($LASTEXITCODE -ne 0) { throw 'Native export timing regression checks failed' }
+          $env:GLPI_TEST_FILTER = 'Colonnes GLPI'
+          dotnet run --no-build --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
+          if ($LASTEXITCODE -ne 0) { throw 'Native column preparation regression checks failed' }
       - name: WebView sources et refresh · Standard/Admin
         timeout-minutes: 14
         run: |
