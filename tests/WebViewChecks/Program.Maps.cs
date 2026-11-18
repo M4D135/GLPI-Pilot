@@ -1,9 +1,18 @@
+using System.Text.Json;
 using GlpiPilot.Core;
 using GlpiPilot.Runtime;
 using Microsoft.Playwright;
 
 internal static partial class Program
 {
+    private static Task SaveMapFixtureSettingsAsync(IPage page, PilotApplication app, AppSettings settings)
+    {
+        // The bridge delivers session/settings events before its awaited reply.
+        // Direct C# fixture writes can let navigation observe a stale browser revision.
+        var arguments = JsonSerializer.SerializeToElement(new { revision = app.Revision, settings }, PilotApplication.Json);
+        return page.EvaluateAsync("async args => { await (await import('/js/bridge.js')).api.call('settings.save', args); }", arguments);
+    }
+
     private static async Task CheckEmbeddedMapOverviewAsync(IPage page, PilotApplication app, Func<string, Task> navigate, Func<string, Task> capture)
     {
         var original = app.Settings.Copy(); var expanded = original.Copy();
@@ -13,7 +22,7 @@ internal static partial class Program
             Latitude = 44.12 + index % 5 * .03, Longitude = 5.12 + index / 5 * .03
         });
         expanded.Cities.Sites.Add(new SiteDefinition { Name = "Site sans coordonnées", CityId = expanded.Cities.Cities.Single().Id, Address = "Adresse sans géocodage" });
-        await Call(app, "settings.save", new { revision = app.Revision, settings = expanded });
+        await SaveMapFixtureSettingsAsync(page, app, expanded);
         await navigate("home"); await navigate("terrain-map");
         await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Gérer le référentiel", Exact = true }).ClickAsync();
@@ -35,7 +44,7 @@ internal static partial class Program
         await map.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await panel.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
         await panel.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
-        await Call(app, "settings.save", new { revision = app.Revision, settings = original });
+        await SaveMapFixtureSettingsAsync(page, app, original);
         await navigate("home");
     }
 
@@ -105,7 +114,7 @@ internal static partial class Program
     {
         var settings = app.Settings.Copy(); var site = settings.Cities.Sites.First(value => value.Name == "Site fictif Nord");
         site.Latitude = 44.1; site.Longitude = 5.1;
-        await Call(app, "settings.save", new { revision = app.Revision, settings });
+        await SaveMapFixtureSettingsAsync(page, app, settings);
         await navigate("terrain-map");
         await page.Locator(".maps-workspace-actions > summary").ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Gérer le référentiel", Exact = true }).ClickAsync();
