@@ -9,14 +9,56 @@ namespace GlpiPilot.Runtime;
 
 public sealed partial class PilotApplication
 {
-    private Task<object?> CaptureLibraryAsync(JsonElement args, CancellationToken ct)
-        => CollectLibraryControlledAsync(args, ct);
+    private sealed class CollectionStoppedException(string message) : InvalidOperationException(message);
+    private sealed class CollectionPreparationException(string message) : InvalidOperationException(message);
+    private async Task<object?> CaptureLibraryAsync(JsonElement args, CancellationToken ct)
+    {
+        var entry = _journal.Start("Collecte globale des tickets", Settings.PortalUrl);
+        string previousSessionId; lock (_collectionGate) previousSessionId = _collectionActivity.SessionId;
+        try
+        {
+            var result = await CollectLibraryControlledAsync(args, ct).ConfigureAwait(false);
+            var activity = ReadCollectionActivity();
+            var state = activity.State switch { "completed" when activity.ErrorCode.Length == 0 => "Terminé", "paused" => "En pause", "stopped" => "Arrêté", "budget" => "À reprendre", _ => "À vérifier" };
+            _journal.Finish(entry, state, activity.ErrorCode.Length > 0 ? activity.ErrorCode : "COLLECTION_" + activity.State.ToUpperInvariant(),
+                activity.Message.Length > 0 ? activity.Message : activity.Phase);
+            return result;
+        }
+        catch (Exception error)
+        {
+            var cancelled = error is OperationCanceledException;
+            await RecordCollectionPreparationFailureAsync(error, cancelled, previousSessionId).ConfigureAwait(false);
+            var activity = ReadCollectionActivity();
+            var diagnosed = activity.SessionId.Length > 0 && activity.SessionId != previousSessionId;
+            var message = diagnosed && activity.Message.Length > 0 ? activity.Message
+                : cancelled ? "Collecte interrompue ; les contenus déjà enregistrés sont conservés." : LibraryCaptureFailureMessage(error);
+            var code = diagnosed && activity.ErrorCode.Length > 0 ? activity.ErrorCode : cancelled ? "CANCELLED" : LibraryCaptureFailureCategory(error);
+            _journal.Finish(entry, cancelled ? "Annulé" : "Échec", code, message);
+            Log("BIBLIOTHÈQUE · préparation ou collecte non aboutie · " + code + " · " + message);
+            throw;
+        }
+    }
     private static bool IsLibraryCaptureFailure(Exception error) => error is PlaywrightException or TimeoutException or InvalidDataException or JsonException
-        or InvalidOperationException or IOException or SqliteException or UnauthorizedAccessException;
+        or InvalidOperationException or IOException or SqliteException or UnauthorizedAccessException or NpgsqlException or GlpiLibraryIndexException;
     private static string LibraryCaptureFailureCategory(Exception error) => error switch
     {
+        GlpiLibraryIndexException index => index.Category,
+        LibraryCollectorLeaseException => "collection-coordination",
+        CollectionStoppedException => "consecutive-errors",
+        CollectionPreparationException => "local-storage",
+        NpgsqlException => "collection-coordination",
         TimeoutException => "read-timeout", PlaywrightException => "browser-unavailable", InvalidDataException or JsonException => "invalid-content",
         SqliteException or IOException or UnauthorizedAccessException => "local-storage", _ => "local-changed"
+    };
+    private static string LibraryCaptureFailureMessage(Exception error) => error switch
+    {
+        GlpiLibraryIndexException index => index.Message,
+        LibraryCollectorLeaseException lease => lease.Message,
+        CollectionStoppedException stopped => stopped.Message,
+        CollectionPreparationException preparation => preparation.Message,
+        GlpiLibraryPageException page => "Liste GLPI non reconnue : " + page.Message,
+        NpgsqlException => "Le verrou de collecte sur la base partagée n’a pas pu être confirmé. Vérifiez la connexion PostgreSQL avant de reprendre.",
+        _ => TicketLibraryCaptureMessages.For(LibraryCaptureFailureCategory(error))
     };
     private static void NormalizeLibraryDate(TicketLibrarySeed seed, LibraryPreferences preferences)
     {

@@ -67,6 +67,15 @@ if (args.Contains("--postgres"))
         var ticketReceipt = await replica.PushAsync(new TicketLibraryMutation(Guid.NewGuid().ToString("N"), ticket), CancellationToken.None);
         Check(teamReceipt.Outcome == "accepted" && (await teamReplica.ChangesAsync(0, 100)).Count == 1 && ticketReceipt.Revision > 0
             && (await replica.PullAsync(0, 100, CancellationToken.None)).Count == 1, "The restricted technical account actually exchanges tickets and team notes, including the central sequence.");
+        foreach (var view in TicketLibraryKnowledge.PostgresViewNames)
+        {
+            await using var corpus = new NpgsqlCommand("SELECT COUNT(*) FROM public." + q.QuoteIdentifier(view), db);
+            _ = await corpus.ExecuteScalarAsync();
+            await using var rights = new NpgsqlCommand("SELECT has_table_privilege(current_user,@view,'SELECT') AND NOT has_table_privilege(current_user,@view,'INSERT,UPDATE,DELETE')", db);
+            rights.Parameters.AddWithValue("view", "public." + view);
+            if ((bool?)await rights.ExecuteScalarAsync() != true) throw new InvalidOperationException("Knowledge view must be readable without write grants.");
+        }
+        Check(true, "The restricted technical account reads all twelve knowledge views without insert, update or delete grants.");
         await using var owner = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(admin) { Database = name, Pooling = false }.ToString()); await owner.OpenAsync();
         async Task Sql(string sql) { await using var command = new NpgsqlCommand(sql, owner); await command.ExecuteNonQueryAsync(); }
         await Sql("ALTER ROLE " + q.QuoteIdentifier(account) + " CREATEDB");

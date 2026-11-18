@@ -38,6 +38,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Collection core checks failed.' }
       - name: Controleur et enregistrement des commandes Csharp
         run: |
+          dotnet run --project tests/LibraryCollectionJournalChecks/LibraryCollectionJournalChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/journal-store.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection journal storage checks failed.' }
+          dotnet run --project tests/LibraryIndexProgressChecks/LibraryIndexProgressChecks.csproj -c Release 2>&1 | Tee-Object artifacts/library-collection/index-progress.log
+          if ($LASTEXITCODE -ne 0) { throw 'Library index progress checks failed.' }
           dotnet run --project tests/LibraryCollectionChecks/LibraryCollectionChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/library-collection/runtime.log
           if ($LASTEXITCODE -ne 0) { throw 'Collection runtime checks failed.' }
       - name: Parcours complet pause reprise et mise a jour differentielle
@@ -51,6 +55,8 @@ jobs:
           $env:GLPI_TEST_PLAYWRIGHT_MODULE = Join-Path $driver 'package'
           $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/library-collection/screenshots'
           Remove-Item Env:GLPI_TEST_OFFLINE_BLOBS -ErrorAction SilentlyContinue
+          & $node --test tests/LibraryCollectionChecks/journal.test.mjs 2>&1 | Tee-Object artifacts/library-collection/journal.log
+          if ($LASTEXITCODE -ne 0) { throw 'Collection journal lifecycle checks failed.' }
           & $node tests/LibraryCollectionChecks/ui.cjs 2>&1 | Tee-Object artifacts/library-collection/ui.log
           if ($LASTEXITCODE -ne 0) { throw 'Collection interface checks failed.' }
           & $node tests/TicketControlChecks/run.cjs 2>&1 | Tee-Object artifacts/library-collection/tickets.log

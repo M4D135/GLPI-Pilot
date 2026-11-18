@@ -296,14 +296,14 @@ public sealed partial class TicketLibraryStore
 
     internal Task<T> Run<T>(Func<SqliteConnection, T> operation, CancellationToken ct) => Task.Run(() =>
     {
-        ct.ThrowIfCancellationRequested(); EnsureInitialized(); ct.ThrowIfCancellationRequested();
+        ct.ThrowIfCancellationRequested(); EnsureInitialized(ct); ct.ThrowIfCancellationRequested();
         ValidateDatabasePath(DatabasePath);
         using var c = new SqliteConnection(ConnectionString); c.Open();
         Execute(c, null, "PRAGMA foreign_keys=ON;");
         return operation(c);
     }, ct);
 
-    private void EnsureInitialized()
+    private void EnsureInitialized(CancellationToken ct)
     {
         lock (_initialization)
         {
@@ -313,7 +313,12 @@ public sealed partial class TicketLibraryStore
             using (var check = Command(c, null, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ticket_library_schema'"))
                 if (Convert.ToInt64(check.ExecuteScalar(), CultureInfo.InvariantCulture) != 0 && ScalarLong(c, null, "SELECT version FROM ticket_library_schema WHERE singleton=1") != SchemaVersion)
                     throw new InvalidDataException("Version du schéma de bibliothèque non prise en charge. La base est conservée.");
-            using var tx = c.BeginTransaction(); Execute(c, tx, SchemaSql); Execute(c, tx, CaptureSchemaSql); tx.Commit();
+            using (var tx = c.BeginTransaction())
+            {
+                Execute(c, tx, SchemaSql); Execute(c, tx, CaptureSchemaSql); InitializeKnowledge(c, tx); ct.ThrowIfCancellationRequested(); tx.Commit();
+            }
+            var indexCursor = "";
+            while (BackfillKnowledgeBatch(c, ct, indexCursor, out indexCursor) > 0) ct.ThrowIfCancellationRequested();
             _initialized = true;
         }
     }
@@ -340,12 +345,7 @@ public sealed partial class TicketLibraryStore
             ("$json", TicketLibraryRules.Serialize(document)), ("$seed", TicketLibraryRules.Serialize(document.Seed)), ("$hash", document.ContentHash), ("$local", document.LocalRevision), ("$central", document.CentralRevision),
             ("$complete", document.DetailComplete ? 1 : 0), ("$current", document.DetailsCurrent ? 1 : 0), ("$hasContent", document.Detail is not null ? 1 : 0));
         if (!rebuildIndex) return;
-        Execute(c, tx, "DELETE FROM ticket_library_chunks WHERE ticket_key=$key", ("$key", document.Key));
-        using var chunk = Command(c, tx, "INSERT INTO ticket_library_chunks(ticket_key,citation_json,body) VALUES($key,$json,$body)", ("$key", document.Key), ("$json", ""), ("$body", ""));
-        foreach (var citation in TicketLibrarySearch.Chunks(document))
-        {
-            ct.ThrowIfCancellationRequested(); chunk.Parameters["$json"].Value = TicketLibraryRules.Serialize(citation); chunk.Parameters["$body"].Value = citation.Excerpt; chunk.ExecuteNonQuery();
-        }
+        RebuildKnowledgeChunks(c, tx, document, ct);
     }
 
     internal static string ConflictId(TicketLibraryDocument current, TicketLibraryDocument incoming, string reason)

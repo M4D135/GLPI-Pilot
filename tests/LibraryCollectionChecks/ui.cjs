@@ -27,13 +27,14 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
     await page.evaluate(async () => {
       const root = document.querySelector('#root'); Object.assign(root.style, { height: '100dvh', overflow: 'auto', padding: '16px' });
       const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js');
-      window.calls = []; window.callbacks = new Map(); window.state = { revision: 1, state: 'idle', runId: '', nextAt: null, options: { version: 1, automatic: false, intervalMinutes: 120, delayMilliseconds: 3000, batchSize: 25, batchPauseSeconds: 30, maximumMinutes: 60, consecutiveErrorLimit: 3, startMinute: 0, endMinute: 1440, timeZone: 'UTC' } }; window.activity = { state: 'idle' };
+      window.calls = []; window.callbacks = new Map(); window.state = { revision: 1, state: 'idle', runId: '', nextAt: null, options: { version: 1, automatic: false, intervalMinutes: 120, delayMilliseconds: 3000, batchSize: 25, batchPauseSeconds: 30, maximumMinutes: 60, consecutiveErrorLimit: 3, startMinute: 0, endMinute: 1440, timeZone: 'UTC' } }; window.activity = { state: 'idle' }; window.collectionEvents = []; window.reportOverride = null;
       const signal = new AbortController().signal;
       const api = { on: (name, callback) => { callbacks.set(name, callback); return () => callbacks.delete(name); }, call: async (op, args = {}) => {
         calls.push({ op, args: structuredClone(args) });
         if (op === 'library.collection.status') return structuredClone(activity);
-        if (op === 'library.collection.get') return { state: structuredClone(state), report: state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null, activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi' };
-        if (op === 'library.capture') { state.runId ||= 'a'.repeat(32); activity = { state: 'running', sessionId: 'b'.repeat(32), runId: state.runId, total: 50, processed: 10, reused: 7, requests: 12, phase: 'Lecture', updatedAt: new Date().toISOString() }; callbacks.get('library.collection.progress')(activity); return new Promise(resolve => { window.finishCollection = resolve; }); }
+        if (op === 'library.collection.get') return { state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi' };
+        if (op === 'library.collection.events') return { runId: args.runId, total: collectionEvents.length, offset: args.offset, limit: args.limit, persisted: true, items: structuredClone(collectionEvents.slice(args.offset, args.offset + args.limit)) };
+        if (op === 'library.capture') { state.runId ||= 'a'.repeat(32); collectionEvents.unshift({ sequence: collectionEvents.length + 1, at: new Date().toISOString(), level: 'info', stage: 'Lecture de l’index', code: 'index.started', message: 'Lecture de la liste accessible démarrée.' }); activity = { state: 'running', sessionId: 'b'.repeat(32), runId: state.runId, total: 50, processed: 10, reused: 7, requests: 12, phase: 'Lecture', updatedAt: new Date().toISOString() }; callbacks.get('library.collection.progress')(activity); return new Promise(resolve => { window.finishCollection = resolve; }); }
         if (op === 'library.collection.control') { assertSession(args.sessionId); state.state = args.action === 'pause' ? 'paused' : 'stopped'; activity = { ...activity, state: state.state }; callbacks.get('library.collection.progress')(activity); finishCollection({ collectionState: state.state }); return { requested: true }; }
         if (op === 'library.collection.settings') { state.options = args.options; state.revision++; return state; }
         if (op === 'library.capture.entries') return { total: 0, items: [] };
@@ -52,6 +53,11 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
     await page.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
     await page.waitForFunction(() => !!window.finishCollection);
     ok(await page.getByRole('button', { name: 'Pause', exact: true }).isEnabled() && await page.getByRole('button', { name: 'Arrêter', exact: true }).isEnabled(), 'Pause and stop remain available during the long capture call');
+    await page.locator('.collection-event').first().waitFor({ state: 'visible' });
+    ok(await page.locator('[data-collection-panel=journal][open]').count() === 1 && await page.evaluate(() => calls.some(c => c.op === 'library.collection.events') && !calls.some(c => c.op === 'library.capture.entries')), 'The operational journal opens and remains readable during capture independently of ticket retry entries');
+    await page.evaluate(() => collectionEvents.unshift({ sequence: 2, at: new Date().toISOString(), level: 'info', stage: 'Lecture de l’index', code: 'index.progress', message: 'Deuxième page de l’index reçue.' }));
+    await page.getByText('Deuxième page de l’index reçue.', { exact: true }).waitFor({ state: 'visible' });
+    ok(await page.locator('.collection-event time[datetime]').count() === 2, 'Live journal polling shows new timestamped stages before the capture operation finishes');
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await page.getByRole('button', { name: 'Reprendre', exact: true }).waitFor({ state: 'visible' });
     await page.waitForFunction(() => state.state === 'paused' && !document.querySelector('button')?.disabled);
@@ -74,12 +80,36 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
     ok(await page.locator('.collection-tuning[open]').count() === 0, 'Advanced pacing is not mixed into everyday controls');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     ok(await page.locator('.collection-state-mark').evaluate(node => getComputedStyle(node).transitionDuration === '0s'), 'Reduced-motion preference keeps status feedback static');
+    await page.evaluate(async () => {
+      cleanup(); window.savedCollectionScenario = structuredClone({ state, activity, collectionEvents });
+      state.state = 'attention';
+      activity = { state: 'attention', sessionId: 'b'.repeat(32), runId: state.runId, message: 'Le délai de lecture de l’index a été dépassé.', updatedAt: new Date().toISOString() };
+      reportOverride = { runId: state.runId, read: 0, reused: 0, observed: 0, retryCount: 0, message: 'Passage interrompu avant lecture des fiches.', limitations: ['La lecture de l’index n’a pas abouti. La reprise vérifiera de nouveau la liste accessible.'] };
+      collectionEvents = [
+        { sequence: 3, at: '2026-11-18T14:32:09Z', level: 'error', stage: 'Lecture de l’index', code: 'index.timeout', message: 'Le délai de lecture de l’index a été dépassé. Aucune fiche individuelle n’a encore pu être identifiée.' },
+        { sequence: 2, at: '2026-11-18T14:31:09Z', level: 'info', stage: 'Lecture de l’index', code: 'index.started', message: 'Lecture de la liste accessible démarrée.' },
+        { sequence: 1, at: '2026-11-18T14:31:00Z', level: 'info', stage: 'Préparation', code: 'collection.started', message: 'Passage démarré.' }
+      ];
+      const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js');
+      window.cleanup = await renderLibraryCollection(collectionContext);
+    });
+    await page.locator('.collection-event[data-level=error]').waitFor({ state: 'visible' });
+    ok(await page.locator('.collection-event').count() === 3 && await page.locator('.collection-phase').textContent().then(text => text.includes('délai de lecture de l’index')), 'An initial zero-ticket failure displays its cause and operational history immediately');
+    ok(await page.getByRole('button', { name: 'Reprendre', exact: true }).isEnabled() && await page.getByRole('button', { name: 'Reprendre les erreurs', exact: true }).count() === 0, 'Index recovery remains available even when there are no identified ticket errors');
+    await page.locator('[data-collection-panel=retry] > summary').click();
+    await page.getByText('Aucune fiche individuelle à reprendre dans ce passage. Une erreur de lecture de l’index peut néanmoins nécessiter « Reprendre » : consultez le journal.', { exact: true }).waitFor({ state: 'visible' });
+    ok(await page.getByRole('button', { name: 'Reprendre les erreurs', exact: true }).isDisabled(), 'An empty ticket retry list explicitly refers index errors to the separate operational journal');
     for (const [width, height] of [[1280, 800], [1366, 768], [1093, 614], [390, 800]]) {
       await page.setViewportSize({ width, height });
       ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Collection controls remain bounded at ${width}x${height}`);
     }
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.evaluate(async () => { cleanup(); collectionContext.root.replaceChildren(); const { renderDataWorkspace } = await importProduction('/web/js/pages/data-workspace.js'); window.workspaceCleanup = await renderDataWorkspace(collectionContext); });
+    if (process.env.GLPI_TEST_SCREENSHOTS) {
+      fs.mkdirSync(process.env.GLPI_TEST_SCREENSHOTS, { recursive: true });
+      await page.locator('[data-collection-panel=journal]').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-journal-initial-failure.png') });
+    }
+    await page.evaluate(async () => { cleanup(); ({ state, activity, collectionEvents } = savedCollectionScenario); reportOverride = null; collectionContext.root.replaceChildren(); const { renderDataWorkspace } = await importProduction('/web/js/pages/data-workspace.js'); window.workspaceCleanup = await renderDataWorkspace(collectionContext); });
     await page.locator('[data-open-panel=collection]').click();
     ok(await page.locator('[data-workspace-panel=collection] .collection-workspace').count() === 1 && await page.getByRole('button', { name: 'Reprendre', exact: true }).isVisible(), 'The production data workspace opens the collector with its saved resumable state');
     await page.locator('[data-workspace-panel=collection] > .modal-heading button').click();

@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.7 · Windows x64
+# GLPI Pilot 4.0.8 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.7 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.8 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,14 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.8 : collecte globale, journal durable et corpus SQL
+
+La collecte globale attend l’activité réelle de l’index GLPI, y compris les critères et résultats chargés par AJAX. Les erreurs de session, de réseau, de réponse HTTP, de périmètre et d’absence de progression sont distinguées des erreurs de lecture de fiche. L’annulation reste disponible et la restauration du filtre ne masque pas l’échec initial.
+
+Le journal de collecte est séparé des fiches à reprendre. Il affiche des événements datés pendant le passage et conserve en SQLite les erreurs survenues avant le premier ticket. Le journal général recense aussi la collecte globale. Une indisponibilité initiale du stockage garde une cause visible dans la session et le journal général.
+
+Les contenus recueillis restent dans la bibliothèque existante. Douze vues SQL versionnées exposent leurs champs, sections, cellules, éléments, textes, limites et citations sur SQLite et PostgreSQL. Le [contrat pour une future intégration de chatbot](docs/Bibliotheque-contrat-chatbot.md) fournit des requêtes et précise les états de confirmation, les versions, les droits et les limites des pièces jointes. Aucun service IA n’est connecté. Voir les [notes 4.0.8](docs/RELEASE-4.0.8.md).
 
 ## 4.0.7 : activité native des colonnes et préparation des données
 

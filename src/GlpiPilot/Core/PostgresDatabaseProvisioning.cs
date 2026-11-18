@@ -101,6 +101,8 @@ public static class PostgresDatabaseProvisioning
             await Execute(db, "GRANT USAGE ON SCHEMA public TO " + quotedAccount, ct);
             foreach (var table in Tables)
                 await Execute(db, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public." + Quote(table) + " TO " + quotedAccount, ct);
+            foreach (var view in TicketLibraryKnowledge.PostgresViewNames)
+                await Execute(db, "GRANT SELECT ON TABLE public." + Quote(view) + " TO " + quotedAccount, ct);
             await Execute(db, "GRANT USAGE, SELECT ON SEQUENCE public.gp_shared_changes_sequence_seq TO " + quotedAccount, ct);
             // An administrator's custom default privileges must not accidentally
             // turn a newly created table into an administrative power for agents.

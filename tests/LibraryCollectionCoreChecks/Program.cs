@@ -294,6 +294,66 @@ try
         Require(read.DetailComplete && !read.DetailsCurrent && !read.ConfirmationPending && read.ConfirmationId == "");
     });
 #if !COLLECTION_CORE_ONLY
+    async Task<JsonElement> RuntimeCall(PilotApplication app, string operation, object args) => JsonSerializer.SerializeToElement(
+        await app.ExecuteAsync(operation, JsonSerializer.SerializeToElement(args, PilotApplication.Json)), PilotApplication.Json);
+    async Task WithRuntimePreferences(LibraryPreferences preferences, Func<Task> action)
+    {
+        var path = Path.Combine(AppPaths.DataRoot, "library.local.json"); var previous = File.Exists(path) ? File.ReadAllBytes(path) : null;
+        try { new LibraryPreferencesStore().Save(preferences); await action(); }
+        finally { if (previous is null) File.Delete(path); else File.WriteAllBytes(path, previous); }
+    }
+    await Check("A library folder that becomes a file keeps a visible memory journal and final operation failure without starting the browser", async () =>
+    {
+        var folder = Path.Combine(root, "blocked-runtime-library");
+        await WithRuntimePreferences(new() { LocalFolder = folder }, async () =>
+        {
+            File.WriteAllText(folder, "Synthetic storage obstruction.");
+            await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });
+            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental" }); });
+            var activity = await RuntimeCall(app, "library.collection.status", new { });
+            var events = await RuntimeCall(app, "library.collection.events", new { });
+            Require(activity.GetProperty("state").GetString() == "attention" && activity.GetProperty("errorCode").GetString() == "local-storage"
+                && events.GetProperty("runId").GetString() == "" && !events.GetProperty("persisted").GetBoolean()
+                && events.GetProperty("items").EnumerateArray().Any(e => e.GetProperty("code").GetString() == "local-storage"));
+            var history = await RuntimeCall(app, "operations.list", new { });
+            Require(history.GetProperty("entries").EnumerateArray().Any(e => e.GetProperty("title").GetString() == "Collecte globale des tickets"
+                && e.GetProperty("code").GetString() == "local-storage" && e.GetProperty("state").GetString() == "Échec"));
+        });
+    });
+    await Check("An unreadable preferences file cannot leave a collection operation in progress or hide its memory diagnostics", async () =>
+    {
+        await WithRuntimePreferences(new() { LocalFolder = Path.Combine(root, "locked-preferences-library") }, async () =>
+        {
+            using var held = new FileStream(Path.Combine(AppPaths.DataRoot, "library.local.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });
+            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental" }); });
+            var activity = await RuntimeCall(app, "library.collection.status", new { });
+            var events = await RuntimeCall(app, "library.collection.events", new { });
+            var history = await RuntimeCall(app, "operations.list", new { });
+            Require(activity.GetProperty("state").GetString() == "attention" && activity.GetProperty("errorCode").GetString() == "local-storage"
+                && events.GetProperty("total").GetInt32() > 0 && !events.GetProperty("persisted").GetBoolean()
+                && history.GetProperty("entries").EnumerateArray().Any(e => e.GetProperty("title").GetString() == "Collecte globale des tickets"
+                    && e.GetProperty("code").GetString() == "local-storage" && e.GetProperty("state").GetString() == "Échec"));
+        });
+    });
+    await Check("A held shared collector lease retains its coordination cause in both journals before any browser read", async () =>
+    {
+        var share = Path.Combine(root, "held-runtime-share"); Directory.CreateDirectory(share);
+        var preferences = new LibraryPreferences { LocalFolder = Path.Combine(root, "held-runtime-library"), SyncMode = "folder", SharedFolder = share };
+        await WithRuntimePreferences(preferences, async () =>
+        {
+            await using var held = await LibraryCollectorLease.AcquireAsync(preferences, installation, "", default);
+            await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });
+            await Reject(async () => { await RuntimeCall(app, "library.capture", new { mode = "incremental" }); });
+            var activity = await RuntimeCall(app, "library.collection.status", new { });
+            var events = await RuntimeCall(app, "library.collection.events", new { });
+            var history = await RuntimeCall(app, "operations.list", new { });
+            Require(activity.GetProperty("errorCode").GetString() == "collection-coordination" && events.GetProperty("runId").GetString() == ""
+                && events.GetProperty("items").EnumerateArray().Any(e => e.GetProperty("code").GetString() == "collection-coordination")
+                && history.GetProperty("entries").EnumerateArray().Any(e => e.GetProperty("title").GetString() == "Collecte globale des tickets"
+                    && e.GetProperty("code").GetString() == "collection-coordination"));
+        });
+    });
     await Check("Runtime exposes narrow status/stop controls but an obsolete session cannot cancel other operations", async () =>
     {
         await using var app = new PilotApplication(new NullHost(), (_, _) => { }, new() { PortalUrl = installation + "/front/ticket.php" });

@@ -34,8 +34,7 @@ public static class TicketLibrarySearch
             IsSolution = solution, Current = document.DetailsCurrent, ContentHash = document.ContentHash
         };
         foreach (var part in Parts(document.Seed.Ticket.Id + "\n" + document.Seed.Title + "\n" + document.Seed.Category)) yield return Citation("Index GLPI", "index", -1, part);
-        if (document.Detail is not { } detail) yield break;
-        foreach (var section in detail.Sections)
+        foreach (var section in document.Detail?.Sections ?? [])
         {
             for (var rowIndex = 0; rowIndex < section.Data.Rows.Count; rowIndex++)
             {
@@ -48,9 +47,10 @@ public static class TicketLibrarySearch
                 foreach (var part in Parts(text)) yield return Citation(section.Name, section.TabKey, rowIndex, part, isSolution);
             }
         }
+        foreach (var citation in TicketLibraryKnowledge.SupplementalChunks(document)) yield return citation;
     }
 
-    private static IEnumerable<string> Parts(string text)
+    internal static IEnumerable<string> Parts(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) yield break;
         for (var offset = 0; offset < text.Length;)

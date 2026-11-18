@@ -24,6 +24,15 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Index : limite configurée et identité dupliquée restent partielles", LimitsAndDuplicates),
     ("Index : résultat vide explicitement annoncé peut être complet", EmptyIndex),
     ("Index : annulation ferme la navigation dédiée et conserve la recherche", CancelIndex),
+    ("Index : requête Tous au-delà de vingt secondes et restauration lente suivent la progression réelle", SlowNativeIndexAndRestore),
+    ("Index : changement Statut AJAX lent observé sans sélectionner deux fois", SlowNativeStatus),
+    ("Index : critère Statut attend DOMContentLoaded et son script defer lent", DeferredStatusInitialization),
+    ("Index : rendu des résultats AJAX lent attend la réponse native", SlowNativeResults),
+    ("Index : erreur HTTP native précise avant le premier ticket et sans nouvelle tentative", IndexHttpFailure),
+    ("Index : panne réseau native précise sans masquer la cause par la restauration", IndexNetworkFailure),
+    ("Index : redirection de session refusée sans poursuivre hors du périmètre", IndexSessionRedirect),
+    ("Index : blocage sans progression arrêté même si un polling étranger reste actif", IndexNoProgress),
+    ("Index : annulation pendant la restauration ferme sa requête et ne retourne pas un succès", CancelDuringRestore),
     ("Détails : tous les onglets sûrs, description, suivis, tâches et solution", AllTabs),
     ("Détails : historique paginé lu jusqu’au total, aucune ligne perdue", HistoryPages),
     ("Détails : références des documents sans téléchargement binaire", DocumentReferences),
@@ -61,6 +70,14 @@ string ListHtml(Uri uri, FixtureOptions options)
     var items = options.Empty ? Array.Empty<int>() : !all ? new[] { 41 } : start == 0 ? new[] { 41, 42 } : new[] { options.Duplicate ? 42 : 43 };
     var value = all ? "all" : "notold";
     var fields = options.NoModification ? "" : "<th data-searchopt-id='19'>Dernière modification</th>";
+    var needsStatus = options.NeedsStatus && !all;
+    var nativeStatus = "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select>"
+        + "<select name='criteria[0][value]'><option value='1'>Nouveau</option><option value='5'>Résolu</option><option value='6'>Clos</option>"
+        + "<option value='notold' " + (all ? "" : "selected") + ">Non résolu</option>"
+        + (options.MissingAll ? "" : "<option value='all' " + (all ? "selected" : "") + ">Tous</option>") + "</select>";
+    var statusControls = needsStatus
+        ? "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><input name='criteria[0][value]' value='22/10/2026'>"
+        : nativeStatus;
     if (options.DuplicateModification) fields += "<th data-searchopt-id='19'>Date ambiguë</th>";
     var rows = string.Join("", items.Select(id => "<tr><td><a href='/glpi/front/ticket.form.php?id=" + id + "'>Titre synthétique " + id + "</a></td><td>" + (id == 41 ? "Nouveau" : id == 42 ? "Résolu" : "Clos") + "</td>" +
         (options.NoModification ? "" : "<td>" + Escape(options.Modified) + "</td>") + (options.DuplicateModification ? "<td>22/10/2026 14:31</td>" : "") + "<td>Catégorie fictive</td></tr>"));
@@ -70,18 +87,22 @@ string ListHtml(Uri uri, FixtureOptions options)
     next.Query = string.Join("&", pairs.Select(pair => Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)));
     var pager = all && start == 0 && count > 2 ? "<div class='search-pager'><p class='page-infos'>1-2/3</p><a class='page-link-next' data-start='2' href='" + Escape(next.Uri.AbsoluteUri) + "'>Suivant</a></div>" : "";
     return $$"""
-        <!doctype html><html lang="fr"><meta charset="utf-8"><title>GLPI bibliothèque synthétique</title><body><div class="page"><header class="navbar">Entité {{(options.ChangeScope && start > 0 ? "B" : "A")}}</header></div>
+        <!doctype html><html lang="fr"><meta charset="utf-8"><title>GLPI bibliothèque synthétique</title>{{(needsStatus && options.DeferredStatusHandler ? "<script defer src='/glpi/js/library-search-fixture.js'></script>" : "")}}<body><div class="page"><header class="navbar">Entité {{(options.ChangeScope && start > 0 ? "B" : "A")}}</header></div>
         <a href="/glpi/front/logout.php">Déconnexion</a>
         <form name="searchformticket" class="search-form-container" method="get" action="/glpi/front/ticket.php">
-          <select id="criterion-field" name="criteria[0][field]"><option value="12" selected>Statut</option><option value="19">Dernière modification</option></select>
-          <select name="criteria[0][searchtype]"><option value="equals">est</option></select>
-          <select name="criteria[0][value]"><option value="1">Nouveau</option><option value="5">Résolu</option><option value="6">Clos</option><option value="notold" {{(all ? "" : "selected")}}>Non résolu</option>{{(options.MissingAll ? "" : "<option value='all' " + (all ? "selected" : "") + ">Tous</option>")}}</select>
+          <select id="criterion-field" name="criteria[0][field]"><option value="12" {{(needsStatus ? "" : "selected")}}>Statut</option><option value="19" {{(needsStatus ? "selected" : "")}}>Dernière modification</option></select>
+          <span id="native-status-fields">{{statusControls}}</span>
           <input type="hidden" name="is_deleted" value="0"><input type="hidden" name="as_map" value="0"><input type="hidden" name="browse" value="0">
           <a class="search-reset" href="/glpi/front/ticket.php?reset=reset">Vider</a><button type="submit" name="search">Rechercher</button>
         </form>
         <form data-search-itemtype="Ticket" data-start="{{start}}" data-count="{{count}}" data-limit="2" action="/glpi/front/massiveaction.php">
           <table class="search-results"><thead><tr><th data-searchopt-id="1">Titre</th><th data-searchopt-id="12">Statut</th>{{fields}}<th data-searchopt-id="7">Catégorie</th></tr></thead><tbody>{{rows}}</tbody></table>{{pager}}
-        </form></body></html>
+        </form>
+        <script>
+          {{(needsStatus && !options.DeferredStatusHandler ? "document.getElementById('criterion-field').addEventListener('change',async()=>{document.getElementById('native-status-fields').innerHTML=await(await fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_searchoption&field=12&itemtype=Ticket'})).text()});" : "")}}
+          {{(all && start == 0 && options.ResultDelayMilliseconds > 0 ? "const results=document.querySelector('form[data-search-itemtype]');results.setAttribute('aria-busy','true');fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_results&itemtype=Ticket'}).then(r=>r.text()).then(()=>results.removeAttribute('aria-busy'));" : "")}}
+          {{(all && options.StalledIndex ? "document.querySelector('form[data-search-itemtype]').setAttribute('aria-busy','true');setInterval(()=>fetch('/glpi/ajax/search.php?action=fold_search&itemtype=Ticket'),150);" : "")}}
+        </script></body></html>
         """;
 }
 
@@ -142,9 +163,39 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
         {
             if (uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal))
             {
+                if (Query(uri, "criteria[0][value]") == "all")
+                {
+                    if (options.IndexStatus >= 400) { await route.FulfillAsync(new() { Status = options.IndexStatus, Body = "NEVER_INDEX_ERROR_CONTENT" }); return; }
+                    if (options.AbortIndex) { await route.AbortAsync("connectionfailed"); return; }
+                    if (options.RedirectIndex) { await route.FulfillAsync(new() { Status = 302, Headers = new Dictionary<string, string> { ["Location"] = "/glpi/front/login.php" } }); return; }
+                    if (options.IndexDelayMilliseconds > 0 && Query(uri, "start") == "") await Task.Delay(options.IndexDelayMilliseconds);
+                }
+                else if (Query(uri, "reset") == "reset")
+                {
+                    if (options.RestoreStatus >= 400) { await route.FulfillAsync(new() { Status = options.RestoreStatus, Body = "NEVER_RESTORE_ERROR_CONTENT" }); return; }
+                    if (options.RestoreDelayMilliseconds > 0) await Task.Delay(options.RestoreDelayMilliseconds);
+                }
                 if (options.DelayIndex && Query(uri, "criteria[0][value]") == "all") await Task.Delay(1500);
                 await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = ListHtml(uri, options) });
             }
+            else if (uri.AbsolutePath.EndsWith("/js/library-search-fixture.js", StringComparison.Ordinal))
+            {
+                await Task.Delay(6000);
+                await route.FulfillAsync(new() { ContentType = "text/javascript", Body = "document.getElementById('criterion-field').addEventListener('change',async()=>{document.getElementById('native-status-fields').innerHTML=await(await fetch('/glpi/ajax/search.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=display_searchoption&field=12&itemtype=Ticket'})).text()});" });
+            }
+            else if (uri.AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal))
+            {
+                var action = Query(uri, "action");
+                if (action.Length == 0) action = Query(new Uri("http://body.test/?" + route.Request.PostData), "action");
+                if (action == "display_searchoption")
+                {
+                    await Task.Delay(options.StatusDelayMilliseconds);
+                    await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><select name='criteria[0][value]'><option value='1'>Nouveau</option><option value='5'>Résolu</option><option value='6'>Clos</option><option value='notold' selected>Non résolu</option><option value='all'>Tous</option></select>" });
+                }
+                else { await Task.Delay(action == "display_results" ? options.ResultDelayMilliseconds : 700); await route.FulfillAsync(new() { Body = "" }); }
+            }
+            else if (uri.AbsolutePath.EndsWith("/front/login.php", StringComparison.Ordinal))
+                await route.FulfillAsync(new() { ContentType = "text/html", Body = "<input type='password'><p>NEVER_INDEX_SESSION_CONTENT</p>" });
             else if (uri.AbsolutePath.EndsWith("/front/ticket.form.php", StringComparison.Ordinal))
                 await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = DetailHtml(options) });
             else if (uri.AbsolutePath.EndsWith("/ajax/common.tabs.php", StringComparison.Ordinal))
@@ -260,6 +311,8 @@ async Task ChangedScope()
 {
     await using var s = await Setup(new() { ChangeScope = true }); var result = await Index(s);
     Require(!result.Complete && result.Tickets.Count == 2 && result.Limitations.Count > 0, "Changement de périmètre ignoré.");
+    Require(!result.SearchRestored && !s.Requests.Any(url => Query(new Uri(url), "criteria[0][value]") != "all" && Query(new Uri(url), "reset") == "reset"),
+        "L’ancien filtre a été réappliqué dans un contexte d’entités différent.");
 }
 async Task LimitsAndDuplicates()
 {
@@ -279,6 +332,120 @@ async Task CancelIndex()
     try { await Index(s, cancel.Token); throw new Exception("Annulation ignorée."); } catch (OperationCanceledException) { }
     Require(s.Context.Pages.Count == 1 && s.Search.Url == source && s.Service.ActivePage == s.Search, "Page d’index non fermée.");
     Require(Query(new Uri(s.Requests.Last()), "criteria[0][value]") == "notold", "Filtre non restauré après annulation.");
+}
+async Task SlowNativeIndexAndRestore()
+{
+    await using var s = await Setup(new() { IndexDelayMilliseconds = 22000, RestoreDelayMilliseconds = 6000 });
+    var diagnostics = new ConcurrentQueue<LibraryIndexProgress>();
+    var result = await s.Service.ReadTicketLibraryIndexAsync(s.Settings, null, CancellationToken.None, diagnostic: diagnostics.Enqueue);
+    Require(result.Complete && result.SearchRestored && result.Tickets.Count == 3, "Une requête GLPI active a été coupée par un délai absolu.");
+    Require(diagnostics.Any(item => item.Phase == "all-status" && item.Category == "request-pending")
+        && diagnostics.Any(item => item.Phase == "restore" && item.Category == "request-pending"), "L’attente active de Tous ou de la restauration n’a pas été expliquée.");
+    Require(s.Requests.Count(url => Query(new Uri(url), "criteria[0][value]") == "all" && Query(new Uri(url), "start") == "") == 1,
+        "La recherche Tous a été renvoyée après un ancien délai de navigation.");
+    Require(s.Context.Pages.Count == 1 && s.Service.ActivePage == s.Search, "Une page lente a été conservée après la fin de l’index.");
+}
+async Task SlowNativeStatus()
+{
+    await using var s = await Setup(new() { NeedsStatus = true, StatusDelayMilliseconds = 6000 });
+    var diagnostics = new ConcurrentQueue<LibraryIndexProgress>();
+    var result = await s.Service.ReadTicketLibraryIndexAsync(s.Settings, null, CancellationToken.None, diagnostic: diagnostics.Enqueue);
+    Require(result.Complete && result.SearchRestored && result.Tickets.Count == 3, "Le critère Statut a expiré pendant son chargement natif.");
+    Require(s.Requests.Count(url => new Uri(url).AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal)) == 1,
+        "Le changement de critère a été renvoyé au lieu d’attendre son unique réponse.");
+    Require(diagnostics.Any(item => item.Phase == "status" && item.Category == "request-pending"), "Progression du critère Statut absente.");
+    Require(Query(new Uri(s.Requests.Last()), "criteria[0][field]") == "19", "Le critère précédent n’a pas été restauré.");
+}
+async Task DeferredStatusInitialization()
+{
+    // readyState becomes interactive while this external defer script is still
+    // in flight. Only DOMContentLoaded proves its change handler is installed.
+    await using var s = await Setup(new() { NeedsStatus = true, DeferredStatusHandler = true });
+    var diagnostics = new ConcurrentQueue<LibraryIndexProgress>();
+    var result = await s.Service.ReadTicketLibraryIndexAsync(s.Settings, null, CancellationToken.None, diagnostic: diagnostics.Enqueue);
+    Require(result.Complete && result.SearchRestored && result.Tickets.Count == 3,
+        "Le critère a été utilisé avant l’installation de son gestionnaire defer.");
+    Require(s.Requests.Count(url => new Uri(url).AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal)) == 1,
+        "Le changement Statut a été perdu ou rejoué après l’initialisation du document.");
+    Require(diagnostics.Any(item => item.Phase == "open-list" && item.Category == "request-pending"
+        && item.Message.Contains("initialisation", StringComparison.Ordinal)), "L’attente du vrai DOMContentLoaded n’a pas été signalée.");
+    Require(s.Context.Pages.Count == 1 && s.Service.ActivePage == s.Search,
+        "La page initialisée lentement n’a pas été refermée après l’indexation.");
+}
+async Task SlowNativeResults()
+{
+    await using var s = await Setup(new() { ResultDelayMilliseconds = 6000 });
+    var diagnostics = new ConcurrentQueue<LibraryIndexProgress>();
+    var result = await s.Service.ReadTicketLibraryIndexAsync(s.Settings, null, CancellationToken.None, diagnostic: diagnostics.Enqueue);
+    Require(result.Complete && result.Tickets.Count == 3, "Le rendu AJAX des résultats a expiré pendant une requête active.");
+    Require(diagnostics.Any(item => item.Phase == "all-status" && item.Category == "request-pending"), "L’attente du rendu AJAX n’est pas visible.");
+    Require(s.Requests.Count(url => new Uri(url).AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal)) == 1,
+        "Le chargement natif des résultats a été répété.");
+}
+async Task IndexHttpFailure()
+{
+    foreach (var status in new[] { 503, 403 })
+    {
+        await using var s = await Setup(new() { IndexStatus = status, RestoreStatus = status == 503 ? 500 : 0 });
+        try { await Index(s); throw new Exception("Une erreur HTTP de l’index a été acceptée."); }
+        catch (GlpiLibraryIndexException error)
+        {
+            Require(error.Phase == "all-status" && error.Category == (status == 403 ? "index-session" : "index-http-error")
+                && error.Message.Contains("HTTP " + status, StringComparison.Ordinal), "L’erreur HTTP a été remplacée par un délai de fiche.");
+        }
+        Require(s.Requests.Count(url => Query(new Uri(url), "criteria[0][value]") == "all") == 1, "Une recherche échouée a été répétée.");
+        Require(!string.Join('\n', s.Logs).Contains("NEVER_", StringComparison.Ordinal), "Le corps d’erreur GLPI a été écrit dans le journal.");
+        if (status == 503) Require(s.Logs.Any(message => message.Contains("HTTP 503", StringComparison.Ordinal))
+            && s.Logs.Any(message => message.Contains("HTTP 500", StringComparison.Ordinal)), "L’échec secondaire de restauration a masqué l’échec initial.");
+        Require(s.Context.Pages.Count == 1 && s.Service.ActivePage == s.Search, "Page d’erreur conservée après l’arrêt.");
+    }
+}
+async Task IndexNetworkFailure()
+{
+    await using var s = await Setup(new() { AbortIndex = true });
+    try { await Index(s); throw new Exception("Une panne réseau de l’index a été acceptée."); }
+    catch (GlpiLibraryIndexException error)
+    { Require(error.Phase == "all-status" && error.Category == "index-network-error", "La panne réseau n’est pas identifiée à l’étape Tous."); }
+    Require(s.Requests.Count(url => Query(new Uri(url), "criteria[0][value]") == "all") == 1, "La navigation interrompue a été renvoyée.");
+    Require(s.Logs.Any(message => message.Contains("réseau", StringComparison.Ordinal)) && s.Context.Pages.Count == 1,
+        "La cause réseau est masquée par la restauration ou une page temporaire reste ouverte.");
+}
+async Task IndexSessionRedirect()
+{
+    await using var s = await Setup(new() { RedirectIndex = true });
+    try { await Index(s); throw new Exception("Une redirection d’authentification a été acceptée comme index."); }
+    catch (GlpiLibraryIndexException error)
+    { Require(error.Phase == "all-status" && error.Category == "index-session", "La redirection est classée comme délai de fiche."); }
+    Require(s.Requests.Count(url => Query(new Uri(url), "criteria[0][value]") == "all") == 1 && s.Context.Pages.Count == 1,
+        "La recherche a été répétée après une redirection ou sa page n’a pas été fermée.");
+    Require(!string.Join('\n', s.Logs).Contains("NEVER_", StringComparison.Ordinal), "Le contenu de la page de connexion a été journalisé.");
+}
+async Task IndexNoProgress()
+{
+    await using var s = await Setup(new() { StalledIndex = true }); var timer = System.Diagnostics.Stopwatch.StartNew();
+    try { await Index(s); throw new Exception("Un tableau sans progression a été accepté."); }
+    catch (GlpiLibraryIndexException error)
+    {
+        Require(error.Phase == "all-status" && error.Category == "index-stalled"
+            && error.Message.Contains("chargement", StringComparison.Ordinal), "Le blocage ne décrit pas l’état réel du tableau.");
+    }
+    Require(timer.Elapsed < TimeSpan.FromSeconds(15) && s.Requests.Any(url => url.Contains("action=fold_search", StringComparison.Ordinal)),
+        "Le polling sans rapport a prolongé indéfiniment l’attente de l’index.");
+    Require(s.Context.Pages.Count == 1, "Le tableau bloqué est resté ouvert.");
+}
+async Task CancelDuringRestore()
+{
+    await using var s = await Setup(new() { RestoreDelayMilliseconds = 10000 }); using var stop = new CancellationTokenSource();
+    var restoring = false;
+    void Diagnostic(LibraryIndexProgress notice)
+    {
+        if (notice.Phase == "restore" && notice.Category == "phase-start") { restoring = true; stop.CancelAfter(300); }
+    }
+    try { await s.Service.ReadTicketLibraryIndexAsync(s.Settings, null, stop.Token, diagnostic: Diagnostic); throw new Exception("Une annulation de restauration a été retournée comme succès."); }
+    catch (OperationCanceledException) { }
+    Require(restoring && s.Context.Pages.Count == 1 && s.Service.ActivePage == s.Search, "La requête de restauration annulée reste ouverte.");
+    Require(s.Requests.Count(url => Query(new Uri(url), "criteria[0][value]") == "notold" && Query(new Uri(url), "reset") == "reset") == 1,
+        "La restauration annulée a été répétée.");
 }
 async Task AllTabs()
 {
@@ -390,6 +557,17 @@ sealed class FixtureOptions
     public bool Duplicate { get; init; }
     public bool Empty { get; init; }
     public bool DelayIndex { get; init; }
+    public int IndexDelayMilliseconds { get; init; }
+    public int RestoreDelayMilliseconds { get; init; }
+    public int RestoreStatus { get; init; }
+    public bool NeedsStatus { get; init; }
+    public bool DeferredStatusHandler { get; init; }
+    public int StatusDelayMilliseconds { get; init; }
+    public int ResultDelayMilliseconds { get; init; }
+    public int IndexStatus { get; init; }
+    public bool AbortIndex { get; init; }
+    public bool RedirectIndex { get; init; }
+    public bool StalledIndex { get; init; }
     public bool ForeignTab { get; init; }
     public bool SkippedTabs { get; init; }
     public string RememberedTab { get; init; } = "";

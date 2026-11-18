@@ -116,6 +116,7 @@ function Assert-PackContents {
         $required = @(
             'GLPI-Pilot.exe', 'GLPI-Pilot-Admin.exe', 'wad/.playwright/node/win32_x64/node.exe',
             'wad/.playwright/package/cli.js', 'wad/docs/Guide-GLPI-Pilot.html',
+            'wad/docs/Bibliotheque-contrat-chatbot.md',
             'wad/docs/Bibliotheque-et-partage.md', 'wad/docs/RELEASE-3.2.0.md', 'wad/docs/RELEASE-3.2.1.md', 'wad/docs/RELEASE-3.2.2.md', 'wad/docs/RELEASE-3.3.0.md', 'wad/docs/RELEASE-3.3.1.md', 'wad/docs/RELEASE-3.3.2.md', 'wad/docs/RELEASE-3.3.3.md', 'wad/docs/RELEASE-3.3.4.md',
             'wad/support/DEBLOQUER_TOUT.cmd', 'wad/support/DIAGNOSTIC_DEMARRAGE.cmd', 'wad/licenses/COMPOSANTS.txt',
             'wad/version.json', 'wad/SHA256SUMS.txt',
@@ -438,6 +439,9 @@ try {
                 @{ Project = 'NativeImportChecks'; Log = 'native-import-checks.log'; Summary = '40/40' },
                 @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' },
                 @{ Project = 'TicketLibraryChecks'; Log = 'ticket-library-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket library checks passed\.\r?$' },
+                @{ Project = 'TicketLibraryKnowledgeChecks'; Log = 'ticket-library-knowledge-checks.log'; Summary = '9/9 ticket library knowledge checks passed.' },
+                @{ Project = 'LibraryCollectionJournalChecks'; Log = 'library-collection-journal-checks.log'; Summary = '10/10 vérifications du journal de collecte réussies.' },
+                @{ Project = 'LibraryIndexProgressChecks'; Log = 'library-index-progress-checks.log'; Summary = '8/8 contrôles purs de progression de l’index réussis.' },
                 @{ Project = 'TicketResolutionChecks'; Log = 'ticket-resolution-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket resolution checks passed\.\r?$' },
                 @{ Project = 'SharedWorkspaceChecks'; Log = 'shared-workspace-checks.log'; Summary = ''; Pattern = '(?m)^25/25 shared workspace checks passed\.\r?$' },
                 @{ Project = 'CalendarChecks'; Log = 'calendar-checks.log'; Summary = ''; Pattern = '(?m)^52/52 contrôles calendrier réussis\.\r?$' },
@@ -516,17 +520,17 @@ try {
                 -LogName 'native-dom-checks.log' -TimeoutSeconds 120 -ExpectedSummary '215 native export DOM checks passed.'
         }
         'LibraryAcquisitionChecks' {
-            # Own stage since 3.13.3: with its 25 checks, this suite no longer fits the browser stage's budget beside the others.
+            # Own stage: acquisition and infrastructure-latency regressions share the same native browser.
             Set-TestBrowser
-            # Les 300 secondes couvrent les 25 contrôles et l'arrêt du vrai processus navigateur. A 180 secondes,
-            # la suite passait ou cassait selon la charge du poste : le lancement de Chromium absorbait le surplus.
+            # Les cas lents attendent réellement leurs réponses, dont une navigation de plus de vingt secondes.
+            # Le budget du banc inclut les 34 cas et l'arrêt du navigateur ; ce n'est pas un délai de collecte produit.
             $suite = 'tests/TicketLibraryAcquisitionChecks'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('build', "$suite/TicketLibraryAcquisitionChecks.csproj", '-c', 'Release', '-p:PlaywrightPlatform=win') `
                 -LogName 'ticket-library-acquisition-build.log' -TimeoutSeconds 120
             $assembly = Join-Path $repository "$suite/bin/Release/net10.0/TicketLibraryAcquisitionChecks.dll"
             if (-not (Test-Path -LiteralPath $assembly -PathType Leaf)) { throw 'Missing compiled ticket library acquisition checks.' }
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
-                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 300 -ExpectedSummary "25/25 contrôles d’acquisition de bibliothèque réussis."
+                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 420 -ExpectedSummary "34/34 contrôles d’acquisition de bibliothèque réussis."
         }
         'WebViewChecks' {
             Set-TestBrowser

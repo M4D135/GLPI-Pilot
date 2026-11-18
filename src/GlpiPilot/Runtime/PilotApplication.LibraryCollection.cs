@@ -3,6 +3,7 @@ using System.Text.Json;
 using GlpiPilot.Core;
 using Microsoft.Data.Sqlite;
 using Microsoft.Playwright;
+using Npgsql;
 
 namespace GlpiPilot.Runtime;
 
@@ -18,6 +19,9 @@ public sealed partial class PilotApplication
         public string RunId { get; init; } = "";
         public string State { get; init; } = "idle";
         public string Phase { get; init; } = "";
+        public string PhaseCode { get; init; } = "";
+        public string Message { get; init; } = "";
+        public string ErrorCode { get; init; } = "";
         public int Requests { get; init; }
         public int Processed { get; init; }
         public int Total { get; init; }
@@ -29,6 +33,7 @@ public sealed partial class PilotApplication
     private void RegisterLibraryCollectionOperations()
     {
         Register("library.collection.status", (_, _) => Task.FromResult<object?>(ReadCollectionActivity()));
+        Register("library.collection.events", ReadCollectionEventsAsync);
         Register("library.collection.control", (a, _) => Task.FromResult<object?>(ControlLibraryCollection(a)));
         Register("library.collection.get", async (_, ct) =>
         {
@@ -53,17 +58,24 @@ public sealed partial class PilotApplication
         RegisterLibraryBootstrapOperations();
     }
 
-    // Only these two narrow controls bypass the normal operation semaphore. They never start a browser read.
+    // Controls and the bounded read-only journal bypass the operation semaphore. They never start a browser read.
     private bool TryCollectionControl(string operation, JsonElement args, CancellationToken ct, out Task<object?> result)
     {
         result = null!;
-        if (operation is not ("library.collection.control" or "library.collection.status")) return false;
+        if (operation is not ("library.collection.control" or "library.collection.status" or "library.collection.events")) return false;
         if (_simulation is not null || IsSimulationInstance) { result = Task.FromResult<object?>(new { supported = false, state = "simulation" }); return true; }
         ct.ThrowIfCancellationRequested();
+        if (operation == "library.collection.events") { result = ReadCollectionEventsAsync(args.Clone(), ct); return true; }
         result = Task.FromResult<object?>(operation == "library.collection.status" ? ReadCollectionActivity() : ControlLibraryCollection(args));
         return true;
     }
-    private object ReadCollectionActivity() { lock (_collectionGate) return _collectionActivity; }
+    private CollectionActivity ReadCollectionActivity()
+    {
+        var context = CurrentCollectionContext();
+        lock (_collectionGate) return context?.Fingerprint == _collectionContextFingerprint
+            || context is null && _collectionSourceIdentity == CollectionSourceIdentity() && _collectionJournal is { RunId.Length: 0 }
+            ? _collectionActivity : new();
+    }
     private object ControlLibraryCollection(JsonElement args)
     {
         var action = Text(args, "action", 20); var session = Text(args, "sessionId", 32);
@@ -93,9 +105,22 @@ public sealed partial class PilotApplication
         var mode = Text(args, "mode", 30, "incremental");
         if (mode is not ("incremental" or "all" or "retry" or "resume")) throw new InvalidDataException("Mode de collecte inconnu.");
         var settings = Settings.Copy(); _ = TargetUrlPolicy.Validate(settings.PortalUrl);
-        var preferences = LibrarySettings.Copy(); var local = TicketLibrary;
-        var context = LibraryCaptureContext(settings, preferences);
-        var state = await local.CollectionStateAsync(context.Fingerprint, requestCancellation).ConfigureAwait(false);
+        LibraryPreferences preferences; TicketLibraryStore local; TicketLibraryCaptureContext context; LibraryCollectionState state;
+        try
+        {
+            preferences = LibrarySettings.Copy(); context = LibraryCaptureContext(settings, preferences); local = TicketLibrary;
+            state = await local.CollectionStateAsync(context.Fingerprint, requestCancellation).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is SqliteException or IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
+        {
+            throw new CollectionPreparationException(error switch
+            {
+                SqliteException sql => $"La bibliothèque locale n’a pas pu être ouverte (SQLite {sql.SqliteErrorCode}/{sql.SqliteExtendedErrorCode}). Vérifiez le fichier et l’espace disponible.",
+                UnauthorizedAccessException => "L’accès aux réglages ou à la bibliothèque locale a été refusé. Vérifiez les droits du dossier.",
+                InvalidDataException or JsonException => "Les réglages, le chemin ou le format de la bibliothèque locale ne sont pas reconnus. Les données existantes sont conservées.",
+                _ => "Les réglages ou le dossier de la bibliothèque locale ne sont pas accessibles. Vérifiez le disque et les fichiers verrouillés."
+            });
+        }
         if (state.State == "running") throw new InvalidOperationException("Une collecte utilise déjà cette bibliothèque locale.");
         if (state.Held && mode == "incremental" && !Flag(args, "confirmedNewCycle"))
             throw new InvalidOperationException("Une collecte est suspendue. Reprenez-la ou confirmez explicitement un nouveau cycle ; les contenus restent conservés.");
@@ -110,14 +135,19 @@ public sealed partial class PilotApplication
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(controlled.Token, budget.Token);
         var ct = linked.Token; var session = Guid.NewGuid().ToString("N");
         string runId = "", outcome = "attention"; var limits = new List<string>(); var finished = false; var checkpointStarted = false; var ownsJournal = false;
+        LibraryCollectionJournalSession journal;
         lock (_collectionGate)
         {
             if (_collectionCancellation is not null) throw new InvalidOperationException("Une collecte est déjà active sur ce poste.");
             _collectionCancellation = controlled; _collectionIntent = "";
-            _collectionActivity = new() { SessionId = session, State = "running", Phase = "Préparation du journal" };
+            _collectionActivity = new() { SessionId = session, State = "running", Phase = "Préparation du journal", PhaseCode = "prepare" };
+            _collectionContextFingerprint = context.Fingerprint;
+            _collectionSourceIdentity = CollectionSourceIdentity();
+            _collectionJournal = journal = new(local, context, () => Log("BIBLIOTHÈQUE · journal disponible dans cette session ; sauvegarde locale des événements interrompue."));
         }
         try
         {
+            CollectionDiagnostic(journal, "lease", "Vérification du poste collecteur", "collection-start", "Démarrage du passage ; vérification du droit de collecte et du point de reprise.");
             await using var lease = await LibraryCollectorLease.AcquireAsync(preferences, context.Installation, preferences.PostgresEnabled ? LibraryConnectionPassword(preferences) : "", ct).ConfigureAwait(false);
             using var pacing = LibraryCollectionPacer.Enter(state.Options,
                 (requests, delay) => CollectionProgress(s => s with { Requests = requests, WaitSeconds = Math.Max(0, delay.TotalSeconds) }),
@@ -129,21 +159,33 @@ public sealed partial class PilotApplication
                 });
             if (mode == "resume") { runId = resumeId; await local.ResumeCaptureAsync(runId, context, ct).ConfigureAwait(false); }
             else runId = await local.BeginCaptureAsync(context, mode, parent, ct).ConfigureAwait(false);
+            journal.Bind(runId);
             ownsJournal = true; state.RunId = runId; state.State = "running"; state.NextAt = null;
             state = await local.SaveCollectionStateAsync(context.Fingerprint, state, state.Revision, ct).ConfigureAwait(false); checkpointStarted = true;
             CollectionProgress(s => s with { RunId = runId, Phase = mode == "resume" ? "Revalidation de l’index, contenus conservés" : "Lecture de l’index accessible" });
+            CollectionDiagnostic(journal, "index", "Lecture de l’index accessible", mode == "resume" ? "collection-resume" : "index-start",
+                mode == "resume" ? "Reprise du même journal ; les contenus déjà enregistrés sont conservés." : "Journal ouvert ; lecture des tickets de tous les statuts dans les entités accessibles.");
             LibraryProgress("Lecture de l’index de tous les statuts dans les entités accessibles…");
             // The index can span many GLPI pages before the first ticket is examined: show its progress instead of a frozen zero.
             var indexPhase = mode == "resume" ? "Revalidation de l’index" : "Lecture de l’index accessible";
-            var indexProgress = new InlineProgress<ExtractionProgress>(p => CollectionProgress(s => s with
-            { Phase = p.Pages > 0 ? $"{indexPhase} · page {p.Pages:N0} · {p.Rows:N0}{(p.Expected is int expected ? $" / {expected:N0}" : "")} ticket(s) indexé(s)" : indexPhase }));
-            var index = await Browser.ReadTicketLibraryIndexAsync(settings, indexProgress, ct, preferences.SourceDateOrder).ConfigureAwait(false);
-            if (!index.AllStatuses) throw new InvalidDataException("Le filtre de tous les statuts n’est pas confirmé.");
+            var lastIndexPage = 0;
+            var indexProgress = new InlineProgress<ExtractionProgress>(p =>
+            {
+                var message = p.Pages > 0 ? $"{indexPhase} · page {p.Pages:N0} · {p.Rows:N0}{(p.Expected is int expected ? $" / {expected:N0}" : "")} ticket(s) indexé(s)" : indexPhase;
+                CollectionProgress(s => s with { Phase = message, PhaseCode = "index" });
+                if (p.Pages > lastIndexPage) { lastIndexPage = p.Pages; CollectionDiagnostic(journal, "index", indexPhase, "index-page", message, changePhase: false); }
+            });
+            void IndexDiagnostic(LibraryIndexProgress p) => CollectionDiagnostic(journal, p.Phase, p.PhaseLabel, p.Category, p.Message,
+                p.Category == "restore-unconfirmed" ? "warning" : "info");
+            var index = await Browser.ReadTicketLibraryIndexAsync(settings, indexProgress, ct, preferences.SourceDateOrder, IndexDiagnostic).ConfigureAwait(false);
+            if (!index.AllStatuses) throw new GlpiLibraryIndexException("all-status", "index-scope", "Le filtre de tous les statuts n’est pas confirmé. Aucune fiche n’a été lue.");
             foreach (var seed in index.Tickets) NormalizeLibraryDate(seed, preferences);
             IReadOnlyCollection<string>? resumedKeys = null;
             if (mode == "resume") resumedKeys = await local.ReconcileCaptureIndexAsync(runId, index, ct).ConfigureAwait(false);
             else await local.SetCaptureIndexAsync(runId, index, targets, ct).ConfigureAwait(false);
             limits.AddRange(index.Limitations);
+            CollectionDiagnostic(journal, "index", "Index enregistré", index.Complete ? "index-saved" : "index-partial",
+                $"{index.Tickets.Count:N0} tickets indexés et enregistrés dans le point de reprise. " + (index.Complete ? "Pagination confirmée." : "Index partiel : les limites sont conservées."), index.Complete ? "info" : "warning");
             var selected = resumedKeys?.ToHashSet(StringComparer.Ordinal) ?? targets?.Select(t => t.TicketKey).ToHashSet(StringComparer.Ordinal);
             var tickets = index.Tickets.Where(s => selected is null || selected.Contains(TicketLibraryRules.Key(s.Ticket))).ToList();
             var requiredReads = mode == "resume" ? await local.RequiredCollectionReadKeysAsync(runId, ct).ConfigureAwait(false) : null;
@@ -152,6 +194,7 @@ public sealed partial class PilotApplication
             var policy = new TicketLibraryCachePolicy { MaximumAge = TimeSpan.FromDays(preferences.MaxAgeDays) };
             var processed = 0; var reused = 0; var failures = 0; TicketReference? lastRead = null;
             CollectionProgress(s => s with { Total = tickets.Count, Phase = "Lecture des contenus nouveaux, incomplets ou modifiés" });
+            CollectionDiagnostic(journal, "details", "Lecture des fiches", "details-start", $"{tickets.Count:N0} tickets à examiner ; réutilisation des contenus encore valides et lecture des autres.");
             foreach (var seed in tickets)
             {
                 ct.ThrowIfCancellationRequested(); var key = TicketLibraryRules.Key(seed.Ticket);
@@ -180,13 +223,17 @@ public sealed partial class PilotApplication
                 }
                 catch (Exception error) when (IsLibraryCaptureFailure(error))
                 {
-                    if (error is SqliteException or IOException or UnauthorizedAccessException) throw;
+                    if (error is SqliteException or IOException or UnauthorizedAccessException or NpgsqlException or LibraryCollectorLeaseException) throw;
                     await local.RecordCaptureFailureAsync(runId, key, LibraryCaptureFailureCategory(error), ct).ConfigureAwait(false);
+                    CollectionDiagnostic(journal, "details", "Lecture d’une fiche", LibraryCaptureFailureCategory(error),
+                        LibraryCaptureFailureMessage(error), "error", seed.Ticket.Id, changePhase: false);
                     failures++;
                     if (failures >= state.Options.ConsecutiveErrorLimit)
-                        throw new InvalidOperationException("Plusieurs lectures n’ont pas abouti. Vérifiez la connexion et la session avant une reprise explicite.");
+                        throw new CollectionStoppedException("Plusieurs lectures n’ont pas abouti. Les causes par ticket sont conservées dans le journal ; vérifiez la connexion et la session avant une reprise explicite.");
                 }
                 processed++; CollectionProgress(s => s with { Processed = processed, Reused = reused });
+                if (processed == 1 || processed % 25 == 0 || processed == tickets.Count)
+                    CollectionDiagnostic(journal, "details", "Contenus enregistrés", "details-progress", $"{processed:N0} / {tickets.Count:N0} tickets examinés ; {reused:N0} contenus réutilisés.", changePhase: false);
                 LibraryProgress($"Bibliothèque · {processed}/{tickets.Count} tickets · {reused} contenus conservés sans nouvelle lecture");
             }
             // A convenience only: the collection result does not depend on it.
@@ -197,32 +244,50 @@ public sealed partial class PilotApplication
             try
             {
                 CollectionProgress(s => s with { Phase = "Confirmation finale des dates et du périmètre" });
-                var final = await Browser.ReadTicketLibraryIndexAsync(settings, Progress(), ct, preferences.SourceDateOrder).ConfigureAwait(false);
+                CollectionDiagnostic(journal, "verification", "Confirmation finale", "verification-start", "Relecture de l’index pour confirmer les dates, les contenus et le périmètre.");
+                var final = await Browser.ReadTicketLibraryIndexAsync(settings, Progress(), ct, preferences.SourceDateOrder,
+                    p => CollectionDiagnostic(journal, "verification-" + p.Phase, "Confirmation finale · " + p.PhaseLabel, p.Category, p.Message,
+                        p.Category == "restore-unconfirmed" ? "warning" : "info")).ConfigureAwait(false);
                 finalVerified = final.AllStatuses && final.Complete && index.Complete && final.ScopeFingerprint == index.ScopeFingerprint;
-                if (!final.AllStatuses || ObjectIdentity.Installation(final.SourceUrl) != context.Installation) throw new InvalidDataException("Périmètre final différent.");
+                if (!final.AllStatuses || ObjectIdentity.Installation(final.SourceUrl) != context.Installation)
+                    throw new GlpiLibraryIndexException("all-status", "index-scope", "Le périmètre de la confirmation finale diffère. Les contenus reçus restent conservés sans confirmation de fraîcheur.");
                 foreach (var seed in final.Tickets) { NormalizeLibraryDate(seed, preferences); await local.ConfirmCaptureTicketAsync(runId, seed, finalVerified, ct).ConfigureAwait(false); }
                 finalRead = true; limits.AddRange(final.Limitations);
                 if (!finalVerified) limits.Add("Le périmètre reste partiel ou a changé. Aucune absence n’est traitée comme une suppression.");
             }
-            catch (Exception error) when (IsLibraryCaptureFailure(error) && error is not (SqliteException or IOException or UnauthorizedAccessException))
-            { limits.Add("La confirmation finale n’a pas abouti. Les contenus reçus restent consultables et reprenables."); }
+            catch (Exception error) when (IsLibraryCaptureFailure(error) && error is not (SqliteException or IOException or UnauthorizedAccessException or NpgsqlException or LibraryCollectorLeaseException))
+            {
+                limits.Add("La confirmation finale n’a pas abouti. Les contenus reçus restent consultables et reprenables.");
+                CollectionDiagnostic(journal, "verification", "Confirmation finale", LibraryCaptureFailureCategory(error), LibraryCaptureFailureMessage(error), "warning");
+            }
             await local.FinishCaptureVerificationAsync(runId, finalRead, finalVerified, ct).ConfigureAwait(false);
             if (preferences.SourceTimeZone.Length == 0) limits.Add("Configurez le fuseau des dates GLPI pour permettre une réutilisation fiable des contenus.");
             limits.Add("Les fichiers joints ne sont pas téléchargés automatiquement : seules leurs références disponibles sont conservées.");
             await local.FinishCaptureAsync(runId, "completed", limits, ct).ConfigureAwait(false); finished = true; outcome = "completed";
             var completedReport = await local.GetCaptureAsync(runId, ct).ConfigureAwait(false);
             if (finalVerified && completedReport.RetryCount == 0) state.LastSuccess = DateTimeOffset.UtcNow;
+            var completionMessage = completedReport.Message + (finalVerified ? " · Périmètre final confirmé." : " · Fraîcheur finale à confirmer.");
+            CollectionDiagnostic(journal, "completed", "Passage terminé", "collection-completed", completionMessage,
+                finalVerified && completedReport.RetryCount == 0 ? "info" : "warning");
+            CollectionProgress(s => s with { Message = completionMessage, ErrorCode = finalVerified && completedReport.RetryCount == 0 ? "" : "collection-incomplete" });
         }
         catch (OperationCanceledException)
         {
             string intent; lock (_collectionGate) intent = _collectionIntent;
             outcome = intent == "stop" ? "stopped" : intent == "pause" ? "paused" : budget.IsCancellationRequested && !requestCancellation.IsCancellationRequested ? "budget" : "interrupted";
             limits.Add(outcome == "budget" ? "Budget de temps atteint ; contenus conservés. La reprise revalide l’index sans réaspirer les contenus inchangés." : "Collecte suspendue ; les contenus enregistrés et le journal sont conservés.");
+            CollectionDiagnostic(journal, "interrupted", "Collecte suspendue", "collection-" + outcome, limits[^1], "warning");
+            CollectionProgress(s => s with { Message = limits[^1], ErrorCode = "collection-" + outcome });
         }
         catch (Exception error) when (IsLibraryCaptureFailure(error))
         {
             outcome = "attention";
-            limits.Add(error is GlpiLibraryPageException page ? "Liste GLPI non reconnue : " + page.Message : TicketLibraryCaptureMessages.For(LibraryCaptureFailureCategory(error)));
+            var code = LibraryCaptureFailureCategory(error); var message = LibraryCaptureFailureMessage(error);
+            limits.Add(message);
+            var phase = error is GlpiLibraryIndexException indexError ? indexError.PhaseLabel : ReadCollectionActivity().Phase;
+            CollectionDiagnostic(journal, error is GlpiLibraryIndexException indexFailure ? indexFailure.Phase : ReadCollectionActivity().PhaseCode,
+                phase.Length > 0 ? phase : "Collecte des tickets", code, message, "error");
+            CollectionProgress(s => s with { Message = message, ErrorCode = code });
         }
         finally
         {
@@ -251,12 +316,19 @@ public sealed partial class PilotApplication
                 }
             }
             catch (Exception error) when (IsLibraryCaptureFailure(error) || error is OperationCanceledException)
-            { outcome = "interrupted"; Log("COLLECTE · point de reprise interrompu ; le journal sera vérifié à la prochaine ouverture, sans reprise automatique."); }
+            {
+                outcome = "interrupted";
+                const string checkpointError = "Le point de reprise n’a pas pu être finalisé ; le journal sera vérifié à la prochaine ouverture, sans reprise automatique.";
+                CollectionDiagnostic(journal, "checkpoint", "Sauvegarde du point de reprise", "local-storage",
+                    checkpointError, "error");
+                CollectionProgress(s => s with { PhaseCode = "checkpoint", Phase = "Sauvegarde du point de reprise", ErrorCode = "local-storage", Message = checkpointError });
+            }
             finally
             {
                 if (ownsJournal) TicketLibraryStore.ReleaseCapture(runId);
                 lock (_collectionGate) { _collectionCancellation = null; _collectionIntent = ""; }
-                CollectionProgress(s => s with { State = outcome, Phase = "Contenus conservés", WaitSeconds = 0 });
+                await journal.CompleteAsync(saveBudget.Token).ConfigureAwait(false);
+                CollectionProgress(s => s with { State = outcome, WaitSeconds = 0 });
                 Publish("library.changed", new { captured = true, runId });
             }
         }

@@ -15,6 +15,8 @@ internal static class CollectionJourneyChecks
         new LibraryPreferencesStore().Save(preferences);
         var settings = new AppSettings { PortalUrl = portal, SelectorOrigin = "https://collection-journey.example", TimeoutSeconds = 15, ListTimeoutSeconds = 5, DetailTimeoutSeconds = 5, MaxPages = 5, MaxRows = 100, ResumePagination = false };
         var reads = new ConcurrentDictionary<string, int>(); var requests = 0; var expanded = false;
+        var indexFailureStatus = 0; var gateUsed = 0;
+        TaskCompletionSource? indexReached = null, releaseIndex = null;
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true, ExecutablePath = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM"), Args = ["--no-sandbox", "--disable-dev-shm-usage"] });
         async Task<PilotApplication> Open(string? stopAction = null)
@@ -28,6 +30,10 @@ internal static class CollectionJourneyChecks
                 string body;
                 if (uri.AbsolutePath.EndsWith("/ticket.php", StringComparison.Ordinal))
                 {
+                    if (indexFailureStatus != 0) { await route.FulfillAsync(new() { Status = indexFailureStatus, Body = "Fixture index access refused." }); return; }
+                    var arrived = indexReached; var release = releaseIndex;
+                    if (arrived is not null && release is not null && Interlocked.Exchange(ref gateUsed, 1) == 0)
+                    { arrived.TrySetResult(); await release.Task; }
                     var all = query["criteria[0][value]"] == "all";
                     var ids = expanded ? new[] { "41", "42", "43" } : new[] { "41", "42" };
                     var rows = string.Join("", ids.Select(id => $"<tr><td><a href='ticket.form.php?id={id}'>Incident synthétique {id}</a></td><td>{(expanded && id == "42" ? "2025-01-02 12:00" : "2025-01-01 12:00")}</td><td>Résolu</td></tr>"));
@@ -163,6 +169,61 @@ internal static class CollectionJourneyChecks
             Require(result.GetProperty("read").GetInt32() == 3 && result.GetProperty("reused").GetInt32() == 0
                 && result.GetProperty("retryCount").GetInt32() == 0 && before.All(pair => reads[pair.Key] == pair.Value + 1),
                 "The production collector reused expired content despite the periodic freshness limit.");
+        });
+        await check("An initial index HTTP failure appears in both durable collection events and the general operation journal with zero tickets", async () =>
+        {
+            preferences.LocalFolder = Path.Combine(root, "index-error-journey-library"); new LibraryPreferencesStore().Save(preferences);
+            string failedRun; var before = reads.Values.Sum();
+            await using (var app = await Open())
+            {
+                indexFailureStatus = 403;
+                JsonElement result;
+                try { result = await Call(app, "library.capture", new { mode = "incremental" }); }
+                finally { indexFailureStatus = 0; }
+                failedRun = result.GetProperty("runId").GetString()!;
+                Require(result.GetProperty("collectionState").GetString() == "attention" && result.GetProperty("observed").GetInt32() == 0
+                    && result.GetProperty("retryCount").GetInt32() == 0 && reads.Values.Sum() == before, "Index failure started a detail read or fabricated a retry ticket.");
+                var events = await Call(app, "library.collection.events", new { runId = failedRun });
+                Require(events.GetProperty("persisted").GetBoolean() && events.GetProperty("items").EnumerateArray().Any(e =>
+                    e.GetProperty("level").GetString() == "error" && e.GetProperty("code").GetString() == "index-session"
+                    && e.GetProperty("message").GetString()!.Contains("403", StringComparison.Ordinal)), "The initial error is absent from the durable collection journal.");
+                var history = await Call(app, "operations.list", new { });
+                Require(history.GetProperty("entries").EnumerateArray().Any(e => e.GetProperty("title").GetString() == "Collecte globale des tickets"
+                    && e.GetProperty("state").GetString() == "À vérifier" && e.GetProperty("code").GetString() == "index-session"), "Global collection was omitted from operation history.");
+                Require(history.GetProperty("log").EnumerateArray().Any(e => e.GetString()!.Contains("index-session", StringComparison.Ordinal)), "Session log omitted the index failure.");
+            }
+            await using var reopened = await Open();
+            var restored = await Call(reopened, "library.collection.events", new { runId = failedRun });
+            Require(restored.GetProperty("persisted").GetBoolean() && restored.GetProperty("total").GetInt32() >= 2
+                && restored.GetProperty("items").EnumerateArray().Any(e => e.GetProperty("code").GetString() == "index-session"), "Reopening lost the failed initial capture journal.");
+        });
+        await check("Live collection events bypass the business semaphore and pause remains available during an unfinished index response", async () =>
+        {
+            preferences.LocalFolder = Path.Combine(root, "live-journal-journey-library"); new LibraryPreferencesStore().Save(preferences);
+            await using var app = await Open(); var before = reads.Values.Sum();
+            indexReached = new(TaskCreationOptions.RunContinuationsAsynchronously); releaseIndex = new(TaskCreationOptions.RunContinuationsAsynchronously); gateUsed = 0;
+            var capture = Call(app, "library.capture", new { mode = "incremental" });
+            try
+            {
+                await indexReached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                var status = await Call(app, "library.collection.status", new { }).WaitAsync(TimeSpan.FromSeconds(5));
+                Require(status.GetProperty("state").GetString() == "running", "Collector was not active on the held index request.");
+                JsonElement events = default;
+                for (var attempt = 0; attempt < 50; attempt++)
+                {
+                    events = await Call(app, "library.collection.events", new { runId = status.GetProperty("runId").GetString() }).WaitAsync(TimeSpan.FromSeconds(5));
+                    if (events.GetProperty("total").GetInt32() > 0) break;
+                    await Task.Delay(50);
+                }
+                Require(events.GetProperty("total").GetInt32() > 0 && !capture.IsCompleted, "Live journal was blocked until capture completion or remained empty.");
+                var paused = await Call(app, "library.collection.control", new { action = "pause", sessionId = status.GetProperty("sessionId").GetString() }).WaitAsync(TimeSpan.FromSeconds(5));
+                Require(paused.GetProperty("requested").GetBoolean(), "Pause was blocked by a live journal read.");
+            }
+            finally { releaseIndex.TrySetResult(); indexReached = null; releaseIndex = null; }
+            var result = await capture.WaitAsync(TimeSpan.FromSeconds(15));
+            Require(result.GetProperty("collectionState").GetString() == "paused" && reads.Values.Sum() == before, "Pausing an unfinished index did not preserve the no-detail-read boundary.");
+            var journal = await Call(app, "library.collection.events", new { runId = result.GetProperty("runId").GetString() });
+            Require(journal.GetProperty("items").EnumerateArray().Any(e => e.GetProperty("code").GetString() == "collection-paused"), "Pause outcome was not recorded durably.");
         });
     }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }

@@ -36,6 +36,12 @@ public sealed partial class TicketLibraryStore
         CREATE TABLE IF NOT EXISTS ticket_library_capture_pending (
           ticket_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, content_hash TEXT NOT NULL, local_revision INTEGER NOT NULL,
           conflict_count INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS ticket_library_collection_events (
+          sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+          run_id TEXT NOT NULL REFERENCES ticket_library_capture_runs(run_id) ON DELETE CASCADE,
+          recorded_at TEXT NOT NULL, level TEXT NOT NULL, stage TEXT NOT NULL, code TEXT NOT NULL,
+          message TEXT NOT NULL, ticket_id TEXT NOT NULL DEFAULT '');
+        CREATE INDEX IF NOT EXISTS ticket_library_collection_events_run ON ticket_library_collection_events(run_id,sequence DESC);
         """;
 
     public Task<string> BeginCaptureAsync(TicketLibraryCaptureContext context, string mode, string parentRunId = "", CancellationToken ct = default)

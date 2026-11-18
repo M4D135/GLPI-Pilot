@@ -4,6 +4,8 @@ GLPI Pilot conserve une bibliothèque SQLite sur chaque poste. Elle réunit les 
 
 Cette fonction suit l’architecture C# et WebView de l’application : acquisition, stockage, règles de version et synchronisation en C# ; pages locales HTML/CSS/JavaScript pour la consultation. Les moteurs .NET, SQLite et WebView nécessaires au client sont embarqués dans les packs Windows. Le mode dossier utilise les droits Windows existants ; il ne demande pas de créer un compte dans GLPI Pilot. PostgreSQL reste une autre possibilité, avec son serveur configuré séparément.
 
+Pour une future intégration de chatbot, les documents existants sont exposés dans un [contrat SQL versionné](Bibliotheque-contrat-chatbot.md) : champs, cellules, observations, textes, citations, provenance, couverture et versions conservées. Ce corpus est consultable dans SQLite et, après préparation Admin, dans PostgreSQL. Aucun service IA n’est connecté et les mentions privées ou les confirmations manquantes restent explicites.
+
 ## Choisir le mode de fonctionnement
 
 Dans **Réglages → Partage entre postes**, choisir un des trois modes :

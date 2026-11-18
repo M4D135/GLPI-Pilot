@@ -80,7 +80,12 @@ public sealed class TicketLibraryPostgresStore : ITicketLibraryReplica
                 if (!await reader.ReadAsync(ct) || reader.GetInt32(0) != SchemaVersion) throw new InvalidDataException("Version du schéma central non prise en charge. Aucune donnée n’a été remplacée.");
                 identity = reader.GetGuid(1).ToString("N");
             }
-            if (_provisionSchema) await Execute(c, tx, SchemaSql, ct); await tx.CommitAsync(ct); _identity = identity; return identity;
+            if (_provisionSchema)
+            {
+                await Execute(c, tx, SchemaSql, ct);
+                await Execute(c, tx, TicketLibraryKnowledge.PostgresSchemaSql, ct);
+            }
+            await tx.CommitAsync(ct); _identity = identity; return identity;
         }
         finally { _initialization.Release(); }
     }

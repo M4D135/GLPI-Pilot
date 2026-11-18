@@ -6,6 +6,8 @@ using Npgsql;
 
 namespace GlpiPilot.Core;
 
+public sealed class LibraryCollectorLeaseException(string message) : InvalidOperationException(message);
+
 /// <summary>One collector per GLPI installation and shared workspace, without locking normal replica exchanges.</summary>
 public sealed class LibraryCollectorLease : IAsyncDisposable
 {
@@ -46,7 +48,7 @@ public sealed class LibraryCollectorLease : IAsyncDisposable
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or NpgsqlException or InvalidOperationException)
         {
             await lease.DisposeAsync();
-            throw new InvalidOperationException("La collecte partagée est déjà occupée ou son verrou ne peut pas être vérifié. Aucun mode local de secours n’a été activé.");
+            throw new LibraryCollectorLeaseException("La collecte partagée est déjà occupée ou son verrou ne peut pas être vérifié. Aucun mode local de secours n’a été activé.");
         }
     }
     public async Task VerifyAsync(CancellationToken ct)
@@ -64,7 +66,7 @@ public sealed class LibraryCollectorLease : IAsyncDisposable
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or NpgsqlException or InvalidOperationException)
-        { throw new InvalidOperationException("Le verrou du collecteur partagé n’est plus vérifiable. Reprise manuelle nécessaire ; aucune nouvelle lecture GLPI autorisée."); }
+        { throw new LibraryCollectorLeaseException("Le verrou du collecteur partagé n’est plus vérifiable. Reprise manuelle nécessaire ; aucune nouvelle lecture GLPI autorisée."); }
     }
     public async ValueTask DisposeAsync()
     {

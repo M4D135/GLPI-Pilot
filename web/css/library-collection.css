@@ -15,10 +15,11 @@
 .collection-state-mark .icon{width:23px;height:23px}
 .collection-status[data-state="paused"] .collection-state-mark,.collection-status[data-state="stopped"] .collection-state-mark{background:var(--surface-2);color:var(--muted)}
 .collection-status[data-state="attention"] .collection-state-mark,.collection-status[data-state="interrupted"] .collection-state-mark{background:var(--warning-soft);color:var(--warning)}
-.collection-phase,.collection-counters,.collection-next,.collection-reassurance{margin:0}
+.collection-phase,.collection-counters,.collection-next,.collection-reassurance,.collection-recovery{margin:0}
 .collection-phase{color:var(--text)}
 .collection-counters{font-variant-numeric:tabular-nums;color:var(--muted)}
 .collection-next{font-size:12px;color:var(--muted)}
+.collection-recovery{padding:12px 14px;border-left:3px solid var(--warning);border-radius:8px;background:var(--warning-soft);font-size:13px;line-height:1.6}
 .collection-reassurance{font-size:12px;color:var(--muted);padding-top:14px;border-top:1px solid var(--border)}
 .collection-actions{margin:0;gap:10px;min-height:42px}
 .collection-actions .button{min-height:42px;padding-inline:18px}
@@ -41,6 +42,33 @@
 .collection-tuning>summary{cursor:pointer;padding:8px 0;color:var(--muted)}
 .collection-tuning[open]>summary{margin-bottom:10px}
 .collection-status:focus-within{border-color:var(--control-border)}
+.collection-journal{display:grid;gap:12px}
+.collection-journal :is(p,ol){margin:0}
+.collection-journal-intro,.collection-journal-count,.collection-journal-status,.collection-journal-empty,.collection-retry-intro{color:var(--muted);font-size:13px;line-height:1.6}
+.collection-journal-count{font-variant-numeric:tabular-nums;color:var(--text)}
+.collection-journal-status{font-size:12px}
+.collection-journal-error{padding:10px 12px;border-left:3px solid var(--warning);border-radius:6px;background:var(--warning-soft);font-size:13px;line-height:1.6}
+.collection-journal-rows{display:grid;gap:10px;padding:0;list-style:none}
+.collection-event{min-width:0;padding:12px 14px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:9px;background:var(--surface-2)}
+.collection-event[data-level=warning]{border-left-color:var(--warning)}
+.collection-event[data-level=error]{border-left-color:var(--danger)}
+.collection-event-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 10px;min-width:0;font-size:12px;line-height:1.6}
+.collection-event-meta time{color:var(--muted);font-variant-numeric:tabular-nums}
+.collection-event-level{font-weight:650;color:var(--accent)}
+.collection-event[data-level=warning] .collection-event-level{color:var(--warning)}
+.collection-event[data-level=error] .collection-event-level{color:var(--danger)}
+.collection-event-stage{font-weight:600;overflow-wrap:anywhere}
+.collection-event-ticket{color:var(--muted)}
+.collection-event .collection-event-message{margin-top:7px;font-size:13px;line-height:1.6;white-space:pre-wrap}
+.collection-event-diagnostic{margin-top:8px;font-size:11px;color:var(--muted)}
+.collection-event-diagnostic summary{cursor:pointer;padding:3px 0}
+.collection-event-diagnostic code{display:block;margin-top:6px;overflow-wrap:anywhere;white-space:pre-wrap}
+.collection-journal .toolbar{margin:0;gap:8px}
+.collection-journal-report{padding-top:14px;border-top:1px solid var(--border);font-size:13px;line-height:1.6}
+.collection-journal-report h3{font-size:14px;margin:0 0 8px}
+.collection-journal-report p+p{margin-top:6px}
+.collection-journal-report ul{padding-left:20px;margin:10px 0 0}
+.collection-retry-action{margin:12px 0}
 @media(max-width:620px){.collection-workspace{gap:12px}.collection-fields{grid-template-columns:minmax(0,1fr)}.collection-header h1{font-size:21px}.collection-status{border-radius:16px}.collection-disclosure>summary{padding:16px}.collection-disclosure>div{padding-inline:16px}.collection-actions .button{flex:1 1 auto}.collection-status-heading{align-items:flex-start}}
 @media(prefers-reduced-motion:reduce){.collection-workspace *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 :root[data-motion="reduce"] .collection-workspace *,:root[data-motion="off"] .collection-workspace *,:root[data-domenia-motion="paused"] .collection-workspace *{transition:none!important;animation:none!important}

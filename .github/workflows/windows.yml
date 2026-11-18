@@ -464,6 +464,18 @@ jobs:
                   raise SystemExit(f'{name}: expected {expected_postgres} real PostgreSQL scenarios, found {real}')
               print(f'{name}: {summaries[0][0]}/{summaries[0][1]} checks, including {real} real PostgreSQL scenarios')
           PY
+      - name: Vérifier le corpus SQL exploitable et la parité SQLite/PostgreSQL
+        run: |
+          set -euo pipefail
+          timeout 300s dotnet run --project tests/TicketLibraryKnowledgeChecks/TicketLibraryKnowledgeChecks.csproj -c Release -- --postgres 2>&1 | tee artifacts/postgres-ci/logs/ticket-library-knowledge-postgres-checks.log
+          python3 - <<'PYKNOWLEDGE'
+          import pathlib, re
+          report = pathlib.Path('artifacts/postgres-ci/logs/ticket-library-knowledge-postgres-checks.log').read_text(encoding='utf-8')
+          if not re.search(r'^12/12 ticket library knowledge checks passed\.$', report, re.M):
+              raise SystemExit('Knowledge corpus checks did not complete all twelve scenarios')
+          if len(re.findall(r'^PASS PostgreSQL:', report, re.M)) != 3:
+              raise SystemExit('Expected three real PostgreSQL corpus scenarios')
+          PYKNOWLEDGE
       - name: Vérifier le provisionnement Admin et les droits du compte technique
         run: |
           set -euo pipefail
