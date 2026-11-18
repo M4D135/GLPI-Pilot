@@ -106,7 +106,11 @@ internal static class ColumnPreparationBrowserChecks
             var script = modern ? """
                 <script>
                 document.querySelector('[name=activate]')?.addEventListener('click',async()=>{
-                  await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body:new URLSearchParams({activate:'1',itemtype:'Ticket',users_id:'17'})});location.reload();
+                  // GLPI 11's native $.ajax().then(reload) runs after the full
+                  // response. fetch alone resolves at headers and can abort an
+                  // unread body on reload, unlike that native XHR lifecycle.
+                  const reply=await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body:new URLSearchParams({activate:'1',itemtype:'Ticket',users_id:'17'})});
+                  await reply.text();location.reload();
                 });
                 document.querySelector('[name=add_opt]')?.addEventListener('click',async()=>{
                   const select=document.querySelector('select[name=num]'), value=select.value;
@@ -115,7 +119,7 @@ internal static class ColumnPreparationBrowserChecks
                   document.querySelector('.list-group').append(li);
                   const body=new URLSearchParams({action:'update_order',itemtype:'Ticket',users_id:'17'});
                   document.querySelectorAll('li[data-opt-id]:not([data-fixed])').forEach(item=>body.append('opts[]',item.dataset.optId));
-                  await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body});
+                  const reply=await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body});await reply.text();
                 });
                 </script>
                 """ : scenario == "renewed" ? """

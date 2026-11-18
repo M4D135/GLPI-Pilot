@@ -418,7 +418,7 @@ try {
                 @{ Project = 'FieldTourChecks'; Log = 'field-tours.log'; Summary = '7/7 field tour checks passed.' },
                 @{ Project = 'StartupDiagnosticsChecks'; Log = 'startup-diagnostics-checks.log'; Summary = 'Startup diagnostics: 14 passed, 0 failed.' },
                 @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
-                @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^38/38 Foundation checks passed\.\r?$' },
+                @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^40/40 Foundation checks passed\.\r?$' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '75/75 vérifications de configuration réussies.' },
                 @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '164/164' },
@@ -462,7 +462,7 @@ try {
                 $assembly = Join-Path $repository "tests/$suite/bin/Release/net10.0/$suite.dll"
                 if (-not (Test-Path -LiteralPath $assembly -PathType Leaf)) { throw "Missing browser test assembly: $suite." }
                 if ($suite -eq 'AutomationChecks') {
-                    # All 83 cases remain mandatory. Real delayed exports and
+                    # Every automation case remains mandatory. Real delayed exports and
                     # column preparation have their own browser process so they
                     # cannot consume the core suite's existing 360 s budget.
                     # The 35 s deadline inside each individual case is unchanged.
@@ -473,7 +473,7 @@ try {
                         Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
                         foreach ($group in @(
                             @{ Name = 'core'; Count = 52 },
-                            @{ Name = 'columns'; Count = 32 },
+                            @{ Name = 'columns'; Count = 42 },
                             @{ Name = 'native-timing'; Count = 11 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name

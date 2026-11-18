@@ -114,6 +114,13 @@ internal static partial class Program
         Require(await page.Locator(".data-workspace[data-ready=true]").CountAsync() == 1 && app.Result is null
             && await page.Locator(".terrain-map-page").CountAsync() == 0,
             "The site reference opens over Data and closes back to its editable GLPI address without opening a map.");
+        // In Live mode the global Actualiser intentionally starts collect.run
+        // on Data (covered by DataSourceWorkflow). This suite checks local view
+        // refresh without GLPI, so load its genuine CSV before that action.
+        var csv = Path.Combine(_root, "tickets-refresh.csv");
+        await File.WriteAllTextAsync(csv, "ID;Titre;Statut;Type;Lieu;Attribué à - Technicien;Attribué à - Groupe\n4101;Incident ATELIER NORD;Nouveau;Incident;ATELIER NORD;Alex Martin;Support Nord\n4102;Demande ATELIER SUD;Nouveau;Demande;ATELIER SUD;Samir Laurent;Support Sud\n4103;Incident ATELIER NORD suite;En cours;Incident;ATELIER NORD;Alex Martin;Support Nord\n");
+        host.NextOpen = csv; await Call(app, "records.import"); await delivery;
+        await WaitForPageAsync(page, "document.querySelector('.source-mode-picker')?.value==='csv'");
         var reads = Count("library.get");
         await Refresh().ClickAsync(); await Idle(); await Capture("refresh-after-reference");
         Require(Count("library.get") > reads && await reference.CountAsync() == 0 && await page.Locator(".data-workspace[data-ready=true]").CountAsync() == 1,
@@ -123,15 +130,12 @@ internal static partial class Program
         Require(await reference.CountAsync() == 0 && await page.Locator(".interventions-workspace").GetAttributeAsync("data-tab") == "map",
             "Returning from Planning to Map does not replay an already consumed site-reference deep link.");
 
-        var csv = Path.Combine(_root, "tickets-refresh.csv");
-        await File.WriteAllTextAsync(csv, "ID;Titre;Statut;Type;Lieu;Attribué à - Technicien;Attribué à - Groupe\n4101;Incident ATELIER NORD;Nouveau;Incident;ATELIER NORD;Alex Martin;Support Nord\n4102;Demande ATELIER SUD;Nouveau;Demande;ATELIER SUD;Samir Laurent;Support Sud\n4103;Incident ATELIER NORD suite;En cours;Incident;ATELIER NORD;Alex Martin;Support Nord\n");
-        host.NextOpen = csv; await Call(app, "records.import");
         await page.ReloadAsync(); await ReadyAsync(page);
         await page.EvaluateAsync("""
             () => {window.__refreshObservedMaps=[];const create=window.L.map;
               window.L.map=function(...args){const map=create.apply(this,args);window.__refreshObservedMaps.push(map);return map;};}
             """);
-        // Forget the calendar view remembered by the deep link above: a profile that never used a map command.
+        // Clear the calendar view just exercised: a profile that never used a map command.
         await page.EvaluateAsync("()=>{for(const key of Object.keys(localStorage))if(key.endsWith(':calendar'))localStorage.removeItem(key);}");
         await page.Locator(".nav-item[data-page=interventions]").ClickAsync(); await page.Locator(".interventions-workspace").WaitForAsync(); await Idle();
         if (await Tab("map").GetAttributeAsync("aria-current") != "page") await Tab("map").ClickAsync();
