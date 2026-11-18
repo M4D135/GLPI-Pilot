@@ -135,7 +135,7 @@ public static class WorkBrowserChecks
                   const listeners=new Map(); let cleanup, controller;
                   window.workState=JSON.parse(state);window.workNotices=[];window.workReady=false;
                   window.addEventListener('pilot:error',event=>workNotices.push({text:event.detail?.message||String(event.detail),tone:'error'}));
-                  window.workApi={call:async(op,args={})=>{const envelope=JSON.parse(await workplaceRuntime(op,JSON.stringify(args)));for(const event of envelope.events){if(event.name==='session.changed')workState.session=event.data;if(event.name==='settings.changed')workState.settings=event.data.settings;listeners.get(event.name)?.(event.data);}if(op==='records.list')window.workLastRecords={args,result:envelope.result};return envelope.result;},on:(name,handler)=>{listeners.set(name,handler);return()=>listeners.delete(name);}};
+                  window.workApi={call:async(op,args={})=>{const envelope=JSON.parse(await workplaceRuntime(op,JSON.stringify(args)));for(const event of envelope.events){if(event.name==='session.changed')workState.session=event.data;if(event.name==='settings.changed')workState.settings=event.data.settings;listeners.get(event.name)?.(event.data);}if(op==='records.list')window.workLastRecords={args,result:envelope.result};if(op==='workplace.ticket.open')window.workLastOpened=envelope.result;return envelope.result;},on:(name,handler)=>{listeners.set(name,handler);return()=>listeners.delete(name);}};
                   window.workNavigate=async(id,params={})=>{await cleanup?.();cleanup=null;controller?.abort();controller=new AbortController(); document.querySelectorAll('dialog').forEach(d=>d.remove());const root=document.querySelector('#root');root.replaceChildren();window.workReady=false;
                     const page=pages.find(p=>p.id===id);if(!page){window.workDestination={id,params};return;}window.workPage=id;
                     cleanup=await page.render({root,api:workApi,state:workState,signal:controller.signal,navigate:workNavigate,params,refresh:()=>workNavigate(id,params),notify:(text,tone)=>{workNotices.push({text,tone});document.querySelector('#notices').textContent=text;}});window.workReady=true;};
@@ -384,11 +384,29 @@ public static class WorkBrowserChecks
         Check(await ui.Page.Locator(".tickets-record-grid tbody tr").CountAsync() == 3);
         await ui.Page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#43 ·')");
-        Check((await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#43 ·", StringComparison.Ordinal)
+        var unreadDiagnostic = await ui.Page.EvaluateAsync<JsonElement>("""
+            () => { const heading=document.querySelector('.work-ticket-heading'), indicator=heading?.querySelector('.ticket-cache-indicator');
+              const refresh=[...(heading?.querySelectorAll('button')||[])].find(button=>button.textContent.trim()==='Actualiser la fiche');
+              const opened=window.workLastOpened;
+              return {title:heading?.querySelector('h2')?.textContent,missingIndicators:heading?.querySelectorAll('.ticket-cache-indicator[data-cache-state=missing]').length,
+                cacheState:indicator?.dataset.cacheState,cacheTone:indicator?.dataset.cacheTone,cacheDescription:indicator?.getAttribute('aria-label'),
+                dates:heading?.querySelector('.ticket-cache-dates')?.innerText,refreshDisabled:refresh?.disabled,headingHtml:heading?.outerHTML,
+                backend:opened?{id:opened.personal?.id,loaded:opened.loaded,canRead:opened.canRead,readReason:opened.readReason,cache:opened.cache}:null}; }
+            """);
+        var unreadBackend = unreadDiagnostic.GetProperty("backend");
+        var unreadBackendReady = unreadBackend.ValueKind == JsonValueKind.Object
+            && unreadBackend.GetProperty("id").GetString() == "43"
+            && !unreadBackend.GetProperty("loaded").GetBoolean()
+            && unreadBackend.GetProperty("canRead").GetBoolean()
+            && unreadBackend.GetProperty("cache").GetProperty("state").GetString() == "missing";
+        var unreadUiReady = (await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#43 ·", StringComparison.Ordinal)
             && await ui.Page.Locator(".work-ticket-heading .ticket-cache-indicator[data-cache-state=missing]").CountAsync() == 1
             && (await ui.Page.Locator(".work-ticket-heading .ticket-cache-dates").InnerTextAsync()).Contains("aucune", StringComparison.Ordinal)
-            && await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Actualiser la fiche", Exact = true }).IsEnabledAsync(),
-            "An unread source row opens its exact local dossier and exposes an explicit refresh action.");
+            && await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Actualiser la fiche", Exact = true }).IsEnabledAsync();
+        if (!unreadBackendReady || !unreadUiReady) await ui.Capture("tickets-saved-unread-failure.png");
+        Check(unreadBackendReady, "Opening the unread source row returns ticket 43, a confirmed missing cache and canRead=true. " + unreadDiagnostic.GetRawText());
+        Check(unreadUiReady,
+            "An unread source row opens its exact local dossier and exposes an explicit refresh action. " + unreadDiagnostic.GetRawText());
         await ui.Navigate("tickets", new { ticketKey = key, section = "personal" });
         Check(await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).InputValueAsync() == "Repère personnel conservé",
             "A ticketKey deep link still restores personal work after source rows change.");

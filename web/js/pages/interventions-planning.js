@@ -442,7 +442,16 @@ export async function renderInterventionsWorkspace(ctx){
   if(result.total>2000)throw new Error('Choisissez au maximum 2 000 tickets à planifier. Affinez la recherche.');
   if(tab!=='planning'){await clearChild();tab='planning';updateTabs();paintPlanning();}await createEvent({day:params.date||date,tickets:result.tickets||[]});
  }
- function changed(){if(disposed)return;refreshPending=true;if(editor?.dirty){replaceChildren(notice,el('div',{class:'calendar-message info'},el('span',{text:'Le planning a évolué. Saisie conservée ; version vérifiée à l’enregistrement.'})));return;}clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{if(!mutation)void action(load)();},180);}
+ function changed(){
+  if(disposed)return;refreshPending=true;clearTimeout(refreshTimer);
+  // Search row coordinates belong to their observation. Keep open forms intact;
+  // Actualiser or closing the map panel rebuilds the search through its workspace.
+  if(initial.ticketSearch&&initial.ticketSearch.revision!==state.session?.revision){
+   replaceChildren(notice,el('div',{class:'calendar-message info'},el('span',{text:'Le relevé a changé. Actualisez cet espace pour reprendre la recherche sur les données courantes.'})));return;
+  }
+  if(editor?.dirty){replaceChildren(notice,el('div',{class:'calendar-message info'},el('span',{text:'Le planning a évolué. Saisie conservée ; version vérifiée à l’enregistrement.'})));return;}
+  refreshTimer=setTimeout(()=>{if(!mutation)void action(load)();},180);
+ }
  for(const event of ['calendar.changed','tours.changed','library.changed','session.changed'])stops.push(api.on(event,changed));
   const abort=()=>{disposed=true;readController?.abort();childController?.abort();map?.dispose();clearInterval(reminderTimer);clearTimeout(refreshTimer);cancelAnimationFrame(layoutFrame);layoutObserver.disconnect();window.removeEventListener('resize',fitViewport);stops.forEach(stop=>stop());editor=null;panelMode='';editorState();};
  signal?.addEventListener('abort',abort,{once:true});

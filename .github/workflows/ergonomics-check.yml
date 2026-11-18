@@ -38,9 +38,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Map search runtime checks failed.' }
       - name: Vrais handlers C# de ticket et stockage existant
         run: |
+          $env:GLPI_TEST_WORKPLACE_SCREENSHOTS = Join-Path $PWD 'artifacts/ergonomics/workplace-screenshots'
           dotnet run --project tests/WorkplaceBridgeChecks/WorkplaceBridgeChecks.csproj -c Release -p:PlaywrightPlatform=win 2>&1 | Tee-Object artifacts/ergonomics/workplace.log
           if ($LASTEXITCODE -ne 0) { throw 'Workplace bridge checks failed.' }
       - name: Ergonomie avec la CSP et les modules de production
+        # Independent UI evidence remains useful if a bridge assertion fails.
+        # The failed bridge step still prevents qualification and publication.
+        if: ${{ !cancelled() }}
         run: |
           $driver = Join-Path $PWD 'tests/WorkplaceBridgeChecks/bin/Release/net10.0/.playwright'
           $node = Join-Path $driver 'node/win32_x64/node.exe'
@@ -51,8 +55,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Grid regression checks failed.' }
           & $node tests/ErgonomicsChecks/run.cjs 2>&1 | Tee-Object artifacts/ergonomics/ui.log
           if ($LASTEXITCODE -ne 0) { throw 'Ergonomics checks failed.' }
-          & $node --test tests/ErgonomicsChecks/ticket-live-read.test.mjs tests/ErgonomicsChecks/ticket-cache.test.mjs 2>&1 | Tee-Object artifacts/ergonomics/ticket-live-read.log
-          if ($LASTEXITCODE -ne 0) { throw 'Ticket cache and delayed refresh checks failed.' }
+          & $node --test tests/ErgonomicsChecks/ticket-live-read.test.mjs tests/ErgonomicsChecks/ticket-cache.test.mjs tests/ErgonomicsChecks/interventions-refresh.test.mjs 2>&1 | Tee-Object artifacts/ergonomics/ticket-live-read.log
+          if ($LASTEXITCODE -ne 0) { throw 'Ticket cache and context refresh checks failed.' }
           $env:GLPI_TEST_SCREENSHOTS = Join-Path $PWD 'artifacts/ergonomics/ticket-journey'
           & $node tests/TicketJourneyChecks/run.cjs 2>&1 | Tee-Object artifacts/ergonomics/ticket-journey.log
           if ($LASTEXITCODE -ne 0) { throw 'Map-search-reader journey checks failed.' }
