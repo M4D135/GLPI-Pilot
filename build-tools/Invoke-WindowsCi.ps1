@@ -441,7 +441,7 @@ try {
                 @{ Project = 'TicketLibraryChecks'; Log = 'ticket-library-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket library checks passed\.\r?$' },
                 @{ Project = 'TicketLibraryKnowledgeChecks'; Log = 'ticket-library-knowledge-checks.log'; Summary = '9/9 ticket library knowledge checks passed.' },
                 @{ Project = 'LibraryCollectionJournalChecks'; Log = 'library-collection-journal-checks.log'; Summary = '10/10 vérifications du journal de collecte réussies.' },
-                @{ Project = 'LibraryIndexProgressChecks'; Log = 'library-index-progress-checks.log'; Summary = "8/8 contrôles purs de progression de l’index réussis." },
+                @{ Project = 'LibraryIndexProgressChecks'; Log = 'library-index-progress-checks.log'; Summary = "9/9 contrôles purs de progression de l’index réussis." },
                 @{ Project = 'TicketResolutionChecks'; Log = 'ticket-resolution-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket resolution checks passed\.\r?$' },
                 @{ Project = 'SharedWorkspaceChecks'; Log = 'shared-workspace-checks.log'; Summary = ''; Pattern = '(?m)^25/25 shared workspace checks passed\.\r?$' },
                 @{ Project = 'CalendarChecks'; Log = 'calendar-checks.log'; Summary = ''; Pattern = '(?m)^52/52 contrôles calendrier réussis\.\r?$' },
@@ -523,14 +523,14 @@ try {
             # Own stage: acquisition and infrastructure-latency regressions share the same native browser.
             Set-TestBrowser
             # Les cas lents attendent réellement leurs réponses, dont une navigation de plus de vingt secondes.
-            # Le budget du banc inclut les 34 cas et l'arrêt du navigateur ; ce n'est pas un délai de collecte produit.
+            # Le budget du banc inclut les 41 cas et l'arrêt du navigateur ; ce n'est pas un délai de collecte produit.
             $suite = 'tests/TicketLibraryAcquisitionChecks'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('build', "$suite/TicketLibraryAcquisitionChecks.csproj", '-c', 'Release', '-p:PlaywrightPlatform=win') `
                 -LogName 'ticket-library-acquisition-build.log' -TimeoutSeconds 120
             $assembly = Join-Path $repository "$suite/bin/Release/net10.0/TicketLibraryAcquisitionChecks.dll"
             if (-not (Test-Path -LiteralPath $assembly -PathType Leaf)) { throw 'Missing compiled ticket library acquisition checks.' }
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
-                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 420 -ExpectedSummary "34/34 contrôles d’acquisition de bibliothèque réussis."
+                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 420 -ExpectedSummary "41/41 contrôles d’acquisition de bibliothèque réussis."
         }
         'WebViewChecks' {
             Set-TestBrowser
