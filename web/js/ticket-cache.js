@@ -1,4 +1,6 @@
 const oldCacheMs = 7 * 24 * 60 * 60 * 1000;
+// Keep the visual fresh-read window aligned with TicketReadCache.UnknownVersionRetryDelay.
+const recentReadMs = 5 * 60 * 1000;
 const dateFormat = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'medium' });
 
 function timestamp(value) {
@@ -12,8 +14,8 @@ function knownDate(value, raw) {
   return time == null ? String(raw || '').trim() : dateFormat.format(time);
 }
 
-// Colour describes the local copy against the loaded observation. It never
-// asserts that the live GLPI ticket has remained unchanged since that date.
+// Green describes a recent successful read or a copy matching the loaded observation.
+// It never asserts that the live GLPI ticket has remained unchanged since that date.
 export function ticketCacheView(cache, now = Date.now()) {
   cache ||= {};
   const state = ['missing', 'current', 'recent', 'stale', 'unknown'].includes(cache.state) ? cache.state : 'unknown';
@@ -27,8 +29,11 @@ export function ticketCacheView(cache, now = Date.now()) {
     else if (readTime == null || readTime > now) label = 'Cache conforme au relevé · date de lecture à vérifier';
     else if (now - readTime > oldCacheMs) label = 'Cache ancien · version inchangée dans le relevé';
     else { tone = 'current'; mark = '✓'; label = 'Cache récent · version conforme au relevé'; }
-  } else if (state === 'recent') {
-    tone = 'warning'; mark = '!'; label = 'Lu récemment · version à vérifier';
+  } else if (state === 'recent' && cache.hasContent) {
+    tone = 'warning'; mark = '!';
+    if (readTime == null || readTime > now) label = 'Cache conservé · date de lecture à vérifier';
+    else if (now - readTime > recentReadMs) label = 'Cache à vérifier · lecture ancienne';
+    else { tone = 'current'; mark = '✓'; label = 'Cache récent · lecture réussie'; }
   } else if (state === 'stale') {
     tone = 'warning'; mark = '!'; label = 'Cache ancien ou modifié · à vérifier';
   }

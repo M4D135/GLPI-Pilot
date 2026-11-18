@@ -114,7 +114,15 @@ public static class TicketReadCache
             && clock >= readAt && clock - readAt <= UnknownVersionRetryDelay)
         {
             status.State = "recent"; status.AutoRead = false;
-            status.Reason = "Lecture récente, version à vérifier : aucun repère comparable ne prouve qu’elle est inchangée.";
+            var precision = version.Precision == "seconds" ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1);
+            var closeModification = !cached.FromLibrary && sameContext && source!.Reliable && !version.Reliable
+                && version.ModifiedAt.HasValue && version.Precision is "seconds" or "minutes" && version.ObservedAt <= readAt
+                && version.ModifiedAt + precision + TimeSpan.FromMinutes(2) > readAt;
+            status.Reason = closeModification
+                ? "Lecture récente, version à vérifier : la date de dernière modification est connue, mais cette lecture est trop proche de cette modification pour confirmer la version."
+                : source?.ModifiedAt is not null || version.ModifiedAt is not null
+                    ? "Lecture récente, version à vérifier : une date de dernière modification est disponible, mais elle ne suffit pas à confirmer la version de cette copie."
+                    : "Lecture récente, version à vérifier : la date de dernière modification est absente ou ne peut pas être interprétée de façon fiable.";
         }
         else
         {

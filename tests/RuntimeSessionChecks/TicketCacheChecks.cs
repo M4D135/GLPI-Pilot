@@ -120,12 +120,55 @@ internal static class TicketCacheRuntimeChecks
                 "A tab-only observation replaced the main ticket's source-version proof.");
             await Consistent(f, cache);
         });
+        Add("a successful read close to a known modification explains its timing without weakening version guards", f =>
+        {
+            var modified = new DateTimeOffset(2026, 11, 18, 12, 0, 0, TimeSpan.Zero);
+            var observed = modified.AddMinutes(1).AddSeconds(9); var readAt = modified.AddMinutes(1).AddSeconds(25);
+            foreach (var raw in new[] { Stamp(modified), modified.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) })
+            {
+                var source = TicketReadCache.Source(Reference(), Source(raw, observed), 0, f.App.Settings);
+                var version = TicketReadCache.Observe(source, Detail(readAt))!;
+                Require(source.Reliable && source.ModifiedAt == modified && !version.Reliable && version.MainReadComplete,
+                    "The synthetic 12:00 / 12:01:09 / 12:01:25 read did not exercise the comparison margin.");
+                var entry = new TicketReadCacheEntry { HasContent = true, ReadAt = readAt, Version = version };
+                var recent = TicketReadCache.Describe(source, entry, true, now: readAt);
+                Require(recent.State == "recent" && !recent.AutoRead && recent.Reason.Contains("trop proche", StringComparison.Ordinal),
+                    "A dated modification close to a successful read was reported as missing evidence: " + recent.Reason);
+                Require(recent.SourceModifiedAt == modified && recent.CachedModifiedAt == modified && recent.ReadAt == readAt,
+                    "Explaining the margin changed the actual observation dates.");
+                var boundary = TicketReadCache.Describe(source, entry, true, now: readAt.AddMinutes(5));
+                var expired = TicketReadCache.Describe(source, entry, true, now: readAt.AddMinutes(5).AddTicks(1));
+                Require(boundary.State == "recent" && !boundary.AutoRead && expired.State == "unknown" && expired.AutoRead
+                    && boundary.SourceToken == recent.SourceToken && expired.SourceToken == recent.SourceToken && !version.Reliable,
+                    "The explanation changed the five-minute fallback, source token or version proof as the clock advanced.");
+                var changedSource = TicketReadCache.Source(Reference(), Source(Stamp(modified.AddMinutes(1)), readAt.AddSeconds(1)), 0, f.App.Settings);
+                var changed = TicketReadCache.Describe(changedSource, entry, true, now: readAt.AddSeconds(1));
+                Require(changed.State == "stale" && changed.AutoRead && changed.SourceToken != recent.SourceToken,
+                    "A close successful read hid a later known change.");
+                var partial = Detail(readAt); partial.Sections[0].Data.Complete = false;
+                entry.Version = TicketReadCache.Observe(source, partial);
+                var incomplete = TicketReadCache.Describe(source, entry, true, now: readAt);
+                Require(incomplete.State == "unknown" && incomplete.AutoRead, "An incomplete main read acquired recent success.");
+            }
+            var laterObservation = TicketReadCache.Source(Reference(), Source(Stamp(modified.AddMinutes(-10)), readAt.AddSeconds(1)), 0, f.App.Settings);
+            var laterEntry = new TicketReadCacheEntry { HasContent = true, ReadAt = readAt, Version = TicketReadCache.Observe(laterObservation, Detail(readAt)) };
+            var dated = TicketReadCache.Describe(laterObservation, laterEntry, true, now: readAt);
+            Require(dated.State == "recent" && !dated.AutoRead && dated.Reason.Contains("date de dernière modification est disponible", StringComparison.Ordinal)
+                && !dated.Reason.Contains("trop proche", StringComparison.Ordinal),
+                "A source observed after the read was incorrectly described as a close modification: " + dated.Reason);
+            return Task.CompletedTask;
+        });
         Add("a changed recent modification stamp bypasses the short fallback even before the earlier version was confirmed", async f =>
         {
             var now = DateTimeOffset.UtcNow;
             f.App.LoadSessionFixture(Source(Stamp(now.AddSeconds(-30)), now.AddSeconds(-10)));
             f.App.AcceptTicketCacheFixture(Detail(now));
-            var recent = Cache(await Open(f)); State(recent, "recent", true, false);
+            var opened = await Open(f); var recent = Cache(opened); State(recent, "recent", true, false);
+            Require(recent.GetProperty("reason").GetString()!.Contains("trop proche", StringComparison.Ordinal),
+                "The real reader did not explain why its known modification stamp is not yet comparable.");
+            var skipped = await f.Call("workplace.ticket.read", new { ticketKey = Key(opened), automatic = true });
+            State(Cache(skipped), "recent", true, false);
+            Require(skipped.GetProperty("readAt").GetDateTimeOffset() == now, "A close successful read caused an immediate second automatic read.");
             f.App.LoadSessionFixture(Source(Stamp(now.AddSeconds(-5)), DateTimeOffset.UtcNow));
             var changed = Cache(await Open(f));
             Require(changed.GetProperty("autoRead").GetBoolean() && changed.GetProperty("state").GetString() is not ("current" or "recent")
@@ -152,6 +195,8 @@ internal static class TicketCacheRuntimeChecks
             var opened = await Open(f); var cache = Cache(opened); State(cache, "recent", true, false);
             Require(cache.GetProperty("sourceModifiedAt").ValueKind == JsonValueKind.Null
                 && cache.GetProperty("cachedModifiedAt").ValueKind == JsonValueKind.Null, "Recent fallback must not manufacture source-version proof.");
+            Require(cache.GetProperty("reason").GetString()!.Contains("absente", StringComparison.Ordinal),
+                "An absent modification marker acquired the diagnostic for a known close date.");
             var skipped = await f.Call("workplace.ticket.read", new { ticketKey = Key(opened), automatic = true });
             Require(skipped.GetProperty("readAt").GetDateTimeOffset() == recent, "Recent fallback caused an unnecessary read.");
             f.App.AcceptTicketCacheFixture(Detail(DateTimeOffset.UtcNow.AddMinutes(-6)));

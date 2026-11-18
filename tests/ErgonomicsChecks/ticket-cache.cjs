@@ -34,6 +34,11 @@ module.exports = async ({ page, reset, ok, capture }) => {
       if (op === 'workplace.ticket.read') {
         const index = Number(args.ticketKey.split('-').at(-1));
         source[index].cache = { ...verified, readAt: new Date().toISOString() };
+        if (index === 0) {
+          const readTime = Date.parse(source[index].cache.readAt), modifiedAt = new Date(readTime - 85000).toISOString();
+          source[index].cache = { ...source[index].cache, state: 'recent', sourceModifiedAt: modifiedAt, cachedModifiedAt: modifiedAt,
+            sourceObservedAt: new Date(readTime - 16000).toISOString(), reason: 'Lecture récente ; le repère de modification reste à vérifier.' };
+        }
         const result = ticket(index);
         if (cacheDelayJournal) result.sections = [{ kind: 'timeline', key: 'timeline', index: 0 }];
         return result;
@@ -47,7 +52,7 @@ module.exports = async ({ page, reset, ok, capture }) => {
   });
   const icons = page.locator('.tickets-record-grid .ticket-cache-indicator');
   ok(await icons.count() === 6, 'Every compact search result has one database cache indicator');
-  ok(await icons.evaluateAll(nodes => nodes.map(n => n.dataset.cacheTone).join(',') === 'missing,current,warning,warning,warning,unknown'), 'Absent, verified, old, unverified and unavailable metadata have distinct honest cache states');
+  ok(await icons.evaluateAll(nodes => nodes.map(n => n.dataset.cacheTone).join(',') === 'missing,current,warning,current,warning,unknown'), 'Both a verified recent copy and a fresh complete read are green; old or changed copies stay orange and unavailable metadata stays unknown');
   ok(await icons.evaluateAll(nodes => nodes.every(n => n.getAttribute('role') === 'img' && n.tabIndex === 0 && n.getAttribute('aria-label') === n.title && n.querySelector('.ticket-cache-mark')?.textContent)), 'Each cache indicator has a focusable textual explanation and a shape cue in addition to colour');
   await capture('ticket-cache-list-desktop');
   await icons.first().focus(); await page.keyboard.press('Enter');
@@ -82,8 +87,14 @@ module.exports = async ({ page, reset, ok, capture }) => {
   await page.locator('[data-focus-key="open-0"]').click();
   await page.waitForFunction(() => cacheCalls.filter(c => c.op === 'workplace.ticket.read').length === 2 && document.querySelector('.tickets-detail-pane .ticket-cache-indicator')?.dataset.cacheTone === 'current');
   ok(await page.evaluate(() => cacheCalls.filter(c => c.op === 'workplace.ticket.read')[1].args.automatic === true), 'A missing copy can auto-read through the guarded automatic API contract');
+  const firstReadIcon = page.locator('.tickets-detail-pane .ticket-cache-indicator');
+  ok(await firstReadIcon.getAttribute('data-cache-state') === 'recent' && (await firstReadIcon.getAttribute('title')).includes('Cache récent · lecture réussie')
+    && (await firstReadIcon.getAttribute('title')).includes('repère de modification reste à vérifier'), 'The first complete read is green immediately while its settling modification marker remains accurately described');
+  await capture('ticket-cache-first-read-desktop');
   await page.getByRole('button', { name: 'Retour à la liste', exact: true }).click();
-  ok(await page.locator('[data-focus-key="row-0"] .ticket-cache-indicator').getAttribute('data-cache-tone') === 'current' && await page.getByLabel('Sélectionner la ligne 2', { exact: true }).isChecked(), 'A newly read cache updates the hidden list row without losing the other selected ticket');
+  ok(await page.locator('[data-focus-key="row-0"] .ticket-cache-indicator').getAttribute('data-cache-tone') === 'current'
+    && await page.locator('[data-focus-key="row-0"] .ticket-cache-indicator').getAttribute('data-cache-state') === 'recent'
+    && await page.getByLabel('Sélectionner la ligne 2', { exact: true }).isChecked(), 'The first fresh cache stays green in the existing list row without losing the other selected ticket');
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     ok(await icons.first().evaluate(n => n.getBoundingClientRect().width === 16 && n.getBoundingClientRect().height === 16) && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Cache indicators stay discrete and search stays bounded at ${width}px`);
