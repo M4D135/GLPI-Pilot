@@ -28,6 +28,7 @@ internal sealed class NativeExportAttempt : IDisposable
     private readonly object _gate = new();
     private readonly Dictionary<IRequest, Chain> _requests = new(ReferenceEqualityComparer.Instance);
     private readonly List<Chain> _chains = [];
+    private readonly TaskCompletionSource<bool> _requestSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _requestLogged;
     private bool _failed;
     private InvalidOperationException? _failure;
@@ -61,6 +62,16 @@ internal sealed class NativeExportAttempt : IDisposable
     public bool RequestObserved
     {
         get { lock (_gate) return !_disposed && _chains.Any(chain => !chain.Rejected && (chain.Verified || chain.Page is null)); }
+    }
+
+    // DOM actions and the context's Request event can complete in either order.
+    // This bounded wait bridges that ordering without sending another request.
+    public async Task<bool> WaitForRequestAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        if (timeout < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
+        ct.ThrowIfCancellationRequested();
+        try { return await _requestSignal.Task.WaitAsync(timeout, ct) && RequestObserved; }
+        catch (TimeoutException) { ct.ThrowIfCancellationRequested(); return false; }
     }
 
     // A failure can follow the Download event while SaveAs is still running;
@@ -205,6 +216,7 @@ internal sealed class NativeExportAttempt : IDisposable
     {
         if (_disposed || _failed) return;
         var candidates = _chains.Where(chain => !chain.Rejected && (chain.Verified || chain.Page is null)).ToArray();
+        if (candidates.Length > 0) _requestSignal.TrySetResult(true);
         if (candidates.Length > 1)
         {
             Fail("Plusieurs requêtes natives d’export distinctes ont été observées. La réception est arrêtée pour ne pas confondre leurs fichiers.");
@@ -233,6 +245,7 @@ internal sealed class NativeExportAttempt : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
+            _requestSignal.TrySetResult(false);
             _context.Request -= OnRequest;
             _context.Response -= OnResponse;
             _context.RequestFailed -= OnRequestFailed;

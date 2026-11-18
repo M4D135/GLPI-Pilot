@@ -14,6 +14,7 @@ internal static class NativeExportTimingBrowserChecks
     public static IEnumerable<(string Name, Func<Task> Run)> Cases(IBrowser browser)
     {
         yield return ("Attente export GLPI : sélection native, contrôle retiré et fichier immédiat importé", () => Check(browser, "selection"));
+        yield return ("Attente export GLPI : sélection conservée, soumission différée sans second clic", () => Check(browser, "selection-kept"));
         yield return ("Attente export GLPI : sélection native, réponse après 12 s et un seul export", () => Check(browser, "selection-slow"));
         yield return ("Attente export GLPI : clic natif, réponse après 9 s et un seul export", () => Check(browser, "click-slow"));
         yield return ("Attente export GLPI : fenêtre native target blank, réponse lente et import unique", () => Check(browser, "popup-slow"));
@@ -39,6 +40,7 @@ internal static class NativeExportTimingBrowserChecks
     {
         var change = scenario == "refused" ? "this.value = '4';"
             : scenario == "click-slow" ? ""
+            : scenario == "selection-kept" ? "const exportForm=this.form;setTimeout(()=>exportForm.submit(),100);"
             : "this.form.submit(); this.remove();";
         if (scenario == "foreign") change = "const unrelated=document.createElement('a');unrelated.href='/glpi/front/unrelated-export.csv';unrelated.download='unrelated.csv';document.body.append(unrelated);unrelated.click();unrelated.remove();" + change;
         var html = """
@@ -220,8 +222,10 @@ internal static class NativeExportTimingBrowserChecks
                 Require(await page.EvaluateAsync<int>("() => window.selectionChanges") == 1
                     && await page.EvaluateAsync<int>("() => window.submitClicks") == (scenario == "click-slow" ? 1 : 0),
                     "An export already triggered by change must not be followed by a second submit click.");
-                if (scenario != "click-slow") Require(await page.Locator("#native-format").CountAsync() == 0,
+                if (scenario is not ("click-slow" or "selection-kept")) Require(await page.Locator("#native-format").CountAsync() == 0,
                     "The successful download must survive the actual native select being removed after submission.");
+                if (scenario == "selection-kept") Require(await page.Locator("#native-format").InputValueAsync() == "-4",
+                    "A retained native selection must not trigger a second submit before its deferred export request is observed.");
                 if (responseDelay > 0) Require(responseDurations.Single() >= TimeSpan.FromMilliseconds(responseDelay),
                     "The delayed fixture must cross the former locator/action deadline before sending the download headers.");
                 if (scenario == "popup-slow") Require(!page.IsClosed && page.Url == Target,

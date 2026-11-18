@@ -87,8 +87,10 @@ public sealed partial class BrowserService
         using var attempt = new NativeExportAttempt(_context ?? throw new InvalidOperationException("Le navigateur a été fermé."),
             table.Page!, frame, table.FrameOrigin, destination[1], destination[0],
             error => receiver.TrySetException(error), message => Log?.Invoke(message));
+        var exportToken = ct;
         var path = await CaptureDownloadCoreAsync(table.Page!, settings.ExportFolder, async token =>
         {
+            exportToken = token;
             var stage = "sélection du format CSV";
             try
             {
@@ -112,13 +114,15 @@ public sealed partial class BrowserService
                 }
                 stage = "déclenchement de l’export CSV";
                 Log?.Invoke("EXPORT · étape : " + stage + ".");
-                await ClickNativeControlAsync(frame, plan.Kind == "direct" ? plan.DirectSelector : plan.SubmitSelector, false, table.FrameOrigin, token);
+                await ClickNativeControlAsync(frame, plan.Kind == "direct" ? plan.DirectSelector : plan.SubmitSelector, false, table.FrameOrigin, token, attempt);
             }
             catch (Exception error) when (error is TimeoutException or PlaywrightException)
             {
                 token.ThrowIfCancellationRequested();
-                if (!attempt.RequestObserved && !receiver.Task.IsCompletedSuccessfully)
+                if (!attempt.RequestObserved && !receiver.Task.IsCompletedSuccessfully
+                    && !await attempt.WaitForRequestAsync(TimeSpan.FromSeconds(5), token))
                 {
+                    attempt.ThrowIfFailed();
                     Log?.Invoke("EXPORT · arrêt pendant " + stage + " ; aucune requête d’export confirmée. " + AppPaths.SafeError(error));
                     throw new InvalidOperationException("GLPI n’a pas confirmé le " + (stage == "déclenchement de l’export CSV" ? stage : "choix demandé")
                         + ". Aucun export n’a été relancé automatiquement. Vérifier la fenêtre GLPI puis réessayer.");
@@ -126,11 +130,20 @@ public sealed partial class BrowserService
                 // The short UI action has finished (including its own timeout).
                 // Its native request is already in flight: do not click twice or
                 // impose the locator deadline on the actual file transfer.
+                attempt.ThrowIfFailed();
                 Log?.Invoke("EXPORT · commande déjà envoyée malgré la fin d’attente du contrôle ; attente du téléchargement dans le délai d’export.");
             }
             token.ThrowIfCancellationRequested();
         }, settings.DownloadTimeoutSeconds, ct, attempt.AcceptsDownload,
-            () => attempt.RequestObserved ? StopPendingNativeExportAsync(table.Page!) : Task.CompletedTask,
+            async () =>
+            {
+                // A cancelled action can precede delivery of its Request event.
+                // Never reuse its page for a new receiver, even when no request
+                // was confirmed before this attempt failed.
+                _freshCollectionPageRequired = true;
+                if (attempt.RequestObserved || exportToken.IsCancellationRequested)
+                    await StopPendingNativeExportAsync(table.Page!);
+            },
             message => progress?.Report(new(0, 0, null, message)), receiver, attempt.ThrowIfFailed);
         attempt.ThrowIfFailed();
         return new(path, expected, plan.Kind);
@@ -177,17 +190,24 @@ public sealed partial class BrowserService
         await locator.SelectOptionAsync(new SelectOptionValue { Value = value }, new() { Timeout = 5000, Force = force });
         ct.ThrowIfCancellationRequested();
         if (attempt.RequestObserved) return;
-        var retained = await frame.EvaluateAsync<bool>("""
+        const string readSelection = """
             args => {
               const controls = [...document.querySelectorAll(args.selector)];
               return controls.length === 1 && controls[0].value === args.value;
             }
-            """, new { selector, value }).WaitAsync(ct);
-        if (!retained && !attempt.RequestObserved)
+            """;
+        var retained = await frame.EvaluateAsync<bool>(readSelection, new { selector, value }).WaitAsync(ct);
+        // The native change handler may submit before Playwright delivers the
+        // Request event. Wait for that event rather than declaring failure (or
+        // clicking Submit again) from an immediate DOM snapshot alone.
+        var request = await attempt.WaitForRequestAsync(TimeSpan.FromSeconds(retained ? 2 : 5), ct);
+        attempt.ThrowIfFailed();
+        if (!request && (!retained || !await frame.EvaluateAsync<bool>(readSelection, new { selector, value }).WaitAsync(ct)))
             throw new InvalidOperationException("GLPI n’a pas conservé le choix d’export et aucune requête CSV Toutes les pages n’a été observée. Aucun second clic n’est exécuté.");
     }
 
-    private async Task ClickNativeControlAsync(IFrame frame, string selector, bool menu, string expectedOrigin, CancellationToken ct)
+    private async Task ClickNativeControlAsync(IFrame frame, string selector, bool menu, string expectedOrigin, CancellationToken ct,
+        NativeExportAttempt? attempt = null)
     {
         ct.ThrowIfCancellationRequested();
         if (Origin(frame.Url) != expectedOrigin) throw new InvalidOperationException("La page a quitté GLPI avant l’export.");
@@ -225,6 +245,9 @@ public sealed partial class BrowserService
             }
             """, new { menu, origin = expectedOrigin }).WaitAsync(ct);
         if (!safe) throw new InvalidOperationException("Le repère choisi n’est pas reconnu comme une commande d’export GLPI sur cette page.");
+        ct.ThrowIfCancellationRequested();
+        attempt?.ThrowIfFailed();
+        if (attempt?.RequestObserved == true) return;
         try { await locator.ClickAsync(new() { Timeout = 7000 }); }
         catch (TimeoutException) when (_downloadWaiter?.Task.IsCompletedSuccessfully == true)
         { Log?.Invoke("EXPORT · téléchargement déjà démarré malgré le délai de navigation."); }
