@@ -374,7 +374,7 @@ Check("Configuration: new dashboards, parameters and local preferences round-tri
     Equal("lieu", imported.Queries.Queries.Last().Parameters[0].Key); Equal("compact", imported.Interface.Density); Equal(90, imported.Automation.IntervalMinutes); Equal(120, imported.History.RetentionDays);
     Assert(!File.ReadAllText(path).Contains("ScheduledExtraction"));
 });
-Check("Configuration: 3.15.1 to 4.0 portable migration accepts known releases and rejects future formats", () =>
+Check("Configuration: portable migration accepts known and current releases and rejects future formats", () =>
 {
     var current = Settings();
     var original = JsonSerializer.Serialize(current);
@@ -384,7 +384,8 @@ Check("Configuration: 3.15.1 to 4.0 portable migration accepts known releases an
     Equal(ConfigurationTransferService.Schema, envelope["Schema"]!.GetValue<string>());
     Equal(ConfigurationTransferService.ApplicationVersion, envelope["AppVersion"]!.GetValue<string>());
 
-    foreach (var compatible in new[] { "1.5", "2.1", "3.11.0", "3.12.0", "3.15.1", "4.0.0" })
+    var running = Version.Parse(ConfigurationTransferService.ApplicationVersion);
+    foreach (var compatible in new[] { "1.5", "2.1", "3.11.0", "3.12.0", "3.15.1", "4.0.0", ConfigurationTransferService.ApplicationVersion }.Distinct())
     {
         envelope["AppVersion"] = compatible;
         File.WriteAllText(path, envelope.ToJsonString());
@@ -392,14 +393,17 @@ Check("Configuration: 3.15.1 to 4.0 portable migration accepts known releases an
         Equal(current.PortalUrl, imported.PortalUrl);
         Equal(original, JsonSerializer.Serialize(current));
     }
-    foreach (var unsupported in new[] { "3.15.2", "3.16.0", "4.0.1", "4.1.0", "5.0.0", "garbage" })
+    foreach (var unsupported in new[] { "3.15.2", "3.16.0",
+        new Version(running.Major, running.Minor, Math.Max(0, running.Build) + 1).ToString(),
+        new Version(running.Major, running.Minor + 1, 0).ToString(),
+        new Version(running.Major + 1, 0, 0).ToString(), "garbage" })
     {
         envelope["AppVersion"] = unsupported;
         File.WriteAllText(path, envelope.ToJsonString());
         Reject<InvalidDataException>(() => ConfigurationTransferService.Import(path, current));
         Equal(original, JsonSerializer.Serialize(current));
     }
-    envelope["AppVersion"] = "4.0.0";
+    envelope["AppVersion"] = ConfigurationTransferService.ApplicationVersion;
     envelope["SchemaVersion"] = ConfigurationTransferService.SchemaVersion + 1;
     File.WriteAllText(path, envelope.ToJsonString());
     Reject<InvalidDataException>(() => ConfigurationTransferService.Import(path, current));

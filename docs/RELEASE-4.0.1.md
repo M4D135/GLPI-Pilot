@@ -21,6 +21,7 @@ Contrôles locaux du 18 novembre 2026 :
 - `AnalyticsBridgeChecks --supervision-only` : 27/27, avec import CSV, filtres, détails, restauration du cache et exports.
 - Suite complète `AnalyticsBridgeChecks` hors navigateur : 373/373.
 - `AnalyticsChecks` : 39/39.
+- `FoundationChecks` : 38/38 ; la compatibilité est vérifiée avec la version courante et les versions futures sont calculées, sans conserver 4.0.1 comme ancien cas de rejet.
 - Contrôles des outils de publication `ReleasePackChecks` : 42/42.
 - Compilation croisée Windows Standard et Admin : aucun avertissement, aucune erreur.
 - Syntaxe JavaScript et contrôle du diff vérifiés. Les nouveaux contrôles visuels sont intégrés à la qualification Windows ; Chromium local ne peut pas démarrer dans l’environnement d’exécution utilisé.
