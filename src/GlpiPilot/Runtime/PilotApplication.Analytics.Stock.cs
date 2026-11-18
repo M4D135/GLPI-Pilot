@@ -42,8 +42,15 @@ public sealed partial class PilotApplication
         };
     }
 
+    private static bool AnalyticsOldestAvailable(DashboardOldestGroupsSnapshot? data, DashboardWidgetSettings widget)
+        => widget.SourceKey == "tickets" ? data?.ScopeAvailable == true : data?.Available == true;
+
+    private static string AnalyticsOldestUnavailableReason(DashboardOldestGroupsSnapshot? data, DashboardWidgetSettings widget)
+        => widget.SourceKey == "tickets" ? data?.ScopeUnavailableReason ?? "Les colonnes Statut et Date d’ouverture sont nécessaires."
+            : data?.UnavailableReason ?? "Les colonnes Statut, Date d’ouverture et Groupe sont nécessaires.";
+
     private static IReadOnlyList<DashboardOldestGroup> AnalyticsOldestGroups(DashboardOldestGroupsSnapshot data, DashboardWidgetSettings widget)
-        => widget.SourceKey == "tickets" && data.Available
+        => widget.SourceKey == "tickets" && data.ScopeAvailable
             ? new[] { new DashboardOldestGroup("scope:", string.IsNullOrWhiteSpace(widget.Title) ? "Actifs du périmètre" : widget.Title,
                 data.Rows, data.DatedRows, data.MissingDateRows, data.InvalidDateRows, data.FutureDateRows,
                 data.Oldest.FirstOrDefault()?.OpenedAt, data.MaximumAgeDays, data.Oldest.FirstOrDefault()?.Color ?? "#ebf5fb", data.Oldest) }
@@ -58,7 +65,7 @@ public sealed partial class PilotApplication
         var groups = AnalyticsOldestGroups(data, widget);
         return new
         {
-            data.Available, data.UnavailableReason, data.ReferenceDate, data.Grain, topCount = top,
+            available = AnalyticsOldestAvailable(data, widget), unavailableReason = AnalyticsOldestUnavailableReason(data, widget), data.ReferenceDate, data.Grain, topCount = top,
             data.Count, data.DatedCount, data.UnrankedCount, data.MissingDateCount, data.InvalidDateCount, data.FutureDateCount,
             data.UnknownStatusCount, data.MaximumAgeDays, explanation = AnalyticsClip(data.Explanation), total = groups.Count, offset, limit = size,
             groups = groups.Skip(offset).Take(size).Select(group => new
@@ -111,7 +118,7 @@ public sealed partial class PilotApplication
         if (kind == "oldest")
         {
             var widget = AnalyticsDetailWidget(run, args);
-            var group = snapshot.OldestGroups is { Available: true } data
+            var group = snapshot.OldestGroups is { } data && AnalyticsOldestAvailable(data, widget)
                 ? AnalyticsOldestGroups(data, widget).SingleOrDefault(group => group.Key == key)
                 ?? throw new InvalidDataException("Groupe absent du classement.")
                 : throw new InvalidDataException("Le classement des plus anciens est indisponible.");

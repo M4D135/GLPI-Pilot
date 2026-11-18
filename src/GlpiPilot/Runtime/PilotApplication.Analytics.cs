@@ -297,7 +297,7 @@ public sealed partial class PilotApplication
         weather = s.WeatherProfiles.Select(d => new { key = d.Key, label = d.Value.Title }).ToArray(),
         oldest = new[] {
             new { key = "groups", label = "Plus anciens · 5 par groupe", available = s.OldestGroups?.Available == true },
-            new { key = "tickets", label = "Plus anciens · 10 du périmètre", available = s.OldestGroups?.Available == true } },
+            new { key = "tickets", label = "Plus anciens · 10 du périmètre", available = s.OldestGroups?.ScopeAvailable == true } },
         participation = new[] {
             new { key = "authors", label = "Participation des rédacteurs · suivis et tâches", available = s.Participation.StatusAvailable && (s.Participation.FollowupsAvailable || s.Participation.TasksAvailable) },
             new { key = "comparison", label = "Rédaction et attribution par personne", available = s.Participation.Available } },
@@ -322,6 +322,20 @@ public sealed partial class PilotApplication
         return new { matrix.Key, matrix.Title, matrix.Available, matrix.Unit,
             cells = cells.Select(c => new { c.RowLabel, c.ColumnLabel, c.Value, count = c.Rows.Length }).ToArray(), total = matrix.Cells.Count,
             rowTotals = totals.Where(t => labels.Contains(t.label)).ToArray(), maximumRowTotal = totals.Select(t => t.value).DefaultIfEmpty().Max(), explanation = AnalyticsClip(matrix.Explanation) };
+    }
+    private static string AnalyticsMissingColumns(DashboardSnapshot snapshot, params string[] roles)
+    {
+        var missing = roles.Distinct(StringComparer.Ordinal).Select(snapshot.Column).Where(column => column?.Index is null).Select(column =>
+            column is null ? "Correspondance absente" : column.Label + " : " + (column.State switch
+            {
+                "ambiguous" => "plusieurs colonnes possibles",
+                "missing-override" => "colonne configurée « " + AnalyticsClip(column.Header, 250) + " » absente",
+                _ => "colonne absente du relevé"
+            })).ToArray();
+        if (missing.Length > 0) return string.Join(" ; ", missing) + ".";
+        if (roles.Contains("status", StringComparer.Ordinal) && snapshot.Metric("active")?.Value is null)
+            return "La colonne Statut est présente, mais aucune valeur reconnue ne permet de déterminer le stock actif.";
+        return "Les valeurs nécessaires à ce calcul ne sont pas disponibles dans ce périmètre.";
     }
     private static object AnalyticsWidget(AnalyticsRun run, DashboardWidgetSettings widget)
     {
@@ -360,7 +374,7 @@ public sealed partial class PilotApplication
             "timeline" => new[] { "created", "resolved", "closed" }.Any(key =>
                 s.DateValues.GetValueOrDefault(key)?.Count > 0 || s.RowCount == 0 && s.Column(key)?.Index is not null),
             "attention" => s.Column("status")?.Index is not null,
-            "oldest" => s.OldestGroups?.Available == true,
+            "oldest" => AnalyticsOldestAvailable(s.OldestGroups, widget),
             "participation" => s.Participation.StatusAvailable && (widget.SourceKey == "authors"
                 ? s.Participation.FollowupsAvailable || s.Participation.TasksAvailable : s.Participation.Available),
             "sites" => s.SiteWorkload.Available,
@@ -378,7 +392,11 @@ public sealed partial class PilotApplication
             "timeline" => "Aucune date d’ouverture, de résolution ou de clôture exploitable dans ce périmètre.",
             "weather" => "Les indicateurs disponibles ne permettent pas de calculer cette météo.",
             "attention" => "Une colonne Statut reconnue est nécessaire pour identifier les tickets actifs.",
-            "oldest" => s.OldestGroups?.UnavailableReason ?? "Les colonnes Statut, Date d’ouverture et Groupe sont nécessaires.",
+            "oldest" => AnalyticsOldestUnavailableReason(s.OldestGroups, widget),
+            "matrix" when widget.SourceKey == "group-status" => AnalyticsMissingColumns(s, "status", "group"),
+            "distribution" when widget.SourceKey == "active-priority" => AnalyticsMissingColumns(s, "status", "priority"),
+            "distribution" when widget.SourceKey is "group" or "active-group" => widget.SourceKey == "group"
+                ? AnalyticsMissingColumns(s, "group") : AnalyticsMissingColumns(s, "status", "group"),
             "participation" => "Vérifiez le statut et les colonnes des rédacteurs de suivis, de tâches ou des techniciens attribués.",
             "sites" => s.SiteWorkload.UnavailableReason,
             _ => "Les colonnes ou les valeurs nécessaires à ce widget ne sont pas disponibles dans ce périmètre."

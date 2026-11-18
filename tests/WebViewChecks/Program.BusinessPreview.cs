@@ -143,8 +143,12 @@ internal static partial class Program
                 "The redesigned composition retains the complete analytical block: " + title + ".");
         Require(await page.Locator("[data-section-key=people]").GetByRole(AriaRole.Columnheader, new() { Name = "Clé GLPI", Exact = true }).CountAsync() >= 1,
             "The contribution section keeps the explicit GLPI identity column.");
-        Require((await page.Locator("[data-widget-id=workspace-stock-history]").InnerTextAsync()).Contains("Aucune observation comparable", StringComparison.Ordinal),
-            "A lone simulation import has no fabricated trend or comparison curve.");
+        var stockHistory = page.Locator("[data-widget-id=workspace-stock-history]");
+        Require(await stockHistory.Locator("[data-history-state=incompatible]").CountAsync() == 1
+            && await stockHistory.Locator("svg").CountAsync() == 0
+            && await stockHistory.Locator("[data-history-state=incompatible] > .analytics-caption").Nth(1).IsVisibleAsync()
+            && (await stockHistory.InnerTextAsync()).Contains("Règles de calcul, de requêtes ou de localisation différentes", StringComparison.Ordinal),
+            "The archived simulation baseline exposes its changed localization rules immediately, without a fabricated trend or comparison curve.");
         await page.Locator(".workspace").EvaluateAsync("node=>node.scrollTop=0");
         await Capture("pilot-complete-light-1600");
         Require(await page.Locator(".workspace-commandbar").EvaluateAsync<bool>("""

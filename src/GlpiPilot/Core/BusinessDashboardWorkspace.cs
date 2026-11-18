@@ -8,7 +8,9 @@ public static partial class BusinessDashboardTemplates
     private static DashboardBoardSettings Workspace(DashboardSettings settings, BusinessDashboardValues observed)
     {
         if (settings.Business.BoardOverrides.FirstOrDefault(board => board.Id == "business-workspace") is { } saved)
-            return saved.Copy();
+        {
+            var copy = saved.Copy(); copy.Widgets.RemoveAll(widget => CanOmitGeneratedTeamPlaceholder(widget, copy)); return copy;
+        }
 
         var profile = Profile(settings, observed);
         var result = new DashboardBoardSettings
@@ -43,11 +45,18 @@ public static partial class BusinessDashboardTemplates
             result.Widgets.Add(widget);
         }
 
-        // Every configured weather card survives the redesign, including its
-        // thresholds, first-team precedence, note and deliberately hidden state.
+        // Configured weather cards retain their thresholds, first-team
+        // precedence, notes and deliberately hidden state.
         var weather = Create("weather", settings, observed);
         foreach (var widget in weather.Widgets)
+        {
+            // The legacy weather page adds an instructional card when it has no
+            // teams. Remove only that exact untouched placeholder, including
+            // saved copies; local notes, labels, filters and presentation
+            // placements are explicit choices and remain untouched.
+            if (CanOmitGeneratedTeamPlaceholder(widget, weather)) continue;
             Add(weather, widget, widget.Section == "context" ? "attention" : widget.Section == "actions" ? "actions" : "weather", true);
+        }
 
         var native = settings.Copy(); native.Business.BoardOverrides.Clear();
         foreach (var key in new[] { "pilotage", "groups", "categories", "oldest", "followup", "participants" })
@@ -76,4 +85,10 @@ public static partial class BusinessDashboardTemplates
         layout.Validate();
         return result;
     }
+
+    private static bool CanOmitGeneratedTeamPlaceholder(DashboardWidgetSettings widget, DashboardBoardSettings board) => widget.Kind == "note"
+        && widget.SourceKey.Length == 0 && widget.Filters.Count == 0
+        && widget.Title == "Équipes du relevé"
+        && widget.Note == "Les groupes du relevé alimentent cette section. Paramètres du pilotage permet de les réunir en équipes et de régler leur ordre."
+        && board.Presentation?.Slides.Any(slide => slide.Items.Any(item => item.WidgetId == widget.Id)) != true;
 }

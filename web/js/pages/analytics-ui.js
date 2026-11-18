@@ -160,8 +160,32 @@ export function svg(tag, attrs = {}, ...children) {
 export function sparkline(series, compact = false) {
   if (!series) return empty('Historique non calculé', 'Lancez le calcul des observations pour ce périmètre.');
   const points = series.points ?? []; const good = points.filter(p => p.comparable && p.value != null && Number.isFinite(p.value));
-  const panel = el('div', { class: `analytics-history ${compact ? 'compact' : ''}` });
-  if (!good.length) { panel.append(caption('Aucune observation comparable.', 'warning'), details('Disponibilité de cette série', caption(series.explanation))); return panel; }
+  const panel = el('div', { class: `analytics-history ${compact ? 'compact' : ''}`,
+    'data-history-state': !points.length ? 'empty' : !good.length ? 'incompatible' : good.length === 1 ? 'single' : 'ready' });
+  const observations = () => details('Observations et limites', caption(series.explanation), table(points, [
+    { key: 'capturedAt', label: 'Observation', render: p => formatDate(p.capturedAt) }, { key: 'value', label: 'Valeur', render: p => number(p.value, series.unit) },
+    { key: 'rows', label: 'Lignes' }, { key: 'comparable', label: 'Comparable', render: p => p.comparable ? 'Oui' : 'Non' }, { key: 'note', label: 'Limites' }
+  ], { maxRows: 250 }));
+  if (!points.length) {
+    panel.append(caption('Historique en attente de relevés.'), caption(series.explanation
+      || 'Aucun relevé archivé pour ce périmètre. Une évolution nécessite au moins deux observations comparables de la même recherche.'));
+    return panel;
+  }
+  if (!good.length) {
+    const reasons = [...new Set(points.map(point => point.note).filter(Boolean))];
+    panel.append(caption('Relevés conservés, comparaison indisponible.', 'warning'));
+    for (const reason of reasons.slice(0, 3)) panel.append(caption(reason));
+    if (!reasons.length) panel.append(caption(series.explanation || 'Les observations conservées ne disposent pas d’une valeur comparable pour cet indicateur.'));
+    if (!compact) panel.append(observations());
+    return panel;
+  }
+  if (good.length === 1) {
+    panel.append(caption('Une seule observation comparable.'), caption(`${formatDate(good[0].capturedAt)} · ${number(good[0].value, series.unit)}`),
+      caption('Une deuxième observation comparable est nécessaire pour afficher une évolution.'));
+    if (points.length > 1) panel.append(caption(`${points.length - 1} rupture(s) / valeur(s) inconnue(s).`, 'warning'));
+    if (!compact) panel.append(observations());
+    return panel;
+  }
   const dates = points.map(p => Date.parse(p.capturedAt)); const minDate = Math.min(...dates); const maxDate = Math.max(...dates);
   const low = Math.min(...good.map(p => p.value)); const high = Math.max(...good.map(p => p.value));
   const x = p => 15 + 570 * (Date.parse(p.capturedAt) - minDate) / Math.max(1, maxDate - minDate);
@@ -170,14 +194,11 @@ export function sparkline(series, compact = false) {
   let segment = [];
   const flush = () => { if (segment.length > 1) drawing.append(svg('polyline', { points: segment.join(' '), fill: 'none', stroke: 'currentColor', 'stroke-width': 2.5 })); segment = []; };
   for (const point of points) {
-    if (!point.comparable || point.value == null) { flush(); continue; }
+    if (!point.comparable || point.value == null || !Number.isFinite(point.value)) { flush(); continue; }
     segment.push(`${x(point)},${y(point)}`);
     drawing.append(svg('circle', { cx: x(point), cy: y(point), r: 3 }, svg('title', {}, `${formatDate(point.capturedAt)} : ${number(point.value, series.unit)} · ${point.note}`)));
   }
   flush(); panel.append(drawing, caption(`${formatDate(points[0]?.capturedAt)} → ${formatDate(points.at(-1)?.capturedAt)} · ${good.length} observations · ${points.length - good.length} ruptures / inconnues`));
-  if (!compact) panel.append(details('Observations et limites', caption(series.explanation), table(points, [
-    { key: 'capturedAt', label: 'Observation', render: p => formatDate(p.capturedAt) }, { key: 'value', label: 'Valeur', render: p => number(p.value, series.unit) },
-    { key: 'rows', label: 'Lignes' }, { key: 'comparable', label: 'Comparable', render: p => p.comparable ? 'Oui' : 'Non' }, { key: 'note', label: 'Limites' }
-  ], { maxRows: 250 })));
+  if (!compact) panel.append(observations());
   return panel;
 }

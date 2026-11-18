@@ -168,6 +168,11 @@ public static class OldestGroupChecks
             var result = Calculate(data);
             check(!result.Available && result.Groups.Count == 0 && result.UnavailableReason.Contains("Correspondances", StringComparison.Ordinal),
                 "Oldest: a missing status, opening or group column stays unavailable instead of fabricating counts or ages.");
+            check(column == 4
+                    ? result.ScopeAvailable && result.Oldest.Single().Index == 0 && result.Oldest.Single().AgeDays == 7
+                        && result.DatedRows.SequenceEqual(new[] { 0 }) && result.ScopeUnavailableReason.Length == 0
+                    : !result.ScopeAvailable && result.Oldest.Count == 0 && result.ScopeUnavailableReason.Length > 0,
+                "Oldest: global ranking requires status and opening dates, but keeps its exact source row and age without a group column.");
         }
         var unknown = Calculate(Source(Row("502", "01/04/2026", status: "Inconnu")));
         check(!unknown.Available && unknown.Count == 0 && unknown.UnknownStatusRows.SequenceEqual(new[] { 0 }),

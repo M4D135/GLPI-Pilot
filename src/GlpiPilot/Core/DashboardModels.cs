@@ -8,6 +8,8 @@ public sealed record DashboardColumn(string Role, string Label, int? Index, stri
     {
         "auto" => "Reconnue automatiquement",
         "configured" => "Définie manuellement",
+        "configured-normalized" => "Libellé configuré normalisé",
+        "configured-alias" => "Libellé GLPI équivalent reconnu",
         "ambiguous" => "Plusieurs colonnes possibles",
         "missing-override" => "Colonne configurée absente",
         "missing" => "Aucune colonne reconnue",

@@ -7,6 +7,60 @@ internal static class WorkspaceChecks
     {
         var observed = new BusinessDashboardValues(new[] { "Support", "Terrain" }, new[] { "Matériel > Poste", "Accès" });
         DashboardSettings Settings() { var settings = new DashboardSettings(); settings.Normalize(); return settings; }
+        test("Supervision omits the generated empty-team note without removing configured notes or group analyses", () =>
+        {
+            var settings = Settings(); var withoutTeams = new BusinessDashboardValues(Array.Empty<string>(), observed.Categories);
+            var before = JsonSerializer.Serialize(settings);
+            var weather = BusinessDashboardTemplates.Create("weather", settings, withoutTeams);
+            var placeholder = weather.Widgets.Single(widget => widget.Kind == "note" && widget.Section == "teams");
+            var workspace = BusinessDashboardTemplates.Create("workspace", settings, withoutTeams);
+            check(!workspace.Widgets.Any(widget => widget.Id == placeholder.Id), "An unconfigured team must not occupy a supervision card with setup instructions.");
+            check(workspace.Widgets.Count(widget => widget.Kind == "matrix" && widget.SourceKey == "group-status") == 2,
+                "The top-group chart and complete group matrix stay visible for diagnosis and recovery.");
+            var pending = weather.Widgets.Single(widget => widget.Kind == "metric" && widget.SourceKey == "pending");
+            check(workspace.Widgets.Any(widget => widget.Id == pending.Id), "Removing the placeholder must not shift the identities of the remaining cards.");
+            check(JsonSerializer.Serialize(settings) == before, "Rendering the defaults leaves persisted settings untouched.");
+
+            settings.Business.BoardOverrides.Add(weather); var savedWeather = JsonSerializer.Serialize(settings);
+            check(!BusinessDashboardTemplates.Create("workspace", settings, withoutTeams).Widgets.Any(widget => widget.Id == placeholder.Id)
+                && JsonSerializer.Serialize(settings) == savedWeather, "An unchanged placeholder in a saved weather board is removed only from the displayed copy.");
+            var legacyWorkspace = workspace.Copy(); legacyWorkspace.Widgets.Add(placeholder.Copy()); legacyWorkspace.Widgets[^1].Section = "weather";
+            settings.Business.BoardOverrides.Clear(); settings.Business.BoardOverrides.Add(legacyWorkspace); var savedWorkspace = JsonSerializer.Serialize(settings);
+            check(!BusinessDashboardTemplates.Create("workspace", settings, withoutTeams).Widgets.Any(widget => widget.Id == placeholder.Id)
+                && JsonSerializer.Serialize(settings) == savedWorkspace, "An unchanged placeholder in an existing workspace is removed without rewriting stored settings.");
+
+            legacyWorkspace.Presentation = new() { Slides = new() { new() { Title = "Note de préparation", Items = new() { new() { WidgetId = placeholder.Id } } } } };
+            var beforePresentation = JsonSerializer.Serialize(settings);
+            var presented = BusinessDashboardTemplates.Create("workspace", settings, withoutTeams);
+            presented.Presentation!.Validate(presented.Widgets.Select(widget => widget.Id));
+            new DashboardLayoutSettings { ActiveBoardId = presented.Id, Boards = new() { presented } }.Validate();
+            check(presented.Widgets.Any(widget => widget.Id == placeholder.Id)
+                && JsonSerializer.Serialize(presented.Presentation) == JsonSerializer.Serialize(legacyWorkspace.Presentation)
+                && JsonSerializer.Serialize(settings) == beforePresentation,
+                "An unchanged note explicitly placed in a saved presentation remains available without orphaning slide content or mutating settings.");
+            weather.Presentation = legacyWorkspace.Presentation.Copy();
+            settings.Business.BoardOverrides.Clear(); settings.Business.BoardOverrides.Add(weather);
+            check(BusinessDashboardTemplates.Create("workspace", settings, withoutTeams).Widgets.Any(widget => widget.Id == placeholder.Id),
+                "A note used in the saved weather presentation remains a deliberate choice when composing supervision.");
+            legacyWorkspace.Presentation = null; weather.Presentation = null;
+
+            placeholder.Note = "Consigne locale de l’équipe"; placeholder.Title = "Équipes du relevé";
+            settings.Business.BoardOverrides.Clear(); settings.Business.BoardOverrides.Add(weather);
+            var configured = BusinessDashboardTemplates.Create("workspace", settings, withoutTeams);
+            check(configured.Widgets.Any(widget => widget.Id == placeholder.Id && widget.Note == "Consigne locale de l’équipe"),
+                "A saved weather note survives even when it uses the former placeholder title.");
+            settings.Business.BoardOverrides.Clear(); workspace.Widgets.Add(placeholder.Copy());
+            workspace.Widgets[^1].Section = "weather"; settings.Business.BoardOverrides.Add(workspace);
+            check(BusinessDashboardTemplates.Create("workspace", settings, withoutTeams).Widgets.Any(widget => widget.Id == placeholder.Id),
+                "A customized workspace note remains intact.");
+            var renamed = legacyWorkspace.Widgets.Single(widget => widget.Id == placeholder.Id); renamed.Title = "Consigne équipe personnalisée";
+            settings.Business.BoardOverrides.Clear(); settings.Business.BoardOverrides.Add(legacyWorkspace);
+            check(BusinessDashboardTemplates.Create("workspace", settings, withoutTeams).Widgets.Any(widget => widget.Id == placeholder.Id),
+                "A deliberately renamed note keeps its content even if it started as the placeholder.");
+            renamed.Title = "Équipes du relevé"; renamed.Filters.Add(new() { Kind = "metric", SourceKey = "active" });
+            check(BusinessDashboardTemplates.Create("workspace", settings, withoutTeams).Widgets.Any(widget => widget.Id == placeholder.Id),
+                "A note with a custom scope is not an untouched generated placeholder.");
+        });
         test("Default service and compatibility boards align metric dimensions without migrating saved choices", () =>
         {
             var settings = Settings();

@@ -140,7 +140,7 @@ public static partial class ReportService
                 else
                 {
                     W("<p>" + H(oldest.Explanation) + "</p>");
-                    if (!oldest.Available) W("<p class=\"warning\">Indisponible : " + H(oldest.UnavailableReason) + "</p>");
+                    if (!oldest.ScopeAvailable) W("<p class=\"warning\">Indisponible : " + H(oldest.ScopeUnavailableReason) + "</p>");
                     else
                     {
                         W("<table><tbody>");
@@ -154,18 +154,22 @@ public static partial class ReportService
                         W("</tbody></table><h3>Classement global du périmètre</h3><p>Une ligne source apparaît une seule fois dans ce classement, même si elle appartient à plusieurs groupes. Les occurrences d’ID répétés restent distinctes.</p>");
                         if (oldest.Oldest.Count == 0) W("<p>Aucune ouverture classable dans ce périmètre.</p>");
                         else OldestTable(oldest.Oldest);
-                        W("<h3>Synthèse par groupe</h3><div class=\"scroll\"><table><thead><tr><th>Groupe</th><th>Stock</th><th>Dates classables</th><th>Dates absentes</th><th>Dates invalides</th><th>Dates futures</th><th>Âge maximal (j)</th></tr></thead><tbody>");
-                        foreach (var group in oldest.Groups)
-                            W("<tr><td>" + H(group.Label) + "</td><td>" + H(Count(group.Count)) + "</td><td>" + H(Count(group.DatedCount))
-                                + "</td><td>" + H(Count(group.MissingDateCount)) + "</td><td>" + H(Count(group.InvalidDateCount))
-                                + "</td><td>" + H(Count(group.FutureDateCount)) + "</td>" + AgeCell(group.MaximumAgeDays, group.Color) + "</tr>");
-                        W("</tbody></table></div>");
-                        if (oldest.Groups.Count == 0) W("<p>Aucun ticket actif dans ce périmètre.</p>");
-                        foreach (var group in oldest.Groups)
+                        if (!oldest.Available) W("<h3>Synthèse par groupe</h3><p class=\"warning\">Indisponible : " + H(oldest.UnavailableReason) + "</p>");
+                        else
                         {
-                            W("<h3>" + H(group.Label) + "</h3>");
-                            if (group.Oldest.Count == 0) { W("<p>Aucune ouverture classable dans ce groupe ; son stock reste inclus dans le tableau ci-dessus.</p>"); continue; }
-                            OldestTable(group.Oldest);
+                            W("<h3>Synthèse par groupe</h3><div class=\"scroll\"><table><thead><tr><th>Groupe</th><th>Stock</th><th>Dates classables</th><th>Dates absentes</th><th>Dates invalides</th><th>Dates futures</th><th>Âge maximal (j)</th></tr></thead><tbody>");
+                            foreach (var group in oldest.Groups)
+                                W("<tr><td>" + H(group.Label) + "</td><td>" + H(Count(group.Count)) + "</td><td>" + H(Count(group.DatedCount))
+                                    + "</td><td>" + H(Count(group.MissingDateCount)) + "</td><td>" + H(Count(group.InvalidDateCount))
+                                    + "</td><td>" + H(Count(group.FutureDateCount)) + "</td>" + AgeCell(group.MaximumAgeDays, group.Color) + "</tr>");
+                            W("</tbody></table></div>");
+                            if (oldest.Groups.Count == 0) W("<p>Aucun ticket actif dans ce périmètre.</p>");
+                            foreach (var group in oldest.Groups)
+                            {
+                                W("<h3>" + H(group.Label) + "</h3>");
+                                if (group.Oldest.Count == 0) { W("<p>Aucune ouverture classable dans ce groupe ; son stock reste inclus dans le tableau ci-dessus.</p>"); continue; }
+                                OldestTable(group.Oldest);
+                            }
                         }
                     }
                 }

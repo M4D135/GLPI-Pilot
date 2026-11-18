@@ -47,6 +47,11 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       await page.evaluate(theme => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, before);
     };
     if (process.env.GLPI_TEST_TICKET_SEARCH_ONLY === '1') { await require('./ticket-search.cjs')({page,reset,ok,capture}); ok(errors.length===0, 'Shared search has no JavaScript errors'); console.log(`${checks}/${checks} ticket search interface checks passed.`); return; }
+    if (process.env.GLPI_TEST_HISTORY_ONLY === '1') {
+      await require('./history-empty.cjs')({ page, reset, ok });
+      ok(errors.length === 0 && external === 0, 'History states use production modules without JavaScript errors or external requests');
+      console.log(`${checks}/${checks} history interface checks passed.`); return;
+    }
     if (process.env.GLPI_TEST_GRID_ONLY !== '1' && process.env.GLPI_TEST_SOURCE_NAVIGATION_ONLY !== '1')
       await require('./hypermotion.cjs')({ page, reset, ok, capture });
     if (process.env.GLPI_TEST_GRID_ONLY !== '1') await require('./source-navigation.cjs')({ page, reset, ok });
@@ -55,6 +60,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       console.log(`${checks}/${checks} source navigation checks passed.`); return;
     }
     if (process.env.GLPI_TEST_GRID_ONLY !== '1') await require('./unavailable-filters.cjs')({ page, reset, ok });
+    if (process.env.GLPI_TEST_GRID_ONLY !== '1') await require('./history-empty.cjs')({ page, reset, ok });
     await require('./workspace-grid.cjs')({ page, reset, ok, capture });
     if (process.env.GLPI_TEST_GRID_ONLY === '1') {
       ok(errors.length === 0 && external === 0, 'Grid checks use production modules without JavaScript errors or external requests');

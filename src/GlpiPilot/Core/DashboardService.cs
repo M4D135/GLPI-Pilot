@@ -16,13 +16,13 @@ public static class DashboardService
         new DashboardRole("urgency", "Urgence", new[] { "Urgence", "Urgency", "Niveau d'urgence" }),
         new DashboardRole("impact", "Impact", new[] { "Impact", "Niveau d'impact" }),
         new DashboardRole("type", "Type", new[] { "Type", "Type de ticket", "Ticket type" }),
-        new DashboardRole("created", "Date d’ouverture", new[] { "Date d'ouverture", "Date d’ouverture", "Date d'ouverture du ticket", "Date de création", "Opening date", "Creation date", "Created", "Created at" }),
-        new DashboardRole("updated", "Dernière modification", new[] { "Dernière modification", "Date de modification", "Date de dernière modification", "Last update", "Last modification", "Modification date", "Updated at" }),
+        new DashboardRole("created", "Date d’ouverture", new[] { "Date d'ouverture", "Date d’ouverture", "Date d'ouverture du ticket", "Ouverture", "Date de création", "Opening date", "Creation date", "Created", "Created at" }),
+        new DashboardRole("updated", "Dernière modification", new[] { "Dernière modification", "Dernière modif", "Date de modification", "Date de dernière modification", "Last update", "Last modification", "Modification date", "Updated at" }),
         new DashboardRole("resolved", "Date de résolution", new[] { "Date de résolution", "Date de resolution", "Resolution date", "Date de solution", "Solved date", "Solved at", "Resolved at" }),
         new DashboardRole("closed", "Date de clôture", new[] { "Date de clôture", "Closing date", "Closed date", "Closed at" }),
         new DashboardRole("due", "Échéance de résolution", new[] { "Temps de résolution", "Date limite de résolution", "Échéance de résolution", "Échéance", "Time to resolve", "Resolution due date", "Due date", "Date d'échéance", "TTR" }),
         new DashboardRole("assignee", "Technicien attribué", new[] { "Attribué à - Technicien", "Attribué à - Techniciens", "Assigned to - Technician", "Assigned to - Technicians", "Technicien", "Techniciens", "Assigned technician", "Assignee" }),
-        new DashboardRole("group", "Groupe attribué", new[] { "Attribué à - Groupe de techniciens", "Attribué à - Groupes de techniciens", "Attribué à - Groupe", "Assigned to - Technician group", "Assigned to - Group", "Groupe de techniciens", "Groupe attribué", "Assignment group" }),
+        new DashboardRole("group", "Groupe attribué", new[] { "Attribué à - Groupe de techniciens", "Attribué à - Groupes de techniciens", "Attribué à - Groupe", "Assigned to - Technician group", "Assigned to - Group", "Groupe de techniciens", "Groupe attribué", "Groupe", "Assignment group" }),
         new DashboardRole("requester", "Demandeur", new[] { "Demandeur", "Demandeur - Demandeur", "Demandeur - Utilisateur", "Demandeurs", "Requester", "Requester - Requester", "Requester - User" }),
         new DashboardRole("category", "Catégorie", new[] { "Catégorie", "Catégorie ITIL", "Category", "ITIL category" }),
         new DashboardRole("entity", "Entité", new[] { "Entité", "Entités", "Entity", "Entities" }),
@@ -37,10 +37,10 @@ public static class DashboardService
         new DashboardRole("followupAuthor", "Rédacteur de suivi · source", new[] { "Suivis - Rédacteur", "Suivi - Rédacteur", "Suivis - Rédacteurs", "Suivis - Auteur" }),
         new DashboardRole("taskAuthor", "Rédacteur de tâche · source", new[] { "Tâches - Rédacteur", "Tâche - Rédacteur", "Tâches - Rédacteurs", "Tâches - Auteur" }),
         new DashboardRole("ttrProgress", "TTR et progression · source", new[] { "TTR + Progression", "TTR - Progression" }),
-        new DashboardRole("takeIntoAccount", "Délai de prise en compte · source", new[] { "Statistiques - Délai de prise en compte", "Délai de prise en compte" }),
-        new DashboardRole("reportedAge", "Âge déclaré · source", new[] { "Âge (jours)", "Âge en jours" }),
-        new DashboardRole("reportedGroupCount", "Nombre de groupes déclaré · source", new[] { "Nombre de groupes" }),
-        new DashboardRole("reportedAuthorCount", "Nombre de rédacteurs déclaré · source", new[] { "Nombre de rédacteurs" }),
+        new DashboardRole("takeIntoAccount", "Délai de prise en compte · source", new[] { "Statistiques - Délai de prise en compte", "Délai de prise en compte", "Délai prise en compte" }),
+        new DashboardRole("reportedAge", "Âge déclaré · source", new[] { "Âge (jours)", "Âge en jours", "Âge" }),
+        new DashboardRole("reportedGroupCount", "Nombre de groupes déclaré · source", new[] { "Nombre de groupes", "Nb groupes" }),
+        new DashboardRole("reportedAuthorCount", "Nombre de rédacteurs déclaré · source", new[] { "Nombre de rédacteurs", "Nb rédacteurs" }),
         new DashboardRole("description", "Description du ticket", new[] { "Description", "Description du ticket", "Ticket description" })
     };
 
@@ -104,6 +104,8 @@ public static class DashboardService
             result.Warnings.Add($"Total annoncé {data.ExpectedTotal:N0} ; lignes récupérées {data.Rows.Count:N0}.");
         foreach (var col in columns.Where(x => x.State is "ambiguous" or "missing-override"))
             result.Warnings.Add($"{col.Label} : {(col.State == "ambiguous" ? "plusieurs colonnes possibles" : "colonne configurée absente")}. À régler dans les correspondances.");
+        foreach (var col in columns.Where(x => x.State is "configured-normalized" or "configured-alias"))
+            result.Warnings.Add($"{col.Label} : correspondance « {settings.ColumnMappings[col.Role]} » reprise sur le libellé équivalent « {col.Header} ». Le réglage enregistré est conservé.");
 
         var invalid = new Dictionary<string, int>();
         var future = new Dictionary<string, int>();
@@ -658,11 +660,30 @@ public static class DashboardService
         {
             settings.ColumnMappings.TryGetValue(role.Key, out var configured);
             var exact = !string.IsNullOrWhiteSpace(configured);
-            var matches = Enumerable.Range(0, headers.Count).Where(i => exact
-                ? string.Equals(headers[i], configured, StringComparison.Ordinal)
-                : HeaderMatches(role, headers[i]) || IsRenamedDuplicate(role, headers[i], normalized)).ToArray();
+            var state = exact ? "configured" : "auto";
+            int[] AutoMatches() => Enumerable.Range(0, headers.Count)
+                .Where(i => HeaderMatches(role, headers[i]) || IsRenamedDuplicate(role, headers[i], normalized)).ToArray();
+            var matches = exact ? Enumerable.Range(0, headers.Count)
+                .Where(i => string.Equals(headers[i], configured, StringComparison.Ordinal)).ToArray() : AutoMatches();
+            if (exact && matches.Length == 0)
+            {
+                // The selected column keeps priority. CSV/Excel and native GLPI
+                // exports may change only accents, spacing or namespace labels.
+                // A custom missing mapping must never fall back to another role.
+                var requested = Normalize(configured);
+                matches = requested.Length == 0 ? Array.Empty<int>() : Enumerable.Range(0, headers.Count)
+                    .Where(i => normalized[i] == requested).ToArray();
+                state = "configured-normalized";
+                if (matches.Length > 0)
+                    matches = matches.Concat(Enumerable.Range(0, headers.Count)
+                        .Where(i => Normalize(RenamedDuplicateBase(headers[i])) == requested)).Distinct().ToArray();
+                if (matches.Length == 0 && HeaderMatches(role, configured))
+                {
+                    matches = AutoMatches(); state = "configured-alias";
+                }
+            }
             return new DashboardColumn(role.Key, role.Label, matches.Length == 1 ? matches[0] : null,
-                matches.Length == 1 ? headers[matches[0]] : configured ?? "", matches.Length == 1 ? exact ? "configured" : "auto" : matches.Length > 1 ? "ambiguous" : exact ? "missing-override" : "missing");
+                matches.Length == 1 ? headers[matches[0]] : configured ?? "", matches.Length == 1 ? state : matches.Length > 1 ? "ambiguous" : exact ? "missing-override" : "missing");
         }).ToList();
     }
 
@@ -686,9 +707,15 @@ public static class DashboardService
     {
         // The native importer renames duplicate labels to "Label (2)". Keep this
         // ambiguity visible instead of silently binding only the first occurrence.
-        var match = Regex.Match(header ?? "", @"^(.*) \((?:[2-9]|[1-9][0-9]+)\)$");
-        return match.Success && normalizedHeaders.Contains(Normalize(match.Groups[1].Value), StringComparer.Ordinal)
-            && HeaderMatches(role, match.Groups[1].Value);
+        var original = RenamedDuplicateBase(header);
+        return original is not null && normalizedHeaders.Contains(Normalize(original), StringComparer.Ordinal)
+            && HeaderMatches(role, original);
+    }
+
+    private static string? RenamedDuplicateBase(string? header)
+    {
+        var match = Regex.Match(header?.Trim() ?? "", @"^(.*)\s+\((?:[2-9]|[1-9][0-9]+)\)$");
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     public static void ValidateSettings(DashboardSettings settings)
@@ -886,7 +913,8 @@ public static class DashboardService
         + snapshot.Scatters.Sum(x => Math.Max(1L, 2L * x.Points.Count))
         + snapshot.History.Sum(x => Math.Max(1L, x.Points.Count))
         + 3L + 5L * snapshot.Participation.Participants.Count + snapshot.Participation.Warnings.Count
-        + (snapshot.OldestGroups is not { } oldest ? 0L : !oldest.Available ? 1L : 7L + oldest.Oldest.Count + oldest.Groups.Sum(group => 6L + group.Oldest.Count))
+        + (snapshot.OldestGroups is not { } oldest ? 0L : !oldest.ScopeAvailable ? 1L
+            : (oldest.Available ? 0L : 1L) + 7L + oldest.Oldest.Count + oldest.Groups.Sum(group => 6L + group.Oldest.Count))
         + 1L + (snapshot.SiteWorkload.Available ? snapshot.SiteWorkload.Sites.Count : 0);
 
     public static ExtractionResult ToExport(DashboardSnapshot snapshot, IReadOnlyList<DashboardStockWeatherEntry>? stockWeather = null)
@@ -972,9 +1000,10 @@ public static class DashboardService
         foreach (var warning in participation.Warnings) Add("Participation · limites", "Avertissement", "", "", "", warning);
         if (snapshot.OldestGroups is { } oldest)
         {
-            if (!oldest.Available) Add("Plus anciens", "Disponibilité", "Non disponible", "", "", oldest.UnavailableReason);
+            if (!oldest.ScopeAvailable) Add("Plus anciens", "Disponibilité", "Non disponible", "", "", oldest.ScopeUnavailableReason);
             else
             {
+                if (!oldest.Available) Add("Plus anciens · groupes", "Disponibilité", "Non disponible", "", "", oldest.UnavailableReason);
                 foreach (var (label, count) in new[] { ("Stock actif", oldest.Count), ("Ouvertures classables", oldest.DatedCount),
                     ("Date absente", oldest.MissingDateCount), ("Date invalide", oldest.InvalidDateCount), ("Date future", oldest.FutureDateCount), ("Statut inconnu exclu", oldest.UnknownStatusCount) })
                     Add("Plus anciens", label, Count(count), oldest.Grain, Count(oldest.Count), oldest.Explanation);
@@ -1030,7 +1059,17 @@ public static class DashboardService
     public static string NormalizeValue(string? value, string role, string header, DashboardSettings settings)
     {
         var raw = (value ?? "").Trim();
-        if (settings.ValueDictionaries.TryGetValue(role, out var dictionary) || settings.ValueDictionaries.TryGetValue(header, out dictionary))
+        var found = settings.ValueDictionaries.TryGetValue(role, out var dictionary) || settings.ValueDictionaries.TryGetValue(header, out dictionary);
+        if (!found && settings.ColumnMappings.TryGetValue(role, out var configured) && !string.IsNullOrWhiteSpace(configured)
+            && settings.ValueDictionaries.TryGetValue(configured, out var previousDictionary))
+        {
+            // Header-specific interpretations travel with a recovered binding;
+            // role/current-header dictionaries still take precedence.
+            var definition = Roles.FirstOrDefault(item => item.Key == role);
+            if (Normalize(configured) == Normalize(header) || definition is not null && HeaderMatches(definition, configured) && HeaderMatches(definition, header))
+            { dictionary = previousDictionary; found = true; }
+        }
+        if (found && dictionary is not null)
         {
             var match = dictionary.FirstOrDefault(p => string.Equals(p.Key, raw, StringComparison.OrdinalIgnoreCase));
             if (match.Key != null) return match.Value;

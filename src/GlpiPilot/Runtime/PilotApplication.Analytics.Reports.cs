@@ -201,7 +201,7 @@ public sealed partial class PilotApplication
                     else Table("Rédaction et attribution", new[] { "Personne", "Rédacteurs · union", "Attribution" }, people.Select(person => new object?[] { person.Name, person.Writers.Count, person.Assigned.Count }));
                     section.Chart.AddRange(people.Select(person => new DashboardReportPoint(person.Name, person.Writers.Count))); break;
                 case "oldest":
-                    if (snapshot.OldestGroups is not { Available: true } oldest) { Missing(snapshot.OldestGroups?.UnavailableReason ?? "Dates et statuts nécessaires."); break; }
+                    if (snapshot.OldestGroups is not { } oldest || !AnalyticsOldestAvailable(oldest, widget)) { Missing(AnalyticsOldestUnavailableReason(snapshot.OldestGroups, widget)); break; }
                     Note(oldest.Explanation); var groups = AnalyticsOldestGroups(oldest, widget); var top = widget.SourceKey == "tickets" ? 10 : 5;
                     Note("Classement métier : " + top + " plus anciennes ouvertures par " + (widget.SourceKey == "tickets" ? "périmètre" : "groupe") + ". Tous les groupes sont inclus, au-delà de la page affichée. Jour de référence : " + oldest.ReferenceDate.ToString("yyyy-MM-dd"));
                     Table("Stocks et qualité des dates", new[] { "Groupe", "Stock", "Dates classables", "Absentes", "Invalides", "Futures", "Âge maximal (j)" }, groups.Select(group => new object?[] { group.Label, group.Count, group.DatedCount, group.MissingDateCount, group.InvalidDateCount, group.FutureDateCount, group.MaximumAgeDays }));

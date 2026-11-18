@@ -1242,6 +1242,7 @@ Test("Author participation preserves union, intersection, assignment, identities
 BusinessViewChecks.Register(Test, Check);
 WorkspaceChecks.Register(Test, Check);
 WeatherScopeChecks.Register(Test, Check);
+ColumnCompatibilityChecks.Register(Test, Check);
 
 int failures = 0;
 foreach (var (name, run) in tests)

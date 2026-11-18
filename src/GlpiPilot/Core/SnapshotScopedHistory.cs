@@ -11,6 +11,7 @@ public sealed class SnapshotScopedHistory
     private readonly string _sourceKey, _schema, _rules, _technicianKey;
     private readonly DateTimeOffset _asOf;
     private readonly bool _currentVerified;
+    private readonly string _missingObservationExplanation;
     private readonly TimeSpan _cadence;
     private readonly (string Key, string Label, string Unit)[] _metrics;
     private readonly SemaphoreSlim _serial = new(1, 1);
@@ -28,6 +29,11 @@ public sealed class SnapshotScopedHistory
         _metrics = baseline.Metrics.Select(m => (m.Key, m.Label, m.Unit)).DistinctBy(m => m.Key).Take(512).ToArray();
         _currentVerified = _sourceKey.Length > 0 && current.Complete && (!current.ExpectedTotal.HasValue || current.ExpectedTotal == current.Rows.Count)
             && current.Provenance is { SearchVerified: true, ScopeVerified: true } && ReliableIds(current, settings.Dashboard, ct);
+        _missingObservationExplanation = _sourceKey.Length == 0
+            ? current.Provenance.SourceKind == "file"
+                ? "Le fichier CSV / Excel donne un état du stock, sans observations successives comparables de sa recherche. Une évolution nécessite au moins deux collectes archivées de la même recherche GLPI, avec le même périmètre et les mêmes règles."
+                : "Le contexte de cette source n’est pas confirmé. Une évolution nécessite au moins deux relevés archivés comparables de la même recherche GLPI ; une collecte vérifiée permet de commencer cet historique."
+            : "Aucun relevé archivé de cette recherche n’est disponible à la date du relevé courant. Archiver les collectes de la même recherche permet de suivre le stock ; une évolution nécessite au moins deux observations comparables.";
     }
 
     public IReadOnlyDictionary<string, IReadOnlyList<DashboardHistorySeries>> Calculate(IReadOnlyList<DashboardHistoryScope> requests, CancellationToken ct = default)
@@ -110,7 +116,8 @@ public sealed class SnapshotScopedHistory
                             found ? o.Note : "Cet indicateur ou son unité est indisponible dans cette archive. Les preuves de localisation et les dénominateurs doivent avoir été conservés lorsqu’ils sont nécessaires.");
                     }).ToArray();
                     series.Add(new(metric.Key, metric.Label + " · historique du périmètre", metric.Unit, SnapshotAnalytics.WithGaps(points, _cadence),
-                        $"Périmètre recalculé dans chaque archive, sans réutiliser les indices ou la liste des tickets courants. Identité : {(_technicianKey.Length == 0 ? "équipe entière" : _technicianKey)}. "
+                        ordered.Length == 0 ? _missingObservationExplanation
+                        : $"Périmètre recalculé dans chaque archive, sans réutiliser les indices ou la liste des tickets courants. Identité : {(_technicianKey.Length == 0 ? "équipe entière" : _technicianKey)}. "
                         + $"Au plus {MaximumSnapshots} archives à la date du relevé courant, {MaximumEvaluatedRows:N0} lignes de calcul et {MaximumMetricPoints:N0} valeurs par recalcul. Les limites, filtres indisponibles, données absentes et archives incompatibles créent des ruptures. Les localisations et effectifs proviennent des preuves conservées dans chaque archive."));
                 }
                 generated[pair.Key] = series;

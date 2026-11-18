@@ -26,6 +26,10 @@ public sealed record DashboardOldestGroupsSnapshot(bool Available, string Unavai
     int[] MissingDateRows, int[] InvalidDateRows, int[] FutureDateRows, int[] UnknownStatusRows,
     int? MaximumAgeDays, IReadOnlyList<DashboardOldestGroup> Groups, string Explanation)
 {
+    // The global ranking needs status and opening dates, independently of an
+    // assignment-group column. Available still describes the per-group view.
+    public bool ScopeAvailable { get; init; } = Available;
+    public string ScopeUnavailableReason { get; init; } = UnavailableReason;
     // One ranking for the complete selected scope. Multigroup membership never
     // repeats an index here; repeated IDs in different source rows remain distinct.
     public IReadOnlyList<DashboardOldestTicket> Oldest { get; init; } = Array.Empty<DashboardOldestTicket>();
@@ -118,7 +122,7 @@ public static class DashboardOldestGroups
         }
         var indexes = new[] { "id", "title", "status", "priority", "assignee", "group", "created" }
             .ToDictionary(role => role, ColumnIndex, StringComparer.Ordinal);
-        var missing = new[] { "status", "group", "created" }.Where(role => !indexes[role].HasValue)
+        var missing = new[] { "status", "created" }.Where(role => !indexes[role].HasValue)
             .Select(role => snapshot.Column(role)?.Label ?? role).ToArray();
         if (missing.Length > 0 || snapshot.Metric("active")?.Value is null)
         {
@@ -130,6 +134,7 @@ public static class DashboardOldestGroups
                 Array.Empty<DashboardOldestGroup>(), Explanation);
         }
 
+        var groupsAvailable = indexes["group"].HasValue;
         string Cell(string[] row, string role) => indexes[role] is int index && index < row.Length
             ? DashboardService.NormalizeValue(row[index], role, data.Headers[index], settings) : "";
         var groups = new Dictionary<string, GroupBuilder>(StringComparer.OrdinalIgnoreCase);
@@ -156,6 +161,9 @@ public static class DashboardOldestGroups
                 DashboardService.StatusLabel(DashboardService.Status(Cell(row, "status"))), Cell(row, "priority"),
                 Cell(row, "assignee"), opened, age, state);
             records.Add(record);
+            // An absent column does not mean that the tickets are unassigned.
+            // Retain the global ranking without inventing a group membership.
+            if (!groupsAvailable) continue;
             var names = DashboardService.SplitTechnicianNames(Cell(row, "group"), settings.MultiValueSeparators)
                 .Select(name => Regex.Replace(name.Normalize(NormalizationForm.FormC), @"\s+", " ").Trim())
                 .Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -195,9 +203,10 @@ public static class DashboardOldestGroups
         ct.ThrowIfCancellationRequested();
         var ordered = projected.OrderBy(group => !group.OldestOpenedAt.HasValue).ThenBy(group => group.OldestOpenedAt)
             .ThenBy(group => group.Label, StringComparer.OrdinalIgnoreCase).ThenBy(group => group.Key, StringComparer.Ordinal).ToArray();
-        return new(true, "", referenceDate, grain, topCount, activeRows, StateRows(records, OpeningState.Dated),
+        return new(groupsAvailable, groupsAvailable ? "" : "Correspondances nécessaires pour le classement par groupe : Groupe attribué.", referenceDate, grain, topCount, activeRows, StateRows(records, OpeningState.Dated),
             StateRows(records, OpeningState.Missing), StateRows(records, OpeningState.Invalid), StateRows(records, OpeningState.Future),
-            unknownStatusRows, maximumAge, ordered, Explanation) { Oldest = First(records).Select(Ticket).ToArray() };
+            unknownStatusRows, maximumAge, ordered, Explanation)
+        { ScopeAvailable = true, ScopeUnavailableReason = "", Oldest = First(records).Select(Ticket).ToArray() };
     }
 
     private static bool MissingDate(string text) => DashboardService.Normalize(text) is "" or "aucun" or "aucune" or "none"

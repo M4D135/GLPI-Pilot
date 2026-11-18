@@ -55,6 +55,11 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_MODE", "1"); Environment.SetEnvironmentVariable("GLPI_PILOT_TEST_ROOT", _root);
         try
         {
+            if (args.Contains("--supervision-only"))
+            {
+                await CheckSupervisionCompatibility();
+                Console.WriteLine($"{_passed}/{_passed} supervision compatibility checks passed."); return;
+            }
             if (args.Contains("--map-journey-only"))
             {
                 await CheckMapWorkspaceRuntime();
@@ -85,6 +90,7 @@ internal static partial class Program
             }
             await CheckRuntime(); await CheckLayoutImports(); await CheckWeatherSourceReliability(); await CheckWeatherScopeRuntime(); await CheckSelectionWeatherRuntime(); CheckScopedHistory();
             await CheckStockViewsRuntime();
+            await CheckSupervisionCompatibility();
             await CheckUnavailableWidgetFilters();
             await CheckSiteLocationSummaryRuntime();
             await CheckSiteGeographySimulationRuntime();
