@@ -139,15 +139,23 @@ internal static class CollectionRecoveryBrowserChecks
                 </script>
                 """);
         }
-        string ListPage() => Html("<a href='/glpi/logout.php'>Déconnexion</a><form name='searchformTicket'>"
-            + Hidden("criteria[0][field]", "12") + Hidden("criteria[0][value]", "1") + "</form><section id='ticket-results'>"
-            + Table((++render).ToString(), priority) + ExportForm() + "</section>"
-            + "<span class='fa-wrench pointer' onclick=\"$('#search_config_top').dialog('open');\">Colonnes</span>"
-            + "<div class='ui-dialog' role='dialog' id='dialog' hidden><button class='ui-dialog-titlebar-close'>Fermer</button>"
-            + "<div id='search_config_top'><iframe id='Iframesearch_config_top'></iframe></div></div>"
-            + """
+        string ListPage()
+        {
+            var currentRender = ++render;
+            // OpenAsync always navigates to the requested search before
+            // preparation. Present the already-open dialog on that second
+            // document, not on the initial document that navigation replaces.
+            var alreadyOpen = scenario == "already-open" && currentRender == 2;
+            return Html("<a href='/glpi/logout.php'>Déconnexion</a><form name='searchformTicket'>"
+                + Hidden("criteria[0][field]", "12") + Hidden("criteria[0][value]", "1") + "</form><section id='ticket-results'>"
+                + Table(currentRender.ToString(), priority) + ExportForm() + "</section>"
+                + "<span class='fa-wrench pointer' onclick=\"$('#search_config_top').dialog('open');\">Colonnes</span>"
+                + "<div class='ui-dialog' role='dialog' id='dialog'" + (alreadyOpen ? "" : " hidden") + "><button class='ui-dialog-titlebar-close'>Fermer</button>"
+                + "<div id='search_config_top'><iframe id='Iframesearch_config_top'" + (alreadyOpen ? " src='/glpi/front/displaypreference.form.php?itemtype=Ticket'" : "") + "></iframe></div></div>"
+                + """
               <script>
               window.$=()=>({dialog:()=>{
+                sessionStorage.setItem('columnOpenerClicks',String(Number(sessionStorage.getItem('columnOpenerClicks')||0)+1));
                 document.querySelector('#dialog').hidden=false;
                 document.querySelector('iframe').src='/glpi/front/displaypreference.form.php?itemtype=Ticket';
               }});
@@ -156,6 +164,7 @@ internal static class CollectionRecoveryBrowserChecks
               };
               </script>
               """);
+        }
         try
         {
             await context.RouteAsync("**/*", async route =>
@@ -195,12 +204,6 @@ internal static class CollectionRecoveryBrowserChecks
                 else await route.AbortAsync();
             });
             await page.GotoAsync(Target);
-            if (scenario == "already-open")
-            {
-                await page.Locator(".fa-wrench.pointer").ClickAsync();
-                await page.FrameLocator("#Iframesearch_config_top").Locator("#personal_tab_before")
-                    .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 });
-            }
             var automatic = new AutomaticExtractionService(service);
             automatic.PhaseChanged += phases.Add;
             var settings = Settings(folder);
@@ -225,9 +228,12 @@ internal static class CollectionRecoveryBrowserChecks
                 "Tab recovery must submit each native command once, with no global or foreign action.");
             Require(receipt is not null && receipt.State == (shouldPrepare ? "ready" : "unavailable")
                 && receipt.AddedCount == (shouldPrepare ? 1 : 0), "Preparation must report its actual outcome without blocking a safe native export.");
-            Require(preferenceReads == 1 && render >= 2 && !await page.Locator("#dialog").IsVisibleAsync()
-                && !page.Frames.Any(frame => frame.Url.Contains("/displaypreference.form.php", StringComparison.Ordinal)),
-                "The native dialog must close and really reload the search before export.");
+            var dialogVisible = await page.Locator("#dialog").IsVisibleAsync();
+            var preferenceFrames = page.Frames.Count(frame => frame.Url.Contains("/displaypreference.form.php", StringComparison.Ordinal));
+            var openerClicks = await page.EvaluateAsync<int>("Number(sessionStorage.getItem('columnOpenerClicks')||0)");
+            Require(preferenceReads == 1 && render >= (scenario == "already-open" ? 3 : 2) && !dialogVisible
+                && preferenceFrames == 0 && openerClicks == (scenario == "already-open" ? 0 : 1),
+                $"The native dialog must close and really reload the search before export. Preference GETs={preferenceReads}, list renders={render}, dialog visible={dialogVisible}, preference frames={preferenceFrames}, opener clicks={openerClicks}.");
             Require(result.Data.Rows.Count == 1 && result.Data.Headers.Count == (shouldPrepare ? 4 : 3)
                 && File.Exists(result.PrimaryPath) && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(priority).TrimStart('\uFEFF')
                 && phases.Contains(AutomaticRunPhase.Ready), "The real native CSV must be preserved and imported before Ready.");
