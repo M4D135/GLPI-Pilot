@@ -79,6 +79,10 @@ internal static partial class Program
         {
             await Idle(); await Reference().Locator(":scope > .modal-heading > button").ClickAsync();
             await Reference().WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            Require(await page.Locator(".data-workspace[data-ready=true]").CountAsync() == 1
+                && await page.GetByLabel("Adresse de la recherche GLPI", new() { Exact = true }).IsVisibleAsync()
+                && await page.Locator(".terrain-map-page").CountAsync() == 0,
+                "Closing the imported site reference stays on Data with the GLPI address editable and no automatic map navigation.");
         }
         async Task ImportSite(string name)
         {

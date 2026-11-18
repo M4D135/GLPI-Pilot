@@ -55,11 +55,9 @@ export async function renderDataWorkspace(ctx) {
     source.value = updated.settings.activeSourceId;
   });
   signal.addEventListener('abort', stopSettings, { once: true });
-  const connectionStatus = el('p', { class: 'help', role: 'status', 'aria-live': 'polite' });
   const live = card(simulation ? 'Collecter dans la simulation' : 'GLPI en direct', field('Recherche mémorisée', source), connection.element,
-    toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => { await saveConnection(); await call('collect.run'); await ctx.refresh(); }, { primary: true, icon: 'download' }),
-      button(simulation ? 'Connecter la source simulée' : 'Se connecter', async () => { await saveConnection(); const result = await call('collect.connect'); connectionStatus.textContent = result.status?.message || result.status?.detail || 'Session connectée.'; }, { icon: 'arrow' })),
-    connectionStatus, el('p', { class: 'help data-connection-help', text: simulation ? 'Connexion et téléchargements simulés. Profil habituel inchangé.' : 'En cas de demande SSO, terminer la connexion dans le navigateur.' }),
+    toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => { await saveConnection(); await call('collect.run'); await ctx.refresh(); }, { primary: true, icon: 'download' })),
+    el('p', { class: 'help data-connection-help', text: simulation ? 'Connexion et téléchargements simulés. Profil habituel inchangé.' : 'La collecte ouvre la connexion GLPI. En cas de demande SSO, terminer la connexion dans le navigateur.' }),
     toolbar(button('Recherches mémorisées', manageSearches, { icon: 'layers', attributes: { 'data-open-panel': 'sources' } }),
       button('Collecter plusieurs recherches', () => openGroupedCollection(ctx, { beforeOpen: prepareConnection, onSaved: savedSettings, manageSources: () => openTool('sources') }), { icon: 'layers' }),
       button('Inspection et reprise', () => openTool('collect'), { attributes: { 'data-open-panel': 'collect' } })));
@@ -127,7 +125,11 @@ export async function renderDataWorkspace(ctx) {
       button('Ouvrir', () => openTool(panel), { attributes: { 'data-open-panel': panel } })));
   }
   async function openTool(name, extra = {}) {
-    if (name === 'sites') return navigate('terrain-map', { panel: 'reference' });
+    if (name === 'sites') return panels.open('Référentiel des lieux', async local => {
+      local.root.classList.add('terrain-function-panel'); local.root.dataset.terrainPanel = 'reference';
+      const { renderReference } = await import('./terrain-reference.js');
+      const cleanup = await renderReference(local); local.root.dataset.ready = 'true'; return cleanup;
+    }, { panel: 'reference', embedded: true });
     if (name === 'enrichment' && !navigationVisible('enrichment', state.settings.interface)) return;
     const definitions = {
       quality: ['Vérifier la qualité des données', renderQuality], mapping: ['Relier les colonnes aux champs métier', renderMapping],
@@ -156,7 +158,8 @@ export async function renderDataWorkspace(ctx) {
         { label: 'Inspecter', render: item => button('Détecter les tableaux', async () => { const result = await local.api.call('collect.inspect', { page: item.index, revision: item.revision }); selected = null; displayTables(result); }) } ]));
     }
     host.append(el('p', { class: 'help', text: 'Utilisez ces commandes pour une liste particulière ou pour reprendre une collecte qui demande une sélection manuelle.' }),
-      toolbar(button('Actualiser les onglets', loadTabs, { icon: 'refresh' }), button(simulation ? 'Afficher la source simulée' : 'Afficher le navigateur', () => local.api.call('collect.show')),
+      toolbar(button(simulation ? 'Connecter la source simulée' : 'Ouvrir la session GLPI', async () => { await saveConnection(); await local.api.call('collect.connect'); await loadTabs(); }, { icon: 'arrow' }),
+        button('Actualiser les onglets', loadTabs, { icon: 'refresh' }), button(simulation ? 'Afficher la source simulée' : 'Afficher le navigateur', () => local.api.call('collect.show')),
         button('Lire un téléchargement GLPI', async () => { await local.api.call('collect.captureDownload'); await local.navigate('records'); })), tabs, tables,
       el('details', {}, el('summary', { text: 'Repères de cette installation' }), toolbar(...[['ready', 'Liste prête'], ['next', 'Page suivante'], ['table', 'Tableau']].map(([kind, label]) =>
         button(label, async () => { const result = await local.api.call('collect.pick', { kind }); notify(result.cancelled ? 'Repérage annulé.' : 'Repère enregistré.'); })))));

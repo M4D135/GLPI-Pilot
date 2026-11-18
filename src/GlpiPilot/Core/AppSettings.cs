@@ -4,14 +4,18 @@ using System.Text.Json.Serialization;
 
 namespace GlpiPilot.Core;
 
-public sealed class AppSettings
+public sealed class AppSettings : IJsonOnDeserialized
 {
     public const int MinimumInterfaceZoomPercent = 75;
     public const int MaximumInterfaceZoomPercent = 150;
     public const int InterfaceZoomStep = 5;
     public string PortalUrl { get; set; } = "";
     public string BrowserChannel { get; set; } = "msedge";
-    public string Theme { get; set; } = "dark";
+    private string _theme = "dark";
+    private bool _themeSpecified;
+    // Retain the last fixed theme for older configuration readers. A new
+    // profile follows Windows until a fixed theme is explicitly chosen.
+    public string Theme { get => _theme; set { _theme = value; _themeSpecified = value is "light" or "dark"; } }
     public int InterfaceZoomPercent { get; set; } = 100;
     public string AutoMode { get; set; } = "native";
     public string ColumnPreparationMode { get; set; } = "supervision";
@@ -104,7 +108,7 @@ public sealed class AppSettings
         MinimumFreeSpaceMb = Math.Clamp(MinimumFreeSpaceMb, 32, 32768);
         PortalUrl ??= "";
         BrowserChannel ??= "msedge";
-        Theme ??= "dark";
+        _theme ??= "dark";
         AutoMode ??= "native";
         if (string.IsNullOrWhiteSpace(ColumnPreparationMode)) ColumnPreparationMode = "supervision";
         ReadySelector ??= "";
@@ -137,7 +141,16 @@ public sealed class AppSettings
         ActiveSourceId ??= "";
         History ??= new(); History.Normalize();
         Automation ??= new(); Automation.Normalize();
-        Interface ??= new(); Interface.Normalize();
+        Interface ??= new(); PreserveExplicitTheme(); Interface.Normalize();
+    }
+
+    void IJsonOnDeserialized.OnDeserialized() => PreserveExplicitTheme();
+    private void PreserveExplicitTheme()
+    {
+        // Legacy files can carry Theme without the newer interface choice.
+        // Preserve that recorded choice regardless of JSON property order.
+        if (_themeSpecified && Theme is "light" or "dark" && Interface is { ThemeChoiceRecorded: false })
+            Interface.FollowWindowsTheme = false;
     }
 
     public static int NormalizeInterfaceZoom(int value) =>
@@ -291,7 +304,9 @@ public sealed class InterfacePreferences
     private static readonly HashSet<string> NavigationGroupIds = new(StringComparer.Ordinal)
         { "pinned", "workspace", "collect", "pilot", "analyze", "work", "terrain", "admin" };
     public string Density { get; set; } = "balanced";
-    public bool FollowWindowsTheme { get; set; }
+    private bool? _followWindowsTheme;
+    public bool FollowWindowsTheme { get => _followWindowsTheme ?? !ContrastTheme; set => _followWindowsTheme = value; }
+    internal bool ThemeChoiceRecorded => _followWindowsTheme.HasValue || ContrastTheme;
     // The high contrast theme stays a choice of this workstation: the shared Theme remains "dark" or "light", complete
     // configurations neither carry nor replace it, and an unused value is not written, so 3.13.4 reads these files.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

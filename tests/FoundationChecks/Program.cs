@@ -226,6 +226,33 @@ Check("Navigation: only six workspace destinations and optional tools survive no
     var missing = JsonSerializer.Deserialize<InterfacePreferences>("{\"NavigationOrder\":null,\"HiddenNavigation\":null,\"PinnedNavigation\":null,\"NavigationGroupOrder\":null,\"NavigationGroups\":null}")!;
     missing.Normalize(); Equal(0, missing.NavigationGroups.Count); Equal(0, missing.NavigationGroupOrder.Count); Equal(0, missing.NavigationOrder.Count);
 });
+Check("Appearance: a new or unspecified profile follows Windows and persists that choice", () =>
+{
+    var path = FilePath(); var fresh = SettingsRecovery.Load(path);
+    Assert(fresh.Interface.FollowWindowsTheme && new InterfacePreferences().FollowWindowsTheme);
+    SettingsRecovery.Save(path, fresh); Assert(SettingsRecovery.Read(path).Interface.FollowWindowsTheme);
+    File.WriteAllText(path, "{}"); Assert(SettingsRecovery.Read(path).Interface.FollowWindowsTheme);
+    File.WriteAllText(path, "{\"Theme\":null,\"Interface\":null}"); Assert(SettingsRecovery.Read(path).Interface.FollowWindowsTheme);
+    File.WriteAllText(path, "{\"Interface\":{\"Density\":\"compact\"}}");
+    Assert(SettingsRecovery.Read(path).Interface.FollowWindowsTheme);
+});
+Check("Appearance: recorded fixed, system and contrast choices survive migration and copies", () =>
+{
+    foreach (var theme in new[] { "light", "dark" })
+    {
+        foreach (var json in new[] { "{\"Theme\":\"" + theme + "\"}",
+            "{\"Theme\":\"" + theme + "\",\"Interface\":{}}", "{\"Interface\":{},\"Theme\":\"" + theme + "\"}" })
+        {
+            var path = FilePath(); File.WriteAllText(path, json); var settings = SettingsRecovery.Read(path);
+            Equal(theme, settings.Theme); Assert(!settings.Interface.FollowWindowsTheme && !settings.Copy().Interface.FollowWindowsTheme);
+            SettingsRecovery.Save(path, settings); Assert(!SettingsRecovery.Read(path).Interface.FollowWindowsTheme);
+        }
+    }
+    var system = JsonSerializer.Deserialize<AppSettings>("{\"Theme\":\"dark\",\"Interface\":{\"FollowWindowsTheme\":true}}")!;
+    Assert(system.Copy().Interface.FollowWindowsTheme);
+    var contrast = JsonSerializer.Deserialize<AppSettings>("{\"Theme\":\"dark\",\"Interface\":{\"ContrastTheme\":true}}")!;
+    Assert(!contrast.Copy().Interface.FollowWindowsTheme && contrast.Interface.ContrastTheme);
+});
 Check("Navigation: old groups migrate once into spaces without hiding a whole space for one hidden tool", () =>
 {
     var fresh = SettingsRecovery.Load(FilePath());

@@ -15,8 +15,9 @@ export const themeQueries = [darkScheme, contrastScheme];
 
 export function themePreference(settings) {
   const preferences = settings?.interface || {};
-  if (preferences.followWindowsTheme) return 'system';
+  if (preferences.followWindowsTheme === true) return 'system';
   if (preferences.contrastTheme) return 'contrast';
+  if (preferences.followWindowsTheme !== false && !['light','dark'].includes(settings?.theme)) return 'system';
   return settings?.theme === 'light' ? 'light' : 'dark';
 }
 export function resolvedTheme(preference) {

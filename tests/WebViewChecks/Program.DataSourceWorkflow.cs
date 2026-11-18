@@ -141,6 +141,7 @@ internal static partial class Program
         Require(await page.Locator(".workspace-live-source").GetByRole(AriaRole.Heading, new() { Name = "GLPI en direct", Exact = true }).IsVisibleAsync()
             && await Button("Lancer la collecte").EvaluateAsync<bool>("node=>node.classList.contains('primary')&&node.getBoundingClientRect().bottom<innerHeight-35")
             && await Button("Importer CSV / Excel").EvaluateAsync<bool>("node=>!node.classList.contains('primary')")
+            && await Button("Se connecter").CountAsync() == 0
             && await page.Locator(".workspace-live-source").EvaluateAsync<bool>("node=>!!(node.compareDocumentPosition(document.querySelector('[data-source-method=file]'))&Node.DOCUMENT_POSITION_FOLLOWING)&&node.getBoundingClientRect().top<document.querySelector('.workspace-data-metrics').getBoundingClientRect().top"),
             "GLPI is the first data workflow with a visible primary collection action; file import remains available as a secondary action.");
         await Capture("data-glpi-first-light");
@@ -236,9 +237,8 @@ internal static partial class Program
         Require(await Button("Collecter la simulation").IsVisibleAsync() && await page.Locator("[data-source-method=glpi]").CountAsync() == 0
             && await page.Locator(".local-test-banner .local-test-copy > strong").InnerTextAsync() == "Démonstration · données fictives",
             "The demo labels its main action as a simulation and never advertises a live GLPI connection.");
-        await Button("Connecter la source simulée").ClickAsync(); await Idle();
-        Require(await OnPage("data") && operations.Contains("collect.connect"),
-            "Connecting the source leaves the Data workspace open.");
+        Require(await OnPage("data") && await Button("Connecter la source simulée").CountAsync() == 0,
+            "Data exposes one collection action without a redundant connection step, including in simulation.");
         await Button("Collecter la simulation").ClickAsync(); await Idle();
         Require(await OnPage("data") && app.IsTestMode && app.Result!.Rows.Count == 60 && operations.Contains("collect.run"),
             "The primary collection refreshes Data in place with the actual C# result instead of opening Pilotage.");

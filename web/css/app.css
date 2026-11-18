@@ -22,6 +22,25 @@
   font-family: var(--font); font-size: 14px; line-height: 1.5;
   background: var(--bg); color: var(--text);
 }
+/* Before the local settings arrive, only the loading message is visible.
+   Follow Windows for that first paint too, without an inline script. */
+:root[data-theme=system] { color-scheme: light dark; }
+@media (prefers-color-scheme: light) {
+  :root[data-theme=system] {
+    --bg: #f3f6fb; --surface: #fff; --surface-2: #f6f8fc; --surface-hover: #edf4ff; --surface-alt: #edf2f9;
+    --nav-bg: #eef3fa; --input-bg: #fff;
+    --text: #17243a; --muted: #52627b; --faint: #5f6f87;
+    --border: #d7e0ec; --control-border: #8392a8;
+    --accent: #075ebd; --accent-solid: #066ddb; --accent-soft: #e8f2ff;
+    --success: #147746; --success-soft: #e7f6ee;
+    --warning: #865300; --warning-soft: #fff4de;
+    --danger: #b92845; --danger-soft: #fceaf0;
+    --shadow: 0 1px 2px #18335408; --shadow-raised: 0 10px 30px #18335414;
+  }
+}
+@media (forced-colors: active) {
+  :root[data-theme=system] { --bg: Canvas; --text: CanvasText; --muted: CanvasText; }
+}
 :root[data-theme=light] {
   color-scheme: light;
   --bg: #f3f6fb; --surface: #fff; --surface-2: #f6f8fc; --surface-hover: #edf4ff; --surface-alt: #edf2f9;

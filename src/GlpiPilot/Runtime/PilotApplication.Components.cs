@@ -6,7 +6,8 @@ namespace GlpiPilot.Runtime;
 
 public sealed partial class PilotApplication
 {
-    // Le pack allégé n’emporte ni le runtime WebView2 fixe, ni le pilote Playwright, ni le build Firefox.
+    // Le pack allégé fournit son pilote Playwright. Les autres composants
+    // peuvent être ajoutés séparément au besoin.
     // L’opérateur dépose le ZIP de dépendance sur le poste et l’installe ici, sans réseau.
     private void RegisterComponentOperations()
     {
@@ -15,14 +16,7 @@ public sealed partial class PilotApplication
             await Task.CompletedTask; ct.ThrowIfCancellationRequested();
             return new
             {
-                known = PackComponents.Known.Select(id => new
-                {
-                    id,
-                    label = PackComponents.DisplayName(id),
-                    installed = PackComponents.IsInstalled(id),
-                    component = PackComponents.Describe(id),
-                    missing = PackComponents.IsInstalled(id) ? "" : PackComponents.MissingMessage(id)
-                }).ToArray(),
+                known = PackComponents.Known.Select(id => PackComponents.Status(id)).ToArray(),
                 folder = PackComponents.Root("firefox") is { } sample ? Path.GetDirectoryName(sample) ?? "" : ""
             };
         });

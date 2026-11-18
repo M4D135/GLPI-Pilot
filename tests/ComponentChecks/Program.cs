@@ -20,7 +20,9 @@ var checks = new List<(string Name, Action Run)>
     ("Composant absent : le message nomme ce qui manque", CheckMissingIsNamed),
     ("Le registre ne mentionne que ce qui est réellement installé", CheckRegistryReflectsReality),
     ("ZIP WebView2 du Socle épinglé : installé comme runtime fixe, sans component.json", CheckInstallsSocleWebView2),
-    ("ZIP WebView2 du Socle non épinglé ou hors de runtime/webview2 : refusé", CheckRejectsUnknownSocle)
+    ("ZIP WebView2 du Socle non épinglé ou hors de runtime/webview2 : refusé", CheckRejectsUnknownSocle),
+    ("Diagnostic : le pilote du pack est disponible sans ZIP séparé", CheckBundledDriverStatus),
+    ("Diagnostic : un pilote incomplet reste signalé, les autres ZIP sont facultatifs", CheckMissingPayloadStatus)
 };
 
 int failures = 0;
@@ -146,6 +148,38 @@ void CheckRejectsUnknownSocle()
     PackComponents.PinSocleWebView2ForTests("9.8.7.5", Hash(outside));
     Throws<InvalidDataException>(() => PackComponents.Install(outside, expectedArchiveSha256: ""));
     True(!PackComponents.IsInstalled(PackComponents.WebView2Fixed), "Un ZIP refusé a laissé un runtime installé.");
+}
+
+void CheckBundledDriverStatus()
+{
+    Clean();
+    var pack = Path.Combine(temporary, "pack-status");
+    var driver = Path.Combine(pack, "wad", ".playwright");
+    Directory.CreateDirectory(Path.Combine(driver, "node", "win32_x64"));
+    Directory.CreateDirectory(Path.Combine(driver, "package"));
+    File.WriteAllText(Path.Combine(driver, "node", "win32_x64", "node.exe"), "fixture, not executable");
+    File.WriteAllText(Path.Combine(driver, "package", "cli.js"), "fixture, not executed");
+    var status = PackComponents.Status(PackComponents.PlaywrightDriver, pack);
+    True(status.Available && !status.Installed && status.Status == "Fourni avec le pack", "Le pilote fourni est confondu avec un ZIP absent.");
+    True(!PackComponents.IsInstalled(PackComponents.PlaywrightDriver), "Le diagnostic a modifié le registre des ZIP séparés.");
+    File.Delete(Path.Combine(driver, "node", "win32_x64", "node.exe"));
+    True(!PackComponents.Status(PackComponents.PlaywrightDriver, pack).Available, "Un pilote sans nœud est déclaré disponible.");
+}
+
+void CheckMissingPayloadStatus()
+{
+    Clean();
+    var absent = Path.Combine(temporary, "absent-pack");
+    var driver = PackComponents.Status(PackComponents.PlaywrightDriver, absent);
+    True(!driver.Available && !driver.Optional && driver.Status == "À installer", "Un pilote manquant n’est pas signalé.");
+    foreach (var id in new[] { PackComponents.WebView2Fixed, PackComponents.Firefox })
+    {
+        var status = PackComponents.Status(id, absent);
+        True(!status.Available && status.Optional && status.Status == "Facultatif", "Un ZIP complémentaire absent est présenté comme une panne : " + id);
+    }
+    PackComponents.Install(ValidArchive(PackComponents.PlaywrightDriver), "");
+    True(!PackComponents.Status(PackComponents.PlaywrightDriver, absent).Available,
+        "La seule présence de component.json suffit à annoncer à tort un pilote disponible.");
 }
 
 string ValidArchive(string id, string payload = "payload/fichier.txt", string version = "3.13.7")

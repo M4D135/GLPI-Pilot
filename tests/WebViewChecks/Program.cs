@@ -396,6 +396,14 @@ internal static partial class Program
         await WaitForPageAsync(page, "document.documentElement.dataset.themePref === 'system'");
         Require(await page.Locator(".theme-switch button[data-set=system]").GetAttributeAsync("aria-pressed") == "true",
             "Following Windows marks the monitor icon as the pressed choice of the switch.");
+        await page.EmulateMediaAsync(new() { ColorScheme = ColorScheme.Dark, ForcedColors = ForcedColors.None });
+        await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'dark' && document.documentElement.dataset.themePref === 'system'");
+        Require(application.Settings.Interface.FollowWindowsTheme,
+            "Windows dark mode updates the rendered interface without replacing the saved system preference.");
+        await page.EmulateMediaAsync(new() { ColorScheme = ColorScheme.Light, ForcedColors = ForcedColors.None });
+        await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light' && document.documentElement.dataset.themePref === 'system'");
+        Require((await Call(application, "settings.get")).GetProperty("interface").GetProperty("followWindowsTheme").GetBoolean(),
+            "Windows light mode is reflected immediately and the real settings bridge retains the system choice.");
         await page.GetByRole(AriaRole.Button, new() { Name = "Thème clair", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.documentElement.dataset.theme === 'light' && document.documentElement.dataset.themePref === 'light'");
         Require(application.Settings.Theme == "light", "The light icon restores the theme expected by the rest of this suite.");

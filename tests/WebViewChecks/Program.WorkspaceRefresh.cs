@@ -111,12 +111,14 @@ internal static partial class Program
         await page.Locator("[data-open-panel=sites]").ClickAsync();
         var reference = page.Locator("dialog[data-workspace-panel=reference]"); await ReadyAsync(reference.Locator(".terrain-function-panel[data-ready=true]"));
         await reference.Locator(":scope > .modal-heading button").ClickAsync(); await reference.WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Idle();
-        Require(await page.Locator(".interventions-workspace").GetAttributeAsync("data-tab") == "map" && app.Result is null,
-            "The real Data-to-site-reference deep link opens the ticket map and closes its reference panel without loading business data.");
-        var reads = requests.Count(request => request.Operation == "calendar.get");
+        Require(await page.Locator(".data-workspace[data-ready=true]").CountAsync() == 1 && app.Result is null
+            && await page.Locator(".terrain-map-page").CountAsync() == 0,
+            "The site reference opens over Data and closes back to its editable GLPI address without opening a map.");
+        var reads = Count("library.get");
         await Refresh().ClickAsync(); await Idle(); await Capture("refresh-after-reference");
-        Require(Count("calendar.get") > reads && await reference.CountAsync() == 0 && await page.Locator(".terrain-map-page").CountAsync() == 1,
-            "The global Actualiser reads the current workspace without replaying the closed site-reference opening command.");
+        Require(Count("library.get") > reads && await reference.CountAsync() == 0 && await page.Locator(".data-workspace[data-ready=true]").CountAsync() == 1,
+            "Actualiser refreshes Data without replaying the closed site-reference panel or navigating to a map.");
+        await page.Locator(".nav-item[data-page=interventions]").ClickAsync(); await page.Locator(".interventions-workspace").WaitForAsync(); await Idle();
         await Tab("planning").ClickAsync(); await Idle(); await Tab("map").ClickAsync(); await Idle();
         Require(await reference.CountAsync() == 0 && await page.Locator(".interventions-workspace").GetAttributeAsync("data-tab") == "map",
             "Returning from Planning to Map does not replay an already consumed site-reference deep link.");
@@ -148,6 +150,8 @@ internal static partial class Program
         await reference.Locator(":scope > .modal-heading button").ClickAsync(); await reference.WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Idle();
         Require(app.IsFileSource && !app.IsTestMode && app.Result!.Rows.Count == 3,
             "The loaded-map scenario uses three rows read by the production CSV importer, not a canned map model.");
+        await page.Locator(".nav-item[data-page=interventions]").ClickAsync(); await page.Locator(".interventions-workspace").WaitForAsync(); await Idle();
+        if (await Tab("map").GetAttributeAsync("aria-current") != "page") await Tab("map").ClickAsync(); await Idle();
         await Button("Modifier la recherche").ClickAsync(); await Idle();
         await Button("Outils du tableau").ClickAsync(); await Button("Vue des colonnes").ClickAsync();
         await page.GetByLabel("Filtre de colonne Type", new() { Exact = true }).FillAsync("Incident");
@@ -278,9 +282,10 @@ internal static partial class Program
         await page.Locator(".nav-item[data-page=data]").ClickAsync(); await ReadyAsync(page.Locator(".data-workspace[data-ready=true]"));
         await page.Locator("[data-open-panel=sites]").ClickAsync(); await ReadyAsync(reference.Locator(".terrain-function-panel[data-ready=true]"));
         await reference.Locator(":scope > .modal-heading button").ClickAsync(); await reference.WaitForAsync(new() { State = WaitForSelectorState.Detached }); await Idle();
-        mapReads = Count("maps.workspace.get"); await Refresh().ClickAsync(); await Idle();
+        mapReads = Count("maps.workspace.get"); var dataReads = Count("library.get"); await Refresh().ClickAsync(); await Idle();
         var afterSimulation = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
-        Require(app.IsTestMode && Count("maps.workspace.get") == mapReads + 1 && await reference.CountAsync() == 0 && realSettings.SequenceEqual(afterSimulation),
+        Require(app.IsTestMode && Count("maps.workspace.get") == mapReads && Count("library.get") > dataReads
+            && await page.Locator(".data-workspace[data-ready=true]").CountAsync() == 1 && await reference.CountAsync() == 0 && realSettings.SequenceEqual(afterSimulation),
             "The same global refresh works inside the genuine fictitious demo and leaves the real profile byte-for-byte unchanged.");
         await Call(app, "records.test.exit");
         Require(app.IsCachedSource && app.Result!.Rows.Count == 3, "Leaving the refresh demonstration restores the original offline observation.");

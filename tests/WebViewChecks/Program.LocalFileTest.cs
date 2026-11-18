@@ -507,9 +507,9 @@ internal static partial class Program
         await page.Keyboard.PressAsync("Escape"); await libraryTicket.WaitForAsync(new() { State = WaitForSelectorState.Hidden });
 
         await Navigate("data");
-        await Button("Connecter la source simulée").ClickAsync();
         await Button("Inspection et reprise").ClickAsync();
         var collectPanel = page.Locator("dialog[data-workspace-panel=collect]");
+        await collectPanel.GetByRole(AriaRole.Button, new() { Name = "Connecter la source simulée", Exact = true }).ClickAsync();
         // La liste des onglets et l'inspection partagent la meme revision cote C#. Relire les onglets entre
         // le rendu des boutons et l'inspection fait refuser celle-ci : le panneau n'affiche alors aucun
         // bouton "Utiliser ce tableau" et le test attendrait 45 secondes une absence. On relit donc les

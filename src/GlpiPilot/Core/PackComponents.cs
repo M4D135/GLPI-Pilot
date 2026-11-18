@@ -9,10 +9,12 @@ using System.Text.Json;
 
 namespace GlpiPilot.Core;
 
-// Un composant est une dépendance lourd que le pack allégé ne transporte pas : runtime WebView2 fixe,
-// pilote Playwright, build Firefox. Il arrive sur le poste par un ZIP déposé hors ligne, vérifié par
+// Un composant complète ou remplace une dépendance du poste : runtime WebView2 fixe,
+// pilote Playwright, build Firefox. Il arrive par un ZIP déposé hors ligne, vérifié par
 // empreinte, et son absence doit être annoncée comme telle plutôt que de faire échouer l’application.
 public sealed record PackComponent(string Id, string Version, string Sha256, long Bytes, DateTimeOffset InstalledAt);
+public sealed record PackComponentStatus(string Id, string Label, bool Installed, bool Available, bool Optional,
+    string Status, string Message, PackComponent? Component);
 
 public static class PackComponents
 {
@@ -81,6 +83,57 @@ public static class PackComponents
 
     public static IReadOnlyList<PackComponent> Installed() =>
         Known.Select(Describe).OfType<PackComponent>().ToList();
+
+    // The ZIP registry only records separately installed components. A missing
+    // registry entry must not report the driver supplied in wad as missing.
+    public static PackComponentStatus Status(string id, string? applicationDirectory = null)
+    {
+        SafeId(id);
+        var component = Describe(id);
+        var pack = Path.Combine(applicationDirectory ?? AppContext.BaseDirectory, "wad");
+        bool Payload(string root) => id switch
+        {
+            WebView2Fixed => File.Exists(Path.Combine(root, "runtime", "webview2", "msedgewebview2.exe")),
+            PlaywrightDriver => File.Exists(Path.Combine(root, ".playwright", "node", "win32_x64", "node.exe"))
+                && File.Exists(Path.Combine(root, ".playwright", "package", "cli.js")),
+            Firefox => HasFirefox(Path.Combine(root, ".local-browsers")),
+            _ => false
+        };
+        if (component is not null && Payload(Root(id)))
+            return new(id, DisplayName(id), true, true, false, "Installé séparément", "Aucune installation supplémentaire nécessaire.", component);
+        if (Payload(pack))
+            return new(id, DisplayName(id), false, true, false, "Fourni avec le pack", "Aucune installation supplémentaire nécessaire.", null);
+        // These locations are used by the browser runtime too. Do not consult
+        // workstation locations when checking an explicitly supplied pack.
+        if (applicationDirectory is null)
+        {
+            var driver = Environment.GetEnvironmentVariable("PLAYWRIGHT_DRIVER_SEARCH_PATH");
+            if (id == PlaywrightDriver && ((!string.IsNullOrWhiteSpace(driver) && Payload(driver)) || Payload(AppContext.BaseDirectory)))
+                return new(id, DisplayName(id), false, true, false, "Disponible", "Le pilote de collecte est disponible sur ce poste.", null);
+            if (id == Firefox && BrowserChannels.BundledFirefoxDirectory() is not null)
+                return new(id, DisplayName(id), false, true, false, "Disponible", "Le build Firefox pilotable est disponible sur ce poste.", null);
+        }
+        return id switch
+        {
+            WebView2Fixed => new(id, DisplayName(id), false, false, true, "Facultatif",
+                "Le runtime fixe est facultatif lorsque WebView2 Evergreen est déjà installé dans Windows.", null),
+            Firefox => new(id, DisplayName(id), false, false, true, "Facultatif",
+                "Nécessaire uniquement pour collecter avec Firefox. Edge et Chrome n’utilisent pas ce composant.", null),
+            _ => new(id, DisplayName(id), false, false, false, "À installer",
+                "Le pilote de collecte n’a pas été trouvé. Remettre le dossier wad complet ou installer le ZIP du pilote Playwright.", null)
+        };
+    }
+
+    private static bool HasFirefox(string root)
+    {
+        if (!Directory.Exists(root)) return false;
+        try
+        {
+            return Directory.EnumerateDirectories(root, "firefox-*").Any(folder => File.Exists(Path.Combine(folder, "firefox", "firefox.exe"))
+                || File.Exists(Path.Combine(folder, "firefox.exe")));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
+    }
 
     // Le runtime WebView2 fixe est publié une seule fois pour tous les outils, dans le dépôt Socle Windows. Son ZIP
     // n’a ni component.json ni inventaire : il est reconnu à sa forme (runtime/webview2/ seul) et n’est accepté que si
