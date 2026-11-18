@@ -100,7 +100,37 @@ internal static partial class Program
             Directory.CreateDirectory(args[index + 1]); await DismissCaptureNotificationsAsync(page);
             await page.ScreenshotAsync(new() { Path = Path.Combine(args[index + 1], name + ".png"), FullPage = true });
         }
-        await page.GotoAsync("https://glpi-pilot.local/index.html"); await ReadyAsync(page);
+        async Task OpenApplication(bool reload = false)
+        {
+            var stage = "navigation";
+            try
+            {
+                // Wait for the new document, then the app's actual bootstrap/home
+                // readiness. The 15 s interaction timeout must not pre-empt that
+                // existing startup budget while local modules are still loading.
+                if (reload) await page.ReloadAsync(new() { WaitUntil = WaitUntilState.Commit });
+                else await page.GotoAsync("https://glpi-pilot.local/index.html", new() { WaitUntil = WaitUntilState.Commit });
+                stage = "application-ready";
+                await ReadyAsync(page);
+            }
+            catch
+            {
+                Console.WriteLine("REFRESH STARTUP: " + JsonSerializer.Serialize(new { stage, reload, operations = requests.TakeLast(30).Select(request => request.Operation).ToArray(), errors = errors.Take(10).ToArray() }));
+                try
+                {
+                    var dom = await page.EvaluateAsync<JsonElement>("""
+                        () => ({document:document.readyState, ready:document.body?.dataset.ready??null,
+                          loading:!!document.querySelector('#app.app-loading'), page:document.querySelector('.page-content')?.dataset.page??null,
+                          startupError:!!document.querySelector('#app > main .notice.danger')})
+                        """).WaitAsync(TimeSpan.FromSeconds(3));
+                    Console.WriteLine("REFRESH STARTUP DOM: " + dom.GetRawText());
+                }
+                catch (Exception diagnosticError) { Console.WriteLine("REFRESH STARTUP DOM unavailable: " + diagnosticError.GetType().Name); }
+                throw;
+            }
+        }
+
+        await OpenApplication();
         // Observe actual Leaflet instances. User clicks and drags still control
         // them; no map state or production response is replaced by this hook.
         await page.EvaluateAsync("""
@@ -130,7 +160,7 @@ internal static partial class Program
         Require(await reference.CountAsync() == 0 && await page.Locator(".interventions-workspace").GetAttributeAsync("data-tab") == "map",
             "Returning from Planning to Map does not replay an already consumed site-reference deep link.");
 
-        await page.ReloadAsync(); await ReadyAsync(page);
+        await OpenApplication(reload: true);
         await page.EvaluateAsync("""
             () => {window.__refreshObservedMaps=[];const create=window.L.map;
               window.L.map=function(...args){const map=create.apply(this,args);window.__refreshObservedMaps.push(map);return map;};}

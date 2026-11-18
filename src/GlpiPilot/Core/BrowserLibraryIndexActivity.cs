@@ -141,7 +141,7 @@ public sealed partial class BrowserService
 
         // A task is started once. In particular a select/change or GET already
         // sent is never replayed when an old locator/navigation budget expires.
-        public async Task<T> AwaitAsync<T>(Task<T> task, CancellationToken ct)
+        public async Task<T> AwaitAsync<T>(Task<T> task, CancellationToken ct, Func<GlpiLibraryIndexException>? stalled = null)
         {
             _ = task.ContinueWith(completed => _ = completed.Exception, CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -150,7 +150,7 @@ public sealed partial class BrowserService
                 ct.ThrowIfCancellationRequested(); ThrowIfFailed();
                 if (task.IsCompleted) return await task;
                 if (!CanWait)
-                    throw new GlpiLibraryIndexException(Phase, "index-stalled", LibraryIndexProgress.LabelFor(Phase) + " : aucune progression ni requête native en cours. L’index n’a pas pu être confirmé.");
+                    throw stalled?.Invoke() ?? new GlpiLibraryIndexException(Phase, "index-stalled", LibraryIndexProgress.LabelFor(Phase) + " : aucune progression ni requête native en cours. L’index n’a pas pu être confirmé.");
                 await Task.Delay(120, ct);
             }
         }

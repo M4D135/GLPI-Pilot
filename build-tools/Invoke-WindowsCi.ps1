@@ -441,7 +441,7 @@ try {
                 @{ Project = 'TicketLibraryChecks'; Log = 'ticket-library-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket library checks passed\.\r?$' },
                 @{ Project = 'TicketLibraryKnowledgeChecks'; Log = 'ticket-library-knowledge-checks.log'; Summary = '9/9 ticket library knowledge checks passed.' },
                 @{ Project = 'LibraryCollectionJournalChecks'; Log = 'library-collection-journal-checks.log'; Summary = '10/10 vérifications du journal de collecte réussies.' },
-                @{ Project = 'LibraryIndexProgressChecks'; Log = 'library-index-progress-checks.log'; Summary = '8/8 contrôles purs de progression de l’index réussis.' },
+                @{ Project = 'LibraryIndexProgressChecks'; Log = 'library-index-progress-checks.log'; Summary = "8/8 contrôles purs de progression de l’index réussis." },
                 @{ Project = 'TicketResolutionChecks'; Log = 'ticket-resolution-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket resolution checks passed\.\r?$' },
                 @{ Project = 'SharedWorkspaceChecks'; Log = 'shared-workspace-checks.log'; Summary = ''; Pattern = '(?m)^25/25 shared workspace checks passed\.\r?$' },
                 @{ Project = 'CalendarChecks'; Log = 'calendar-checks.log'; Summary = ''; Pattern = '(?m)^52/52 contrôles calendrier réussis\.\r?$' },

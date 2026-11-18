@@ -469,12 +469,22 @@ public sealed partial class BrowserService
     private async Task<LibraryIndexDom> WaitLibraryIndexDomAsync(IPage page, Uri source, string mode, LibraryIndexActivity activity, CancellationToken ct)
     {
         LibraryIndexDom? last = null;
+        GlpiLibraryIndexException Stalled()
+        {
+            var reason = mode == "status" && last?.Ready == true
+                ? "L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI."
+                : KnownIndexReason(last?.Reason);
+            return new(activity.Phase, "index-stalled",
+                reason + " Aucune progression ni requête native en cours ; l’index n’est pas confirmé.");
+        }
         while (true)
         {
             ct.ThrowIfCancellationRequested(); activity.ThrowIfFailed();
             try
             {
-                last = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, mode, ct), ct);
+                // Inactivity can expire while the next DOM read is in flight.
+                // Keep the last observed reason in that path as well.
+                last = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, mode, ct), ct, Stalled);
                 activity.Observe(last.Progress);
                 if (last.Terminal)
                     throw new GlpiLibraryIndexException(activity.Phase, "index-session", KnownIndexReason(last.Reason));
@@ -485,13 +495,7 @@ public sealed partial class BrowserService
             catch (PlaywrightException) when (!page.IsClosed && activity.HasPendingRequest)
             { activity.ThrowIfFailed(); } // Only a live native navigation can replace an execution context normally.
             if (!activity.CanWait)
-            {
-                var reason = mode == "status" && last?.Ready == true
-                    ? "L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI."
-                    : KnownIndexReason(last?.Reason);
-                throw new GlpiLibraryIndexException(activity.Phase, "index-stalled",
-                    reason + " Aucune progression ni requête native en cours ; l’index n’est pas confirmé.");
-            }
+                throw Stalled();
             await Task.Delay(200, ct);
         }
     }

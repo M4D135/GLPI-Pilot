@@ -135,7 +135,37 @@ internal static partial class Program
             await GuideCaptureAsync(page, name);
         }
 
-        await page.GotoAsync("https://glpi-pilot.local/index.html"); await ReadyAsync(page);
+        async Task OpenApplication(bool reload = false)
+        {
+            var stage = "navigation";
+            try
+            {
+                // Commit guarantees the new document. Its modules and C# bootstrap
+                // then use the existing application-ready budget, not the short
+                // interaction timeout attached to the browser's load event.
+                if (reload) await page.ReloadAsync(new() { WaitUntil = WaitUntilState.Commit });
+                else await page.GotoAsync("https://glpi-pilot.local/index.html", new() { WaitUntil = WaitUntilState.Commit });
+                stage = "application-ready";
+                await ReadyAsync(page);
+            }
+            catch
+            {
+                Console.WriteLine("SOURCE STARTUP: " + JsonSerializer.Serialize(new { stage, reload, operations = operations.TakeLast(30).ToArray(), errors = errors.Take(10).ToArray() }));
+                try
+                {
+                    var dom = await page.EvaluateAsync<JsonElement>("""
+                        () => ({document:document.readyState, ready:document.body?.dataset.ready??null,
+                          loading:!!document.querySelector('#app.app-loading'), page:document.querySelector('.page-content')?.dataset.page??null,
+                          startupError:!!document.querySelector('#app > main .notice.danger')})
+                        """).WaitAsync(TimeSpan.FromSeconds(3));
+                    Console.WriteLine("SOURCE STARTUP DOM: " + dom.GetRawText());
+                }
+                catch (Exception diagnosticError) { Console.WriteLine("SOURCE STARTUP DOM unavailable: " + diagnosticError.GetType().Name); }
+                throw;
+            }
+        }
+
+        await OpenApplication();
         await Button("Collecter depuis GLPI").ClickAsync(); await WaitForNavigationTargetAsync(page, "data");
         await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
         Require(await page.Locator(".workspace-live-source").GetByRole(AriaRole.Heading, new() { Name = "GLPI en direct", Exact = true }).IsVisibleAsync()
@@ -220,7 +250,7 @@ internal static partial class Program
             && await Button("Lancer la collecte").IsEnabledAsync(), "A loaded CSV keeps its explicit provenance while the live GLPI collection action remains available.");
         await Capture("data-csv-provenance-dark");
         await Call(app, "cache.restore"); File.Delete(csv);
-        await page.ReloadAsync(); await ReadyAsync(page); await DataPage();
+        await OpenApplication(reload: true); await DataPage();
         Require(app.IsCachedSource && (await page.Locator("[data-current-origin]").InnerTextAsync()).Contains("Cache local", StringComparison.Ordinal),
             "An offline cached file is identified honestly with its original file absent, even though the GLPI form is presented first.");
         Require(await page.GetByRole(AriaRole.Combobox, new() { Name = "Source des données" }).Locator("option").CountAsync() == 4,
@@ -377,13 +407,13 @@ internal static partial class Program
         Require(campaigns.Count == 2 && await summary.GetByRole(AriaRole.Alert).CountAsync() == 0,
             "Reopening preparation after cancellation launches the genuine two-search simulation successfully with its current revision.");
         await CloseDialog(summary); await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
-        await Call(app, "records.test.exit"); await page.ReloadAsync(); await ReadyAsync(page); await DataPage();
+        await Call(app, "records.test.exit"); await OpenApplication(reload: true); await DataPage();
         var realSettingsAfterExit = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
         Require(app.IsCachedSource && app.Result!.Rows.Count == 2 && realSettingsBytes.SequenceEqual(realSettingsAfterExit)
             && app.Settings.Sources.Any(source => source.Id == firstId) && app.Settings.Sources.All(source => source.Id is not (demoA or demoB)),
             "Leaving the grouped demonstration restores the original cached CSV and real saved-search choices.");
         await File.WriteAllTextAsync(csv, "ID;Titre;Statut\n31103;Extrait de contrôle;Nouveau\n");
-        await Call(app, "records.test.import"); await page.ReloadAsync(); await ReadyAsync(page); await DataPage();
+        await Call(app, "records.test.import"); await OpenApplication(reload: true); await DataPage();
         await Button("Collecter plusieurs recherches").ClickAsync(); await Group().WaitForAsync();
         Require(await page.GetByRole(AriaRole.Heading, new() { Name = "Fichier en simulation", Exact = true }).CountAsync() == 1
             && (await Group().InnerTextAsync()).Contains("Simulation locale : ces collectes réutilisent les données du fichier chargé.", StringComparison.Ordinal)

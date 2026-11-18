@@ -427,7 +427,8 @@ async Task IndexNoProgress()
     catch (GlpiLibraryIndexException error)
     {
         Require(error.Phase == "all-status" && error.Category == "index-stalled"
-            && error.Message.Contains("chargement", StringComparison.Ordinal), "Le blocage ne décrit pas l’état réel du tableau.");
+            && error.Message.Contains("chargement", StringComparison.Ordinal),
+            "Le blocage ne décrit pas l’état réel du tableau. Reçu : " + error.Phase + " / " + error.Category + " / " + error.Message);
     }
     Require(timer.Elapsed < TimeSpan.FromSeconds(15) && s.Requests.Any(url => url.Contains("action=fold_search", StringComparison.Ordinal)),
         "Le polling sans rapport a prolongé indéfiniment l’attente de l’index.");
