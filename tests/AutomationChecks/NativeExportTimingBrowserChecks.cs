@@ -42,7 +42,7 @@ internal static class NativeExportTimingBrowserChecks
             : scenario == "click-slow" ? ""
             : scenario == "selection-kept" ? "const exportForm=this.form;setTimeout(()=>exportForm.submit(),100);"
             : "this.form.submit(); this.remove();";
-        if (scenario == "foreign") change = "const unrelated=document.createElement('a');unrelated.href='/glpi/front/unrelated-export.csv';unrelated.download='unrelated.csv';document.body.append(unrelated);unrelated.click();unrelated.remove();" + change;
+        if (scenario == "foreign") change = "const unrelated=document.createElement('iframe');unrelated.hidden=true;document.body.append(unrelated);unrelated.src='/glpi/front/unrelated-export.csv';" + change;
         var html = """
             <!doctype html><html lang="fr"><meta charset="utf-8"><title>GLPI — Tickets synthétiques</title>
             <style>body{font:14px sans-serif}td,th{padding:6px}button,select{min-height:28px}</style><body>
@@ -88,13 +88,16 @@ internal static class NativeExportTimingBrowserChecks
         var requests = new ConcurrentQueue<(string Method, Uri Url)>();
         var responseDurations = new ConcurrentQueue<TimeSpan>();
         var routeTasks = new ConcurrentBag<Task>();
+        var downloadChecks = new ConcurrentBag<Task>();
         var logs = new ConcurrentQueue<string>();
         var firstRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var foreignDownloadObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stopResponses = new CancellationTokenSource();
         using var cancellation = new CancellationTokenSource();
         var responseDelay = scenario == "selection-slow" ? 12000 : scenario is "click-slow" or "popup-slow" ? 9000 : 0;
-        var saved = 0; var ready = 0; var foreignRequests = 0;
+        var saved = 0; var ready = 0; var foreignRequests = 0; var foreignDownloads = 0;
+        var foreignVerified = false; var foreignFailure = "";
+        Task<AutomaticRunResult>? pendingRun = null;
         service.Log += logs.Enqueue;
         service.AttachForTesting(context, Target); // Includes the production 10 s default locator timeout.
         try
@@ -111,8 +114,15 @@ internal static class NativeExportTimingBrowserChecks
                         firstRequest.TrySetResult();
                         var responseClock = Stopwatch.StartNew();
                         if (scenario == "cancel") await Task.Delay(Timeout.InfiniteTimeSpan, stopResponses.Token);
-                        else if (responseDelay > 0) await Task.Delay(responseDelay, stopResponses.Token);
-                        if (scenario == "foreign") await foreignDownloadObserved.Task.WaitAsync(stopResponses.Token);
+                        // Windows timer resolution can finish one Task.Delay
+                        // slightly before the requested Stopwatch duration.
+                        while (responseClock.Elapsed < TimeSpan.FromMilliseconds(responseDelay))
+                            await Task.Delay(Math.Max(1, responseDelay - (int)responseClock.Elapsed.TotalMilliseconds), stopResponses.Token);
+                        if (scenario == "foreign")
+                        {
+                            try { await foreignDownloadObserved.Task.WaitAsync(stopResponses.Token); }
+                            catch when (foreignDownloadObserved.Task.IsFaulted) { await route.AbortAsync(); return; }
+                        }
                         responseDurations.Enqueue(responseClock.Elapsed);
                         if (scenario == "http403")
                         {
@@ -149,7 +159,34 @@ internal static class NativeExportTimingBrowserChecks
                 var task = Handle(route); routeTasks.Add(task); return task;
             });
             var page = await context.NewPageAsync();
-            page.Download += (_, download) => { if (download.Url == ForeignDownload) foreignDownloadObserved.TrySetResult(); };
+            async Task VerifyForeignDownloadAsync(IDownload download)
+            {
+                try
+                {
+                    foreignFailure = await download.FailureAsync() ?? "";
+                    Require(foreignFailure.Length == 0, "The unrelated fixture attachment failed: " + foreignFailure);
+                    await using var stream = await download.CreateReadStreamAsync();
+                    Require(stream is not null, "No stream was available for the unrelated fixture attachment.");
+                    using var bytes = new MemoryStream();
+                    await stream!.CopyToAsync(bytes, stopResponses.Token);
+                    foreignVerified = Encoding.UTF8.GetString(bytes.ToArray()) == Csv.Replace("7;", "99;", StringComparison.Ordinal);
+                    Require(foreignVerified, "The unrelated attachment did not contain the exact synthetic ID99 CSV.");
+                    foreignDownloadObserved.TrySetResult();
+                }
+                catch (Exception error)
+                {
+                    foreignFailure = error.GetType().Name + ": " + error.Message;
+                    foreignDownloadObserved.TrySetException(error);
+                }
+            }
+            page.Download += (_, download) =>
+            {
+                if (download.Url == ForeignDownload)
+                {
+                    Interlocked.Increment(ref foreignDownloads);
+                    downloadChecks.Add(VerifyForeignDownloadAsync(download));
+                }
+            };
             await page.GotoAsync(Target);
             var settings = Settings(folder);
             var original = await service.ChooseAutoTableAsync(page, settings, CancellationToken.None);
@@ -162,7 +199,7 @@ internal static class NativeExportTimingBrowserChecks
             var automatic = new AutomaticExtractionService(service);
             automatic.NativeFileSaved += _ => Interlocked.Increment(ref saved);
             automatic.PhaseChanged += phase => { if (phase == AutomaticRunPhase.Ready) Interlocked.Increment(ref ready); };
-            var runTask = automatic.RunAsync(settings, null, cancellation.Token);
+            var runTask = pendingRun = automatic.RunAsync(settings, null, cancellation.Token);
             if (scenario == "cancel")
             {
                 var first = await Task.WhenAny(firstRequest.Task, runTask).WaitAsync(TimeSpan.FromSeconds(10));
@@ -203,6 +240,11 @@ internal static class NativeExportTimingBrowserChecks
             }
             else
             {
+                if (scenario == "foreign")
+                {
+                    await Task.WhenAny(runTask, foreignDownloadObserved.Task);
+                    if (foreignDownloadObserved.Task.IsFaulted) await foreignDownloadObserved.Task;
+                }
                 var run = await runTask;
                 Require(run.Data.Rows.Count == 1 && run.Data.Rows[0].SequenceEqual(new[] { "7", "Exemple synthétique" })
                     && run.Data.Complete && run.Data.Provenance.Method == "native-csv" && run.Data.Provenance.ScopeVerified,
@@ -227,25 +269,34 @@ internal static class NativeExportTimingBrowserChecks
                 if (scenario == "selection-kept") Require(await page.Locator("#native-format").InputValueAsync() == "-4",
                     "A retained native selection must not trigger a second submit before its deferred export request is observed.");
                 if (responseDelay > 0) Require(responseDurations.Single() >= TimeSpan.FromMilliseconds(responseDelay),
-                    "The delayed fixture must cross the former locator/action deadline before sending the download headers.");
+                    $"The delayed fixture must cross the former locator/action deadline before sending the download headers: expected {responseDelay} ms, observed {responseDurations.Single().TotalMilliseconds:F2} ms.");
                 if (scenario == "popup-slow") Require(!page.IsClosed && page.Url == Target,
                     "The native popup export must leave the source search open and unchanged.");
-                if (scenario == "foreign") Require(foreignRequests == 1 && foreignDownloadObserved.Task.IsCompletedSuccessfully
-                    && Directory.EnumerateFiles(folder).Count() == 1,
-                    "The unrelated attachment from the same page must be observed first and ignored; only the matching native CSV may be retained.");
+                if (scenario == "foreign") Require(foreignRequests == 1 && foreignDownloads == 1 && foreignVerified
+                    && foreignDownloadObserved.Task.IsCompletedSuccessfully && Directory.EnumerateFiles(folder).Count() == 1,
+                    $"The unrelated attachment from the same page must be received first and ignored; only the matching native CSV may be retained. Foreign requests={foreignRequests}, downloads={foreignDownloads}, verified={foreignVerified}, failure={foreignFailure}.");
             }
         }
         catch
         {
             Console.Error.WriteLine($"TRACE synthetic native export timing {scenario}: requests={requests.Count}, saved={saved}, ready={ready}");
+            Console.Error.WriteLine($"TRACE synthetic native export timing: response milliseconds=[{string.Join(",", responseDurations.Select(value => value.TotalMilliseconds.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)))}]; foreign requests={foreignRequests}, downloads={foreignDownloads}, verified={foreignVerified}, failure={foreignFailure}");
+            Console.Error.WriteLine("TRACE synthetic native export timing files: " + (Directory.Exists(folder) ? string.Join(",", Directory.EnumerateFiles(folder).Select(Path.GetFileName)) : "no export directory"));
             foreach (var line in logs.TakeLast(30)) Console.Error.WriteLine("TRACE synthetic native export timing: " + line);
             throw;
         }
         finally
         {
             stopResponses.Cancel();
+            cancellation.Cancel();
             await service.DisposeAsync();
-            await Task.WhenAll(routeTasks).WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.WhenAll(routeTasks.Concat(downloadChecks)).WaitAsync(TimeSpan.FromSeconds(5));
+            if (pendingRun is not null)
+            {
+                // A failed foreign fixture proof can end the check before the
+                // production run. Closing its context must also drain that run.
+                try { await pendingRun; } catch (Exception) { }
+            }
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
         }
     }
