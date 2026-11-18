@@ -47,6 +47,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
       await page.evaluate(theme => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, before);
     };
     if (process.env.GLPI_TEST_TICKET_SEARCH_ONLY === '1') { await require('./ticket-search.cjs')({page,reset,ok,capture}); ok(errors.length===0, 'Shared search has no JavaScript errors'); console.log(`${checks}/${checks} ticket search interface checks passed.`); return; }
+    if (process.env.GLPI_TEST_TICKET_CACHE_ONLY === '1') { await require('./ticket-cache.cjs')({page,reset,ok,capture}); ok(errors.length===0 && external===0, 'Ticket cache indicators have no JavaScript errors or external requests'); console.log(`${checks}/${checks} ticket cache interface checks passed.`); return; }
     if (process.env.GLPI_TEST_HISTORY_ONLY === '1') {
       await require('./history-empty.cjs')({ page, reset, ok });
       ok(errors.length === 0 && external === 0, 'History states use production modules without JavaScript errors or external requests');
@@ -244,6 +245,7 @@ const html = fs.readFileSync(path.join(project, 'web/index.html'), 'utf8')
     await require('./tickets.cjs')({page,reset,ok,capture});
     await require('./tours.cjs')({page,reset,ok,capture});
     await require('./ticket-search.cjs')({page,reset,ok,capture});
+    await require('./ticket-cache.cjs')({page,reset,ok,capture});
     ok(errors.length===0,`Production modules report no JavaScript errors (${errors.join('; ')})`);
     ok(external===0,'Synthetic ergonomics checks make no external requests');
     console.log(`${checks}/${checks} ergonomics checks passed.`);

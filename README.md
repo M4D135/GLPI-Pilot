@@ -28,9 +28,15 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
-## 4.0.1 : rétablissement des widgets de supervision
+## 4.0.1 : supervision, tournées et cache des tickets
 
 Reconnaissance des libellés courts des exports et récupération des correspondances dont seul le libellé connu a changé. Les choix personnalisés, les ambiguïtés et les règles de correction de valeurs restent respectés. Les dix plus anciens du périmètre ne dépendent plus de la présence d’une colonne Groupe. La note automatique « Équipes du relevé » sans contenu est retirée du tableau par défaut ; l’historique indique directement pourquoi une évolution ne peut pas encore être tracée. Voir les [corrections et vérifications de la 4.0.1](docs/RELEASE-4.0.1.md).
+
+La création d’une tournée depuis la recherche ouvre directement son planning avec les tickets concernés. Un second bouton distinct permet de préparer la tournée depuis la carte.
+
+La lecture automatique d’une fiche n’est plus relancée par un événement de focus pendant l’affichage de son premier résultat réussi.
+
+Un indicateur discret de cache accompagne les tickets dans la recherche et le détail. Il distingue absence de copie, copie récente, copie ancienne et version à vérifier. Le lecteur compare le repère de modification GLPI du relevé à celui de la copie locale pour réutiliser une version inchangée ; les dates connues restent visibles dans la fiche.
 
 ## 4.0.0 : interface, cartes et parcours tickets
 

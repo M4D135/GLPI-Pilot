@@ -122,7 +122,7 @@ public sealed partial class PilotApplication
         Publish("session.changed", SessionState());
         return SessionState();
     }
-    private Task<object?> RecordListAsync(JsonElement args, CancellationToken ct)
+    private async Task<object?> RecordListAsync(JsonElement args, CancellationToken ct)
     {
         if (args.TryGetProperty("indices", out _) || args.TryGetProperty("transform", out _)) CheckRevision(args);
         var data = RequireResult(); var settings = EffectiveSettings.Dashboard;
@@ -143,8 +143,10 @@ public sealed partial class PilotApplication
         }
         var keys = DataObjectIdentity.KeyResolver(data, settings);
         var locations = Flag(args, "includeLocations") ? TerrainLocations(ct).Matches.ToDictionary(match => match.RowIndex) : null;
-        return Task.FromResult<object?>(new { locationsAvailable = locations is not null, correctionAllowed = TerrainCorrectionReadOnlyReason.Length == 0, focusPosition, revision = Revision, headers = data.Headers, rows = query.SourceIndices.Skip(offset).Take(limit).Select(i => new { index = i, key = keys(i), location = locations?.GetValueOrDefault(i) is { } match
-            ? new { label = match.SiteName.Length > 0 ? match.SiteName : !string.IsNullOrWhiteSpace(match.CityName) ? match.CityName : match.State == CityMatchState.Ambiguous ? "Localisation ambiguë" : "Lieu non reconnu", isOverride = match.IsOverride } : null, cells = data.Rows[i].Select(cell => cell.Length > 2000 ? cell[..2000] + "…" : cell).ToArray() }), total = query.MatchCount, sourceTotal = data.Rows.Count, offset, limit, complete = data.Complete, columns = PreviewViewPreferences.Load(DataPath("preview-view.json"), data.Headers), session = SessionState() });
+        var pageRows = query.SourceIndices.Skip(offset).Take(limit).ToArray();
+        var caches = await WorkRecordCacheStatusAsync(pageRows, ct).ConfigureAwait(false);
+        return new { locationsAvailable = locations is not null, correctionAllowed = TerrainCorrectionReadOnlyReason.Length == 0, focusPosition, revision = Revision, headers = data.Headers, rows = pageRows.Select(i => new { index = i, key = keys(i), cache = caches[i], location = locations?.GetValueOrDefault(i) is { } match
+            ? new { label = match.SiteName.Length > 0 ? match.SiteName : !string.IsNullOrWhiteSpace(match.CityName) ? match.CityName : match.State == CityMatchState.Ambiguous ? "Localisation ambiguë" : "Lieu non reconnu", isOverride = match.IsOverride } : null, cells = data.Rows[i].Select(cell => cell.Length > 2000 ? cell[..2000] + "…" : cell).ToArray() }), total = query.MatchCount, sourceTotal = data.Rows.Count, offset, limit, complete = data.Complete, columns = PreviewViewPreferences.Load(DataPath("preview-view.json"), data.Headers), session = SessionState() };
     }
     private async Task<object?> ExportRecordsAsync(JsonElement args, CancellationToken ct)
     {

@@ -20,7 +20,7 @@ public static class SessionBrowserChecks
             ("Application shutdown drains handlers before closing the authenticated browser context", BrowserDrain),
             ("The actual draft page retries its final text after a queued save is cancelled for closing", () => DraftCloseFlush(false)),
             ("A failed final draft save leaves the editor usable and permits an acknowledged retry", () => DraftCloseFlush(true))
-        };
+        }.Concat(TicketCacheRuntimeChecks.CreateBrowserChecks(_browser)).ToArray();
     }
     public static async Task DisposeAsync()
     { if (_browser is not null) await _browser.DisposeAsync(); _playwright?.Dispose(); }

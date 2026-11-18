@@ -29,6 +29,24 @@ public sealed class TicketReadingPosition
     public TicketReadingPosition Copy() => (TicketReadingPosition)MemberwiseClone();
 }
 
+/// <summary>The source version associated with one successful main-ticket read, not a library confirmation.</summary>
+public sealed class TicketReadSourceVersion
+{
+    public string TicketKey { get; set; } = "";
+    public string Context { get; set; } = "";
+    public string ModifiedRaw { get; set; } = "";
+    public DateTimeOffset? ModifiedAt { get; set; }
+    public string Precision { get; set; } = "unknown";
+    public bool Reliable { get; set; }
+    public DateTimeOffset ObservedAt { get; set; }
+    public string RowFingerprint { get; set; } = "";
+    public bool MainReadComplete { get; set; }
+    public TicketReadSourceVersion Copy() => (TicketReadSourceVersion)MemberwiseClone();
+    public bool IsValid(string key) => TicketKey == key && Context is { Length: <= 64 } && ModifiedRaw is { Length: <= 1000 }
+        && Precision is "unknown" or "minutes" or "seconds" && RowFingerprint is { Length: <= 64 }
+        && (!Reliable || ModifiedRaw.Length > 0 && ModifiedAt.HasValue && Precision != "unknown");
+}
+
 public sealed class PersonalTicket
 {
     public string Key { get; set; } = "";
@@ -48,6 +66,7 @@ public sealed class PersonalTicket
     public string SnoozeReason { get; set; } = "";
     public DateTimeOffset? LastOpenedAt { get; set; }
     public DateTimeOffset? LastReadAt { get; set; }
+    public TicketReadSourceVersion? LastReadSource { get; set; }
     public string PreferredSection { get; set; } = "";
     public TicketReadingPosition ReadingPosition { get; set; } = new();
     public Dictionary<string, List<string>> RowFingerprints { get; set; } = new(StringComparer.Ordinal);
@@ -58,7 +77,7 @@ public sealed class PersonalTicket
         Key = Key, Id = Id, Url = Url, Title = Title, Pinned = Pinned, Offline = Offline,
         QueueOrder = QueueOrder, Notes = Notes, FollowupDraft = FollowupDraft, LastActionReceipt = LastActionReceipt, ReminderAt = ReminderAt,
         ReminderAcknowledgedAt = ReminderAcknowledgedAt, SnoozedUntil = SnoozedUntil, SnoozeReason = SnoozeReason,
-        LastOpenedAt = LastOpenedAt, LastReadAt = LastReadAt, PreferredSection = PreferredSection,
+        LastOpenedAt = LastOpenedAt, LastReadAt = LastReadAt, LastReadSource = LastReadSource?.Copy(), PreferredSection = PreferredSection,
         Checklist = Checklist.Select(item => item.Copy()).ToList(),
         SectionFingerprints = new(SectionFingerprints, StringComparer.Ordinal),
         ReadingPosition = ReadingPosition.Copy(), RowFingerprints = RowFingerprints.ToDictionary(p => p.Key, p => p.Value.ToList(), StringComparer.Ordinal), RowsFullyCompared = RowsFullyCompared
@@ -174,6 +193,8 @@ public static class WorkplaceStore
         {
             if (ticket == null || TicketKey(new(ticket.Id, ticket.Url)) != ticket.Key || !keys.Add(ticket.Key))
                 throw new InvalidDataException("Une identité de ticket est invalide ou dupliquée dans l’espace personnel.");
+            if (ticket.LastReadSource is { } source && !source.IsValid(ticket.Key))
+                throw new InvalidDataException("Le repère de version de la fiche conservée est invalide.");
             if (ticket.QueueOrder is < 0 or > MaximumTickets || ticket.Checklist == null || ticket.Checklist.Count > MaximumChecklistItems || ticket.Checklist.Any(item => item == null)
                 || ticket.SectionFingerprints == null || ticket.SectionFingerprints.Count > 100)
                 throw new InvalidDataException("Les limites d’un ticket personnel sont dépassées.");

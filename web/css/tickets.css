@@ -31,6 +31,19 @@
 .tickets-list-reference { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .tickets-row-id { font-size: 11px; letter-spacing: .02em; font-weight: 800; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tickets-row-priority { font-size: 10px; font-weight: 650; color: var(--muted); }
+.tickets-cache-reference,.tickets-cache-cell { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+.tickets-cache-cell > .cell-button { min-width: 0; }
+.ticket-cache-indicator { position: relative; display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; align-items: center; justify-content: center; color: var(--muted); vertical-align: middle; cursor: help; border-radius: 3px; }
+.ticket-cache-indicator > .icon { width: 16px; height: 16px; }
+.ticket-cache-indicator[data-cache-tone=missing] { color: var(--danger); }
+.ticket-cache-indicator[data-cache-tone=current] { color: var(--success); }
+.ticket-cache-indicator[data-cache-tone=warning] { color: var(--warning); }
+.ticket-cache-indicator:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ticket-cache-mark { position: absolute; right: -3px; bottom: -2px; min-width: 7px; border-radius: 3px; background: var(--surface); font-size: 9px; font-weight: 800; line-height: 1; text-align: center; }
+.ticket-cache-dates { display: flex; flex-wrap: wrap; gap: 3px 14px; margin: 6px 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.ticket-cache-dates strong { color: inherit; font-weight: 600; }
+.tickets-cache-heading { display: flex; gap: 8px; align-items: center; }
+.tickets-cache-heading h2 { min-width: 0; }
 .tickets-list-title { border: 0; padding: 0; text-align: left; background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 700; line-height: 1.45; cursor: pointer; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .tickets-list-title:hover { color: var(--accent); }
 .tickets-list-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }

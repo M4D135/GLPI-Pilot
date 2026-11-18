@@ -65,6 +65,7 @@ namespace GlpiPilot.Runtime
     public sealed partial class PilotApplication
     {
         public void LoadSessionFixture(ExtractionResult data, SnapshotDocument? historical = null) => SetResult(data, historical: historical);
+        public void AcceptTicketCacheFixture(TicketDetailResult detail, bool observeSource = true) => WorkAcceptDetail(detail, observeSource: observeSource);
         public void LoadEnrichedSessionFixture(CityEnrichmentResult locations, AppSettings? context = null) => SetResult(locations.Data, locations, context: context);
         public void RegisterSessionFixture(string name, Func<JsonElement, CancellationToken, Task<object?>> handler) => Register(name, handler);
         public void ForceScheduledFixture(Func<JsonElement, CancellationToken, Task<object?>> collect)

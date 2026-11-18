@@ -116,7 +116,8 @@ export async function renderTicketsWorkspace(ctx, { resumeActive = false } = {})
   }
   async function mountReader(args) {
     readerCleanup = await renderTicketReader({ ...ctx, root: readerRoot, params: args, navigate: readerNavigate }, {
-      onTicketOpened: (ticket, opened) => { currentTicket = ticket; currentArgs = opened; activeRow = opened.rowIndex ?? null; listCleanup?.highlight?.(activeRow); drawPath(); drawResume(); },
+      onTicketOpened: (ticket, opened) => { currentTicket = ticket; currentArgs = opened; activeRow = opened.rowIndex ?? null; listCleanup?.updateCache?.(opened.rowIndex, ticket.cache, opened.revision); listCleanup?.highlight?.(activeRow); drawPath(); drawResume(); },
+      onTicketCacheChanged: (ticket, opened) => { currentTicket = ticket; listCleanup?.updateCache?.(opened?.rowIndex, ticket.cache, opened?.revision); drawResume(); },
       onSourceChanged: async () => { await ensureList(); updateLayout(); drawPath(); },
       onTicketClosed: () => { currentTicket = currentArgs = null; activeRow = null; drawPath(); drawResume(); }
     });

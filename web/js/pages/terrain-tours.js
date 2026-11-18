@@ -22,7 +22,10 @@ export async function renderTours(ctx) {
   const order = select([{ value: 'saved', label: 'Ordre mémorisé' }, { value: 'alphabetical', label: 'Alphabétique' }, { value: 'priority', label: 'Priorités actives' }, { value: 'due', label: 'Échéances actives' }, { value: 'proximity', label: 'Proximité à vol d’oiseau' }], 'saved');
   const firstCity = referenceField(p, 'Première ville pour la proximité', 'city', '', '', { saved: true });
   const newTour = form([{ key: 'name', label: 'Nom de la tournée', required: true }, { key: 'date', label: 'Premier jour', type: 'date', required: true }], { name: 'Nouvelle tournée', date: new Date().toLocaleDateString('en-CA') });
-  p.body.append(...(ctx.params?.ticketSearch?[toolbar(button('Créer une tournée depuis la recherche',()=>ctx.navigate('interventions',{tab:'map',ticketMap:true,ticketSearch:ctx.params.ticketSearch}),{primary:true,icon:'route'})),el('p',{class:'help',text:'Tournées contenant au moins un ticket de la recherche. Sélection des tickets et préparation des étapes sur la carte.'})]:[]),summary, tabs, content);
+  p.body.append(toolbar(
+    button('Créer une tournée depuis la recherche', prepareSearchTour, { primary: true, icon: 'search', disabled: !state.loaded, attributes: { 'data-tour-action': 'from-search' } }),
+    button('Créer une tournée depuis la carte', openTourMap, { icon: 'map', disabled: !state.loaded, attributes: { 'data-tour-action': 'from-map' } })),
+    ...(ctx.params?.ticketSearch ? [el('p', { class: 'help', text: 'Tournées contenant au moins un ticket de la recherche. Création directe depuis les résultats ou sélection des étapes sur la carte.' })] : []), summary, tabs, content);
 
   function args(extra = {}) { return { revision: state.revision, draftVersion: state.draftVersion, ...extra }; }
   function filterArgs() { return { revision: state.revision, technician: scope.read(), allStatuses: allStatuses.checked }; }
@@ -49,6 +52,39 @@ export async function renderTours(ctx) {
   async function abandonForSwitch() {
     if (!state.dirty && !headerChanged()) return true;
     return confirm('Changer de tournée', 'Le brouillon de la tournée en cours n’est pas enregistré. Ouvrir une autre tournée abandonne ses modifications.', 'Abandonner le brouillon');
+  }
+  function creationSearch() {
+    if (!ctx.params?.ticketSearch) return null;
+    const query = structuredClone(ctx.params.ticketSearch);
+    if (Array.isArray(ctx.params.rows)) {
+      query.selectedRows = [...ctx.params.rows];
+      if (ctx.params.revision != null) query.revision = ctx.params.revision;
+    }
+    return query;
+  }
+  function openTourMap() {
+    const ticketSearch = creationSearch();
+    return ctx.navigate('interventions', { tab: 'map', ticketMap: true, ...(ticketSearch ? { ticketSearch } : {}) });
+  }
+  function prepareSearchTour() {
+    const ticketSearch = creationSearch();
+    if (!ticketSearch) return ctx.navigate('records', { returnToSearch: true });
+    const errors = el('div', { role: 'alert' });
+    const values = form([{ key: 'name', label: 'Nom de la tournée', required: true, maxLength: 120 },
+      { key: 'date', label: 'Premier jour', type: 'date', required: true }],
+      { name: 'Tournée depuis la recherche', date: ctx.params?.visitDate || new Date().toLocaleDateString('en-CA') });
+    const technician = referenceField(p, 'Technicien prévu', 'technician', '', '', { saved: true, empty: 'À attribuer' });
+    p.dialog('Créer une tournée depuis la recherche', el('div', {}, errors,
+      el('p', { text: Array.isArray(ticketSearch.selectedRows)
+        ? `La tournée reprend ${formatNumber(ticketSearch.selectedRows.length)} ticket${ticketSearch.selectedRows.length === 1 ? '' : 's'} sélectionné${ticketSearch.selectedRows.length === 1 ? '' : 's'} dans la recherche.`
+        : 'La tournée reprend tous les résultats de la recherche, y compris ceux des autres pages.' }), values.element, technician.element),
+    [{ label: 'Annuler', action: close => close() }, { label: 'Créer le brouillon', primary: true, action: close => p.run(async () => {
+      const fields = values.read();
+      if (!await abandonForSwitch()) return;
+      state = await p.call('terrain.tours.createFromSearch', { revision: state.revision, ticketSearch, ...fields, technician: technician.read(), discardDraft: true });
+      headerForm = null; pointForms = null; tab = 'planning'; stopsOffset = 0; scheduleOffset = 0;
+      close(); paintSummary(); paintTabs(); await paintEditor(); p.message('Brouillon créé depuis la recherche. Vérifier les étapes puis enregistrer la tournée.');
+    }, errors) }]);
   }
   async function openTour(id) {
     if (!await abandonForSwitch()) return;

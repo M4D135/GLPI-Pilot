@@ -385,7 +385,9 @@ public static class WorkBrowserChecks
         await ui.Page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
         await ui.Page.WaitForFunctionAsync("()=>document.querySelector('.work-ticket-heading h2')?.textContent.startsWith('#43 ·')");
         Check((await ui.Page.Locator(".work-ticket-heading h2").InnerTextAsync()).StartsWith("#43 ·", StringComparison.Ordinal)
-            && await ui.Page.GetByText("Fiche non lue", new() { Exact = true }).CountAsync() == 1,
+            && await ui.Page.Locator(".work-ticket-heading .ticket-cache-indicator[data-cache-state=missing]").CountAsync() == 1
+            && (await ui.Page.Locator(".work-ticket-heading .ticket-cache-dates").InnerTextAsync()).Contains("aucune", StringComparison.Ordinal)
+            && await ui.Page.GetByRole(AriaRole.Button, new() { Name = "Actualiser la fiche", Exact = true }).IsEnabledAsync(),
             "An unread source row opens its exact local dossier and exposes an explicit refresh action.");
         await ui.Navigate("tickets", new { ticketKey = key, section = "personal" });
         Check(await ui.Page.GetByLabel("Notes personnelles", new() { Exact = true }).InputValueAsync() == "Repère personnel conservé",

@@ -42,6 +42,11 @@ try
         await TerrainPreviewValidityChecks.RunAsync(root, Check, Reject);
         Console.WriteLine($"{passed}/{passed} terrain reference preview checks passed."); return;
     }
+    if (args.Contains("--search-tour-only", StringComparer.Ordinal))
+    {
+        await TerrainTourSearchChecks.RunAsync(root, Check, Reject);
+        Console.WriteLine($"{passed}/{passed} search tour checks passed."); return;
+    }
     var alpha = new CityDefinition { Id = "11111111111111111111111111111111", Name = "Alpha", TerritoryPath = "France / Nord / Secteur A", Latitude = 50, Longitude = 2 };
     var beta = new CityDefinition { Id = "22222222222222222222222222222222", Name = "Beta", Latitude = 49, Longitude = 3 };
     var campus = new SiteDefinition { Id = "33333333333333333333333333333333", CityId = alpha.Id, Name = "Campus Nord", Latitude = 50.1, Longitude = 2.1,
@@ -202,6 +207,7 @@ try
     await TerrainPreviewValidityChecks.RunAsync(root, Check, Reject);
     await TerrainHistoricalReferenceChecks.RunAsync(root, Check, Reject);
     await TerrainCorrectionChecks.RunAsync(root, Check, Reject);
+    await TerrainTourSearchChecks.RunAsync(root, Check, Reject);
     Console.WriteLine($"{passed}/{passed} terrain bridge checks passed.");
 }
 finally

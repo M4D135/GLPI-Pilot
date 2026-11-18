@@ -32,6 +32,7 @@ public sealed partial class PilotApplication
         TerrainRegister("terrain.tours.basket", TerrainBasketPage);
         TerrainRegister("terrain.tours.select", TerrainBasketSelect);
         TerrainRegister("terrain.tours.create", TerrainCreateTour);
+        TerrainRegister("terrain.tours.createFromSearch", TerrainCreateTourFromSearch);
         TerrainRegister("terrain.tours.open", TerrainOpenTour);
         TerrainRegister("terrain.tours.edit", TerrainEditTour);
         TerrainRegister("terrain.tours.stops", TerrainStops);
@@ -188,6 +189,13 @@ public sealed partial class PilotApplication
         CheckRevision(args); TerrainRefreshBasket(); TerrainMaySwitch(args);
         var tour = ScheduledTourService.Create(TerrainContext(ct), _terrainBasket.Order(), Text(args, "name", 120), TerrainDate(Text(args, "date", 10)), Text(args, "technician", 400), ct);
         _terrainTourBaseline = null; return TerrainSetTour(tour);
+    }
+    private object TerrainCreateTourFromSearch(JsonElement args, CancellationToken ct)
+    {
+        CheckRevision(args); TerrainMaySwitch(args);
+        var rows = TicketSearchRows(args, ct) ?? throw new InvalidDataException("Revenez à la recherche de tickets avant de créer cette tournée.");
+        var tour = ScheduledTourService.Create(TerrainContext(ct), rows.Order(), Text(args, "name", 120), TerrainDate(Text(args, "date", 10)), Text(args, "technician", 400), ct);
+        ct.ThrowIfCancellationRequested(); _terrainTourBaseline = null; return TerrainSetTour(tour);
     }
     private object TerrainOpenTour(JsonElement args, CancellationToken ct)
     {

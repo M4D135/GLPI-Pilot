@@ -116,3 +116,167 @@ test('failed automatic reading preserves the cached view and offers manual retry
   assert.equal(states.at(-1), 'fresh');
   reader.dispose();
 });
+
+test('focus resumption while applying a successful response does not read or repaint twice', async t => {
+  const started = deferred(), response = deferred(), painting = deferred(), finishPainting = deferred();
+  const calls = [], views = ['cached'], states = [];
+  const reader = createTicketLiveRead({
+    delayMs: 4,
+    onState: status => states.push(status),
+    read: async (key, signal) => {
+      calls.push({ key, signal });
+      if (calls.length === 1) { started.resolve(); await response.promise; }
+      if (signal.aborted) return;
+      views.push('fresh ' + key);
+      if (views.length === 2) {
+        // The reader replaces its focused heading, then awaits the journal.
+        // Its queued focusout handler resumes reading before draw() completes.
+        queueMicrotask(() => reader.schedule(key));
+        painting.resolve();
+        await finishPainting.promise;
+      }
+      return key;
+    }
+  });
+  t.after(() => { reader.dispose(); finishPainting.resolve(); });
+  reader.schedule('A');
+  await started.promise;
+  response.resolve();
+  await painting.promise;
+  await pause(16);
+  assert.deepEqual(calls.map(call => call.key), ['A']);
+  assert.deepEqual(views, ['cached', 'fresh A']);
+  assert.equal(calls[0].signal.aborted, false);
+  finishPainting.resolve();
+  await pause(1);
+  assert.equal(states.at(-1), 'fresh');
+  assert.equal(states.filter(state => state === 'reading').length, 1);
+  reader.schedule('A');
+  await pause(10);
+  assert.equal(calls.length, 1);
+});
+
+test('focus resumption joins a manual read instead of cancelling its result', async t => {
+  const response = deferred(), calls = [];
+  const reader = createTicketLiveRead({
+    delayMs: 4,
+    read: async (key, signal) => { calls.push({ key, signal }); return response.promise; }
+  });
+  t.after(() => { reader.dispose(); response.resolve('fresh'); });
+  const manual = reader.refresh('A');
+  reader.schedule('A');
+  await pause(12);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].signal.aborted, false);
+  response.resolve('fresh');
+  assert.equal(await manual, 'fresh');
+});
+
+test('navigation to another ticket still cancels an in-flight read and rejects its late freshness', async t => {
+  const started = deferred(), response = deferred(), calls = [], states = [];
+  const reader = createTicketLiveRead({
+    delayMs: 4,
+    onState: status => states.push(status),
+    read: async (key, signal) => {
+      calls.push({ key, signal });
+      if (calls.length === 1) { started.resolve(); await response.promise; }
+      return key;
+    }
+  });
+  t.after(() => { reader.dispose(); response.resolve(); });
+  reader.schedule('A');
+  await started.promise;
+  reader.schedule('B');
+  assert.equal(calls[0].signal.aborted, true);
+  await pause(12);
+  assert.deepEqual(calls.map(call => call.key), ['A', 'B']);
+  const completedStates = [...states];
+  response.resolve();
+  await pause(1);
+  assert.deepEqual(states, completedStates);
+  reader.schedule('A');
+  await pause(12);
+  assert.deepEqual(calls.map(call => call.key), ['A', 'B', 'A']);
+  assert.equal(states.at(-1), 'fresh');
+});
+
+test('disabling the same ticket still aborts the active read and allows a later retry', async t => {
+  const started = deferred(), response = deferred(), calls = [], states = [];
+  const reader = createTicketLiveRead({
+    delayMs: 4,
+    onState: status => states.push(status),
+    read: async (key, signal) => {
+      calls.push({ key, signal });
+      if (calls.length === 1) { started.resolve(); await response.promise; }
+      return key;
+    }
+  });
+  t.after(() => { reader.dispose(); response.resolve(); });
+  reader.schedule('A');
+  await started.promise;
+  reader.schedule('A', false);
+  assert.equal(calls[0].signal.aborted, true);
+  response.resolve();
+  await pause(10);
+  assert.equal(states.at(-1), 'unavailable');
+  assert.equal(calls.length, 1);
+  reader.schedule('A');
+  await pause(12);
+  assert.equal(calls.length, 2);
+  assert.equal(states.at(-1), 'fresh');
+});
+
+test('a changed source version bypasses the short recent-read delay without changing ticket identity', async t => {
+  const calls = [];
+  const reader = createTicketLiveRead({ delayMs: 4, read: async key => { calls.push(key); return key; } });
+  t.after(() => reader.dispose());
+  reader.schedule('A', true, 'modified-v1');
+  await pause(12);
+  reader.schedule('A', true, 'modified-v1');
+  await pause(10);
+  assert.deepEqual(calls, ['A']);
+  reader.schedule('A', true, 'modified-v2');
+  await pause(12);
+  assert.deepEqual(calls, ['A', 'A']);
+  reader.schedule('A', true, 'modified-v2');
+  await pause(10);
+  assert.equal(calls.length, 2);
+});
+
+test('a new source version cancels an older in-flight read of the same ticket', async t => {
+  const started = deferred(), response = deferred(), calls = [];
+  const reader = createTicketLiveRead({
+    delayMs: 4,
+    read: async (key, signal) => {
+      calls.push({ key, signal });
+      if (calls.length === 1) { started.resolve(); await response.promise; }
+      return key;
+    }
+  });
+  t.after(() => { reader.dispose(); response.resolve(); });
+  reader.schedule('A', true, 'v1');
+  await started.promise;
+  reader.schedule('A', true, 'v2');
+  assert.equal(calls[0].signal.aborted, true);
+  await pause(12);
+  assert.deepEqual(calls.map(call => call.key), ['A', 'A']);
+  response.resolve();
+  await pause(1);
+  reader.schedule('A', true, 'v2');
+  await pause(10);
+  assert.equal(calls.length, 2);
+});
+
+test('automatic reads carry the cache hint while manual refresh remains forced', async t => {
+  const calls = [];
+  const reader = createTicketLiveRead({
+    delayMs: 4,
+    read: async (key, signal, options) => { calls.push({ key, automatic: options.automatic }); return key; }
+  });
+  t.after(() => reader.dispose());
+  reader.schedule('A', true, 'same-version');
+  await pause(12);
+  assert.deepEqual(calls, [{ key: 'A', automatic: true }]);
+  assert.equal(await reader.refresh('A', 'same-version'), 'A');
+  assert.deepEqual(calls, [{ key: 'A', automatic: true }, { key: 'A', automatic: false }]);
+});

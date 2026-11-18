@@ -6,6 +6,7 @@ import { publishSharedOperation } from './shared-operations.js';
 import { mountMap } from './maps.js';
 import { searchForTools, searchToolParams } from '../ticket-search-context.js';
 import { createTicketLiveRead } from './ticket-live-read.js';
+import { ticketCacheIndicator, ticketCacheDates } from './ticket-cache-ui.js';
 const personalDrafts = new Map();
 
 export async function renderTickets(ctx) {
@@ -15,13 +16,14 @@ export async function renderTickets(ctx) {
 
 // The full-page ticket combines source facts, collected observations and
 // a dedicated personal follow-up area. Specialist tools open in context.
-export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged, onTicketClosed } = {}) {
+export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheChanged, onSourceChanged, onTicketClosed } = {}) {
   if(fileSourceUnavailable(ctx))return;
   const simulation = isSimulation(ctx.state.session);
   let state = await call(ctx, 'workplace.get'), current = null, source = null, opened = null;
   let personal = null, tool = null, disposed = false, version = 0, mapController = null;
   let readStatus = 'idle', readError = null, readIndicator = null;
   let readSuspended = false, openingTicket = false, localLookup = null;
+  let applyingRead = null;
   const reader = el('section', { class: 'work-ticket-reader tickets-working-panel', 'aria-label': 'Lecture du ticket' });
   ctx.root.replaceChildren(reader);
   function paintReadStatus() {
@@ -34,7 +36,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
       paused: 'Actualisation en pause',
       waiting: 'Copie disponible · vérification dans un instant',
       reading: 'Lecture fraîche de la fiche GLPI…',
-      fresh: 'Fiche à jour · ' + date(current?.readAt),
+      fresh: 'Dernière lecture · ' + date(current?.cache?.readAt || current?.readAt),
       error: 'Lecture indisponible · dernière observation conservée'
     };
     readIndicator.querySelector('.ticket-live-read-text').textContent = labels[readStatus] || '';
@@ -46,16 +48,21 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
   }
   const liveRead = createTicketLiveRead({
     onState: showReadStatus,
-    read: async (ticketKey, signal) => {
+    read: async (ticketKey, signal, { automatic = false } = {}) => {
       const generation = version;
-      const updated = await ctx.api.call('workplace.ticket.read', { ticketKey },
+      const updated = await ctx.api.call('workplace.ticket.read', { ticketKey, automatic },
         { signal: ctx.signal ? AbortSignal.any([ctx.signal, signal]) : signal });
       if (disposed || signal.aborted || generation !== version || current?.personal.key !== ticketKey) return;
       personal?.remember();
       await personal?.dispose();
       if (disposed || signal.aborted || generation !== version || current?.personal.key !== ticketKey) return;
-      current = updated;
-      await draw();
+      const applying = { ticketKey, generation }; applyingRead = applying;
+      try {
+        current = updated;
+        await draw();
+        if (!disposed && !signal.aborted && generation === version && current?.personal.key === ticketKey)
+          onTicketCacheChanged?.(updated, opened);
+      } finally { if (applyingRead === applying) applyingRead = null; }
       return updated;
     }
   });
@@ -68,7 +75,11 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     if (tool || localLookup || editing() || document.querySelector('dialog[open]')) {
       liveRead.cancel(); showReadStatus('paused'); return;
     }
-    liveRead.schedule(current.personal.key, eligibleForLiveRead(current));
+    // Applying a successful read can move focus and mark the cache unchanged.
+    // Let that active result finish; explicit editor/navigation pauses still win.
+    const eligible = eligibleForLiveRead(current);
+    if (eligible && applyingRead?.ticketKey === current.personal.key && applyingRead.generation === version) return;
+    liveRead.schedule(current.personal.key, eligible && current.cache?.autoRead !== false, current.cache?.sourceToken);
   }
   function pauseForEditor(event) {
     if (disposed || !current) return;
@@ -182,9 +193,18 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     if (!result.complete) body.append(note('Couverture de cette rubrique partielle ou non confirmée.'));
     return body;
   }
+  const cacheFor = ticket => ticket.cache || { readAt: ticket.readAt };
+  function paintCache() {
+    if (disposed || !current) return;
+    const heading = reader.querySelector('.tickets-panel-heading');
+    heading?.querySelector('.ticket-cache-indicator')?.replaceWith(ticketCacheIndicator(cacheFor(current)));
+    heading?.querySelector('.ticket-cache-dates')?.replaceWith(ticketCacheDates(cacheFor(current)));
+    paintReadStatus();
+    onTicketCacheChanged?.(current, opened);
+  }
   async function draw() {
     const ticket = current, generation = version;
-    const refresh = run(ctx, () => liveRead.refresh(ticket.personal.key));
+    const refresh = run(ctx, () => liveRead.refresh(ticket.personal.key, current?.cache?.sourceToken));
     const facts = sourceFacts(ticket), journalHost = el('div'), planningHost=el('section',{class:'tickets-plan-links',hidden:true,'aria-label':'Interventions liées au ticket'});
     const mapHost = el('div', { class: 'tickets-map-host' });
     const mapDisclosure=el('details',{class:'tickets-context-map'},el('summary',{text:'Aperçu de la localisation'}),mapHost);
@@ -196,8 +216,9 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     replaceChildren(reader,
       el('header', { class: 'work-ticket-heading tickets-panel-heading' },
         toolbar(badge(`#${ticket.personal.id}`, 'info'), badge(simulation ? 'Simulation locale' : ticket.loaded ? 'Observation datée' : 'Lecture à demander')),
-        el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }),
-        el('p', { class: 'help', text: ticket.loaded ? 'Lu le ' + date(ticket.readAt) : 'Fiche non lue' }),
+        el('div', { class: 'tickets-cache-heading' },
+          el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }), ticketCacheIndicator(cacheFor(ticket))),
+        ticketCacheDates(cacheFor(ticket)),
         readIndicator,
         toolbar(button('Actualiser la fiche', refresh, { icon: 'refresh', disabled: !ticket.canRead }),
           button(simulation ? 'Afficher la fiche simulée' : 'Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: ticket.personal.key }); if (simulation) await refresh(); }), { disabled: !ticket.canRead }))),
@@ -288,13 +309,14 @@ export async function renderTicketReader(ctx, { onTicketOpened, onSourceChanged,
     record.ready = (async () => {
       const persist = patch => savePosition(ticket, patch);
       if (kind === 'reader') record.cleanup = await renderSections(ctx, content, ticket, state, persist, async updated => {
-        if (current?.personal.key === ticket.personal.key) { current = updated; await closeTool(); await personal?.dispose(); await draw(); }
+        if (current?.personal.key === ticket.personal.key) { current = updated; await closeTool(); await personal?.dispose(); await draw(); if (current?.personal.key === ticket.personal.key) onTicketCacheChanged?.(updated, opened); }
       });
       else if (kind === 'draft') record.cleanup = await renderDraft(ctx, content, ticket);
       else if (kind === 'actions') record.cleanup = await renderActions(ctx, content, ticket, async updated => {
         if (disposed || current?.personal.key !== updated.personal.key) return;
         current = updated; await onSourceChanged?.(updated); await loadSource(opened);
         const facts = reader.querySelector('.tickets-source-facts'); if (facts) facts.replaceWith(sourceFacts(updated));
+        paintCache();
       });
       else if (kind === 'insights') await renderInsights(ctx, content, ticket);
       else if (kind === 'intelligence') await renderIntelligence(ctx, content, ticket, persist);

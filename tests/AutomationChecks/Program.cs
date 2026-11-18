@@ -746,7 +746,14 @@ async Task CheckNative10()
                 && Directory.GetFiles(settings.ExportFolder, "*.xlsx").Length == 1
                 && Directory.GetFiles(settings.ExportFolder, "*.csv").Length == 1;
     };
-    var run = await automatic.RunAsync(settings, null, CancellationToken.None);
+    AutomaticRunResult run;
+    try { run = await automatic.RunAsync(settings, null, CancellationToken.None); }
+    catch
+    {
+        Console.Error.WriteLine($"TRACE synthetic CheckNative10: download requests={downloads.Count}");
+        foreach (var line in h.Logs.TakeLast(80)) Console.Error.WriteLine("TRACE synthetic CheckNative10: " + line);
+        throw;
+    }
     Equal(5, run.Data.Rows.Count); Equal(5, run.Data.ExpectedTotal); Equal(2, run.Data.Headers.Count);
     True(run.Data.Complete, string.Join(" | ", run.Data.Warnings));
     Equal("0001", run.Data.Rows[0][0]); Equal("0005", run.Data.Rows[^1][0]); Equal("=1+1", run.Data.Rows[^1][1]);
@@ -1233,7 +1240,14 @@ async Task CheckRealisticLegacy(bool imageSubmit)
         True(inspection.Plans.Single().FormatHidden, "Le select natif masqué par Select2 doit être reconnu avant sa sélection forcée.");
     }
     var settings = Settings(legacyTarget); settings.MaxRows = 1000;
-    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    AutomaticRunResult run;
+    try { run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None); }
+    catch
+    {
+        Console.Error.WriteLine($"TRACE synthetic CheckRealisticLegacy(imageSubmit={imageSubmit}): download requests={downloads.Count}");
+        foreach (var line in h.Logs.TakeLast(80)) Console.Error.WriteLine("TRACE synthetic CheckRealisticLegacy: " + line);
+        throw;
+    }
     Equal("#legacy-results", run.Table.Selector);
     Equal(828, run.Data.Rows.Count); Equal(828, run.Data.ExpectedTotal); Equal(16, run.Data.Headers.Count);
     True(run.Data.Complete, string.Join(" | ", run.Data.Warnings));

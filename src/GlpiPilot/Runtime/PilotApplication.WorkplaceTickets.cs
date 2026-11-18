@@ -49,19 +49,7 @@ public sealed partial class PilotApplication
             p = WorkplaceStore.Remember(doc, reference, titleCol is int col ? data.Rows[index][col] : "Ticket " + reference.Id);
         }
         else { var known = WorkPersonal(a); p = WorkplaceStore.Remember(doc, new(known.Id, known.Url), known.Title); }
-        if (Result?.Provenance is { SourceKind: "local", Method: "ticket-library" })
-        {
-            var preferences = new LibraryPreferencesStore().Load();
-            var library = new TicketLibraryStore(preferences.DatabasePath);
-            var cached = await library.GetAsync(new TicketReference(p.Id, p.Url), ct).ConfigureAwait(false);
-            if (cached?.Detail is { } detail)
-            {
-                detail.Warnings.Add(cached.DetailComplete && cached.DetailsCurrent
-                    ? "Contenu chargé depuis la bibliothèque locale ; la date affichée correspond à son observation dans GLPI."
-                    : "Contenu chargé depuis la bibliothèque locale ; sa couverture ou sa fraîcheur reste à recontrôler.");
-                WorkCache(detail);
-            }
-        }
+        await WorkLoadCachedTicketAsync(p, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested(); WorkSave(doc); return WorkTicketView(p.Key);
     }
     private TicketDetailResult? WorkOptionalDetail(PersonalTicket p)
@@ -69,7 +57,9 @@ public sealed partial class PilotApplication
         if (_workplaceDetails.TryGetValue(p.Key, out var detail)) return detail;
         if (IsSimulationInstance) { detail = SimulationDetail(new(p.Id, p.Url)); WorkCache(detail); return detail; }
         if (!p.Offline) return null;
-        detail = WorkplaceStore.LoadOffline(DataPath("TicketCache"), new(p.Id, p.Url));
+        try { detail = WorkplaceStore.LoadOffline(DataPath("TicketCache"), new(p.Id, p.Url)); }
+        catch (Exception error) when (WorkCacheUnavailable(error))
+        { _workplaceCacheErrors[p.Key] = "La copie hors connexion n’a pas pu être vérifiée."; return null; }
         if (detail is not null) WorkCache(detail); return detail;
     }
     private TicketDetailResult WorkDetail(string key)
@@ -85,6 +75,7 @@ public sealed partial class PilotApplication
         return new
         {
             revision = Revision, personal = WorkPersonalView(p), canRead, readReason = reason, loaded = detail is not null,
+            cache = WorkTicketCacheStatus(p),
             readAt = detail?.ReadAt, title = detail?.Title ?? p.Title, warnings = detail?.Warnings.ToArray() ?? Array.Empty<string>(),
             sections = detail?.Sections.Select((s, i) => new { index = i, key = TicketReadingService.SectionKey(s), s.Name, s.Kind, s.TabKey, s.TabName, rows = s.Data.Rows.Count, s.Data.Complete, readAt = s.Data.ExtractedAt }).ToArray(),
             tabs = detail?.Tabs.Select(t => new { t.Key, t.Name, t.Category, t.Loaded, t.IsActive }).ToArray(),
@@ -94,20 +85,26 @@ public sealed partial class PilotApplication
     }
     private void WorkCache(TicketDetailResult detail)
     {
-        var key = WorkplaceStore.TicketKey(detail.Ticket); _workplaceDetails[key] = detail;
+        var key = WorkplaceStore.TicketKey(detail.Ticket); _workplaceDetails[key] = detail; _workplaceLibraryReads.Remove(key);
         while (_workplaceDetails.Count > 12)
-        { var remove = _workplaceDetails.Where(pair => pair.Key != key).OrderBy(pair => pair.Value.ReadAt).First().Key; _workplaceDetails.Remove(remove); _workplaceChanges.Remove(remove); }
+        { var remove = _workplaceDetails.Where(pair => pair.Key != key).OrderBy(pair => pair.Value.ReadAt).First().Key; _workplaceDetails.Remove(remove); _workplaceChanges.Remove(remove); _workplaceLibraryReads.Remove(remove); }
     }
-    private void WorkAcceptDetail(TicketDetailResult detail, bool open = false)
+    private void WorkAcceptDetail(TicketDetailResult detail, bool open = false, bool observeSource = true)
     {
         var doc = WorkDocument().Copy(); var p = WorkplaceStore.Remember(doc, detail.Ticket, detail.Title, open);
         var changes = WorkplaceStore.ObserveRead(p, detail);
+        if (observeSource) p.LastReadSource = TicketReadCache.Observe(WorkCacheSource(detail.Ticket), detail);
         if (p.Offline) WorkplaceStore.SaveOffline(DataPath("TicketCache"), detail);
-        WorkSave(doc); WorkCache(detail); _workplaceChanges[p.Key] = changes;
+        WorkSave(doc); WorkCache(detail); _workplaceChanges[p.Key] = changes; _workplaceCacheErrors.Remove(p.Key);
     }
     private async Task<object?> WorkTicketReadAsync(JsonElement a, CancellationToken ct)
     {
         var p = WorkPersonal(a); var ticket = WorkValidateReference(new(p.Id, p.Url));
+        if (Flag(a, "automatic"))
+        {
+            await WorkLoadCachedTicketAsync(p, ct).ConfigureAwait(false);
+            if (!WorkTicketCacheStatus(p).AutoRead) return WorkTicketView(p.Key);
+        }
         var detail = await Browser.ReadTicketDetailsAsync(ticket, Settings.Copy(), new WorkProgress<ExtractionProgress>(progress => Publish("workplace.ticket.progress", new { ticketKey = p.Key, progress })), ct);
         ct.ThrowIfCancellationRequested(); if (detail.Ticket != ticket) throw new InvalidDataException("La lecture reçue correspond à un autre ticket.");
         WorkAcceptDetail(detail); return WorkTicketView(p.Key);
@@ -132,7 +129,7 @@ public sealed partial class PilotApplication
             }).Concat(part.Tabs.Where(t => old.Tabs.All(o => o.Key != t.Key))).ToList(),
             Warnings = old.Warnings.Concat(part.Warnings).Distinct().Take(200).ToList()
         };
-        WorkAcceptDetail(merged); return new { loaded = true, warnings = part.Warnings, ticket = WorkTicketView(p.Key) };
+        WorkAcceptDetail(merged, observeSource: false); return new { loaded = true, warnings = part.Warnings, ticket = WorkTicketView(p.Key) };
     }
     private object WorkTicketSection(JsonElement a)
     {

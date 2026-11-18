@@ -9,8 +9,8 @@ internal static partial class Program
     {
         // The bridge delivers session/settings events before its awaited reply.
         // Direct C# fixture writes can let navigation observe a stale browser revision.
-        var arguments = JsonSerializer.SerializeToElement(new { revision = app.Revision, settings }, PilotApplication.Json);
-        return page.EvaluateAsync("async args => { await (await import('/js/bridge.js')).api.call('settings.save', args); }", arguments);
+        var arguments = JsonSerializer.Serialize(new { revision = app.Revision, settings }, PilotApplication.Json);
+        return page.EvaluateAsync("async raw => { const args = JSON.parse(raw); await (await import('/js/bridge.js')).api.call('settings.save', args); }", arguments);
     }
 
     private static async Task CheckEmbeddedMapOverviewAsync(IPage page, PilotApplication app, Func<string, Task> navigate, Func<string, Task> capture)
