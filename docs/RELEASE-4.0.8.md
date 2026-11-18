@@ -22,6 +22,8 @@ Les documents déjà recueillis restent la source de référence dans SQLite et 
 
 La recherche plein texte locale couvre aussi les champs et colonnes de l’index ainsi que les propriétés des éléments observés. L’index des bibliothèques existantes est reconstruit par petits lots reprenables, sans modifier leurs documents, révisions, confirmations ni échanges en attente.
 
+En mode Résolution, les extraits de solution correspondant à la recherche sont présentés en premier, avec leur texte exact et leur source. L’ajout de métadonnées à l’index ne doit pas les faire disparaître des extraits affichés.
+
 Le [contrat SQL](Bibliotheque-contrat-chatbot.md), inclus dans le pack, fournit les noms de vues, les champs de provenance et des requêtes SQLite/PostgreSQL. Les vues SQLite sont installées à l’ouverture. Une base PostgreSQL existante doit être préparée de nouveau depuis l’édition Admin pour ajouter les vues et accorder leur lecture au compte technique ; la synchronisation ordinaire ne modifie pas les droits ni le schéma central.
 
 Le corpus couvre ce que la session GLPI a réellement permis de lire. Les pièces jointes restent référencées : leurs fichiers et leur texte ne sont pas téléchargés ou reconnus automatiquement. Les droits GLPI ne sont pas répliqués ; un chatbot devra filtrer les données selon les droits de ses utilisateurs. Aucun modèle ou fournisseur IA n’est connecté par cette version.

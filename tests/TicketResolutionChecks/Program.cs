@@ -74,6 +74,38 @@ try
         Require(citation.Excerpt == original && citation.Current && citation.ContentHash == saved.Document.ContentHash
             && citation.SectionKey == "timeline" && citation.Url == candidate.Ticket.Url && citation.Ticket == candidate.Ticket);
     });
+    await Check("Resolved-only search keeps the original solution visible ahead of repeated index and detail titles", async () =>
+    {
+        var store = Store("resolved-search-citations");
+        const string original = "Réinitialiser le pilote <b>LOCAL</b>\nPuis tester l’imprimante. null";
+        TicketLibrarySeed Indexed(string id, string title, int status)
+        {
+            var seed = Seed(id, title, status); seed.Ticket = new(id, "https://library-fixture.invalid/front/ticket.form.php?id=" + id); seed.Category = "Impression";
+            seed.Fields = new() { ["Priorité"] = "Moyenne", ["Attribué à - Technicien"] = "Technicien synthétique" };
+            seed.IndexHeaders = ["ID", "Titre", "Statut", "Dernière modification", "Priorité", "Attribué à - Technicien"];
+            seed.IndexValues = [id, title, seed.Status, seed.LastModifiedRaw, "Moyenne", "Technicien synthétique"];
+            return seed;
+        }
+        Task<TicketLibraryWriteResult> SaveIndexed(TicketLibrarySeed seed, string text)
+        {
+            var detail = Detail(seed, text); detail.Sections[0].Name = "Historique synthétique";
+            return store.SaveDetailAsync(seed, detail, new() { Complete = true, TabsLoaded = 1, TabsDiscovered = 1 }, "fixture-v1");
+        }
+        var solved = Indexed("7000001", "Imprimante : solution appliquée", 5); var saved = await SaveIndexed(solved, original);
+        await store.ObserveSeedAsync(Indexed("7000002", "Imprimante : incident en cours", 2));
+        var conflicting = Indexed("7000003", "Imprimante : versions concurrentes", 2);
+        await SaveIndexed(conflicting, "Première observation synthétique"); await SaveIndexed(conflicting, "Autre observation au même date_mod");
+        var results = await store.SearchAsync(new() { Text = "imprimante", ResolvedOnly = true });
+        Require(results.Total == 1 && results.Rows.Single().Ticket == solved.Ticket);
+        var row = results.Rows.Single();
+        Console.WriteLine("TRACE resolved citations: " + string.Join(" | ", row.Citations.Select(citation => citation.Section + ": solution=" + citation.IsSolution)));
+        var solution = row.Citations.Take(3).SingleOrDefault(citation => citation.IsSolution);
+        Require(solution is not null && solution.Excerpt == original && solution.Section == "Historique synthétique"
+            && solution.ObservedAt == saved.Document.ReadAt && solution.Url == solved.Ticket.Url
+            && solution.ContentHash == saved.Document.ContentHash && solution.Current);
+        var titleOnly = await store.SearchAsync(new() { Text = "appliquée", ResolvedOnly = true });
+        Require(titleOnly.Rows.Single().Ticket == solved.Ticket && titleOnly.Rows.Single().Citations.All(citation => !citation.IsSolution));
+    });
     await Check("Evidence within collected content can justify a match and is distinguished from title overlap", async () =>
     {
         var store = Store("content"); var source = Seed("1", "Imprimante laser", 2); await store.ObserveSeedAsync(source);

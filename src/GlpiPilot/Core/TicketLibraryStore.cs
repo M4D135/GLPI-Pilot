@@ -206,9 +206,12 @@ public sealed partial class TicketLibraryStore
             {
                 ct.ThrowIfCancellationRequested(); var d = Read(c, null, key)!;
                 var row = new TicketLibrarySearchRow { Key = d.Key, Ticket = d.Seed.Ticket, Installation = d.Installation, Title = d.Seed.Title, Status = d.Seed.Status, StatusCode = d.Seed.StatusCode, Category = d.Seed.Category, LastModifiedRaw = d.Seed.LastModifiedRaw, LastModifiedAt = d.Seed.LastModifiedAt, ReadAt = d.ReadAt, DetailComplete = d.DetailComplete, DetailsCurrent = d.DetailsCurrent, Pending = d.Pending, Conflicts = d.Conflicts };
+                // Resolution cards show a bounded excerpt list: matching solution
+                // evidence must precede repeated index/detail titles in that list.
+                var citationOrder = q.ResolvedOnly ? "json_extract(c.citation_json,'$.isSolution') DESC," : "";
                 var sql = match.Length == 0
                     ? "SELECT citation_json,0.0 FROM ticket_library_chunks WHERE ticket_key=$key ORDER BY json_extract(citation_json,'$.isSolution') DESC,chunk_id LIMIT 4"
-                    : "SELECT c.citation_json,bm25(ticket_library_fts) FROM ticket_library_fts JOIN ticket_library_chunks c ON c.chunk_id=ticket_library_fts.rowid WHERE ticket_library_fts MATCH $match AND c.ticket_key=$key ORDER BY bm25(ticket_library_fts),c.chunk_id LIMIT 4";
+                    : "SELECT c.citation_json,bm25(ticket_library_fts) FROM ticket_library_fts JOIN ticket_library_chunks c ON c.chunk_id=ticket_library_fts.rowid WHERE ticket_library_fts MATCH $match AND c.ticket_key=$key ORDER BY " + citationOrder + "bm25(ticket_library_fts),c.chunk_id LIMIT 4";
                 using var citations = Command(c, null, sql, ("$key", key), ("$match", match)); using var reader = citations.ExecuteReader();
                 while (reader.Read())
                 {
