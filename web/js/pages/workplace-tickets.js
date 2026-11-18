@@ -34,7 +34,8 @@ export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheCha
     readIndicator.dataset.state = readStatus;
     const labels = {
       paused: 'Actualisation en pause',
-      waiting: 'Copie disponible · vérification dans un instant',
+      waiting: (current?.cache?.hasContent ?? current?.loaded)
+        ? 'Copie disponible · vérification dans un instant' : 'Lecture de la fiche dans un instant',
       reading: 'Lecture fraîche de la fiche GLPI…',
       fresh: 'Dernière lecture · ' + date(current?.cache?.readAt || current?.readAt),
       error: 'Lecture indisponible · dernière observation conservée'

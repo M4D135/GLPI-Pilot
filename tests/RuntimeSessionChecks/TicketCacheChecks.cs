@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using GlpiPilot.Core;
 using GlpiPilot.Runtime;
+using Microsoft.Data.Sqlite;
 using Microsoft.Playwright;
 
 internal static class TicketCacheRuntimeChecks
@@ -28,6 +29,48 @@ internal static class TicketCacheRuntimeChecks
             Require(!opened.GetProperty("loaded").GetBoolean() && cache.GetProperty("readAt").ValueKind == JsonValueKind.Null, "Missing content acquired a fabricated read date.");
             Require(cache.GetProperty("sourceModifiedRaw").GetString() == Stamp(Modified), "The restored short header and old configured mapping did not resolve the source stamp.");
             await Consistent(f, cache);
+        });
+        Add("opening the calendar before a ticket leaves an unused library absent without creating its schema", async f =>
+        {
+            var first = await Open(f);
+            await f.Call("calendar.forTicket", new { ticketKey = Key(first) });
+            var path = new LibraryPreferencesStore().Load().DatabasePath;
+            Require(File.Exists(path), "The calendar did not create its actual shared SQLite file.");
+            var before = await File.ReadAllBytesAsync(path);
+            var opened = await Open(f); State(Cache(opened), "missing", false, true);
+            Require(!opened.GetProperty("loaded").GetBoolean() && opened.GetProperty("canRead").GetBoolean(),
+                "An unused library prevented an unread source ticket from opening normally.");
+            await Consistent(f, Cache(opened));
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+            connection.Open(); using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE lower(name) GLOB 'ticket_library_*'";
+            Require((long)command.ExecuteScalar()! == 0 && (await File.ReadAllBytesAsync(path)).SequenceEqual(before),
+                "Opening a ticket or listing badges initialized or changed the shared database.");
+        });
+        Add("partial or unsupported library schemas remain unknown and untouched in both list and reader", async f =>
+        {
+            foreach (var (name, sql) in new[]
+            {
+                ("missing-table", "DROP TABLE ticket_library_outbox"),
+                ("missing-column", "ALTER TABLE ticket_library_conflicts RENAME COLUMN ticket_key TO unavailable_key"),
+                ("future-version", "UPDATE ticket_library_schema SET version=999"),
+                ("invalid-version", "UPDATE ticket_library_schema SET version='unrecognized'"),
+                ("missing-version", "DELETE FROM ticket_library_schema")
+            })
+            {
+                var preferences = new LibraryPreferences { LocalFolder = Path.Combine(f.Root, "cache-" + name) };
+                new LibraryPreferencesStore().Save(preferences);
+                var store = new TicketLibraryStore(preferences.DatabasePath); await store.InitializeAsync();
+                using (var connection = new SqliteConnection(store.ConnectionString))
+                {
+                    connection.Open(); using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery();
+                }
+                var before = await File.ReadAllBytesAsync(preferences.DatabasePath);
+                var opened = await Open(f); State(Cache(opened), "unknown", false, true);
+                Require(opened.GetProperty("canRead").GetBoolean(), "An unavailable cache blocked the source ticket: " + name);
+                await Consistent(f, Cache(opened));
+                Require((await File.ReadAllBytesAsync(preferences.DatabasePath)).SequenceEqual(before), "Read-only cache lookup repaired or rewrote an unsupported schema: " + name);
+            }
         });
         Add("an old read of the same reliable source version skips automatic reading without a browser", async f =>
         {

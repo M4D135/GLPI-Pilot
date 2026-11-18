@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
@@ -11,6 +12,7 @@ public sealed partial class TicketLibraryStore
         ct.ThrowIfCancellationRequested(); ValidateDatabasePath(DatabasePath);
         var connectionString = new SqliteConnectionStringBuilder(ConnectionString) { Mode = SqliteOpenMode.ReadOnly }.ToString();
         using var connection = new SqliteConnection(connectionString); connection.Open();
+        if (!HasReadableCacheSchema(connection)) return null;
         return Read(connection, null, TicketLibraryRules.Key(ticket));
     }, ct);
 
@@ -26,6 +28,7 @@ public sealed partial class TicketLibraryStore
             ct.ThrowIfCancellationRequested(); ValidateDatabasePath(DatabasePath);
             var connectionString = new SqliteConnectionStringBuilder(ConnectionString) { Mode = SqliteOpenMode.ReadOnly }.ToString();
             using var connection = new SqliteConnection(connectionString); connection.Open();
+            if (!HasReadableCacheSchema(connection)) return result;
             using var command = connection.CreateCommand();
             var parameters = keys.Keys.Select((key, index) => (Name: "$key" + index, Key: key)).ToArray();
             command.CommandText = """
@@ -63,5 +66,47 @@ public sealed partial class TicketLibraryStore
             }
             return result;
         }, ct);
+    }
+
+    private static bool HasReadableCacheSchema(SqliteConnection connection)
+    {
+        // Calendar/team storage can create this shared file before the library
+        // has ever been used. A badge must not initialize or migrate its schema.
+        var anyLibraryObject = false;
+        var tables = new HashSet<string>(StringComparer.Ordinal);
+        using (var objects = connection.CreateCommand())
+        {
+            objects.CommandText = "SELECT lower(name),type FROM sqlite_master WHERE lower(name) GLOB 'ticket_library_*'";
+            using var reader = objects.ExecuteReader();
+            while (reader.Read())
+            {
+                anyLibraryObject = true;
+                if (reader.GetString(1) == "table") tables.Add(reader.GetString(0));
+            }
+        }
+        if (!anyLibraryObject) return false;
+        if (new[] { "ticket_library_schema", "ticket_library_tickets", "ticket_library_outbox", "ticket_library_conflicts" }.Any(name => !tables.Contains(name)))
+            throw new InvalidDataException("Le schéma du cache de tickets est incomplet. La base est conservée.");
+        using (var version = connection.CreateCommand())
+        {
+            version.CommandText = """
+                SELECT COUNT(*)=1 AND COALESCE(SUM(singleton=1 AND version=$version
+                    AND typeof(singleton)='integer' AND typeof(version)='integer'),0)=1
+                FROM ticket_library_schema
+                """;
+            version.Parameters.AddWithValue("$version", SchemaVersion);
+            if (version.ExecuteScalar() is not long valid || valid != 1)
+                throw new InvalidDataException("Version du cache de tickets non prise en charge. La base est conservée.");
+        }
+        // Validate the columns needed by both readers without loading bodies.
+        // Partial or damaged library schemas must remain unknown, never absent.
+        using var columns = connection.CreateCommand();
+        columns.CommandText = """
+            SELECT t.ticket_key,t.document_json,t.local_revision,t.central_revision,t.has_content,t.details_current,t.content_hash,
+                o.ticket_key,c.ticket_key
+            FROM ticket_library_tickets t,ticket_library_outbox o,ticket_library_conflicts c LIMIT 0
+            """;
+        using var checkedColumns = columns.ExecuteReader();
+        return true;
     }
 }

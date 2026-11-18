@@ -30,6 +30,8 @@ La lecture automatique compare le repère de modification du ticket dans le rele
 
 L’âge visuel du cache est de sept jours ; il ne provoque pas de relecture lorsque la version est inchangée. Sans repère comparable, la réutilisation temporaire est limitée à cinq minutes. Les copies disponibles en mémoire, dans la bibliothèque ou conservées hors connexion sont réutilisées ; cette correction ne crée pas un second stockage complet des fiches. La lecture d’un onglet ne valide pas artificiellement les autres rubriques de la fiche.
 
+Une bibliothèque pas encore utilisée est distinguée d’un cache illisible, y compris lorsque le planning a déjà créé le stockage local partagé. Le calcul de l’indicateur consulte ce stockage sans l’initialiser ni le modifier.
+
 ## Vérifications
 
 Les contrôles de non-régression vérifient les valeurs et les lignes sources des widgets groupes/statuts, stock par groupe, priorités, ancienneté et participation avec des libellés courts et des correspondances conservées d’un autre export. Ils couvrent également les ambiguïtés, les correspondances personnalisées et les cas d’historique incomplet.
@@ -45,7 +47,7 @@ Contrôles locaux du 18 novembre 2026 :
 - `FoundationChecks` : 38/38 ; la compatibilité est vérifiée avec la version courante et les versions futures sont calculées, sans conserver 4.0.1 comme ancien cas de rejet.
 - `TerrainBridgeChecks` : 287/287, dont 41 contrôles de création depuis la recherche.
 - Ordonnanceur de lecture automatique : 15/15 contrôles Node, après reproduction des deux relances indues ; indicateurs et dates du cache : 7/7.
-- Cache et pont applicatif : 10/10 scénarios ciblés finaux ; la suite complète `RuntimeSessionChecks` a passé ses 160 contrôles avant les deux derniers cas ciblés. Le scénario avec navigateur réel est intégré à la qualification Windows.
+- Cache et pont applicatif : 12/12 scénarios ciblés finaux, dont l’ouverture après création du stockage par le planning et la conservation des bases incomplètes ou incompatibles. Le scénario avec navigateur réel est intégré à la qualification Windows.
 - Contrôles des outils de publication `ReleasePackChecks` : 42/42.
 - Compilation croisée Windows Standard et Admin : aucun avertissement, aucune erreur.
 - Syntaxe JavaScript et contrôle du diff vérifiés. Les nouveaux contrôles visuels sont intégrés à la qualification Windows ; Chromium local ne peut pas démarrer dans l’environnement d’exécution utilisé.

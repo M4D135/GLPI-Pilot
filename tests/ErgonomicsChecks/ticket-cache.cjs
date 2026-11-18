@@ -49,6 +49,7 @@ module.exports = async ({ page, reset, ok, capture }) => {
   ok(await icons.count() === 6, 'Every compact search result has one database cache indicator');
   ok(await icons.evaluateAll(nodes => nodes.map(n => n.dataset.cacheTone).join(',') === 'missing,current,warning,warning,warning,unknown'), 'Absent, verified, old, unverified and unavailable metadata have distinct honest cache states');
   ok(await icons.evaluateAll(nodes => nodes.every(n => n.getAttribute('role') === 'img' && n.tabIndex === 0 && n.getAttribute('aria-label') === n.title && n.querySelector('.ticket-cache-mark')?.textContent)), 'Each cache indicator has a focusable textual explanation and a shape cue in addition to colour');
+  await capture('ticket-cache-list-desktop');
   await icons.first().focus(); await page.keyboard.press('Enter');
   ok(await page.evaluate(() => !cacheCalls.some(c => c.op === 'workplace.ticket.open' || c.op === 'workplace.ticket.read')), 'Inspecting cache metadata never opens or reads a ticket');
   await page.getByRole('button', { name: 'Outils du tableau', exact: true }).click();
@@ -64,6 +65,7 @@ module.exports = async ({ page, reset, ok, capture }) => {
   await page.locator('.tickets-detail-pane .work-ticket-heading h2').waitFor();
   ok(await page.getByRole('heading', { name: '#2 · Cache fixture 2', exact: true }).count() === 1 && await page.locator('.tickets-detail-pane .ticket-cache-indicator[data-cache-tone=current]').count() === 1, 'Ticket detail shows the same cache indicator beside an unchanged accessible heading');
   ok(await page.locator('.ticket-cache-dates').evaluate(n => n.textContent.includes('Dernière modification (relevé)') && n.textContent.includes('Dernière lecture / mise en cache') && !n.textContent.includes('non connue')), 'Ticket detail shows known source modification and cache reading dates directly under its title');
+  await capture('ticket-cache-detail-desktop');
   await page.waitForTimeout(650); // Beyond the real 500 ms dwell, with a verified unchanged cache.
   ok(await page.evaluate(() => !cacheCalls.some(c => c.op === 'workplace.ticket.read')), 'An unchanged backend cache decision suppresses the detail auto-read');
   await page.evaluate(() => { cacheDelayJournal = true; });
