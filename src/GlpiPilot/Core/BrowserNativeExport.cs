@@ -31,7 +31,8 @@ public sealed partial class BrowserService
         return await ReadJsonAsync<NativeExportInspection>(frame, "selector => window.__glpiPilotNative.inspect(selector)", table.Selector, ct);
     }
 
-    public async Task<NativeDownloadResult> ExportAllNativeAsync(TableChoice table, AppSettings settings, CancellationToken ct)
+    public async Task<NativeDownloadResult> ExportAllNativeAsync(TableChoice table, AppSettings settings, CancellationToken ct,
+        IProgress<ExtractionProgress>? progress = null)
     {
         var custom = settings.NativeMenuSelector.Length > 0 || settings.NativeSubmitSelector.Length > 0 || settings.NativeFormatSelector.Length > 0 || settings.NativeScopeSelector.Length > 0;
         var frame = await ResolveFrameAsync(table, ct);
@@ -81,23 +82,109 @@ public sealed partial class BrowserService
             throw new InvalidOperationException("Le total configuré ne correspond pas au total annoncé par GLPI. Corrigez le total attendu avant d’exporter.");
         var expected = settings.ExpectedTotal ?? observed;
         Log?.Invoke($"EXPORT · option toutes les pages CSV confirmée ; mode={plan.Kind}, total annoncé={(expected?.ToString() ?? "inconnu")}.");
+        var destination = await ReadNativeExportDestinationAsync(frame, plan, table.FrameOrigin, ct);
+        var receiver = new TaskCompletionSource<IDownload>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var attempt = new NativeExportAttempt(_context ?? throw new InvalidOperationException("Le navigateur a été fermé."),
+            table.Page!, frame, table.FrameOrigin, destination[1], destination[0],
+            error => receiver.TrySetException(error), message => Log?.Invoke(message));
         var path = await CaptureDownloadCoreAsync(table.Page!, settings.ExportFolder, async token =>
         {
-            if (plan.Kind == "direct")
-                await ClickNativeControlAsync(frame, plan.DirectSelector, false, table.FrameOrigin, token);
-            else
+            var stage = "sélection du format CSV";
+            try
             {
-                if (plan.ScopeSelector.Length > 0)
-                    await SelectNativeOptionAsync(frame, plan.ScopeSelector, plan.ScopeValue, true, token);
-                if (_downloadWaiter?.Task.IsCompletedSuccessfully == true) return;
-                if (plan.FormatSelector.Length > 0)
-                    await SelectNativeOptionAsync(frame, plan.FormatSelector, plan.FormatValue, plan.FormatHidden, token);
-                if (_downloadWaiter?.Task.IsCompletedSuccessfully == true) return;
-                if (plan.SubmitSelector.Length == 0) throw new InvalidOperationException("Le bouton de validation de l’export est introuvable.");
-                await ClickNativeControlAsync(frame, plan.SubmitSelector, false, table.FrameOrigin, token);
+                if (plan.Kind == "form")
+                {
+                    if (plan.ScopeSelector.Length > 0)
+                    {
+                        stage = "sélection de Toutes les pages";
+                        Log?.Invoke("EXPORT · étape : " + stage + ".");
+                        await SelectNativeExportOptionAsync(frame, plan.ScopeSelector, plan.ScopeValue, true, attempt, token);
+                    }
+                    if (attempt.RequestObserved || receiver.Task.IsCompletedSuccessfully) return;
+                    if (plan.FormatSelector.Length > 0)
+                    {
+                        stage = "sélection du format CSV";
+                        Log?.Invoke("EXPORT · étape : " + stage + ".");
+                        await SelectNativeExportOptionAsync(frame, plan.FormatSelector, plan.FormatValue, plan.FormatHidden, attempt, token);
+                    }
+                    if (attempt.RequestObserved || receiver.Task.IsCompletedSuccessfully) return;
+                    if (plan.SubmitSelector.Length == 0) throw new InvalidOperationException("Le bouton de validation de l’export est introuvable.");
+                }
+                stage = "déclenchement de l’export CSV";
+                Log?.Invoke("EXPORT · étape : " + stage + ".");
+                await ClickNativeControlAsync(frame, plan.Kind == "direct" ? plan.DirectSelector : plan.SubmitSelector, false, table.FrameOrigin, token);
             }
-        }, settings.DownloadTimeoutSeconds, ct);
+            catch (Exception error) when (error is TimeoutException or PlaywrightException)
+            {
+                token.ThrowIfCancellationRequested();
+                if (!attempt.RequestObserved && !receiver.Task.IsCompletedSuccessfully)
+                {
+                    Log?.Invoke("EXPORT · arrêt pendant " + stage + " ; aucune requête d’export confirmée. " + AppPaths.SafeError(error));
+                    throw new InvalidOperationException("GLPI n’a pas confirmé le " + (stage == "déclenchement de l’export CSV" ? stage : "choix demandé")
+                        + ". Aucun export n’a été relancé automatiquement. Vérifier la fenêtre GLPI puis réessayer.");
+                }
+                // The short UI action has finished (including its own timeout).
+                // Its native request is already in flight: do not click twice or
+                // impose the locator deadline on the actual file transfer.
+                Log?.Invoke("EXPORT · commande déjà envoyée malgré la fin d’attente du contrôle ; attente du téléchargement dans le délai d’export.");
+            }
+            token.ThrowIfCancellationRequested();
+        }, settings.DownloadTimeoutSeconds, ct, attempt.AcceptsDownload,
+            () => attempt.RequestObserved ? StopPendingNativeExportAsync(table.Page!) : Task.CompletedTask,
+            message => progress?.Report(new(0, 0, null, message)), receiver, attempt.ThrowIfFailed);
+        attempt.ThrowIfFailed();
         return new(path, expected, plan.Kind);
+    }
+
+    private static async Task<string[]> ReadNativeExportDestinationAsync(IFrame frame, NativeExportPlan plan, string origin, CancellationToken ct)
+    {
+        // Read only the destination and the observed native mode. The browser
+        // still submits the real form with all its actual criteria and fields.
+        var destination = await frame.EvaluateAsync<string[]>("""
+            args => {
+              const matches = [...document.querySelectorAll(args.kind === 'direct' ? args.directSelector : args.submitSelector)];
+              if (matches.length !== 1) return [];
+              const control = matches[0];
+              const form = control.form || control.closest('form');
+              const url = new URL(args.kind === 'direct' ? control.getAttribute('href') :
+                control.getAttribute('formaction') || form?.getAttribute('action') || location.href, document.baseURI);
+              if (url.origin !== args.origin || !/\/front\/report\.dynamic\.php\/?$/i.test(url.pathname)) return [];
+              let modes;
+              if (args.kind === 'direct') modes = url.searchParams.getAll('display_type');
+              else {
+                if (!form || (control.getAttribute('formmethod') || form.getAttribute('method') || 'get').toLowerCase() !== 'get') return [];
+                modes = [...form.querySelectorAll('[name="display_type"]')].filter(e => !e.disabled).map(e =>
+                  args.formatSelector && e.matches(args.formatSelector) ? args.formatValue :
+                  args.scopeSelector && e.matches(args.scopeSelector) ? args.scopeValue : e.value);
+              }
+              return modes.length === 1 && /^-[1-9]\d*$/.test(modes[0]) ? [url.pathname, modes[0]] : [];
+            }
+            """, new { kind = plan.Kind, directSelector = plan.DirectSelector, submitSelector = plan.SubmitSelector,
+                formatSelector = plan.FormatSelector, formatValue = plan.FormatValue, scopeSelector = plan.ScopeSelector, scopeValue = plan.ScopeValue, origin }).WaitAsync(ct);
+        if (destination.Length != 2)
+            throw new InvalidOperationException("La destination native CSV Toutes les pages n’est plus identifiable avant la commande. Inspecter à nouveau la recherche GLPI.");
+        return destination;
+    }
+
+    private static async Task SelectNativeExportOptionAsync(IFrame frame, string selector, string value, bool force,
+        NativeExportAttempt attempt, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var locator = frame.Locator(selector);
+        if (await locator.CountAsync() != 1) throw new InvalidOperationException("Le choix d’export ne désigne plus une liste unique.");
+        // Finish this bounded action before acknowledging cancellation. A change
+        // handler can itself submit the native form and remove the select.
+        await locator.SelectOptionAsync(new SelectOptionValue { Value = value }, new() { Timeout = 5000, Force = force });
+        ct.ThrowIfCancellationRequested();
+        if (attempt.RequestObserved) return;
+        var retained = await frame.EvaluateAsync<bool>("""
+            args => {
+              const controls = [...document.querySelectorAll(args.selector)];
+              return controls.length === 1 && controls[0].value === args.value;
+            }
+            """, new { selector, value }).WaitAsync(ct);
+        if (!retained && !attempt.RequestObserved)
+            throw new InvalidOperationException("GLPI n’a pas conservé le choix d’export et aucune requête CSV Toutes les pages n’a été observée. Aucun second clic n’est exécuté.");
     }
 
     private async Task ClickNativeControlAsync(IFrame frame, string selector, bool menu, string expectedOrigin, CancellationToken ct)

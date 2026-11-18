@@ -110,7 +110,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax error' }
           python -m unittest discover -s tests/ReleasePackChecks -p "test_*.py"
           if ($LASTEXITCODE -ne 0) { throw 'Explicit publication guards failed' }
-      - name: Colonnes GLPI · repères renouvelés et reprise
+      - name: Colonnes GLPI et attente des exports natifs
         timeout-minutes: 7
         run: |
           $ErrorActionPreference = 'Stop'
@@ -121,6 +121,9 @@ jobs:
           $env:GLPI_TEST_FILTER = 'Colonnes GLPI'
           dotnet run --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
           if ($LASTEXITCODE -ne 0) { throw 'Native column preparation regression checks failed' }
+          $env:GLPI_TEST_FILTER = 'Attente export GLPI'
+          dotnet run --no-build --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
+          if ($LASTEXITCODE -ne 0) { throw 'Native export timing regression checks failed' }
       - name: WebView sources et refresh · Standard/Admin
         timeout-minutes: 14
         run: |

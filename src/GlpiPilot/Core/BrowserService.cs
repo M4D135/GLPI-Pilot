@@ -23,6 +23,9 @@ public sealed partial class BrowserService : IAsyncDisposable
     private string _profileInstallation = "";
     private TaskCompletionSource<IDownload>? _downloadWaiter;
     private IPage? _downloadPage;
+    private Func<IDownload, bool>? _downloadAccept;
+    private Action<string>? _downloadProgress;
+    private bool _freshCollectionPageRequired;
     private IPage? _activePage;
     private string _targetUrl = "";
     private readonly ConcurrentDictionary<IPage, DateTimeOffset> _navigationTimes = new();
@@ -144,8 +147,10 @@ public sealed partial class BrowserService : IAsyncDisposable
         _openedAt = DateTimeOffset.UtcNow;
         _targetUrl = uri.AbsoluteUri;
         _authenticationNavigationObserved = false;
-        var page = ActivePage ?? _context.Pages.FirstOrDefault(p => !p.IsClosed && !IsTicketDetailPage(p) && TargetUrlPolicy.SamePage(p.Url, _targetUrl))
+        var page = _freshCollectionPageRequired ? await _context.NewPageAsync()
+            : ActivePage ?? _context.Pages.FirstOrDefault(p => !p.IsClosed && !IsTicketDetailPage(p) && TargetUrlPolicy.SamePage(p.Url, _targetUrl))
             ?? _context.Pages.FirstOrDefault(p => !p.IsClosed && !IsTicketDetailPage(p)) ?? await _context.NewPageAsync();
+        _freshCollectionPageRequired = false;
         SetActivePage(page);
         if (BackgroundMode) await SetPageWindowAsync(page, false, cancellationToken);
         else await ShowBrowserAsync(page, cancellationToken);
@@ -182,13 +187,25 @@ public sealed partial class BrowserService : IAsyncDisposable
         page.Download += async (_, download) =>
         {
             var waiter = _downloadWaiter;
-            if (waiter == null || _downloadPage == null) return;
+            var owner = _downloadPage;
+            var accepts = _downloadAccept;
+            var progress = _downloadProgress;
+            if (waiter == null || owner == null) return;
             try
             {
                 IPage? ancestor = page;
                 for (var depth = 0; ancestor != null && depth < 4; depth++)
                 {
-                    if (ReferenceEquals(ancestor, _downloadPage)) { waiter.TrySetResult(download); break; }
+                    if (ReferenceEquals(ancestor, owner))
+                    {
+                        if (accepts?.Invoke(download) == false) break;
+                        if (ReferenceEquals(waiter, _downloadWaiter) && waiter.TrySetResult(download))
+                        {
+                            Log?.Invoke("EXPORT · téléchargement observé ; réception suivie jusqu’à la fin du transfert.");
+                            progress?.Invoke("Fichier détecté · réception du téléchargement GLPI…");
+                        }
+                        break;
+                    }
                     ancestor = await ancestor.OpenerAsync();
                 }
             }
@@ -530,13 +547,17 @@ public sealed partial class BrowserService : IAsyncDisposable
     public Task<string> CaptureDownloadAsync(IPage page, string folder, CancellationToken ct) =>
         CaptureDownloadCoreAsync(page, folder, null, null, ct);
 
-    private async Task<string> CaptureDownloadCoreAsync(IPage page, string folder, Func<CancellationToken, Task>? trigger, int? timeoutSeconds, CancellationToken ct)
+    private async Task<string> CaptureDownloadCoreAsync(IPage page, string folder, Func<CancellationToken, Task>? trigger, int? timeoutSeconds, CancellationToken ct,
+        Func<IDownload, bool>? acceptsDownload = null, Func<Task>? stopPendingRequest = null, Action<string>? progress = null,
+        TaskCompletionSource<IDownload>? receiver = null, Action? verifyAttempt = null)
     {
         if (_downloadWaiter != null) throw new InvalidOperationException("Une réception de fichier est déjà en cours.");
         if (page.IsClosed) throw new InvalidOperationException("L’onglet a été fermé.");
         Directory.CreateDirectory(folder);
-        _downloadWaiter = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _downloadWaiter = receiver ?? new(TaskCreationOptions.RunContinuationsAsynchronously);
         _downloadPage = page;
+        _downloadAccept = acceptsDownload;
+        _downloadProgress = progress;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         if (timeoutSeconds.HasValue) deadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds.Value));
         var transferToken = deadline.Token;
@@ -549,7 +570,11 @@ public sealed partial class BrowserService : IAsyncDisposable
                 Log?.Invoke("Réception activée. Dans GLPI, déclenche l’export souhaité, en choisissant Toutes les pages si nécessaire.");
             }
             else { Log?.Invoke("EXPORT · réception armée avant l’action Toutes les pages / CSV."); await trigger(transferToken); }
+            verifyAttempt?.Invoke();
+            if (!_downloadWaiter.Task.IsCompleted)
+                progress?.Invoke("Export CSV demandé à GLPI · attente du fichier…");
             download = await _downloadWaiter.Task.WaitAsync(transferToken);
+            verifyAttempt?.Invoke();
             Log?.Invoke("EXPORT · téléchargement détecté, attente de la fin du transfert.");
             var raw = Path.GetFileName(download.SuggestedFilename);
             var name = string.Join("_", raw.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
@@ -566,6 +591,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                 saveTask = download.SaveAsAsync(temporary);
                 await saveTask.WaitAsync(transferToken);
                 transferToken.ThrowIfCancellationRequested();
+                verifyAttempt?.Invoke();
                 File.Move(temporary, path);
             }
             catch (OperationCanceledException)
@@ -576,17 +602,49 @@ public sealed partial class BrowserService : IAsyncDisposable
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
             Log?.Invoke($"EXPORT · fichier reçu ({new FileInfo(path).Length:N0} octets, extension {extension}).");
+            verifyAttempt?.Invoke();
             return path;
         }
-        catch (OperationCanceledException)
+        catch (Exception error)
         {
             var pending = download ?? (_downloadWaiter.Task.IsCompletedSuccessfully ? _downloadWaiter.Task.Result : null);
             if (pending != null) { try { await pending.CancelAsync(); } catch (PlaywrightException) { } }
-            if (!ct.IsCancellationRequested && deadline.IsCancellationRequested)
+            if (stopPendingRequest is not null) await stopPendingRequest();
+            if (error is OperationCanceledException && !ct.IsCancellationRequested && deadline.IsCancellationRequested)
                 throw new TimeoutException("Le téléchargement GLPI n’a pas abouti dans le délai d’export. Augmente ce délai dans Réglages ou copie le diagnostic.");
             throw;
         }
-        finally { _downloadWaiter = null; _downloadPage = null; }
+        finally { _downloadWaiter = null; _downloadPage = null; _downloadAccept = null; _downloadProgress = null; }
+    }
+
+    private async Task StopPendingNativeExportAsync(IPage source)
+    {
+        // A download has no Request identity. A late attachment from a cancelled
+        // navigation must never satisfy a later run with the same URL. Retire
+        // this export page and use a fresh page next time, preserving other tabs.
+        _freshCollectionPageRequired = true;
+        var descendants = new List<IPage>();
+        foreach (var candidate in _context?.Pages.ToArray() ?? Array.Empty<IPage>())
+        {
+            if (candidate.IsClosed || ReferenceEquals(candidate, source)) continue;
+            try
+            {
+                IPage? ancestor = candidate;
+                for (var depth = 0; ancestor is not null && depth < 4; depth++)
+                {
+                    if (ReferenceEquals(ancestor, source)) { descendants.Add(candidate); break; }
+                    ancestor = await ancestor.OpenerAsync();
+                }
+            }
+            catch (PlaywrightException) { /* A closing popup cannot become the next export page. */ }
+        }
+        foreach (var page in descendants.Append(source))
+        {
+            if (page.IsClosed) continue;
+            try { await page.CloseAsync(new() { RunBeforeUnload = false }); }
+            catch (PlaywrightException) when (page.IsClosed || _context is null) { }
+        }
+        Log?.Invoke("EXPORT · onglet du transfert interrompu fermé ; la prochaine collecte utilisera un nouvel onglet.");
     }
 
     public async ValueTask DisposeAsync()

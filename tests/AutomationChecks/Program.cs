@@ -99,6 +99,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Gestion de fenêtre bloquée : délai borné, sémaphore libéré et annulation rapide", CheckWindowManagementTimeout)
 };
 checks.AddRange(ColumnPreparationBrowserChecks.Cases(browser));
+checks.AddRange(NativeExportTimingBrowserChecks.Cases(browser));
 var checkFilter = Environment.GetEnvironmentVariable("GLPI_TEST_FILTER");
 if (!string.IsNullOrWhiteSpace(checkFilter))
 {

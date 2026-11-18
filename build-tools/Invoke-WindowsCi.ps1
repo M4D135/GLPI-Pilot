@@ -464,8 +464,12 @@ try {
                 # Mesuré sur le runner qualifié : AutomationChecks a rendu ses 40/40 vérifications puis a dépassé
                 # le plafond de 180 s avant de rendre la main. Ces deux suites pilotent un vrai WebView2 et un vrai
                 # navigateur, comme les voisines déjà plafonnées à 300 s ; le même budget leur est appliqué.
+                # Export timing regressions deliberately retain native responses beyond 7/10 s.
+                # Keep the existing browser budget; give only this enlarged automation suite
+                # the additional minute consumed by its real delayed transfers.
+                $browserBudget = if ($suite -eq 'AutomationChecks') { 360 } else { 300 }
                 Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
-                    -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 vérifications[^\r\n]*réussies\.\r?$'
+                    -LogName ($suite.ToLowerInvariant() + '.log') -TimeoutSeconds $browserBudget -ExpectedPattern '(?m)^([1-9]\d*)/\1 vérifications[^\r\n]*réussies\.\r?$'
             }
             # Same rule as the neighbours: cold compilation must not eat the browser process's deadline.
             $detailProject = 'tests/TicketDetailChecks/TicketDetailChecks.csproj'

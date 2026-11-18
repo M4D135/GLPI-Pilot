@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.4 · Windows x64
+# GLPI Pilot 4.0.5 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.4 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.5 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.5 : réception des exports après une réponse GLPI lente
+
+Une commande native d’export peut démarrer depuis le choix du format, puis remplacer son menu. La collecte suit désormais la requête réellement émise et son téléchargement sans attendre l’ancien contrôle ni envoyer une seconde commande. Les réponses arrivant après les délais courts de navigation utilisent le délai d’export configuré, puis les contrôles habituels du fichier et du périmètre.
+
+L’annulation d’une requête encore en attente isole l’onglet interrompu avant une nouvelle collecte. Le diagnostic distingue les étapes de sélection, de demande du fichier et de réception. Voir les [notes 4.0.5](docs/RELEASE-4.0.5.md).
 
 ## 4.0.4 : reprise de la collecte après préparation des colonnes
 

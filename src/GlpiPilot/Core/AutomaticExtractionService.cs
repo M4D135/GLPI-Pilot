@@ -118,7 +118,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 NativeDownloadResult? download = null;
                 try
                 {
-                    download = await browser.ExportAllNativeAsync(table, settings, ct);
+                    download = await browser.ExportAllNativeAsync(table, settings, ct, progress);
                     nativePath = download.Path;
                     NativeFileSaved?.Invoke(nativePath);
                     Log?.Invoke("EXPORT · fichier natif conservé dans le dossier des exports, avant l’import.");

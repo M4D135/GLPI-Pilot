@@ -17,7 +17,8 @@ public static class DiagnosticReport
         report.AppendLine("Adresse source (paramètres masqués) : " + AppPaths.SafeUrl(settings.PortalUrl));
         if (Uri.TryCreate(settings.PortalUrl, UriKind.Absolute, out var url))
             report.AppendLine("Nombre de paramètres mémorisés : " + url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries).Length);
-        report.AppendLine($"Attente SSO : {settings.TimeoutSeconds} s · export : {settings.DownloadTimeoutSeconds} s");
+        report.AppendLine($"Attente SSO : {settings.TimeoutSeconds} s · liste et colonnes : {settings.ListTimeoutSeconds} s · export : {settings.DownloadTimeoutSeconds} s");
+        report.AppendLine($"Préparation des colonnes : {settings.ColumnPreparationMode}");
         report.AppendLine($"Limites : {settings.MaxRows} lignes · {settings.MaxPages} pages · Excel auto : {settings.AutoSaveXlsx}");
         report.AppendLine($"Repères mémorisés : tableau={settings.TableHeaderFingerprint.Length > 0}, session={settings.ReadySelector.Length > 0}, suivant={settings.NextSelector.Length > 0}, export={settings.NativeSubmitSelector.Length > 0}");
         report.AppendLine($"Détail des tickets : automatique={settings.TicketDetails.AutoLoadOnSelection}, détection={settings.TicketDetails.IncludeAutoDetected}, sections={settings.TicketDetails.Sections.Count}, limite={settings.TicketDetails.MaxRowsPerSection}");
