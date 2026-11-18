@@ -4,7 +4,7 @@
   // Read-only discovery of the native GLPI display-preference controls.
   // The host clicks/selects through Playwright. No form, URL, request or DOM
   // mutation is manufactured by this adapter; users_id=0 is never actionable.
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.1';
   const TABLES = 'table.search-results,table.tab_cadrehov,table.tab_cadre_fixehov';
   const PREF_PATH = /\/front\/displaypreference\.form\.php\/?$/;
   const tidy = value => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -142,7 +142,7 @@
   function inspectPreferences() {
     const state = { supported: false, reason: '', proof: '', layout: '', itemType: '', usersId: '', personalScope: false, personalActive: false,
       personalTabSelector: '', personalTabSelectSelector: '', personalTabValue: '', formSelector: '', activateSelector: '', selectSelector: '', selectHidden: false, addSelector: '',
-      options: [], selected: [], selectedIdsKnown: false };
+      options: [], selected: [], selectedValue: '', selectedIdsKnown: false };
     const url = localUrl(location.href);
     // Legacy POST navigation does not retain the GET itemtype parameter.
     // The personal form/tab below must still prove Ticket from its rendered DOM.
@@ -203,7 +203,7 @@
     if (new Set(options.map(option => option.value)).size !== options.length)
       return { ...state, reason: 'Plusieurs options de colonne partagent le même identifiant.' };
     return { ...state, supported: true, proof: modern ? 'native-personal-options-ajax' : 'native-personal-options-form',
-      formSelector: selector(modern ? body : select.form), selectSelector: selector(select), selectHidden: !visible(select), addSelector: selector(add), options };
+      formSelector: selector(modern ? body : select.form), selectSelector: selector(select), selectHidden: !visible(select), addSelector: selector(add), selectedValue: select.value, options };
   }
 
   window.__glpiPilotColumns = { version: VERSION, inspect, inspectPreferences };

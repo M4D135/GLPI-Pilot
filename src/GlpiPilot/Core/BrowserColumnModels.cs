@@ -31,6 +31,7 @@ public sealed class NativeColumnPreferences
     [JsonPropertyName("activateSelector")] public string ActivateSelector { get; set; } = "";
     [JsonPropertyName("selectSelector")] public string SelectSelector { get; set; } = "";
     [JsonPropertyName("selectHidden")] public bool SelectHidden { get; set; }
+    [JsonPropertyName("selectedValue")] public string SelectedValue { get; set; } = "";
     [JsonPropertyName("addSelector")] public string AddSelector { get; set; } = "";
     [JsonPropertyName("options")] public List<NativeColumnOption> Options { get; set; } = new();
     [JsonPropertyName("selected")] public List<NativeSelectedColumn> Selected { get; set; } = new();

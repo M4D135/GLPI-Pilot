@@ -47,13 +47,38 @@ public sealed partial class BrowserService
         after.Selected.Count >= before.Selected.Count && before.Selected.Select(ColumnIdentity)
             .SequenceEqual(after.Selected.Take(before.Selected.Count).Select(ColumnIdentity), StringComparer.Ordinal);
 
-    private static async Task ClickColumnControlAsync(IFrame frame, string origin, string selector, CancellationToken ct)
+    private static bool SamePersonalColumnView(NativeColumnPreferences before, NativeColumnPreferences after) =>
+        PersonalColumnScope(after) && after.UsersId == before.UsersId && after.Layout == before.Layout
+        && after.PersonalActive == before.PersonalActive && SelectedColumnsPreserved(before, after);
+
+    private static bool SameColumnOption(NativeColumnOption expected, NativeColumnOption observed) =>
+        expected.Value == observed.Value && DashboardService.Normalize(ColumnPreparationPolicy.Header(expected))
+            == DashboardService.Normalize(ColumnPreparationPolicy.Header(observed));
+
+    // This exception is restricted to failures before the native add/activate
+    // click. A response or persistence failure must never enter the fallback.
+    private sealed class ColumnOptionUnavailableException(string message) : InvalidOperationException(message);
+    private sealed record ColumnCommandResult(NativeColumnPreferences Preferences, bool Added);
+
+    private void ValidatePersonalColumnView(NativeColumnPreferences before, NativeColumnPreferences fresh)
+    {
+        if (!SamePersonalColumnView(before, fresh))
+            throw new InvalidOperationException("La vue personnelle des colonnes a changé avant l’ajout. Aucune autre commande n’est exécutée.");
+        if (fresh.FormSelector != before.FormSelector || fresh.SelectSelector != before.SelectSelector
+            || fresh.AddSelector != before.AddSelector || fresh.ActivateSelector != before.ActivateSelector)
+            Log?.Invoke("COLONNES · repères natifs renouvelés ; la même vue personnelle a été revalidée.");
+    }
+
+    private static async Task ClickColumnControlAsync(IFrame frame, string origin, string selector, CancellationToken ct, bool optionalCommand = false)
     {
         ct.ThrowIfCancellationRequested();
         if (frame.IsDetached || Origin(frame.Url) != origin) throw new InvalidOperationException("Le contexte des colonnes a changé avant l’action native.");
         var control = frame.Locator(selector);
         if (selector.Length == 0 || await control.CountAsync() != 1 || !await control.IsVisibleAsync() || !await control.IsEnabledAsync())
+        {
+            if (optionalCommand) throw new ColumnOptionUnavailableException("La commande personnelle a disparu avant le clic ; aucun ajout n’a été envoyé pour cette option.");
             throw new InvalidOperationException("La commande native des colonnes n’est plus disponible sans ambiguïté.");
+        }
         await control.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct);
         ct.ThrowIfCancellationRequested();
     }
@@ -114,31 +139,70 @@ public sealed partial class BrowserService
         return (preferencesFrame, new() { Reason = preferences.Reason.Length > 0 ? preferences.Reason : "La vue personnelle n’est pas devenue disponible dans le délai prévu." });
     }
 
-    private async Task<NativeColumnPreferences> SubmitColumnControlAsync(IFrame frame, string origin, NativeColumnPreferences before,
+    private async Task<ColumnCommandResult> SubmitColumnControlAsync(IFrame frame, string origin, NativeColumnPreferences before,
         NativeColumnOption? option, int timeoutSeconds, CancellationToken ct)
     {
         var fresh = await InspectColumnPreferencesAsync(frame, origin, ct);
-        if (!PersonalColumnScope(fresh) || fresh.UsersId != before.UsersId || fresh.Layout != before.Layout || fresh.FormSelector != before.FormSelector
-            || fresh.Proof != before.Proof || !SelectedColumnsPreserved(before, fresh))
-            throw new InvalidOperationException("La vue personnelle des colonnes a changé avant l’ajout. Aucune autre commande n’est exécutée.");
+        ValidatePersonalColumnView(before, fresh);
         var activate = option is null;
-        if (activate ? fresh.ActivateSelector.Length == 0 || fresh.ActivateSelector != before.ActivateSelector
-            : fresh.SelectSelector != before.SelectSelector || fresh.AddSelector != before.AddSelector
-                || !ColumnPreparationPolicy.Available(fresh).Any(item => item.Value == option!.Value && item.Label == option.Label && item.Group == option.Group))
-            throw new InvalidOperationException("L’option de colonne n’est plus proposée par GLPI.");
+        if (activate && fresh.ActivateSelector.Length == 0)
+            throw new ColumnOptionUnavailableException("La commande personnelle de création n’est plus disponible après relecture.");
         if (!activate)
         {
-            await SelectNativeOptionAsync(frame, fresh.SelectSelector, option!.Value, fresh.SelectHidden, ct);
-            var selected = await InspectColumnPreferencesAsync(frame, origin, ct);
-            if (!PersonalColumnScope(selected) || selected.UsersId != fresh.UsersId || selected.FormSelector != fresh.FormSelector
-                || selected.AddSelector != fresh.AddSelector || !SelectedColumnsPreserved(fresh, selected))
-                throw new InvalidOperationException("Le formulaire personnel a changé pendant le choix de la colonne.");
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (fresh.SelectedIdsKnown && fresh.Selected.Any(item => item.Value == option!.Value))
+                {
+                    Log?.Invoke("COLONNES · option déjà présente dans la vue relue ; aucun ajout en double.");
+                    return new(fresh, false);
+                }
+                var offered = ColumnPreparationPolicy.Available(fresh).FirstOrDefault(item => SameColumnOption(option!, item));
+                if (offered is null)
+                    throw new ColumnOptionUnavailableException(fresh.Options.Any(item => item.Value == option!.Value)
+                        ? "Le libellé de l’option a changé après relecture ; aucun ajout n’a été envoyé pour cette option."
+                        : "L’option choisie n’est plus disponible dans la vue relue ; aucun ajout n’a été envoyé pour cette option.");
+                if (fresh.SelectSelector.Length == 0 || fresh.AddSelector.Length == 0)
+                    throw new ColumnOptionUnavailableException("La commande personnelle d’ajout n’est plus disponible après relecture.");
+                if (fresh.SelectedValue != option!.Value)
+                {
+                    var previous = fresh;
+                    try
+                    {
+                        // A native rerender may replace the ID during change.
+                        // Re-read the verified form afterwards instead of asking
+                        // the old locator for its now-detached input value.
+                        await frame.Locator(fresh.SelectSelector).SelectOptionAsync(new SelectOptionValue { Value = option.Value },
+                            new() { Timeout = 3000, Force = fresh.SelectHidden });
+                        ct.ThrowIfCancellationRequested();
+                    }
+                    catch (PlaywrightException)
+                    {
+                        fresh = await InspectColumnPreferencesAsync(frame, origin, ct);
+                        ValidatePersonalColumnView(previous, fresh);
+                        if (attempt == 2) throw new ColumnOptionUnavailableException("Le menu des colonnes n’a pas conservé un repère utilisable ; aucun ajout n’a été envoyé pour cette option.");
+                        continue;
+                    }
+                    fresh = await InspectColumnPreferencesAsync(frame, origin, ct);
+                    ValidatePersonalColumnView(previous, fresh);
+                }
+                if (fresh.SelectedValue == option.Value && ColumnPreparationPolicy.Available(fresh).Any(item => SameColumnOption(option, item))) break;
+                if (attempt == 2) throw new ColumnOptionUnavailableException("Le menu n’a pas conservé la colonne choisie ; aucun ajout n’a été envoyé pour cette option.");
+            }
         }
         // Observe GLPI's own request. No endpoint, payload, CSRF token or form
         // is synthesized. The modern route returns no application JSON status;
         // its persisted list is checked again after reopening below.
         var response = await frame.Page.RunAndWaitForResponseAsync(
-            () => ClickColumnControlAsync(frame, origin, activate ? fresh.ActivateSelector : fresh.AddSelector, ct),
+            async () =>
+            {
+                var ready = await InspectColumnPreferencesAsync(frame, origin, ct);
+                ValidatePersonalColumnView(fresh, ready);
+                if (activate ? ready.ActivateSelector.Length == 0 : ready.AddSelector.Length == 0 || ready.SelectedValue != option!.Value
+                    || !ColumnPreparationPolicy.Available(ready).Any(item => SameColumnOption(option!, item)))
+                    throw new ColumnOptionUnavailableException("La commande a changé avant sa validation ; aucun ajout n’a été envoyé pour cette option.");
+                fresh = ready;
+                await ClickColumnControlAsync(frame, origin, activate ? ready.ActivateSelector : ready.AddSelector, ct, optionalCommand: true);
+            },
             reply => reply.Request.Method == "POST" && Origin(reply.Url) == origin && reply.Request.Frame == frame
                 && new Uri(reply.Url).AbsolutePath.EndsWith(fresh.Layout == "modern" ? "/ajax/displaypreference.php" : "/front/displaypreference.form.php", StringComparison.Ordinal),
             new() { Timeout = timeoutSeconds * 1000 }).WaitAsync(ct);
@@ -153,10 +217,10 @@ public sealed partial class BrowserService
             catch (PlaywrightException) { await Task.Delay(120, ct); continue; }
             if (PersonalColumnScope(after) && after.UsersId == fresh.UsersId && after.ActivateSelector.Length == 0)
             {
-                if (activate) return after;
+                if (activate) return new(after, false);
                 if (after.Selected.Count >= fresh.Selected.Count + 1 && SelectedColumnsPreserved(fresh, after)
                     && (after.SelectedIdsKnown ? after.Selected.Any(item => item.Value == option!.Value)
-                        : !after.Options.Any(item => item.Value == option!.Value))) return after;
+                        : !after.Options.Any(item => item.Value == option!.Value))) return new(after, true);
             }
             await Task.Delay(120, ct);
         }
@@ -285,31 +349,50 @@ public sealed partial class BrowserService
         var opened = await OpenColumnPreferencesAsync(table, timeout, ct);
         var preferences = opened.Preferences;
         var added = new List<NativeColumnOption>();
+        var satisfied = new List<NativeColumnOption>();
         if (opened.Frame is null || !PersonalColumnScope(preferences)) Unavailable(preferences.Reason);
         else
         {
-            if (preferences.ActivateSelector.Length > 0)
+            try
             {
-                await CheckPreparationScopeAsync();
-                Report("Activation de la vue personnelle GLPI ; les colonnes et leur ordre sont conservés.");
-                preferences = await SubmitColumnControlAsync(opened.Frame, table.FrameOrigin, preferences, null, timeout, ct);
+                if (preferences.ActivateSelector.Length > 0)
+                {
+                    await CheckPreparationScopeAsync();
+                    Report("Activation de la vue personnelle GLPI ; les colonnes et leur ordre sont conservés.");
+                    preferences = (await SubmitColumnControlAsync(opened.Frame, table.FrameOrigin, preferences, null, timeout, ct)).Preferences;
+                }
+                var initiallyOffered = ColumnPreparationPolicy.Available(preferences).Select(option => option.Value).ToHashSet(StringComparer.Ordinal);
+                while (ColumnPreparationPolicy.Next(mode, original.Headers, preferences, settings.Dashboard, satisfied) is { } option)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (!initiallyOffered.Contains(option.Value))
+                        throw new ColumnOptionUnavailableException("La liste des options de colonne a changé pendant la préparation ; aucun ajout n’a été envoyé pour cette nouvelle option.");
+                    Report($"Ajout de colonne {added.Count + 1:N0} · {ColumnPreparationPolicy.Header(option)}");
+                    await CheckPreparationScopeAsync();
+                    var command = await SubmitColumnControlAsync(opened.Frame, table.FrameOrigin, preferences, option, timeout, ct);
+                    preferences = command.Preferences;
+                    if (command.Added) added.Add(option);
+                    satisfied.Add(option);
+                }
+                receipt.State = "ready";
             }
-            var initiallyOffered = ColumnPreparationPolicy.Available(preferences).Select(option => option.Value).ToHashSet(StringComparer.Ordinal);
-            while (ColumnPreparationPolicy.Next(mode, original.Headers, preferences, settings.Dashboard, added) is { } option)
+            catch (ColumnOptionUnavailableException error)
             {
                 ct.ThrowIfCancellationRequested();
-                if (!initiallyOffered.Contains(option.Value))
-                    throw new InvalidOperationException("La liste des options de colonne a changé pendant la préparation. Les ajouts effectués sont conservés ; relancer pour examiner la nouvelle liste.");
-                Report($"Ajout de colonne {added.Count + 1:N0} · {ColumnPreparationPolicy.Header(option)}");
+                // Closing the legacy dialog reloads the page and could erase
+                // a changed, not-yet-submitted search form. Check before it.
                 await CheckPreparationScopeAsync();
-                preferences = await SubmitColumnControlAsync(opened.Frame, table.FrameOrigin, preferences, option, timeout, ct);
-                added.Add(option);
+                // No unconfirmed add is retried or hidden here. Earlier native
+                // commands remain subject to the persistence check below.
+                Unavailable(error.Message);
+                Log?.Invoke("COLONNES · préparation interrompue avant la commande ; reprise de la collecte après fermeture et relecture du même périmètre.");
             }
-            receipt.State = "ready";
         }
-        await CloseColumnPreferencesAsync(table, ct, waitForRefresh: preferences.Layout == "modern", timeout);
+        // Legacy closes reload the document too. Even with zero additions, do
+        // not return the still-visible old table before that reload completes.
+        await CloseColumnPreferencesAsync(table, ct, waitForRefresh: true, timeout);
         table = await RefreshPreparedTableAsync(original, before.Headers.Count + added.Count, timeout, ct);
-        if (opened.Frame is not null && preferences.Layout == "modern" && added.Count > 0)
+        if (opened.Frame is not null && preferences.Layout == "modern" && satisfied.Count > 0)
         {
             // GLPI 11 updates its DOM optimistically and can reuse the iframe.
             // Reopen, then read its already observed native GET URL normally;
@@ -341,6 +424,13 @@ public sealed partial class BrowserService
             receipt.Warnings.Add("La liste des tickets a évolué pendant la préparation des colonnes, avec les mêmes critères observables. L’export utilise un nouvel échantillon ; la couverture de cette exécution reste à vérifier.");
         if (receipt.State == "ready") receipt.Message = $"{added.Count:N0} colonnes ajoutées à la vue personnelle · {after.Headers.Count:N0} colonnes relues dans GLPI."
             + (mode == "all" ? " Toutes les options disponibles ont été traitées." : " Préparation de supervision terminée.");
+        else if (added.Count > 0)
+        {
+            var previousMessage = receipt.Message;
+            receipt.Message += $" Ajouts confirmés : {added.Count:N0} · colonnes relues : {after.Headers.Count:N0}.";
+            var warning = receipt.Warnings.IndexOf(previousMessage);
+            if (warning >= 0) receipt.Warnings[warning] = receipt.Message;
+        }
         Report(receipt.Message);
         ct.ThrowIfCancellationRequested();
         return new(table, receipt);

@@ -2,7 +2,8 @@
 
 // Synthetic fixtures follow the native markup in these official sources:
 // 9.5: glpi-project/glpi@1a3f445f362983a12c5e960ea3fce38bf866da3e,
-//      inc/search.class.php, inc/displaypreference.class.php, inc/ajax.class.php.
+//      inc/search.class.php, inc/displaypreference.class.php, inc/ajax.class.php,
+//      inc/dropdown.class.php, inc/html.class.php and js/common.js.
 // 10:  glpi-project/glpi@02d219b1bc1d343033440bb2a30c053f52f3b98f,
 //      src/DisplayPreference.php, templates/components/search/controls.html.twig.
 // 11:  glpi-project/glpi@b0897d490548cc2ccf5f82d775eb3690861d3734,
@@ -28,6 +29,7 @@ module.exports = async function checkColumns({ browser, project, ok, equal }) {
   let active = false;
   let stored = [];
   let renderNumber = 0;
+  let preferenceRenderNumber = 0;
   let preferenceReads = 0;
   const inherited = ['12', '2'];
   const requests = [];
@@ -46,7 +48,9 @@ module.exports = async function checkColumns({ browser, project, ok, equal }) {
     const modern = version === 'modern';
     if (view === 'global' || view === 'global-readonly') return html(tab + '<div id="tabsbody">' +
       (view === 'global' ? form('<select name="num"><option value="8">Groupe de techniciens</option></select><input type="submit" name="add" value="Ajouter">', '0') : '<p>Statut · ID</p>') + '</div>');
-    const dropdown = `<select id="column-choice" name="num">${options(modern)}</select>`;
+    // Native Dropdown::showFromArray assigns dropdown_num + mt_rand() on each
+    // server render. The identifier is a locator, not the identity of a column.
+    const dropdown = `<select id="dropdown_num${++preferenceRenderNumber}" name="num">${options(modern)}</select>`;
     let content;
     if (!active) content = modern ? identity('17') + '<button type="button" name="activate">Créer</button>' : form('<input type="submit" name="activate" value="Créer">');
     else if (modern) content = identity('17') + dropdown + '<button type="button" name="add_opt">Ajouter</button><button type="button" name="disable">Supprimer la vue personnelle</button><ul class="list-group">' +
@@ -158,15 +162,17 @@ module.exports = async function checkColumns({ browser, project, ok, equal }) {
       equal(state.selectedIdsKnown, version === 'modern', version + ' does not confuse legacy preference record IDs with column IDs');
       equal(state.options.filter(item => item.label === 'Rédacteur').map(item => [item.group, item.fullLabel]), [['Suivis', 'Suivis - Rédacteur'], ['Tâches', 'Tâches - Rédacteur']], version + ' keeps identical author labels separated by their native group');
       await opened.frame.locator(state.selectSelector).selectOption('8');
+      equal((await read(opened.frame)).selectedValue, '8', version + ' reports the actual selected column value before a native submit');
       if (version === 'modern') await Promise.all([page.waitForResponse(response => response.url().endsWith('/ajax/displaypreference.php') && response.request().method() === 'POST'), opened.frame.locator(state.addSelector).click()]);
       else await Promise.all([opened.frame.waitForNavigation(), opened.frame.locator(state.addSelector).click()]);
       await opened.frame.evaluate(script); state = await read(opened.frame);
       ok(version === 'modern' ? state.selected.some(item => item.value === '8') : !state.options.some(item => item.value === '8'), version + ' exposes the native proof that the chosen missing column was added');
-      const previousFrame = opened.frame;
+      const previousFrame = opened.frame, previousSelect = state.selectSelector;
       await close(opened); const readsBeforeReopen = preferenceReads;
       opened = await open(); state = await read(opened.frame);
       equal(state.selected.map(item => item.label), ['Titre', 'Statut', 'ID', entryLabel('8')], version + ' persists the appended column across native close and reopen');
-      ok(new URL(page.url()).searchParams.get('criteria[0][value]') === 'notold' && requests.every(request => request.user === '17'), version + ' retains search filters and never submits a global preference');
+      ok(new URL(page.url()).searchParams.get('criteria[0][value]') === 'notold' && requests.every(request => request.user === '17') && state.selectSelector !== previousSelect,
+        version + ' re-discovers the regenerated dropdown ID, retains search filters and never submits a global preference');
       if (version === 'modern') {
         equal(state.options.length, choices.length, 'GLPI 11 keeps all native options in its select; selected IDs must be subtracted');
         ok(opened.frame !== previousFrame && preferenceReads === readsBeforeReopen + 1 && await page.locator('iframe').count() === 2,
@@ -207,6 +213,18 @@ module.exports = async function checkColumns({ browser, project, ok, equal }) {
     await page.evaluate(() => { const select = document.querySelector('select[name="num"]'); select.className = 'select2-hidden-accessible'; const container = document.createElement('span'); container.className = 'select2-container'; container.textContent = 'Option'; select.after(container); });
     state = await read(page);
     ok(state.supported && state.selectHidden, 'A visible native Select2 wrapper permits controlled selection of its hidden select');
+    const beforeRebuild = state;
+    await page.evaluate(() => {
+      const select = document.querySelector('select[name="num"]');
+      const replacement = select.cloneNode(true);
+      replacement.id = 'dropdown_num_rebuilt';
+      replacement.value = '8';
+      select.replaceWith(replacement);
+    });
+    state = await read(page);
+    equal([state.supported, state.usersId, state.proof, state.options, state.selected, state.selectedValue, state.selectSelector !== beforeRebuild.selectSelector],
+      [true, beforeRebuild.usersId, beforeRebuild.proof, beforeRebuild.options, beforeRebuild.selected, '8', true],
+      'Replacing the native dropdown retains its personal semantics and exposes the current selected value with a fresh locator');
     stored = choices.map(item => item.value); await direct(); state = await read(page);
     ok(state.supported && state.options.length === 0 && state.selected.length === choices.length + 1 && !state.addSelector, 'A complete legacy personal view needs no additional mutations');
     await page.goto(origin + '/glpi/front/ticket.php'); await page.evaluate(script); await page.evaluate(() => document.querySelector('form[data-search-itemtype]').dataset.searchItemtype = 'Computer');
