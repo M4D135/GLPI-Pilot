@@ -23,7 +23,8 @@ var checks = new (string Name, Action Run)[]
     ("Journal corrompu : refus explicite et contenu conservé", CheckMalformedJournal),
     ("Commande de suppression : seules les additions journalisées sont autorisées", CheckInvalidCommand),
     ("Échec de création : aucune trace partielle ni fausse session", CheckCreateFailure),
-    ("Échec de sauvegarde : la dernière intention durable reste intacte", CheckSaveFailure)
+    ("Échec de sauvegarde : la dernière intention durable reste intacte", CheckSaveFailure),
+    ("Cadre initial : URL en attente observée sans accepter origine, parent ou page étrangers", BrowserColumnFrameChecks.Run)
 };
 var failures = 0;
 foreach (var (name, run) in checks)

@@ -155,8 +155,25 @@ internal static class CollectionRecoveryBrowserChecks
                 + "<span class='fa-wrench pointer' onclick=\"$('#search_config_top').dialog('open');\">Colonnes</span>"
                 + "<div class='ui-dialog' role='dialog' id='dialog'" + (alreadyOpen ? "" : " hidden") + "><button class='ui-dialog-titlebar-close'>Fermer</button>"
                 + "<div id='search_config_top'><iframe id='Iframesearch_config_top'" + (alreadyOpen ? " src='/glpi/front/displaypreference.form.php?itemtype=Ticket'" : "") + "></iframe></div></div>"
+                + "<script>window.__listRender=" + currentRender + ";</script>"
                 + """
               <script>
+              document.querySelector('#native-export').addEventListener('submit',()=>{
+                // Observe the real document synchronously before its native GET.
+                // The routed response must not await evaluation of that same
+                // document while Chromium is navigating to the attachment.
+                const dialog=document.querySelector('#dialog'), box=dialog.getBoundingClientRect();
+                const preferenceFrames=[...document.querySelectorAll('iframe')].filter(frame=>{
+                  try{return frame.contentWindow.location.href.includes('/displaypreference.form.php');}
+                  catch{return true;}
+                }).length;
+                sessionStorage.setItem('nativeExportSnapshot',JSON.stringify({
+                  render:window.__listRender,
+                  openerClicks:Number(sessionStorage.getItem('columnOpenerClicks')||0),
+                  dialogVisible:getComputedStyle(dialog).visibility==='visible'&&box.width>0&&box.height>0,
+                  preferenceFrames
+                }));
+              });
               window.$=()=>({dialog:()=>{
                 sessionStorage.setItem('columnOpenerClicks',String(Number(sessionStorage.getItem('columnOpenerClicks')||0)+1));
                 document.querySelector('#dialog').hidden=false;
@@ -214,8 +231,8 @@ internal static class CollectionRecoveryBrowserChecks
                         && values.GetValueOrDefault("criteria[0][value]") == "1", "The actual all-pages native export must preserve the search.");
                     readsAtExport = preferenceReads; rendersAtExport = render;
                     framesAtExport = page.Frames.Count(frame => frame.Url.Contains("/displaypreference.form.php", StringComparison.Ordinal));
-                    openersAtExport = await page.EvaluateAsync<int>("Number(sessionStorage.getItem('columnOpenerClicks')||0)");
-                    dialogAtExport = await page.Locator("#dialog").IsVisibleAsync();
+                    // No browser command here: this response releases the very
+                    // navigation such a command could otherwise wait behind.
                     exports++; await SendCsv(route, priority);
                 }
                 else await route.AbortAsync();
@@ -239,6 +256,12 @@ internal static class CollectionRecoveryBrowserChecks
                 return;
             }
             var result = await automatic.RunAsync(settings, null, CancellationToken.None);
+            var submitted = await page.EvaluateAsync<JsonElement>("JSON.parse(sessionStorage.getItem('nativeExportSnapshot')||'null')");
+            Require(submitted.ValueKind == JsonValueKind.Object && submitted.GetProperty("render").GetInt32() == rendersAtExport
+                && submitted.GetProperty("preferenceFrames").GetInt32() == framesAtExport,
+                "The native submit must retain the actual exporting document and its preference-frame state before navigation.");
+            openersAtExport = submitted.GetProperty("openerClicks").GetInt32();
+            dialogAtExport = submitted.GetProperty("dialogVisible").GetBoolean();
             var receipt = result.Data.Provenance.ColumnPreparation;
             Require(exports == 1 && posts == (shouldPrepare ? 1 : 0) && removals == (shouldPrepare ? 1 : 0)
                 && !priority && !service.HasPendingTemporaryColumns(settings) && tabGets == (scenario is "renewed" or "compact" ? 1 : 0)

@@ -422,7 +422,7 @@ try {
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^40/40 Foundation checks passed\.\r?$' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
                 @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '94/94 vérifications de configuration réussies.' },
-                @{ Project = 'ColumnRestorationChecks'; Log = 'column-restoration-checks.log'; Summary = '20/20 vérifications pures de restauration des colonnes réussies.' },
+                @{ Project = 'ColumnRestorationChecks'; Log = 'column-restoration-checks.log'; Summary = '21/21 vérifications pures de restauration des colonnes réussies.' },
                 @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '164/164' },
                 @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '47/47 checks passed.' },
                 @{ Project = 'WorkbookProfileChecks'; Log = 'workbook-profile-checks.log'; Summary = '21/21 workbook profile checks passed.' },

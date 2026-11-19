@@ -52,7 +52,7 @@ Les contrôles purs couvrent le choix des colonnes, la migration, la source des 
 | --- | --- |
 | Configuration, source des fiches et lancement | 94/94 |
 | Lecture des fiches et ouverture sans liste | 36/36 |
-| Journal et règles de restauration, sans navigateur | 20/20 |
+| Journal et règles de restauration, sans navigateur | 21/21 |
 | Automatisation générale et provenance avant export | 53/53 |
 | Colonnes GLPI et récupération | 68/68 |
 | Attente et identité des exports natifs | 11/11 |

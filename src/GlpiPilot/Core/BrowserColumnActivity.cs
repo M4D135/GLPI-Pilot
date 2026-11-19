@@ -83,8 +83,12 @@ public sealed partial class BrowserService
 
         public void BindPreferencesFrame(IFrame frame)
         {
+            // Playwright publishes an attached frame with an empty URL before
+            // its first navigation commits. Bind only its request observer in
+            // this initial state, just as for about:blank. Native inspection
+            // and every command still require the verified HTTP origin.
             if (frame.Page != _page || (frame.ParentFrame != _tableFrame && !(_directPreferences && frame == _tableFrame)) || frame.IsDetached
-                || frame.Url != "about:blank" && !LocalAddress(frame.Url, out _))
+                || frame.Url is not ("" or "about:blank") && !LocalAddress(frame.Url, out _))
                 throw new InvalidOperationException("Le cadre personnel des colonnes n’appartient plus au contexte GLPI vérifié.");
             lock (_gate)
             {
