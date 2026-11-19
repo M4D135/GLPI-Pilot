@@ -20,9 +20,13 @@ Cette récupération concerne les changements suivis par cette version. Elle ne 
 
 Le reçu de collecte distingue une **vue GLPI restaurée** d’une **récupération en attente**, avec le nombre de colonnes temporaires retirées. Une restauration non confirmée n’est pas présentée comme réussie.
 
+Le tableau mémorisé conserve son empreinte initiale, avant l’ajout des colonnes temporaires. La collecte suivante retrouve ainsi la liste choisie, y compris lorsqu’une même page contient plusieurs tableaux.
+
 ## Repli paginé sans affichage massif
 
 Lorsque l’export natif toutes-pages est indisponible, le repli autorisé parcourt les pages. Il ne sélectionne plus automatiquement une valeur gigantesque de `glpilist_limit` pour afficher toute la recherche. La limite d’affichage GLPI reste conservée, même si l’option « Afficher tout » est proposée. Une limite de collecte dépassée ou un repli désactivé produit un message explicite.
+
+Les contrôles de pagination des anciennes listes GLPI sont reconnus avec leur total et leur lien suivant. Les deux barres équivalentes en haut et en bas de la liste restent rattachées au tableau de résultats ; les tableaux de navigation ou de critères n’en héritent pas.
 
 Les filtres de collecte ciblée, la date de début d’historique, la réutilisation des contenus déjà confirmés, la reprise des lots et le taux de couverture du périmètre introduits en 4.0.9 restent disponibles. Ils évitent de collecter les fiches de toute la base pour une sélection limitée.
 
@@ -54,13 +58,13 @@ Les contrôles purs couvrent le choix des colonnes, la migration, la source des 
 | Lecture des fiches et ouverture sans liste | 36/36 |
 | Journal et règles de restauration, sans navigateur | 21/21 |
 | Automatisation générale et provenance avant export | 53/53 |
-| Colonnes GLPI et récupération | 68/68 |
+| Colonnes GLPI et récupération | 69/69 |
 | Attente et identité des exports natifs | 11/11 |
 | Démarrage, admission, annulation et consultation prioritaire | 25/25 |
 | Données et sources · Standard | 55/55 |
 | Données et sources · Admin | 55/55 |
 
-Les 55 anciens scénarios de colonnes sont conservés et treize scénarios de restauration sont ajoutés. La préparation comprend maintenant son nettoyage ; le groupe dispose de 900 secondes et le préflight exécute les groupes complets, y compris les nouveaux cas. Chaque cas garde sa limite propre de 35 secondes. Les autres groupes gardent leurs limites et les délais de l’application restent bornés séparément. Les seuils ci-dessus sont des critères de qualification, dont la réussite se vérifie dans le run du commit publié.
+Les 55 anciens scénarios de colonnes sont conservés et quatorze scénarios couvrent la restauration et la mémorisation du tableau après nettoyage. La préparation comprend maintenant son nettoyage ; le groupe dispose de 900 secondes et le préflight exécute les groupes complets, y compris les nouveaux cas. Chaque cas garde sa limite propre de 35 secondes. Les autres groupes gardent leurs limites et les délais de l’application restent bornés séparément. Les seuils ci-dessus sont des critères de qualification, dont la réussite se vérifie dans le run du commit publié.
 
 Les contrôles de démarrage sont aussi inclus dans la suite complète du moteur. Ils vérifient le jeton unique, les refus sans mise en attente, les modifications de source et de configuration, les caches locaux, l’annulation et la conservation du relevé précédent. Le parcours WebView attend la fin des lectures initiales de l’accueil avant d’envoyer sa demande ; une action ultérieure de l’utilisateur peut annuler cette intention.
 

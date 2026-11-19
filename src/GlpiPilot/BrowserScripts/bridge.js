@@ -2,13 +2,14 @@
   'use strict';
 
   // Reinstalling after every command is safe; a full navigation creates fresh state.
-  const VERSION = '1.1.5';
+  const VERSION = '1.1.6';
   if (window.__glpiPilot?.version === VERSION) return VERSION;
   try { window.__glpiPilot?.cancelPick(); } catch (_) { /* Previous document adapter. */ }
 
   const TABLE = 'table,[role="grid"],[role="table"],[role="treegrid"]';
   const UI = '[data-glpi-pilot-ui]';
-  const PAGER = '.pagination,.pager,.pager_container,.paginator,.pagination-container,[data-pagination],nav[aria-label*="pagination" i],nav[aria-label*="pages" i]';
+  const LEGACY_PAGER = 'table.tab_cadre_pager';
+  const PAGER = LEGACY_PAGER + ',.pagination,.pager,.pager_container,.paginator,.pagination-container,[data-pagination],nav[aria-label*="pagination" i],nav[aria-label*="pages" i]';
   const CLICKABLE = 'a,button,[role="button"],input[type="button"]';
   const registry = new Map();
   let nextKey = 0;
@@ -454,21 +455,60 @@
     return { headers, rows, keys, csvRepresentations, warnings: [...warnings], headerFingerprint: fingerprint(JSON.stringify(headers)), signature: fingerprint(JSON.stringify([headers, rows, keys])) };
   }
 
-  function pagerOwner(root, inventory) {
+  function pagerCandidates(root, inventory) {
     const controlled = (root.getAttribute('aria-controls') || '').split(/\s+/);
     const direct = inventory.filter(t => t.id && controlled.includes(t.id));
-    if (direct.length === 1) return direct[0];
+    if (direct.length) return direct;
     let scope = root.parentElement;
     for (let depth = 0; scope && depth < 16; depth++, scope = scope.parentElement) {
       const contained = inventory.filter(t => scope.contains(t));
-      if (contained.length) return contained.length === 1 ? contained[0] : null;
+      if (contained.length) return contained;
     }
-    return null;
+    return [];
+  }
+
+  function pagerOwner(root, inventory) {
+    const candidates = pagerCandidates(root, inventory);
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  // The inspection inventory intentionally includes layout tables. Legacy GLPI
+  // pagers also use TH cells, so ownership needs the same data-table evidence
+  // as native export discovery instead of counting every surrounding table.
+  function pagerDataTable(table) {
+    if (table.matches(LEGACY_PAGER) || table.closest('form[name^="searchform"],form[id^="searchform"]')) return false;
+    if (table.matches('table.search-results,table.tab_cadrehov,table.tab_cadre_fixehov,[role="grid"],[role="table"],[role="treegrid"]')) return true;
+    const rows = all('tr,[role="row"]', table).filter(row => row.closest(TABLE) === table && visible(row));
+    const headers = all('th,[role="columnheader"]', table).filter(cell => cell.closest(TABLE) === table && visible(cell));
+    return headers.length > 0 && rows.length > 1 && rows.some(row => {
+      const cells = all('td,[role="cell"],[role="gridcell"]', row).filter(cell => cell.closest(TABLE) === table && visible(cell));
+      return cells.length >= 2 && cells.some(cell => !cell.querySelector('input,select,button,textarea'));
+    });
+  }
+
+  function visibleLegacyPager(pager) {
+    return visible(pager) && !pager.parentElement?.closest(TABLE);
   }
 
   function ownedPagers(table) {
     const inventory = tables();
-    return all(PAGER).filter(p => visible(p) && !p.closest(TABLE) && pagerOwner(p, inventory) === table);
+    const dataInventory = inventory.filter(pagerDataTable);
+    return all(PAGER).filter(p => p.matches(LEGACY_PAGER)
+      ? visibleLegacyPager(p) && pagerOwner(p, dataInventory) === table
+      : visible(p) && !p.closest(TABLE) && pagerOwner(p, inventory) === table);
+  }
+
+  function legacyPagerRange(pager) {
+    const text = plain(all('td,th', pager)
+      .filter(cell => cell.closest('table') === pager && visible(cell) && !cell.querySelector('select,input,textarea,button'))
+      .map(summaryText).join(' '));
+    const number = '(\\d(?:[\\d\\s,.]*\\d)?)';
+    const match = text.match(new RegExp('\\b(?:de|from)\\s+' + number + '\\s+(?:a|to)\\s+' + number + '\\s+(?:sur|of)\\s+' + number + '(?:\\b|$)', 'i'));
+    if (!match) return null;
+    const values = match.slice(1, 4).map(value => Number(value.replace(/\D/g, '')));
+    if (values.some(value => !Number.isSafeInteger(value) || value < 0 || value > 2147483647)
+      || values[0] > values[1] || values[1] > values[2]) return null;
+    return { start: values[0], end: values[1], total: values[2] };
   }
 
   function summaryText(node) {
@@ -493,6 +533,13 @@
       const count = Number(declared);
       if (Number.isSafeInteger(count) && count <= 2147483647) return count;
     }
+    const legacy = ownedPagers(table).filter(pager => pager.matches(LEGACY_PAGER));
+    if (legacy.length) {
+      const totals = [...new Set(legacy.map(legacyPagerRange).filter(Boolean).map(range => range.total))];
+      // Top and bottom native pagers must agree. Do not silently take the first
+      // text match from contradictory controls or from another list.
+      return totals.length === 1 ? totals[0] : null;
+    }
     const text = plain(pageSummary(table));
     const number = '(?:\\d{1,3}(?:[\\s,.]\\d{3})+|\\d+)';
     const patterns = [
@@ -510,7 +557,12 @@
   }
 
   function buttonLabel(element) {
-    return compact(element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('data-original-title') || element.textContent || element.getAttribute('value')).slice(0, 160);
+    const own = element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('data-original-title') || element.getAttribute('alt');
+    const text = compact(summaryText(element) || element.getAttribute('value'));
+    const childLabels = [...new Set(all('[aria-label],[title],[data-original-title],[alt]', element)
+      .filter(visible)
+      .map(child => compact(child.getAttribute('aria-label') || child.getAttribute('title') || child.getAttribute('data-original-title') || child.getAttribute('alt'))).filter(Boolean))];
+    return compact(own || (/\p{L}/u.test(text) ? text : childLabels.join(' ') || text)).slice(0, 160);
   }
 
   function disabled(element) {
@@ -529,6 +581,9 @@
 
   function getNext(tableKey, overrideSelector) {
     const table = resolveTable(tableKey);
+    const pagers = ownedPagers(table);
+    const legacyTotals = new Set(pagers.filter(pager => pager.matches(LEGACY_PAGER)).map(legacyPagerRange).filter(Boolean).map(range => range.total));
+    if (legacyTotals.size > 1) return { selector: '', label: 'Page suivante', disabled: true, ambiguous: true, reason: 'Les paginations GLPI associées annoncent des totaux contradictoires.' };
     if (overrideSelector && compact(overrideSelector)) {
       const candidates = all(overrideSelector).filter(visible);
       if (candidates.length !== 1) return { selector: '', label: 'Page suivante', disabled: true, ambiguous: true, reason: 'Le sélecteur choisi ne désigne pas exactement un élément visible.' };
@@ -537,14 +592,21 @@
       return describeNext(element, 'Contrôle sélectionné explicitement par l’utilisateur.');
     }
     const found = [];
-    for (const pager of ownedPagers(table)) {
+    for (const pager of pagers) {
       all(CLICKABLE, pager).filter(e => visible(e) && looksNext(e)).forEach(e => found.push(e));
     }
     // rel=next is sufficient only when ownership by this table is unambiguous.
     const inventory = tables();
     all('a[rel~="next"],button[rel~="next"]').filter(e => visible(e) && pagerOwner(e, inventory) === table).forEach(e => found.push(e));
     const candidates = [...new Set(found)];
-    if (!candidates.length) return null;
+    if (!candidates.length) {
+      const dataInventory = inventory.filter(pagerDataTable);
+      const ambiguousLegacy = all(LEGACY_PAGER).filter(visibleLegacyPager).some(pager => {
+        const owners = pagerCandidates(pager, dataInventory);
+        return owners.length > 1 && owners.includes(table);
+      });
+      return ambiguousLegacy ? { selector: '', label: 'Page suivante', disabled: true, ambiguous: true, reason: 'La pagination GLPI appartient à plusieurs tableaux possibles.' } : null;
+    }
     const active = candidates.filter(e => !disabled(e));
     const choices = active.length ? active : candidates;
     const linked = choices.filter(e => e.tagName === 'A' && e.getAttribute('href') && e.getAttribute('href') !== '#');

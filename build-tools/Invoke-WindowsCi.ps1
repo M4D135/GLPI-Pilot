@@ -479,9 +479,9 @@ try {
                         foreach ($group in @(
                             @{ Name = 'core'; Count = 53; TimeoutSeconds = 360 },
                             # The original 55 cases now also restore their personal view;
-                            # 13 recovery scenarios verify the new durable lifecycle.
+                            # 14 recovery scenarios verify the new durable lifecycle and table memory.
                             # Keep each case's 35 s deadline and allow the full group to finish.
-                            @{ Name = 'columns'; Count = 68; TimeoutSeconds = 900 },
+                            @{ Name = 'columns'; Count = 69; TimeoutSeconds = 900 },
                             @{ Name = 'native-timing'; Count = 11; TimeoutSeconds = 360 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name

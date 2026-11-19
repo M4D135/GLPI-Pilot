@@ -49,4 +49,9 @@ public sealed class NativeDisplayPlan
 
 public sealed record NativeDownloadResult(string Path, int? ExpectedTotal, string PlanKind);
 public sealed class NativeExportUnavailableException(string message) : InvalidOperationException(message) { }
-public sealed record AutomaticRunResult(ExtractionResult Data, TableChoice Table, string PrimaryPath, string? NativePath, string? ExcelPath, CityEnrichmentResult? Cities = null);
+public sealed record AutomaticRunResult(ExtractionResult Data, TableChoice Table, string PrimaryPath, string? NativePath, string? ExcelPath, CityEnrichmentResult? Cities = null)
+{
+    // The live collection table can carry temporary columns. Persist this
+    // observed baseline for the next navigation after those columns are restored.
+    public TableChoice? TableToRemember { get; init; }
+}

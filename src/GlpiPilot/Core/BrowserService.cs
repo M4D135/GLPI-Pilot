@@ -573,9 +573,23 @@ public sealed partial class BrowserService : IAsyncDisposable
         if (await locator.CountAsync() != 1) throw new InvalidOperationException("Le contrôle Suivant ne désigne pas un élément unique.");
         var safe = await locator.EvaluateAsync<bool>("""
             (el, origin) => {
-              const labels = [el.textContent, el.getAttribute('aria-label'), el.title, el.rel].filter(Boolean).map(v => v.replace(/\s+/g, ' ').trim());
+              const icons = [...el.querySelectorAll('[aria-label],[title],[data-original-title],[alt]')];
+              const iconLabels = icon => [icon.getAttribute('aria-label'), icon.getAttribute('title'), icon.getAttribute('data-original-title'), icon.getAttribute('alt')];
+              const normalize = values => values.filter(Boolean).map(v => v.replace(/\s+/g, ' ').trim());
+              const ownLabels = [el.textContent, el.getAttribute('aria-label'), el.title, el.rel];
+              const labels = normalize([...ownLabels, ...icons.flatMap(iconLabels)]);
               if (/supprim|delete|effac|valid|enregistr|save|submit|clotur|clôtur|archiv/i.test(labels.join(' '))) return false;
-              const navigation = labels.some(v => /^(?:(?:page )?suivante?|next(?: page)?|[›»→])$/i.test(v.replace(/^[›»→]\s*|\s*[›»→]$/g, '').trim()) || /^[›»→]$/.test(v)) || el.getAttribute('rel') === 'next';
+              const visibleIcons = icons.filter(icon => {
+                if (!icon.isConnected) return false;
+                for (let node = icon; node instanceof Element; node = node.parentElement) {
+                  if (node.hidden || node.getAttribute('aria-hidden') === 'true' || node.hasAttribute('inert')) return false;
+                  const style = getComputedStyle(node);
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+                }
+                return icon.getClientRects().length > 0;
+              });
+              const navigationLabels = normalize([...ownLabels, ...visibleIcons.flatMap(iconLabels)]);
+              const navigation = navigationLabels.some(v => /^(?:(?:page )?suivante?|next(?: page)?|[›»→])$/i.test(v.replace(/^[›»→]\s*|\s*[›»→]$/g, '').trim()) || /^[›»→]$/.test(v)) || el.getAttribute('rel') === 'next';
               if (!navigation) return false;
               const pagination = el.closest('.pagination, .pager, .paginator, .tab_cadre_pager, [data-pagination], nav[aria-label*=pagination i], nav[aria-label*=pages i]');
               if (el.tagName !== 'A' && !pagination && el.getAttribute('rel') !== 'next') return false;

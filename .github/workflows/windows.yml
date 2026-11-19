@@ -203,7 +203,7 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
 
       - name: Vérifier le navigateur et les exports sur des pages synthétiques
-        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 68 cas
+        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 69 cas
         # colonnes incluent la restauration et disposent de 900 s. Chaque cas garde 35 s.
         # Cette enveloppe couvre leur somme ; builds, fiches et DOM gardent leurs limites séparées.
         timeout-minutes: 40

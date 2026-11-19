@@ -10,11 +10,12 @@ public sealed partial class PilotApplication
     private List<PageChoice> _pages = new();
     private List<TableChoice> _tables = new();
     private TableChoice? _selectedTable;
+    private TableChoice? _selectedTableToRemember;
     private long _collectionRevision;
     private string _inspectedPageUrl = "";
     partial void SettingsContextChanged()
     {
-        _collectionRevision++; _pages.Clear(); _tables.Clear(); _selectedTable = null; _inspectedPageUrl = "";
+        _collectionRevision++; _pages.Clear(); _tables.Clear(); _selectedTable = null; _selectedTableToRemember = null; _inspectedPageUrl = "";
     }
     private void CheckCollectionRevision(JsonElement args)
     {
@@ -33,7 +34,7 @@ public sealed partial class PilotApplication
             var choice = _pages[Number(a, "page", 0, 0, _pages.Count - 1)];
             if (choice.Page.IsClosed || SnapshotStore.SourceKey(choice.Page.Url) != SnapshotStore.SourceKey(choice.Url)) throw new InvalidOperationException("Cet onglet a changé de recherche. Actualisez la liste des onglets.");
             var tables = await Browser.InspectAsync(choice.Page, ct).ConfigureAwait(false); ct.ThrowIfCancellationRequested();
-            _tables = tables; _selectedTable = null; _inspectedPageUrl = choice.Page.Url; _collectionRevision++;
+            _tables = tables; _selectedTable = null; _selectedTableToRemember = null; _inspectedPageUrl = choice.Page.Url; _collectionRevision++;
             return _tables.Select((t, i) => new { index = i, revision = _collectionRevision, t.Label, t.Headers, t.RowCount, t.ColumnCount }).ToArray();
         });
         Register("collect.table", async (a, ct) =>
@@ -42,7 +43,7 @@ public sealed partial class PilotApplication
             var table = _tables[Number(a, "index", 0, 0, _tables.Count - 1)]; var tables = _tables.ToList(); var url = _inspectedPageUrl;
             if (table.Page is null || table.Page.IsClosed || SnapshotStore.SourceKey(table.Page.Url) != SnapshotStore.SourceKey(url)) throw new InvalidOperationException("Le tableau a changé de recherche ; inspectez de nouveau l’onglet.");
             var next = Settings.Copy(); next.RememberTable(table); next.Sources.SingleOrDefault(s => s.Id == next.ActiveSourceId)?.Capture(next); CommitSettings(next);
-            _tables = tables; _selectedTable = table; _inspectedPageUrl = url; _collectionRevision++;
+            _tables = tables; _selectedTable = table; _selectedTableToRemember = AutomaticExtractionService.SnapshotTableSelection(table); _inspectedPageUrl = url; _collectionRevision++;
             if (Flag(a, "highlight", true)) await Browser.HighlightAsync(table, ct).ConfigureAwait(false);
             return new { selected = true, revision = _collectionRevision, table.Label };
         });
@@ -72,6 +73,9 @@ public sealed partial class PilotApplication
             if (table.Page is null || table.Page.IsClosed || SnapshotStore.SourceKey(table.Page.Url) != SnapshotStore.SourceKey(_inspectedPageUrl))
                 throw new InvalidOperationException("Le tableau a changé de recherche ; inspectez de nouveau l’onglet.");
             var settings = Settings.Copy();
+            // Native reloads update the live table while its original selection
+            // remains the recipe for a later navigation or a second manual run.
+            var tableToRemember = _selectedTableToRemember ??= AutomaticExtractionService.SnapshotTableSelection(table);
             Task<ColumnRestorationResult>? cleanup = null;
             Task<ColumnRestorationResult> RestoreOnce() => cleanup ??= Browser.CompleteTemporaryColumnCollectionAsync(settings, Progress());
             try
@@ -87,16 +91,21 @@ public sealed partial class PilotApplication
                 ct.ThrowIfCancellationRequested();
                 ColumnPreparationPolicy.ApplyReceipt(data, preparation.Receipt);
                 ColumnRestorationReceipt.Apply(data, await RestoreOnce().ConfigureAwait(false));
+                settings.RememberTable(tableToRemember);
                 ct.ThrowIfCancellationRequested();
                 var locations = CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides);
                 await RememberSourceAsync(locations.Data, settings, locations, ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
-                Settings.RememberTable(table); CaptureCurrentSource(); SaveSettings();
-                _selectedTable = table; _inspectedPageUrl = table.Page!.Url; _collectionRevision++;
+                Settings.RememberTable(tableToRemember); CaptureCurrentSource(); SaveSettings();
+                _selectedTable = table; _selectedTableToRemember = tableToRemember; _inspectedPageUrl = table.Page!.Url; _collectionRevision++;
                 SetResult(locations.Data, locations, context: settings);
                 await ArchiveActiveAsync(ct).ConfigureAwait(false); return SessionState();
             }
-            finally { await RestoreOnce().ConfigureAwait(false); }
+            finally
+            {
+                try { await RestoreOnce().ConfigureAwait(false); }
+                finally { settings.RememberTable(tableToRemember); }
+            }
         });
         Register("collect.campaign", async (a, ct) => { if (a.TryGetProperty("revision", out _)) CheckRevision(a); return await RunCampaignAsync(ct).ConfigureAwait(false); });
         Register("collect.captureDownload", async (_, ct) =>
@@ -119,7 +128,7 @@ public sealed partial class PilotApplication
     private async Task<object> PagesAsync()
     {
         _pages = await Browser.GetPagesAsync().ConfigureAwait(false);
-        _tables.Clear(); _selectedTable = null; _inspectedPageUrl = ""; _collectionRevision++;
+        _tables.Clear(); _selectedTable = null; _selectedTableToRemember = null; _inspectedPageUrl = ""; _collectionRevision++;
         return new { pages = _pages.Select((p, i) => new { index = i, revision = _collectionRevision, p.Title, url = AppPaths.SafeUrl(p.Url) }).ToArray(), status = await Browser.SessionAsync(Browser.ActivePage, Settings).ConfigureAwait(false) };
     }
     private async Task<object?> RunCollectionAsync(AppSettings settings, bool archive, CancellationToken ct)
@@ -129,9 +138,11 @@ public sealed partial class PilotApplication
         try
         {
             var run = await service.RunAsync(settings, Progress(), ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides).ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested(); Settings.RememberTable(run.Table); CaptureCurrentSource(); SaveSettings();
+            ct.ThrowIfCancellationRequested(); Settings.RememberTable(run.TableToRemember ?? run.Table); CaptureCurrentSource(); SaveSettings();
             await RememberSourceAsync(run.Data, settings, run.Cities, ct).ConfigureAwait(false);
-            SetResult(run.Data, run.Cities, context: settings); _selectedTable = run.Table; _inspectedPageUrl = run.Table.Page?.Url ?? ""; _collectionRevision++;
+            SetResult(run.Data, run.Cities, context: settings); _selectedTable = run.Table;
+            _selectedTableToRemember = run.TableToRemember ?? AutomaticExtractionService.SnapshotTableSelection(run.Table);
+            _inspectedPageUrl = run.Table.Page?.Url ?? ""; _collectionRevision++;
             var received = run.Data.Complete || run.Data.Quality is { ReceptionComplete: true, ScopeStable: true, SampleIdentityVerified: not false };
             _health.Record(settings.ActiveSourceId, settings.Sources.FirstOrDefault(s => s.Id == settings.ActiveSourceId)?.Name ?? "Source courante", received, run.Data.Status, DateTimeOffset.Now);
             if (archive) await ArchiveActiveAsync(ct).ConfigureAwait(false);

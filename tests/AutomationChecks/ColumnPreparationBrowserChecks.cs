@@ -40,6 +40,7 @@ internal static class ColumnPreparationBrowserChecks
         foreach (var check in ColumnPreparationRaceBrowserChecks.Cases(browser)) yield return check;
         foreach (var check in ColumnControlCaptureBrowserChecks.Cases(browser)) yield return check;
         foreach (var check in TemporaryColumnRestorationBrowserChecks.Cases(browser)) yield return check;
+        yield return ("Colonnes GLPI : deux collectes conservent le tableau mémorisé après restauration parmi deux listes natives", () => RememberedColumnBaselineBrowserChecks.CheckAsync(browser));
     }
 
     private static void Require(bool value, string message)

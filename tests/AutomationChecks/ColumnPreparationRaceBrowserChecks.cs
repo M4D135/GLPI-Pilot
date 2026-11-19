@@ -274,6 +274,7 @@ internal static class ColumnPreparationRaceBrowserChecks
             await page.GotoAsync(Target);
             var automatic = new AutomaticExtractionService(service);
             automatic.PhaseChanged += phases.Add;
+            if (scenario == "unrelated-polling") automatic.Log += diagnostics.Add;
             var settings = new AppSettings
             {
                 PortalUrl = Target, SelectorOrigin = Origin, AutoMode = "native", ColumnPreparationMode = "supervision",
@@ -320,7 +321,15 @@ internal static class ColumnPreparationRaceBrowserChecks
             }
             if (scenario == "unrelated-polling")
             {
-                var collected = await run.WaitAsync(TimeSpan.FromSeconds(10));
+                AutomaticRunResult collected;
+                try { collected = await run.WaitAsync(TimeSpan.FromSeconds(10)); }
+                catch (TimeoutException error)
+                {
+                    throw new TimeoutException("Unrelated polling exceeded the unchanged 10-second fixture deadline. "
+                        + $"Run={run.Status}, preferences={preferenceGets}, tabs={tabGets}, posts={posts}, exports={exports}, "
+                        + $"backgroundRequests={unrelatedRequests}, phases={string.Join(',', phases)}."
+                        + Environment.NewLine + string.Join(Environment.NewLine, diagnostics.TakeLast(35)), error);
+                }
                 Require(unrelatedRequests >= 3 && posts == 0 && preferenceGets == 1 && tabGets == 0 && exports == 1,
                     "Background polling must not keep optional preparation alive or cause a false native failure.");
                 Require(collected.Data.Provenance.ColumnPreparation is { State: "unavailable", AddedCount: 0, ColumnCount: 3 }

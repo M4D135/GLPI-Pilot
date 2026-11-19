@@ -109,8 +109,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
             && fixture.Adds == 1 && fixture.Removals == 0 && fixture.Exports == 0
             && fixture.Service.HasPendingTemporaryColumns(fixture.Settings),
             "The interrupted preparation must leave one attributable server-side addition and a durable recovery record. "
-            + $"Adds={fixture.Adds}, removals={fixture.Removals}, lost={fixture.ResponseLost}; "
-            + "events=" + string.Join(',', fixture.Events) + "; initial error=" + (interruption?.Message ?? "none"));
+                + $"Interruption={interruption?.GetType().Name ?? "none"}: {interruption?.Message ?? "none"}; responseLost={fixture.ResponseLost}, "
+                + $"attempts={fixture.AddAttempts}, adds={fixture.Adds}, removals={fixture.Removals}, exports={fixture.Exports}, "
+                + $"events={string.Join(',', fixture.Events)}.");
         if (cancel) Require(fixture.BlockedRecoveryReads > 0,
             "Cancellation must attempt its independent cleanup immediately; the durable journal may remain only because GLPI is unavailable in this fixture.");
         if (!cancel)

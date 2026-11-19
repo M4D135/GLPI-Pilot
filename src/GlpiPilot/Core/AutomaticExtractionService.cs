@@ -13,16 +13,19 @@ public sealed class AutomaticExtractionService(BrowserService browser)
     public async Task<AutomaticRunResult> RunAsync(AppSettings settings, IProgress<ExtractionProgress>? progress, CancellationToken ct, IReadOnlyList<CityTicketOverride>? overrides = null)
     {
         AutomaticRunResult? run = null;
+        TableChoice? tableToRemember = null;
         Task<ColumnRestorationResult>? cleanup = null;
         Task<ColumnRestorationResult> RestoreOnce() => cleanup ??= browser.CompleteTemporaryColumnCollectionAsync(settings, progress);
         try
         {
-            run = await RunCoreAsync(settings, progress, ct, overrides, RestoreOnce);
+            run = await RunCoreAsync(settings, progress, ct, overrides, RestoreOnce, table => tableToRemember = table);
             return run;
         }
         finally
         {
-            var restoration = await RestoreOnce();
+            ColumnRestorationResult restoration;
+            try { restoration = await RestoreOnce(); }
+            finally { if (tableToRemember is not null) settings.RememberTable(tableToRemember); }
             if (run is not null)
             {
                 ColumnRestorationReceipt.Apply(run.Data, restoration);
@@ -33,7 +36,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
     }
 
     private async Task<AutomaticRunResult> RunCoreAsync(AppSettings settings, IProgress<ExtractionProgress>? progress, CancellationToken ct,
-        IReadOnlyList<CityTicketOverride>? overrides, Func<Task<ColumnRestorationResult>> restoreColumns)
+        IReadOnlyList<CityTicketOverride>? overrides, Func<Task<ColumnRestorationResult>> restoreColumns, Action<TableChoice> rememberBaseline)
     {
         var clock = Stopwatch.StartNew();
         var startedAt = DateTimeOffset.Now;
@@ -74,6 +77,8 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var searchVerified = TargetUrlPolicy.IncludesSearch(page.Url, navigation.PortalUrl);
         Stage("Recherche du tableau mémorisé…", AutomaticRunPhase.Search);
         var table = await browser.WaitForAutoTableAsync(page, navigation, ct);
+        var tableToRemember = SnapshotTableSelection(table);
+        rememberBaseline(tableToRemember);
         var preparation = await browser.PrepareColumnsAsync(table, settings, progress, ct);
         table = preparation.Table;
         // Native export can navigate its page to a report/download controller.
@@ -319,8 +324,16 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         if (activePhase.Length > 0) phaseSeconds[activePhase] = phaseSeconds.GetValueOrDefault(activePhase) + (clock.Elapsed - phaseStarted).TotalSeconds;
         data.Provenance.StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         data.Provenance.FinishedAt = DateTimeOffset.Now;
-        return new(data, table, primaryPath, nativePath, excelPath, cities);
+        return new(data, table, primaryPath, nativePath, excelPath, cities) { TableToRemember = tableToRemember };
     }
+
+    internal static TableChoice SnapshotTableSelection(TableChoice table) => new()
+    {
+        Key = table.Key, Label = table.Label, Selector = table.Selector,
+        Headers = table.Headers.ToList(), RowCount = table.RowCount, ColumnCount = table.ColumnCount,
+        HeaderFingerprint = table.HeaderFingerprint, Frame = table.Frame, Page = table.Page,
+        FrameOrigin = table.FrameOrigin, FrameName = table.FrameName, TopOrigin = table.TopOrigin
+    };
 
     private static string NewPath(string folder, string prefix, string extension) =>
         Path.Combine(folder, $"{prefix}-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}{extension}");

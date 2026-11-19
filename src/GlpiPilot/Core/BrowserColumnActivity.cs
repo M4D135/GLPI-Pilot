@@ -83,13 +83,17 @@ public sealed partial class BrowserService
 
         public void BindPreferencesFrame(IFrame frame)
         {
-            // Playwright publishes an attached frame with an empty URL before
-            // its first navigation commits. Bind only its request observer in
-            // this initial state, just as for about:blank. Native inspection
-            // and every command still require the verified HTTP origin.
-            if (frame.Page != _page || (frame.ParentFrame != _tableFrame && !(_directPreferences && frame == _tableFrame)) || frame.IsDetached
-                || frame.Url is not ("" or "about:blank") && !LocalAddress(frame.Url, out _))
-                throw new InvalidOperationException("Le cadre personnel des colonnes n’appartient plus au contexte GLPI vérifié.");
+            var url = frame.Url;
+            // A newly attached native iframe may expose an empty address before
+            // its first navigation commits. Like about:blank, this only binds
+            // observation; inspection and every command still require GLPI's origin.
+            var initialDocument = url is "" or "about:blank";
+            var refusal = frame.Page != _page ? "page-mismatch"
+                : frame.ParentFrame != _tableFrame && !(_directPreferences && frame == _tableFrame) ? "parent-mismatch"
+                : frame.IsDetached ? "detached"
+                : !initialDocument && !LocalAddress(url, out _) ? "address-outside-context" : "";
+            if (refusal.Length > 0)
+                throw new InvalidOperationException("Le cadre personnel des colonnes n’appartient plus au contexte GLPI vérifié (" + refusal + ").");
             lock (_gate)
             {
                 if (_preferencesFrame == frame) return;
@@ -100,6 +104,7 @@ public sealed partial class BrowserService
                 foreach (var request in _requests.Values.Where(request => request.Frame == frame && request.Failure is not null))
                     Fail(request.Failure!);
             }
+            if (initialDocument) _report?.Invoke("Préparation des colonnes · cadre natif initial (" + (url.Length == 0 ? "address-empty" : "about-blank") + ") ; attente du document GLPI.");
             ThrowIfFailed();
         }
 

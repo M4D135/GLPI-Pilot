@@ -742,7 +742,9 @@ async Task CheckRootExportRedirectReference()
 {
     const string criteria = "criteria%5B0%5D%5Bfield%5D=12&criteria%5B0%5D%5Bvalue%5D=1";
     const string root = "http://glpi.test/glpi/?" + criteria;
-    const string list = "http://glpi.test/glpi/front/ticket.php?" + criteria + "&start=0";
+    // Native all-pages export preserves the filtered menu target; only the
+    // pagination path explicitly rewrites the list offset to start=0.
+    const string list = "http://glpi.test/glpi/front/ticket.php?" + criteria;
     const string preparationUrl = "http://glpi.test/glpi/front/report.dynamic.php?prepare=1&" + criteria;
     const string downloadUrl = "http://glpi.test/glpi/front/report.dynamic.php?item_type=Ticket&start=0&" + criteria + "&display_type=-4";
     const string csv = "\uFEFFID;Titre\r\n0003;Un incident affiché\r\n";
@@ -1559,10 +1561,11 @@ async Task CheckDisplayAll()
           });
         }
         """);
-    int displayRequests = 0, nativeRequests = 0;
+    int displayRequests = 0, nativeRequests = 0, navigationRequests = 0;
     await using var h = await Create(route =>
     {
         var uri = new Uri(route.Request.Url);
+        if (route.Request.IsNavigationRequest) navigationRequests++;
         if (uri.AbsolutePath.EndsWith("/report.dynamic.php", StringComparison.Ordinal)) nativeRequests++;
         if (route.Request.Method == "POST")
         {
@@ -1571,9 +1574,87 @@ async Task CheckDisplayAll()
         return Html(route, html);
     }, legacyTarget);
     var settings = Settings(legacyTarget); settings.MaxRows = 1000;
-    var table = (await h.Service.InspectAsync(h.Page, CancellationToken.None)).Single(item => item.Selector == "#legacy-results");
+    var tables = await h.Service.InspectAsync(h.Page, CancellationToken.None);
+    Equal(6, tables.Count);
+    var table = tables.Single(item => item.Selector == "#legacy-results");
     var inspection = await h.Service.InspectNativeExportAsync(table, CancellationToken.None);
     True(inspection.Unavailable && inspection.DisplayPlan != null, "La fixture doit proposer Afficher tout sans export CSV toutes-pages.");
+    Equal(45, inspection.ExpectedTotal);
+    var sample = await h.Service.ReadVerificationSampleAsync(table, CancellationToken.None);
+    Equal(45, sample.ExpectedTotal);
+    True(sample.Next is { Disabled: false, Ambiguous: false } && sample.Next.Selector.Length > 0,
+        "Les deux pagers legacy équivalents doivent exposer le vrai lien Suivant du tableau de résultats.");
+    Equal("ticket.php?start=20", await h.Page.Locator(sample.Next!.Selector).GetAttributeAsync("href"));
+    foreach (var surrounding in tables.Where(item => item.Selector != table.Selector))
+    {
+        var unrelated = await h.Service.ReadVerificationSampleAsync(surrounding, CancellationToken.None);
+        True(unrelated.ExpectedTotal is null && unrelated.Next is null,
+            "Le total et la pagination des tickets ne doivent pas être attribués à une table de navigation, critères, commandes ou pager : " + surrounding.Selector);
+    }
+    int navigationBeforeHiddenControls = navigationRequests;
+    string addressBeforeHiddenControls = h.Page.Url;
+    try
+    {
+        await h.Page.EvaluateAsync("""
+            () => {
+              const counter = document.createElement('td');
+              counter.id = 'hidden-legacy-counter'; counter.hidden = true;
+              counter.textContent = 'De 1 à 20 sur 999';
+              document.getElementById('legacy-range-top').before(counter);
+              const details = document.createElement('a');
+              details.id = 'details-with-hidden-next'; details.href = 'ticket.php?start=20';
+              details.innerHTML = 'Détails<img hidden alt="Suivant">';
+              window.hiddenNextClicks = 0;
+              details.addEventListener('click', () => window.hiddenNextClicks++);
+              document.body.appendChild(details);
+            }
+            """);
+        var visibleCounter = await h.Service.ReadVerificationSampleAsync(table, CancellationToken.None);
+        Equal(45, visibleCounter.ExpectedTotal);
+        True(visibleCounter.Next is { Disabled: false, Ambiguous: false },
+            "Un compteur masqué avant le compteur visible ne doit ni annoncer 999 tickets ni rendre la pagination ambiguë.");
+        // Keep the navigation refusal independent from the counter probe.
+        await h.Page.Locator("#hidden-legacy-counter").EvaluateAsync("element => element.remove()");
+        True(await h.Page.Locator("#details-with-hidden-next").IsVisibleAsync()
+            && !await h.Page.Locator("#details-with-hidden-next img").IsVisibleAsync(),
+            "Le lien Détails doit être visible et seule son icône Suivant doit être masquée.");
+        var overridden = settings.Copy();
+        overridden.SelectorOrigin = table.FrameOrigin;
+        overridden.NextSelector = "#details-with-hidden-next";
+        var refused = await h.Service.ExtractAsync(table, true, overridden, null, CancellationToken.None);
+        Equal(20, refused.Rows.Count); Equal(45, refused.ExpectedTotal); Equal(1, refused.Pages);
+        True(!refused.Complete && refused.Warnings.Any(warning => warning.Contains("pagination sûre et reconnue", StringComparison.Ordinal)),
+            "Même choisi explicitement, le lien Détails ne doit pas devenir Suivant grâce aux métadonnées d’une icône masquée.");
+        Equal(0, await h.Page.EvaluateAsync<int>("() => window.hiddenNextClicks"));
+        Equal(navigationBeforeHiddenControls, navigationRequests);
+        Equal(addressBeforeHiddenControls, h.Page.Url);
+        Equal(0, displayRequests); Equal(0, nativeRequests);
+    }
+    finally
+    {
+        await h.Page.EvaluateAsync("""
+            () => {
+              document.getElementById('hidden-legacy-counter')?.remove();
+              document.getElementById('details-with-hidden-next')?.remove();
+              delete window.hiddenNextClicks;
+            }
+            """);
+    }
+    try
+    {
+        await h.Page.Locator("#legacy-range-bottom").EvaluateAsync("element => element.textContent = 'De 1 à 20 sur 46'");
+        var contradictory = await h.Service.ReadVerificationSampleAsync(table, CancellationToken.None);
+        True(contradictory.ExpectedTotal is null && contradictory.Next is { Ambiguous: true, Disabled: true, Selector.Length: 0 },
+            "Deux compteurs natifs contradictoires (45 et 46) doivent interdire le clic Suivant sans retenir arbitrairement le premier total.");
+        Equal(0, displayRequests); Equal(0, nativeRequests);
+    }
+    finally
+    {
+        await h.Page.Locator("#legacy-range-bottom").EvaluateAsync("element => element.textContent = 'De 1 à 20 sur 45'");
+    }
+    var reconciled = await h.Service.ReadVerificationSampleAsync(table, CancellationToken.None);
+    Equal(45, reconciled.ExpectedTotal);
+    True(reconciled.Next is { Disabled: false, Ambiguous: false }, "Les deux compteurs de la vraie collecte doivent de nouveau annoncer le même total.");
     var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
     Equal(45, run.Data.Rows.Count); Equal(45, run.Data.ExpectedTotal); Equal(3, run.Data.Pages);
     True(run.Data.Complete, string.Join(" | ", run.Data.Warnings));
@@ -1584,6 +1665,9 @@ async Task CheckDisplayAll()
     Equal(1, Directory.GetFiles(settings.ExportFolder, "*.csv").Length);
     Equal("20", await h.Page.Locator("#legacy-limit-top").InputValueAsync());
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
+    var finalPage = await h.Service.ReadVerificationSampleAsync(run.Table, CancellationToken.None);
+    Equal(5, finalPage.Rows.Count); Equal(45, finalPage.ExpectedTotal);
+    True(finalPage.Next is null or { Disabled: true, Ambiguous: false }, "La troisième page native doit réellement terminer la recherche après ses cinq dernières lignes.");
 }
 
 async Task CheckDisplayAllRejected()
@@ -1598,6 +1682,13 @@ async Task CheckDisplayAllRejected()
         }
         return Html(route, html);
     }, legacyTarget);
+    var table = (await h.Service.InspectAsync(h.Page, CancellationToken.None)).Single(item => item.Selector == "#legacy-results");
+    var native = await h.Service.InspectNativeExportAsync(table, CancellationToken.None);
+    Equal(828, native.ExpectedTotal);
+    var visible = await h.Service.ReadVerificationSampleAsync(table, CancellationToken.None);
+    Equal(20, visible.Rows.Count); Equal(828, visible.ExpectedTotal);
+    True(visible.Next is { Disabled: false, Ambiguous: false },
+        "La limite doit être comparée aux 828 tickets annoncés par le pager natif, pas aux 20 lignes visibles.");
     var capped = Settings(legacyTarget); capped.MaxRows = 100; capped.TimeoutSeconds = 2;
     var capFailure = await MustRejectRun(() => new AutomaticExtractionService(h.Service).RunAsync(capped, null, CancellationToken.None));
     True(capFailure.Message.Contains("limite", StringComparison.OrdinalIgnoreCase), "La limite de collecte doit être expliquée sans modifier l’affichage GLPI.");
