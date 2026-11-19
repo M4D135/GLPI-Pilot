@@ -458,7 +458,10 @@ public sealed partial class BrowserService
             if (window.TableSelector.Length == 0) { await Task.Delay(120, ct); continue; }
             if (!window.Supported || window.CloseSelector.Length == 0)
                 throw new InvalidOperationException("La fermeture native de la fenêtre des colonnes n’a pas pu être confirmée. Fermer cette fenêtre dans GLPI puis relancer la collecte.");
-            await using var previousTable = waitForRefresh ? await ColumnElementAsync(frame, table.FrameOrigin, table.Selector, ct) : null;
+            // The native inspection identifies the current visible table. GLPI
+            // can retain a hidden AJAX copy with the original selector, so use
+            // this fresh, unique reference when observing the list replacement.
+            await using var previousTable = waitForRefresh ? await ColumnElementAsync(frame, table.FrameOrigin, window.TableSelector, ct) : null;
             if (waitForRefresh && (previousTable is null || !await previousTable.EvaluateAsync<bool>("element => element.isConnected").WaitAsync(ct)))
             {
                 // GLPI can renew the table while its modal is open. Reinspect

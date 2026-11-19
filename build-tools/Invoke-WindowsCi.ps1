@@ -477,7 +477,7 @@ try {
                         Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
                         foreach ($group in @(
                             @{ Name = 'core'; Count = 52 },
-                            @{ Name = 'columns'; Count = 42 },
+                            @{ Name = 'columns'; Count = 44 },
                             @{ Name = 'native-timing'; Count = 11 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name

@@ -24,6 +24,8 @@ internal static class ColumnPreparationRaceBrowserChecks
         yield return ("Colonnes GLPI : activité native · requête interrompue sans attente ni export", () => Check(browser, "network-failure"));
         yield return ("Colonnes GLPI : activité native · annulation pendant un ajout en cours, aucun renvoi", () => Check(browser, "cancel-post"));
         yield return ("Colonnes GLPI : activité native · requêtes de fond étrangères à la phase ignorées", () => Check(browser, "unrelated-polling"));
+        yield return ("Colonnes GLPI : repère de tableau cloné · copie masquée conservée après renouvellement Ajax", () => Check(browser, "table-hidden-clone"));
+        yield return ("Colonnes GLPI : repère de tableau cloné · deux collectes, un ajout personnel et deux exports", () => Check(browser, "table-hidden-clone-repeated"));
     }
 
     private static void Require(bool condition, string message)
@@ -67,10 +69,23 @@ internal static class ColumnPreparationRaceBrowserChecks
 
         string Preferences()
         {
+            var retainTableClone = scenario is "table-hidden-clone" or "table-hidden-clone-repeated" ? """
+                <script>
+                // The native preferences load occurs after the host verified
+                // its initial table. An Ajax renderer retains the old result
+                // markup while the active table keeps its existing identity.
+                if(!parent.document.querySelector('[data-retained-column-results]')){
+                  const table=parent.document.querySelector('.tab_cadre_fixehov'), owner=table.closest('form');
+                  const stale=owner.cloneNode(true);stale.hidden=true;stale.dataset.retainedColumnResults='true';owner.before(stale);
+                  parent.sessionStorage.setItem('retainedTableClones',String(Number(parent.sessionStorage.getItem('retainedTableClones')||0)+1));
+                  parent.sessionStorage.setItem('retainedTableSelectorMatches',String(parent.document.querySelectorAll('#'+CSS.escape(table.id)).length));
+                }
+                </script>
+                """ : "";
             if (scenario == "unrelated-polling")
                 return Html("<div id='tabsbody' aria-busy='true'>Chargement de la vue personnelle…</div>");
             if (scenario != "body-loading" || priority)
-                return Html("<div id='tabsbody' data-priority='" + (priority ? "true" : "false") + "'>" + PersonalBody() + "</div>");
+                return Html("<div id='tabsbody' data-priority='" + (priority ? "true" : "false") + "'>" + PersonalBody() + "</div>" + retainTableClone);
             // Let the host observe the real loading state once, then let the
             // fixture's ordinary native Ajax handler finish the personal view.
             return Html("<div id='tabsbody' aria-busy='true'>Chargement de la vue personnelle…</div><script>"
@@ -124,10 +139,20 @@ internal static class ColumnPreparationRaceBrowserChecks
                     poll();window.unrelatedSearchTimer=setInterval(poll,200);
                   }
                 }});
-                document.querySelector('.ui-dialog-titlebar-close').onclick=()=>{
+                document.querySelector('.ui-dialog-titlebar-close').onclick=async()=>{
                   clearInterval(window.unrelatedSearchTimer);
                   sessionStorage.setItem('columnCloseClicks',String(Number(sessionStorage.getItem('columnCloseClicks')||0)+1));
-                  document.querySelector('#dialog').hidden=true;setTimeout(()=>location.reload(),180);
+                  document.querySelector('#dialog').hidden=true;
+                  if(scenario==='table-hidden-clone'||scenario==='table-hidden-clone-repeated'){
+                    const active=document.querySelector('#ticket-results > form:not([data-retained-column-results])');
+                    const stale=document.querySelector('[data-retained-column-results]');
+                    const response=await fetch(location.href), fresh=new DOMParser().parseFromString(await response.text(),'text/html');
+                    active.replaceWith(fresh.querySelector('#ticket-results > form'));
+                    // Keep the obsolete hidden table connected. Waiting on
+                    // that copy instead of the active table would never end.
+                    if(stale?.isConnected&&!active.isConnected)
+                      sessionStorage.setItem('retainedTableSurvived',String(Number(sessionStorage.getItem('retainedTableSurvived')||0)+1));
+                  }else setTimeout(()=>location.reload(),180);
                 };
                 let columnReader, renewed=false;
                 Object.defineProperty(window,'__glpiPilotColumns',{
@@ -135,6 +160,11 @@ internal static class ColumnPreparationRaceBrowserChecks
                     const inspect=value.inspect;
                     value.inspect=function(selector){
                       const snapshot=inspect(selector), frame=document.querySelector('iframe');
+                      if((scenario==='table-hidden-clone'||scenario==='table-hidden-clone-repeated')&&snapshot.iframeSelector&&
+                          snapshot.tableSelector&&snapshot.tableSelector!==selector&&document.querySelectorAll(selector).length===2){
+                        const tables=document.querySelectorAll(snapshot.tableSelector);
+                        if(tables.length===1&&!tables[0].closest('[hidden]'))sessionStorage.setItem('retainedTableRevalidated','1');
+                      }
                       if(!renewed&&snapshot.iframeSelector){
                         if(scenario==='iframe-renewed'){
                           renewed=true;frame.id='Iframesearch_config_renewed';
@@ -305,6 +335,36 @@ internal static class ColumnPreparationRaceBrowserChecks
             if (scenario is "slow-get" or "slow-post")
                 Require(diagnostics.Any(message => message.Contains("requête GLPI est encore en cours", StringComparison.Ordinal)),
                     "The native activity observer must report the still-pending request after the configured list delay, rather than hiding the wait inside a locator action.");
+            if (scenario is "table-hidden-clone" or "table-hidden-clone-repeated")
+                Require(await page.EvaluateAsync<int>("Number(sessionStorage.getItem('retainedTableClones')||0)") == 1
+                    && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('retainedTableSelectorMatches')||0)") == 2
+                    && await page.EvaluateAsync<string>("sessionStorage.getItem('retainedTableRevalidated')||''") == "1"
+                    && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('retainedTableSurvived')||0)") == 1
+                    && await page.Locator("[data-retained-column-results]").CountAsync() == 1,
+                    "The original selector must become ambiguous, native inspection must identify the one active table, and its hidden obsolete copy must remain attached after Ajax renewal.");
+            if (scenario == "table-hidden-clone-repeated")
+            {
+                phases.Clear();
+                await page.EvaluateAsync("sessionStorage.removeItem('retainedTableRevalidated')");
+                var repeated = await automatic.RunAsync(settings, null, cancellation.Token);
+                Require(posts == 1 && preferenceGets == 2 && exports == 2 && foreignRequests == 0
+                    && repeated.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 0, ColumnCount: 4, SourceChanged: false }
+                    && repeated.Data.Rows.Count == 1 && phases.Contains(AutomaticRunPhase.Ready),
+                    "A second collection in the same browser context must reuse persisted personal columns, without another addition and with exactly one new native export.");
+                Require(File.Exists(result.PrimaryPath) && File.Exists(repeated.PrimaryPath)
+                    && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(true).TrimStart('\uFEFF')
+                    && await File.ReadAllTextAsync(repeated.PrimaryPath) == Csv(true).TrimStart('\uFEFF')
+                    && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('columnOpenerClicks')||0)") == 2
+                    && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('columnCloseClicks')||0)") == 2
+                    && !await page.Locator("#dialog").IsVisibleAsync(),
+                    "Both real CSV receipts must remain intact and each collection must open and close the native preferences once.");
+                Require(await page.EvaluateAsync<int>("Number(sessionStorage.getItem('retainedTableClones')||0)") == 2
+                    && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('retainedTableSelectorMatches')||0)") == 2
+                    && await page.EvaluateAsync<string>("sessionStorage.getItem('retainedTableRevalidated')||''") == "1"
+                    && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('retainedTableSurvived')||0)") == 2
+                    && await page.Locator("[data-retained-column-results]").CountAsync() == 1,
+                    "The repeated collection must independently rediscover its active table while another hidden same-ID copy remains attached through native renewal.");
+            }
         }
         finally
         {
