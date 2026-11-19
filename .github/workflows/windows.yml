@@ -153,7 +153,7 @@ jobs:
     name: Windows x64 · contrôles C# et WebView
     runs-on: windows-2025
     # C# and browser checks run independently of native packs and of the complete WebView stage.
-    # Every original suite and per-process deadline is retained; publication requires every job to succeed.
+    # Every suite remains mandatory; per-case and application deadlines are unchanged. Publication requires every job to succeed.
     timeout-minutes: 100
     defaults:
       run:
@@ -200,9 +200,9 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
 
       - name: Vérifier le navigateur et les exports sur des pages synthétiques
-        # Les trois groupes d'automatisation sont obligatoires et gardent chacun leur limite de 360 s,
-        # avec 35 s par cas. Les builds et les suites navigateur, fiches et DOM ont leurs gardes séparées.
-        # Cette enveloppe couvre leur somme ; aucune limite interne n'est augmentée.
+        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 55 cas
+        # colonnes disposent de 600 s (397 s observées dans le préflight réussi). Chaque cas garde 35 s.
+        # Cette enveloppe couvre leur somme ; builds, fiches et DOM gardent leurs limites séparées.
         timeout-minutes: 40
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
 

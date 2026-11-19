@@ -28,7 +28,7 @@ Onze nouveaux parcours de navigateur couvrent les copies masquées créées apr�
 | Données et sources · Standard | 42/42 |
 | Données et sources · Admin | 42/42 |
 
-Le budget du préflight des colonnes et exports natifs passe de 7 à 10 minutes pour accueillir les onze nouveaux cas. Les délais de l’application restent inchangés. Les contrôles de configuration portent sur le nouveau défaut, la migration unique et la préservation des choix ultérieurs, des recherches mémorisées et des imports.
+Le budget du préflight des colonnes et exports natifs passe de 7 à 10 minutes pour accueillir les onze nouveaux cas. Le préflight réussi a exécuté les 55 cas de colonnes en 397 secondes ; leur groupe dans le harnais complet dispose donc de 600 secondes au lieu de 360. Les autres groupes conservent 360 secondes, chaque cas garde sa propre limite et les délais de l’application restent inchangés. Les contrôles de configuration portent sur le nouveau défaut, la migration unique et la préservation des choix ultérieurs, des recherches mémorisées et des imports.
 
 Ces seuils sont les critères de qualification ; leur réussite se vérifie dans le run associé au commit publié. Les parcours utilisent des données synthétiques ; le portail privé et le SSO de l’organisation ne sont pas testés directement. La publication exige une qualification Windows et PostgreSQL complète sur le commit exact, puis l’inspection de l’archive originale PROD-LIGHT.
 

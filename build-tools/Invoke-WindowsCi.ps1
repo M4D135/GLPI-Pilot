@@ -476,14 +476,16 @@ try {
                     try {
                         Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
                         foreach ($group in @(
-                            @{ Name = 'core'; Count = 52 },
-                            @{ Name = 'columns'; Count = 55 },
-                            @{ Name = 'native-timing'; Count = 11 }
+                            @{ Name = 'core'; Count = 52; TimeoutSeconds = 360 },
+                            # The 55 column cases took 397 s in the successful preflight.
+                            # Keep every case and its deadline; only the group needs more time.
+                            @{ Name = 'columns'; Count = 55; TimeoutSeconds = 600 },
+                            @{ Name = 'native-timing'; Count = 11; TimeoutSeconds = 360 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name
                             try {
                                 Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
-                                    -LogName "automationchecks-$($group.Name).log" -TimeoutSeconds 360 `
+                                    -LogName "automationchecks-$($group.Name).log" -TimeoutSeconds $group.TimeoutSeconds `
                                     -ExpectedSummary "$($group.Count)/$($group.Count) vérifications d’automatisation réussies."
                             }
                             catch {
