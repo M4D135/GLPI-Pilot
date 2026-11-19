@@ -27,6 +27,7 @@ internal static partial class Program
         var externalRequests = 0; var collectionAttempts = 0; PilotApplication? application = null;
         var holdCalendar = 0;
         TaskCompletionSource? calendarEntered = null, calendarRelease = null;
+        TaskCompletionSource? nextDemonstration = null;
         page.PageError += (_, error) => errors.Enqueue(error);
         await context.RouteAsync("**/*", async route =>
         {
@@ -66,9 +67,16 @@ internal static partial class Program
                 // in-flight refresh without replacing any C# response.
                 calendarEntered!.TrySetResult(); await calendarRelease!.Task.WaitAsync(ct);
             }
+            var demonstration = op == "app.demo" ? Interlocked.Exchange(ref nextDemonstration, null) : null;
             var timing = System.Diagnostics.Stopwatch.StartNew();
             if (op == "app.demo") Console.WriteLine("TRACE demo request admitted " + DateTimeOffset.UtcNow.ToString("O"));
-            try { return await app.ExecuteAsync(op, data, ct); }
+            try
+            {
+                var result = await app.ExecuteAsync(op, data, ct);
+                demonstration?.TrySetResult();
+                return result;
+            }
+            catch (Exception error) { demonstration?.TrySetException(error); throw; }
             finally { if (op == "app.demo") Console.WriteLine($"TRACE demo request settled after {timing.ElapsedMilliseconds} ms; simulation={app.IsTestMode}; cancelled={ct.IsCancellationRequested}"); }
         }, Post); bridge = actualBridge;
         await page.ExposeBindingAsync("__pilotSend", (BindingSource _, string json) => bridge.Receive(json));
@@ -296,11 +304,25 @@ internal static partial class Program
             "Navigating away during refresh keeps the new Data workspace and its honest cached-source provenance.");
 
         var realSettings = await File.ReadAllBytesAsync(AppPaths.SettingsFile);
-        await OpenDemonstrationFromSettingsAsync(page);
-        try { await WaitForNavigationTargetAsync(page, "home"); }
+        var demonstrationCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (Interlocked.CompareExchange(ref nextDemonstration, demonstrationCompleted, null) is not null)
+            throw new InvalidOperationException("A demonstration operation is already being awaited.");
+        var demoRequests = Count("app.demo"); var demoStage = "confirmation";
+        try
+        {
+            await OpenDemonstrationFromSettingsAsync(page);
+            demoStage = "operation";
+            // Real storage work precedes navigation. Match the existing local-file
+            // fixture's operation budget, then retain the 20-second DOM deadline.
+            await demonstrationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(45));
+            if (Count("app.demo") != demoRequests + 1)
+                throw new InvalidOperationException("One confirmation must invoke exactly one real demonstration operation.");
+            demoStage = "navigation";
+            await WaitForNavigationTargetAsync(page, "home");
+        }
         catch
         {
-            Console.WriteLine($"TRACE demo timeout: busy={app.IsBusy}; operation={app.CurrentOperation}; simulation={app.IsTestMode}; requested={Count("app.demo")}");
+            Console.WriteLine($"TRACE demo {demoStage} failed: busy={app.IsBusy}; operation={app.CurrentOperation}; simulation={app.IsTestMode}; requested={Count("app.demo") - demoRequests}");
             Console.WriteLine("TRACE synthetic page: " + await page.EvaluateAsync<string>("""
                 async () => JSON.stringify({ page: document.querySelector('.page-content')?.dataset.page,
                   contentBusy: document.querySelector('#content')?.getAttribute('aria-busy'),
@@ -312,6 +334,14 @@ internal static partial class Program
                 """));
             await Capture("refresh-demo-navigation-failure");
             throw;
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref nextDemonstration, null, demonstrationCompleted);
+            // A failed click or expired wait must not retain an observer or an
+            // unobserved late fault while the bridge cancels its real operation.
+            demonstrationCompleted.TrySetCanceled();
+            if (demonstrationCompleted.Task.IsFaulted) _ = demonstrationCompleted.Task.Exception;
         }
         await page.Locator(".nav-item[data-page=data]").ClickAsync(); await ReadyAsync(page.Locator(".data-workspace[data-ready=true]"));
         await page.Locator("[data-open-panel=sites]").ClickAsync(); await ReadyAsync(reference.Locator(".terrain-function-panel[data-ready=true]"));
