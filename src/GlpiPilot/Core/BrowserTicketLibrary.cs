@@ -61,17 +61,33 @@ public sealed partial class BrowserService
           const prefix=selected.name.replace(/\[field\]$/,''), named=suffix=>[...form.elements].filter(e=>e.name===prefix+suffix);
           const types=named('[searchtype]'), values=named('[value]');
           const type=types.length===1?types[0]:null,value=values.length===1?values[0]:null;
-          state.push(selected.value,types.length,values.length,type instanceof HTMLSelectElement?type.value:'',selected.value===nativeField?value?.value||'':'',type?.options?.length||0,value?.options?.length||0);
-          const observed=selected.value===nativeField && type instanceof HTMLSelectElement && [...type.options].some(o=>o.value==='equals') && resets.length===1 && (targeted
+          // GLPI 9.5/10 renders unbounded numeric ID equality as contains labelled "is" (French: "est").
+          // Its generic text contains operator is not equality. Keep the native value and require a unique usable option.
+          const equalityOperator=control=>{
+            if(!(control instanceof HTMLSelectElement)||control.matches(':disabled'))return '';
+            const options=[...control.options],candidates=options.filter(o=>o.value==='equals'||targeted&&o.value==='contains'&&/^(est|is)$/.test(o.label.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase()));
+            if(candidates.length!==1)return '';
+            const candidate=candidates[0];
+            return !candidate.matches(':disabled')&&!candidate.hidden&&options.filter(o=>o.value===candidate.value).length===1?candidate.value:'';
+          };
+          const nativeSearchType=equalityOperator(type);
+          state.push(selected.value,types.length,values.length,type instanceof HTMLSelectElement?type.value:'',selected.value===nativeField?value?.value||'':'',type?.options?.length||0,value?.options?.length||0,nativeSearchType);
+          const observed=selected.value===nativeField && !selected.matches(':disabled') && nativeSearchType.length>0 && (!targeted||!arg.targetSearchType||nativeSearchType===arg.targetSearchType) && resets.length===1 && !value?.matches(':disabled') && (targeted
             ? value instanceof HTMLInputElement && ['text','search','number'].includes(value.type)
             : value instanceof HTMLSelectElement && [...value.options].some(o=>o.value==='all'));
           const selectedPairs=allFields.filter(e=>!['checkbox','radio'].includes(e.type)||e.checked).map(e=>[e.name,e.value]);
           const expected=new Map();
-          if(targeted){for(let i=0;i<targets.length;i++){const key='criteria['+i+']';expected.set(key+'[field]',nativeField);expected.set(key+'[searchtype]','equals');expected.set(key+'[value]',targets[i]);if(i>0)expected.set(key+'[link]','OR');}}
+          if(targeted){for(let i=0;i<targets.length;i++){const key='criteria['+i+']';expected.set(key+'[field]',nativeField);expected.set(key+'[searchtype]',nativeSearchType);expected.set(key+'[value]',targets[i]);if(i>0)expected.set(key+'[link]','OR');}}
           else {expected.set(prefix+'[field]','12');expected.set(prefix+'[searchtype]','equals');expected.set(prefix+'[value]','all');}
+          const targetCriteriaObserved=!targeted||targets.every((_,i)=>{
+            const controls=suffix=>allFields.filter(e=>e.name==='criteria['+i+']'+suffix),fields=controls('[field]'),types=controls('[searchtype]'),values=controls('[value]');
+            return fields.length===1&&fields[0] instanceof HTMLSelectElement&&!fields[0].matches(':disabled')&&fields[0].value===nativeField
+              &&types.length===1&&equalityOperator(types[0])===nativeSearchType&&types[0].value===nativeSearchType
+              &&values.length===1&&values[0] instanceof HTMLInputElement&&!values[0].matches(':disabled')&&['text','search','number'].includes(values[0].type);
+          });
           const flagsOk=['is_deleted','as_map','browse'].every(name=>{const controls=[...form.elements].filter(e=>e.name===name);return controls.length<=1&&controls.every(e=>e.value==='0')});
           const optionalLink=targeted?'criteria[0][link]':prefix+'[link]';
-          const exact=observed && flagsOk && selectedPairs.length>=expected.size && selectedPairs.length<=expected.size+1 && [...expected].every(([k,v])=>selectedPairs.filter(p=>p[0]===k&&p[1]===v).length===1) && selectedPairs.every(([k,v])=>expected.get(k)===v || k===optionalLink&&v==='AND');
+          const exact=observed && targetCriteriaObserved && flagsOk && selectedPairs.length>=expected.size && selectedPairs.length<=expected.size+1 && [...expected].every(([k,v])=>selectedPairs.filter(p=>p[0]===k&&p[1]===v).length===1) && selectedPairs.every(([k,v])=>expected.get(k)===v || k===optionalLink&&v==='AND');
           const action=new URL(form.getAttribute('action'),document.baseURI);
           if(observed){action.searchParams.set('reset','reset');for(const [k,v] of expected)action.searchParams.set(k,v);for(const key of ['is_deleted','as_map','browse'])action.searchParams.set(key,'0');}
           const queryOk=[...new URL(location.href).searchParams].every(([k,v])=>{
@@ -84,7 +100,7 @@ public sealed partial class BrowserService
           const scopeControls=[...document.querySelectorAll('select[name],input[name]')].filter(e=>/^(active_entity|entities_id|newprofile|profiles_id)$/.test(e.name));
           const scope=JSON.stringify({context:scopeControls.map(e=>[e.name,e.value]).sort(),header:[...document.querySelectorAll('body > .page > header.navbar,body > .page > aside.navbar,#header_top,#c_ssmenu2')].map(text)});
           if(scope.length>64000 || scopeControls.length>100)return fail('Le périmètre de session ne peut pas être borné.');
-          const response={ready:true,reason:'',formSelector:css(form),fieldSelector:css(selected),statusFieldSelector:statusField?css(statusField):'',statusOptions,nativeField,statusSelected:selected.value===nativeField,allUrl:observed?action.href:'',allStatuses:exact&&queryOk,scope,restoreUrl,progress:JSON.stringify(state),documentReady:document.readyState!=='loading'};
+          const response={ready:true,reason:'',formSelector:css(form),fieldSelector:css(selected),statusFieldSelector:statusField?css(statusField):'',statusOptions,nativeField,nativeSearchType,statusSelected:selected.value===nativeField,allUrl:observed?action.href:'',allStatuses:exact&&queryOk,scope,restoreUrl,progress:JSON.stringify(state),documentReady:document.readyState!=='loading'};
           if(arg.mode!=='read')return response;
           if(targeted&&!response.allStatuses)return fail('La recherche ne confirme pas les seuls identifiants sélectionnés sans autre filtre.',true,'index-scope');
           if(!response.allStatuses)return fail('La recherche ne confirme pas Statut = Tous sans autre filtre.');
@@ -169,6 +185,7 @@ public sealed partial class BrowserService
         [JsonPropertyName("statusFieldSelector")] public string StatusFieldSelector { get; set; } = "";
         [JsonPropertyName("statusOptions")] public List<LibraryStatusOption> StatusOptions { get; set; } = new();
         [JsonPropertyName("nativeField")] public string NativeField { get; set; } = "";
+        [JsonPropertyName("nativeSearchType")] public string NativeSearchType { get; set; } = "";
         [JsonPropertyName("statusSelected")] public bool StatusSelected { get; set; }
         [JsonPropertyName("allUrl")] public string AllUrl { get; set; } = "";
         [JsonPropertyName("restoreUrl")] public string RestoreUrl { get; set; } = "";
@@ -333,6 +350,7 @@ public sealed partial class BrowserService
                     ? "Le critère Identifiant et son opérateur d’égalité n’ont pas été observés. Aucune recherche globale n’a été lancée."
                     : "L’option Tous du critère Statut n’a pas été observée dans le formulaire GLPI. Aucun périmètre complet n’est déclaré.");
             ValidateLibraryListUrl(form.AllUrl, source, allowReset: true);
+            var targetSearchType = targeted ? form.NativeSearchType : "";
             await NavigateLibraryListAsync(page, form.AllUrl, targeted ? "targeted" : "all-status", activity, ct);
             var ids = new HashSet<string>(StringComparer.Ordinal);
             var expectedStart = 0;
@@ -341,7 +359,7 @@ public sealed partial class BrowserService
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var snapshot = await WaitLibraryIndexDomAsync(page, source, "read", activity, ct, targetIds, statusOptions);
+                var snapshot = await WaitLibraryIndexDomAsync(page, source, "read", activity, ct, targetIds, statusOptions, targetSearchType);
                 ValidateLibraryListUrl(page.Url, source, allowReset: true);
                 if (!snapshot.AllStatuses) throw new GlpiLibraryPageException("Le filtre attendu a changé pendant la lecture de la bibliothèque.");
                 if (targeted && snapshot.Count > targetIds!.Count)
@@ -541,9 +559,9 @@ public sealed partial class BrowserService
     }
 
     private Task<LibraryIndexDom> ReadLibraryIndexDomAsync(IPage page, Uri source, string mode, CancellationToken ct,
-        IReadOnlyList<string>? targetIds = null, IReadOnlyList<LibraryStatusOption>? statusOptions = null) =>
+        IReadOnlyList<string>? targetIds = null, IReadOnlyList<LibraryStatusOption>? statusOptions = null, string targetSearchType = "") =>
         ReadJsonAsync<LibraryIndexDom>(page.MainFrame, LibrarySearchDomScript,
-            new { mode, targetIds, statusOptions = statusOptions?.Select(o => new { code = o.Code, label = o.Label }).ToArray(),
+            new { mode, targetIds, targetSearchType, statusOptions = statusOptions?.Select(o => new { code = o.Code, label = o.Label }).ToArray(),
                 origin = source.GetLeftPart(UriPartial.Authority), path = source.AbsolutePath, detailPath = source.AbsolutePath.Replace("/front/ticket.php", "/front/ticket.form.php", StringComparison.Ordinal) }, ct);
 
     // Only fixed reasons written by LibrarySearchDomScript leave the reader.
@@ -552,7 +570,7 @@ public sealed partial class BrowserService
         reason is { Length: > 0 } && IndexReasons.Contains(reason) ? reason : "La recherche GLPI ne présente pas une structure de liste prise en charge.";
 
     private async Task<LibraryIndexDom> WaitLibraryIndexDomAsync(IPage page, Uri source, string mode, LibraryIndexActivity activity, CancellationToken ct,
-        IReadOnlyList<string>? targetIds = null, IReadOnlyList<LibraryStatusOption>? statusOptions = null)
+        IReadOnlyList<string>? targetIds = null, IReadOnlyList<LibraryStatusOption>? statusOptions = null, string targetSearchType = "")
     {
         LibraryIndexDom? last = null;
         GlpiLibraryIndexException Stalled()
@@ -572,7 +590,7 @@ public sealed partial class BrowserService
             {
                 // Inactivity can expire while the next DOM read is in flight.
                 // Keep the last observed reason in that path as well.
-                last = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, mode, ct, targetIds, statusOptions), ct, Stalled);
+                last = await activity.AwaitAsync(ReadLibraryIndexDomAsync(page, source, mode, ct, targetIds, statusOptions, targetSearchType), ct, Stalled);
                 activity.Observe(last.Progress);
                 if (last.Terminal)
                     throw new GlpiLibraryIndexException(activity.Phase,

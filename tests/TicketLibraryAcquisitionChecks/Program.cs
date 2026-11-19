@@ -40,6 +40,11 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Index ciblé : cible absente demeure explicitement indisponible", TargetedMissing),
     ("Index ciblé : changement de périmètre entre lots interdit une confirmation complète", TargetedChangedScope),
     ("Index ciblé : refus de session et annulation conservent la recherche", TargetedSessionAndCancel),
+    ("Index ciblé : ID numérique legacy contains est, Select2 masqué et filtre restauré", () => TargetedNumericOperator("est", multipleBatches: false, select2: true)),
+    ("Index ciblé : ID numérique contains is, trente cibles en lots OR exacts", () => TargetedNumericOperator("is", multipleBatches: true, select2: false)),
+    ("Index ciblé : opérateurs non exacts ou égalité canonique inutilisable refusés", TargetedNonExactOperator),
+    ("Index ciblé : opérateur numérique dupliqué ou contrôle natif ambigu refusé", TargetedAmbiguousOperator),
+    ("Index ciblé : opérateur modifié dans la réponse ou une ligne OR interdit la confirmation", TargetedOperatorDrift),
     ("Détails : tous les onglets sûrs, description, suivis, tâches et solution", AllTabs),
     ("Détails : historique paginé lu jusqu’au total, aucune ligne perdue", HistoryPages),
     ("Détails : références des documents sans téléchargement binaire", DocumentReferences),
@@ -68,6 +73,21 @@ return failed == 0 ? 0 : 1;
 static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 static string Escape(string value) => WebUtility.HtmlEncode(value);
 static string Query(Uri uri, string name) => TicketReferenceResolver.ParseQuery(uri).FirstOrDefault(pair => pair.Key == name).Value ?? "";
+
+string IdOperatorHtml(FixtureOptions options, int index, bool result = false)
+{
+    var drift = result ? options.TargetOperatorDrift : "";
+    var changedValue = drift == "all-value" || drift == "one-value" && index == 1;
+    var value = changedValue ? "equals" : options.NativeIdOperator;
+    var label = changedValue ? "est" : drift == "one-label" && index == 1 ? "contient" : options.NativeIdOperatorLabel;
+    var disabled = drift == "one-disabled" && index == 1;
+    var select = "<select name='criteria[" + index + "][searchtype]'" + (options.NativeIdSelect2 ? " class='select2-hidden-accessible' style='display:none'" : "") + ">"
+        + "<option value='" + Escape(value) + "' selected" + (disabled ? " disabled" : "") + ">" + Escape(label) + "</option>"
+        + string.Concat(options.AdditionalIdOperators.Select(option => "<option value='" + Escape(option.Value) + "'"
+            + (option.Disabled ? " disabled" : "") + ">" + Escape(option.Label) + "</option>")) + "</select>";
+    return select + (options.DuplicateIdOperatorControl ? select : "")
+        + (options.NativeIdSelect2 ? "<span class='select2-container'>" + Escape(label) + "</span>" : "");
+}
 
 string ListHtml(Uri uri, FixtureOptions options)
 {
@@ -99,7 +119,7 @@ string ListHtml(Uri uri, FixtureOptions options)
         <!doctype html><html lang="fr"><meta charset="utf-8"><title>GLPI bibliothèque synthétique</title>{{(needsStatus && options.DeferredStatusHandler ? "<script defer src='/glpi/js/library-search-fixture.js'></script>" : "")}}<body><div class="page"><header class="navbar">Entité {{(options.ChangeScope && start > 0 ? "B" : options.CurrentEntity)}}</header></div>
         <a href="/glpi/front/logout.php">Déconnexion</a>
         <form name="searchformticket" class="search-form-container" method="get" action="/glpi/front/ticket.php">
-          <select id="criterion-field" name="criteria[0][field]"><option value="12" {{(needsStatus ? "" : "selected")}}>Statut</option><option value="19" {{(needsStatus ? "selected" : "")}}>Dernière modification</option>{{(options.NativeIdField.Length > 0 ? "<option value='" + Escape(options.NativeIdField) + "'>ID</option>" : "")}}</select>
+          <select id="criterion-field" name="criteria[0][field]" {{(options.NativeIdSelect2 ? "class='select2-hidden-accessible' style='display:none'" : "")}}><option value="12" {{(needsStatus ? "" : "selected")}}>Statut</option><option value="19" {{(needsStatus ? "selected" : "")}}>Dernière modification</option>{{(options.NativeIdField.Length > 0 ? "<option value='" + Escape(options.NativeIdField) + "'>ID</option>" : "")}}</select>{{(options.NativeIdSelect2 ? "<span class='select2-container'>Critère natif</span>" : "")}}
           <span id="native-status-fields">{{statusControls}}</span>
           <input type="hidden" name="is_deleted" value="0"><input type="hidden" name="as_map" value="0"><input type="hidden" name="browse" value="0">
           <a class="search-reset" href="/glpi/front/ticket.php?reset=reset">Vider</a><button type="submit" name="search">Rechercher</button>
@@ -123,7 +143,7 @@ string TargetedListHtml(Uri uri, FixtureOptions options)
     var items = requested.Where(id => id != options.MissingTargetId).ToList();
     if (options.OutsideTarget && items.Count > 0) items[0] = "999999";
     var form = string.Join("", requested.Select((id, i) => "<select name='criteria[" + i + "][field]'><option value='12'>Statut</option><option value='" + options.NativeIdField + "' selected>ID</option></select>"
-        + "<select name='criteria[" + i + "][searchtype]'><option value='equals'>est</option></select><input name='criteria[" + i + "][value]' value='" + (options.DriftTargetCriterion ? "999998" : Escape(id)) + "'>"
+        + IdOperatorHtml(options, i, result: true) + "<input name='criteria[" + i + "][value]' value='" + (options.DriftTargetCriterion ? "999998" : Escape(id)) + "'>"
         + (i == 0 ? "" : "<select name='criteria[" + i + "][link]'><option value='OR'>OU</option></select>")));
     var rows = string.Join("", items.Select(id => "<tr><td><a href='/glpi/front/ticket.form.php?id=" + Escape(id) + "'>Ticket sélectionné " + Escape(id) + "</a></td><td>Clos</td><td>" + Escape(options.Modified) + "</td><td>Catégorie fictive</td></tr>"));
     if (items.Count == 0) rows = "<tr><td colspan='4'>Aucun élément trouvé</td></tr>";
@@ -231,7 +251,7 @@ async Task<FixtureSession> Setup(FixtureOptions? configuration = null)
                     var field = Query(new Uri("http://body.test/?" + route.Request.PostData), "field");
                     if (options.NativeIdField.Length > 0 && field == options.NativeIdField)
                     {
-                        await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><input name='criteria[0][value]' value=''>" });
+                        await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = IdOperatorHtml(options, 0) + "<input name='criteria[0][value]' value=''>" });
                         return;
                     }
                     await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><select name='criteria[0][value]'><option value='1'>Nouveau</option><option value='5'>Résolu</option><option value='6'>Clos</option><option value='notold' selected>Non résolu</option><option value='all'>Tous</option></select>" });
@@ -264,8 +284,8 @@ Task<TicketLibraryDetailRead> Detail(FixtureSession s, CancellationToken ct = de
 static TicketReference Target(string id) => new(id, "http://glpi-library.test/glpi/front/ticket.form.php?id=" + id);
 Task<TicketLibraryIndex> Subset(FixtureSession s, IEnumerable<string> ids, CancellationToken ct = default) =>
     s.Service.ReadTicketLibrarySubsetIndexAsync(s.Settings, ids.Select(Target).ToArray(), null, ct);
-static List<Uri> TargetQueries(FixtureSession s) => s.Requests.Select(url => new Uri(url))
-    .Where(uri => uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal) && Query(uri, "criteria[0][field]") == "92").ToList();
+static List<Uri> TargetQueries(FixtureSession s, string nativeField = "92") => s.Requests.Select(url => new Uri(url))
+    .Where(uri => uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal) && Query(uri, "criteria[0][field]") == nativeField).ToList();
 static void NoGlobalQuery(FixtureSession s) => Require(!s.Requests.Select(url => new Uri(url)).Any(uri => Query(uri, "criteria[0][value]") == "all"),
     "La collecte ciblée a lancé une recherche globale Tous.");
 
@@ -304,6 +324,119 @@ async Task TargetedBatches()
     var sent = queries.SelectMany(uri => TicketReferenceResolver.ParseQuery(uri).Where(p => p.Key.EndsWith("[value]", StringComparison.Ordinal)).Select(p => p.Value));
     Require(sent.SequenceEqual(requested) && result.SearchRestored, "Cible omise, dupliquée, ajoutée ou filtre non restauré entre lots.");
     NoGlobalQuery(s);
+}
+
+static void AssertTargetedOperatorQueries(FixtureSession session, IReadOnlyList<string> requested, string nativeField, string nativeOperator)
+{
+    var queries = TargetQueries(session, nativeField);
+    Require(queries.Count == (requested.Count + 24) / 25, "Nombre de recherches ciblées incorrect ou critère renvoyé après attente.");
+    var offset = 0;
+    foreach (var uri in queries)
+    {
+        var pairs = TicketReferenceResolver.ParseQuery(uri);
+        var count = pairs.Count(pair => pair.Key.EndsWith("[field]", StringComparison.Ordinal));
+        Require(count == Math.Min(25, requested.Count - offset)
+            && pairs.Count(pair => pair.Key.StartsWith("criteria[", StringComparison.Ordinal)) == 4 * count - 1,
+            "Un lot ciblé doit contenir exactement ses identités et ses liaisons OR, sans autre critère.");
+        for (var index = 0; index < count; index++)
+        {
+            var prefix = "criteria[" + index + "]";
+            Require(Query(uri, prefix + "[field]") == nativeField && Query(uri, prefix + "[searchtype]") == nativeOperator
+                && Query(uri, prefix + "[value]") == requested[offset + index],
+                "Le champ, l’opérateur natif ou une identité a été deviné, réécrit ou omis dans la recherche ciblée.");
+            Require(index == 0 ? !pairs.Any(pair => pair.Key == prefix + "[link]") : Query(uri, prefix + "[link]") == "OR",
+                "Seules les identités du même lot doivent être reliées par OR.");
+        }
+        Require(Query(uri, "reset") == "reset" && new[] { "is_deleted", "as_map", "browse" }.All(flag => Query(uri, flag) == "0"),
+            "La recherche ciblée doit rester hors corbeille et sans restriction implicite de la vue précédente.");
+        offset += count;
+    }
+    Require(offset == requested.Count, "Une identité demandée n’a pas été couverte par les lots ciblés.");
+}
+
+async Task AssertTargetedSearchRestored(FixtureSession session, string original)
+{
+    Require(session.Search.Url == source && await session.Search.ContentAsync() == original
+        && session.Context.Pages.Count == 1 && session.Service.ActivePage == session.Search,
+        "La recherche affichée doit garder son DOM et sa page active après succès ou refus du critère ID.");
+    var restored = session.Requests.Select(address => new Uri(address))
+        .Last(uri => uri.AbsolutePath.EndsWith("/front/ticket.php", StringComparison.Ordinal));
+    Require(Query(restored, "reset") == "reset" && Query(restored, "criteria[0][field]") == "12"
+        && Query(restored, "criteria[0][searchtype]") == "equals" && Query(restored, "criteria[0][value]") == "notold",
+        "Le filtre de session initial Statut equals Non résolu doit être restauré par son GET natif exact.");
+    Require(!session.Requests.Any(address => address.Contains("ticket.form.php", StringComparison.Ordinal)),
+        "La vérification ciblée des opérateurs ne doit ouvrir aucune fiche de contenu.");
+    NoGlobalQuery(session);
+}
+
+async Task TargetedNumericOperator(string label, bool multipleBatches, bool select2)
+{
+    await using var s = await Setup(new()
+    {
+        NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = label, NativeIdSelect2 = select2
+    });
+    var original = await s.Search.ContentAsync();
+    var requested = multipleBatches
+        ? Enumerable.Range(1, 30).Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray()
+        : new[] { "42" };
+    var result = await Subset(s, requested);
+    Require(result.IsTargeted && result.RequestedCount == requested.Length && result.ExpectedTotal == requested.Length
+        && result.Complete && result.AllStatuses && result.SearchRestored && result.ScopeFingerprint.Length > 0,
+        "L’opérateur numérique natif observé n’a pas produit une sélection complète et restaurée : " + string.Join(" | ", result.Limitations));
+    Require(result.PagesRead == (multipleBatches ? 2 : 1) && result.Tickets.Select(ticket => ticket.Ticket.Id).SequenceEqual(requested)
+        && result.Tickets.All(ticket => ticket.LastModifiedReliable && ticket.StatusCode == 6),
+        "Les identités, dates ou codes de statut ont été altérés par le changement d’opérateur du champ ID.");
+    AssertTargetedOperatorQueries(s, requested, "2", "contains");
+    Require(s.Requests.Count(address => new Uri(address).AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal)) == (multipleBatches ? 2 : 1),
+        "Le critère ID doit être sélectionné une fois par lot, sans deuxième changement après attente.");
+    await AssertTargetedSearchRestored(s, original);
+}
+
+async Task AssertTargetedOperatorRefused(FixtureOptions options, bool queryWasSent)
+{
+    await using var s = await Setup(options);
+    var original = await s.Search.ContentAsync();
+    string[] requested = ["42", "43"];
+    try
+    {
+        await Subset(s, requested);
+        throw new Exception("Un opérateur ID non exact, ambigu ou modifié a été accepté.");
+    }
+    catch (GlpiLibraryIndexException) { }
+    if (queryWasSent) AssertTargetedOperatorQueries(s, requested, "2", "contains");
+    else Require(TargetQueries(s, "2").Count == 0, "Une recherche ID a été envoyée avant d’observer une égalité native univoque.");
+    Require(s.Requests.Count(address => new Uri(address).AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal)) == 1,
+        "Un opérateur refusé ne doit pas déclencher une nouvelle sélection du critère.");
+    await AssertTargetedSearchRestored(s, original);
+}
+
+async Task TargetedNonExactOperator()
+{
+    foreach (var options in new[]
+    {
+        new FixtureOptions { NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = "contient" },
+        new FixtureOptions { NativeIdField = "2", NativeIdOperator = "notcontains", NativeIdOperatorLabel = "is not" },
+        new FixtureOptions { NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = "est", AdditionalIdOperators = [("equals", "est", true)] },
+        new FixtureOptions { NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = "est", AdditionalIdOperators = [("equals", "est", false), ("equals", "est", false)] }
+    }) await AssertTargetedOperatorRefused(options, queryWasSent: false);
+}
+
+async Task TargetedAmbiguousOperator()
+{
+    foreach (var options in new[]
+    {
+        new FixtureOptions { NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = "est", AdditionalIdOperators = [("contains", "contient", false)] },
+        new FixtureOptions { NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = "est", DuplicateIdOperatorControl = true }
+    }) await AssertTargetedOperatorRefused(options, queryWasSent: false);
+}
+
+async Task TargetedOperatorDrift()
+{
+    foreach (var drift in new[] { "all-value", "one-value", "one-label", "one-disabled" })
+        await AssertTargetedOperatorRefused(new()
+        {
+            NativeIdField = "2", NativeIdOperator = "contains", NativeIdOperatorLabel = "est", TargetOperatorDrift = drift
+        }, queryWasSent: true);
 }
 
 async Task TargetedInputGuard()
@@ -728,6 +861,12 @@ async Task PrivateLogs()
 sealed class FixtureOptions
 {
     public string NativeIdField { get; init; } = "";
+    public string NativeIdOperator { get; init; } = "equals";
+    public string NativeIdOperatorLabel { get; init; } = "est";
+    public bool NativeIdSelect2 { get; init; }
+    public (string Value, string Label, bool Disabled)[] AdditionalIdOperators { get; init; } = [];
+    public bool DuplicateIdOperatorControl { get; init; }
+    public string TargetOperatorDrift { get; init; } = "";
     public string MissingTargetId { get; init; } = "";
     public bool DriftTargetCriterion { get; init; }
     public bool OutsideTarget { get; init; }
