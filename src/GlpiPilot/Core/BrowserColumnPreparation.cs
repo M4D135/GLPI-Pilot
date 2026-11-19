@@ -691,9 +691,7 @@ public sealed partial class BrowserService
                 if (persisted.Frame is null) throw new InvalidOperationException("La vue personnelle ne peut pas être relue pour confirmer les colonnes ajoutées.");
                 await using var iframe = await persisted.Frame.FrameElementAsync().WaitAsync(ct);
                 var observedUrl = await iframe.EvaluateAsync<string>("element => element.src").WaitAsync(ct);
-                if (!Uri.TryCreate(observedUrl, UriKind.Absolute, out var nativeUrl) || Origin(observedUrl) != table.FrameOrigin
-                    || nativeUrl.UserInfo.Length > 0 || !nativeUrl.AbsolutePath.EndsWith("/front/displaypreference.form.php", StringComparison.Ordinal)
-                    || nativeUrl.Query.TrimStart('?') != "itemtype=Ticket")
+                if (!TemporaryColumnJournalStore.IsObservedPreferencesUrl(observedUrl, table.FrameOrigin))
                     throw new InvalidOperationException("L’adresse native de relecture des colonnes n’est pas vérifiable. Aucun relevé complet n’est publié.");
                 activity.BeginPhase("Relecture des colonnes enregistrées par GLPI");
                 await activity.RunAndWaitForResponseAsync(

@@ -20,6 +20,9 @@ var checks = new (string Name, Action Run)[]
     ("Journal en attente : aucun écrasement par une autre session", CheckNoOverwrite),
     ("Restauration terminée : état durable sans commande à rejouer", CheckComplete),
     ("Adresse native : origine, type Ticket et absence de paramètres privés", CheckNativeAddress),
+    ("Adresse modale : seul indicateur natif facultatif _in_modal=1 autorisé", CheckNativeModalAddress),
+    ("Adresse modale : paramètres inconnus, doublons et variantes ambiguës refusés", CheckNativeModalAddressRefusals),
+    ("Journal modal : adresse observée conservée exactement après redémarrage", CheckNativeModalJournal),
     ("Journal corrompu : refus explicite et contenu conservé", CheckMalformedJournal),
     ("Commande de suppression : seules les additions journalisées sont autorisées", CheckInvalidCommand),
     ("Échec de création : aucune trace partielle ni fausse session", CheckCreateFailure),
@@ -293,6 +296,70 @@ static void CheckNativeAddress()
         origin + "/glpi/front/displaypreference.form.php?itemtype=Ticket#secret",
         origin + "/glpi/front/ticket.form.php?itemtype=Ticket"
     }) Require(!TemporaryColumnJournalStore.IsObservedPreferencesUrl(address, origin), "A foreign, global, private or business endpoint must never be persisted for recovery: " + address);
+}
+
+static void CheckNativeModalAddress()
+{
+    foreach (var origin in new[] { "https://glpi.test", "http://glpi.test:8080" })
+    foreach (var query in new[] { "itemtype=Ticket", "itemtype=Ticket&_in_modal=1", "_in_modal=1&itemtype=Ticket" })
+        Require(TemporaryColumnJournalStore.IsObservedPreferencesUrl(origin + "/glpi/front/displaypreference.form.php?" + query, origin),
+            "The observed Ticket GET must accept only the optional native modal marker, in either parameter order.");
+}
+
+static void CheckNativeModalAddressRefusals()
+{
+    const string origin = "https://glpi.test";
+    const string endpoint = origin + "/glpi/front/displaypreference.form.php?";
+    foreach (var query in new[]
+    {
+        "_in_modal=1", "itemtype=Computer&_in_modal=1", "itemtype=ticket&_in_modal=1",
+        "itemtype=Ticket&_in_modal=0", "itemtype=Ticket&_in_modal=01", "itemtype=Ticket&_in_modal=true", "itemtype=Ticket&_in_modal=",
+        "itemtype=Ticket&itemtype=Ticket&_in_modal=1", "itemtype=Ticket&itemtype=Computer&_in_modal=1",
+        "itemtype=Ticket&_in_modal=1&_in_modal=1", "_in_modal=1&itemtype=Ticket&_in_modal=0",
+        "itemtype[]=Ticket&_in_modal=1", "itemtype=Ticket&_in_modal[]=1",
+        "itemtype=Ticket&_in_modal=1&users_id=0", "itemtype=Ticket&_in_modal=1&_glpi_csrf_token=secret",
+        "itemtype=Ticket&_in_modal=1&session=secret", "itemtype=Ticket&_in_modal=1&unknown=1",
+        "itemtype=Ticket&_in_modal=1&", "&itemtype=Ticket&_in_modal=1", "itemtype=Ticket&&_in_modal=1",
+        "?itemtype=Ticket", "itemtype=Ticket;_in_modal=1", "itemtype=Ticket&_in_modal=1=1",
+        "itemtype=Ticket&%5Fin_modal=1", "itemtype=Ticket&_in_modal=%31", "itemtype=%54icket&_in_modal=1",
+        "itemtype=Ticket%26_in_modal%3D1", "itemtype=Ticket&_in_modal=1+", "itemtype=Ticket&_in_modal=1%20"
+    }) Require(!TemporaryColumnJournalStore.IsObservedPreferencesUrl(endpoint + query, origin),
+        "An unknown, duplicated, private or ambiguous modal query must be rejected: " + query);
+    foreach (var address in new[]
+    {
+        "http://glpi.test/glpi/front/displaypreference.form.php?itemtype=Ticket&_in_modal=1",
+        "https://other-glpi.test/glpi/front/displaypreference.form.php?itemtype=Ticket&_in_modal=1",
+        "https://glpi.test:8443/glpi/front/displaypreference.form.php?itemtype=Ticket&_in_modal=1",
+        "https://user:secret@glpi.test/glpi/front/displaypreference.form.php?itemtype=Ticket&_in_modal=1",
+        endpoint + "itemtype=Ticket&_in_modal=1#secret",
+        origin + "/glpi/front/ticket.form.php?itemtype=Ticket&_in_modal=1",
+        origin + "/glpi/front/displaypreference.form.php/other?itemtype=Ticket&_in_modal=1",
+        "about:blank", "/glpi/front/displaypreference.form.php?itemtype=Ticket&_in_modal=1"
+    }) Require(!TemporaryColumnJournalStore.IsObservedPreferencesUrl(address, origin),
+        "The native modal marker must not relax the observed origin, endpoint or URL privacy requirements: " + address);
+    var settings = Settings(); var foreignInstallation = Record(settings);
+    foreignInstallation.PreferencesUrl = origin + "/other/front/displaypreference.form.php?itemtype=Ticket&_in_modal=1";
+    Throws<InvalidDataException>(() => TemporaryColumnJournalStore.Validate(foreignInstallation, settings),
+        "A same-origin modal from another installation must not become a recovery target.");
+}
+
+static void CheckNativeModalJournal()
+{
+    foreach (var query in new[] { "itemtype=Ticket&_in_modal=1", "_in_modal=1&itemtype=Ticket" })
+    {
+        using var fixture = new Storage(); var settings = Settings(); var record = Record(settings);
+        var observedAddress = record.PreferencesUrl = "https://glpi.test/glpi/front/displaypreference.form.php?" + query;
+        fixture.Store.Create(settings, record);
+        var restartedStore = new TemporaryColumnJournalStore(fixture.Root); var restored = restartedStore.Load(settings)!;
+        Require(restored.PreferencesUrl == observedAddress && restored.SessionId == record.SessionId
+            && restored.PendingCommand is { Kind: "add", OptionValue: "3" },
+            "A restart must retain the exact observed modal URL and pending intent, without dropping or reordering its native query.");
+        restored.State = "active"; restartedStore.Save(settings, restored);
+        var reread = new TemporaryColumnJournalStore(fixture.Root).Load(settings)!;
+        var serializedAddress = JsonNode.Parse(File.ReadAllText(fixture.Store.PathFor(settings)))!["PreferencesUrl"]!.GetValue<string>();
+        Require(reread.PreferencesUrl == observedAddress && serializedAddress == observedAddress && reread.State == "active",
+            "Subsequent durable writes must keep the native recovery URL exactly as it was observed.");
+    }
 }
 
 static void CheckMalformedJournal()

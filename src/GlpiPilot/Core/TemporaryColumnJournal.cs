@@ -169,9 +169,12 @@ public sealed class TemporaryColumnJournalStore(string? root = null)
         if (!Uri.TryCreate(address, UriKind.Absolute, out var url) || url.Scheme is not ("https" or "http")
             || url.UserInfo.Length > 0 || url.Fragment.Length > 0 || url.GetLeftPart(UriPartial.Authority) != origin
             || !url.AbsolutePath.EndsWith("/front/displaypreference.form.php", StringComparison.Ordinal)) return false;
-        // Persist exactly the reviewed native GET, without CSRF/session/search
-        // parameters, credentials or a manufactured endpoint.
-        return url.Query.TrimStart('?') == "itemtype=Ticket";
+        // GLPI's native iframe modal appends _in_modal=1. Accept only these
+        // literal GET queries, without duplicates, encoded aliases or private
+        // parameters. Uri.Query unescapes some aliases, so inspect the original
+        // query; the journal retains the observed address unchanged.
+        var queryStart = address.IndexOf('?');
+        return queryStart >= 0 && address[queryStart..] is "?itemtype=Ticket" or "?itemtype=Ticket&_in_modal=1" or "?_in_modal=1&itemtype=Ticket";
     }
 
     public static void Validate(TemporaryColumnJournalRecord record, AppSettings settings)

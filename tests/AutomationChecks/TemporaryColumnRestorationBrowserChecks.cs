@@ -9,6 +9,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
     {
         yield return ("Colonnes temporaires : legacy, export enrichi puis ordre personnel initial restauré", () => CheckCompleted(browser, modern: false));
         yield return ("Colonnes temporaires : moderne, colonnes personnelles hors supervision conservées", () => CheckCompleted(browser, modern: true));
+        yield return ("Colonnes temporaires : URL modale native legacy, export puis restauration exacte", () => CheckCompleted(browser, modern: false, nativeModal: true));
+        yield return ("Colonnes temporaires : URL modale native moderne, relecture persistante puis restauration", () => CheckCompleted(browser, modern: true, nativeModal: true));
+        yield return ("Colonnes temporaires : URL modale native legacy, interruption puis reprise froide exacte", () => CheckReconnect(browser, cancel: true, nativeModal: true));
         yield return ("Colonnes temporaires : vue créée pour toutes les colonnes puis désactivée sans toucher la globale", () => CheckActivated(browser));
         yield return ("Colonnes temporaires : activation GLPI 11 déjà complète, retrait d’une copie puis retour global", () => CheckCompleteActivation(browser));
         yield return ("Colonnes temporaires : deuxième ajout refusé, premier ajout restauré sans export", () => CheckPartialFailure(browser));
@@ -28,10 +31,10 @@ internal static class TemporaryColumnRestorationBrowserChecks
     private sealed class ImmediateProgress(Action<ExtractionProgress> report) : IProgress<ExtractionProgress>
     { public void Report(ExtractionProgress value) => report(value); }
 
-    private static async Task CheckCompleted(IBrowser browser, bool modern)
+    private static async Task CheckCompleted(IBrowser browser, bool modern, bool nativeModal = false)
     {
         using var storage = new ColumnTestStorageScope();
-        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern);
+        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern, nativeModal: nativeModal);
         var result = await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, CancellationToken.None);
         Require(fixture.Adds == 2 && fixture.Removals == 2 && fixture.Exports == 1 && fixture.Disables == 0
             && fixture.Columns.SequenceEqual(fixture.Original) && fixture.PersonalActive,
@@ -40,6 +43,7 @@ internal static class TemporaryColumnRestorationBrowserChecks
             && await File.ReadAllTextAsync(result.PrimaryPath) == fixture.ExportedCsv.TrimStart('\uFEFF')
             && result.Data.Provenance.ColumnPreparation is { AddedCount: 2, RecoveryPending: false, RestorationState: "restored" },
             "The saved native CSV must retain its enriched schema after the browser preference has been restored.");
+        if (nativeModal) fixture.AssertNativeModalEvidence(requirePersistenceRead: modern);
         fixture.AssertClean();
     }
 
@@ -87,10 +91,10 @@ internal static class TemporaryColumnRestorationBrowserChecks
         fixture.AssertClean();
     }
 
-    private static async Task CheckReconnect(IBrowser browser, bool cancel)
+    private static async Task CheckReconnect(IBrowser browser, bool cancel, bool nativeModal = false)
     {
         using var storage = new ColumnTestStorageScope();
-        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: !cancel);
+        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: !cancel, nativeModal: nativeModal);
         fixture.LoseFirstAdditionResponse = !cancel;
         using var cancellation = new CancellationTokenSource();
         var progress = new ImmediateProgress(value =>
@@ -117,6 +121,12 @@ internal static class TemporaryColumnRestorationBrowserChecks
         if (!cancel)
             Require(new TemporaryColumnJournalStore().Load(fixture.Settings)?.PendingCommand is { Kind: "add", ResponseObserved: false },
                 "A response lost after persistence must remain an unresolved add intent, not a fictional successful response.");
+        var savedPreferencesUrl = new TemporaryColumnJournalStore().Load(fixture.Settings)?.PreferencesUrl;
+        if (nativeModal)
+            Require(savedPreferencesUrl == fixture.PreferencesUrl
+                && fixture.PreferenceReads.Any(read => !read.TopLevel && read.Url == savedPreferencesUrl),
+                "Before restart, the durable journal must retain the exact observed native modal GET, including _in_modal=1.");
+        var readsBeforeRestart = fixture.PreferenceReads.Count;
         fixture.BlockRecoveryUntilReconnect = false; await fixture.RestartAsync();
         fixture.Events.Clear(); fixture.RequireRestorationBeforeList = true;
         fixture.Settings.ColumnPreparationMode = "current";
@@ -127,6 +137,13 @@ internal static class TemporaryColumnRestorationBrowserChecks
             && fixture.Exports == 1 && fixture.Columns.SequenceEqual(fixture.Original)
             && result.Data.Headers.SequenceEqual(fixture.Original.Select(fixture.Label).Prepend("Titre")),
             "The new browser session must finish recovery before loading tickets and must never replay the interrupted add.");
+        if (nativeModal)
+        {
+            var recoveryReads = fixture.PreferenceReads.Skip(readsBeforeRestart).ToArray();
+            Require(recoveryReads.Length > 0 && recoveryReads[0].TopLevel && recoveryReads[0].Url == savedPreferencesUrl,
+                "The cold session must first reopen the exact journaled modal URL as its recovery document, without rebuilding or dropping its query.");
+            fixture.AssertNativeModalEvidence();
+        }
         fixture.AssertClean();
     }
 
@@ -213,7 +230,7 @@ internal static class TemporaryColumnRestorationBrowserChecks
         fixture.AssertClean();
     }
 
-    private sealed class RestorationFixture(IBrowser browser, string root, bool modern, bool active, bool complete) : IAsyncDisposable
+    private sealed class RestorationFixture(IBrowser browser, string root, bool modern, bool active, bool complete, bool nativeModal) : IAsyncDisposable
     {
         private const string Origin = "http://glpi-column-restoration.test";
         private const string Target = Origin + "/glpi/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&criteria%5B0%5D%5Bvalue%5D=1";
@@ -232,6 +249,10 @@ internal static class TemporaryColumnRestorationBrowserChecks
         public List<string> Original { get; } = complete ? ["12", "900", "2", "3", "8"] : ["12", "900", "2"];
         public List<string> Columns { get; } = complete ? ["12", "900", "2", "3", "8"] : ["12", "900", "2"];
         public List<string> Events { get; } = new();
+        public List<(string Url, bool TopLevel, int Adds, int Removals)> PreferenceReads { get; } = [];
+        public List<string> JournalPreferenceUrls { get; } = [];
+        private string PreferencesPath => "/glpi/front/displaypreference.form.php?itemtype=Ticket" + (nativeModal ? "&_in_modal=1" : "");
+        public string PreferencesUrl => Origin + PreferencesPath;
         public bool PersonalActive { get; private set; } = active;
         public string UsersId { get; set; } = "17";
         public string ProfileId { get; set; } = "4";
@@ -263,9 +284,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
             ExpectedTotal = 1, MaxRows = 20, MaxPages = 5
         };
 
-        public static async Task<RestorationFixture> CreateAsync(IBrowser browser, string root, bool modern, bool active = true, bool complete = false)
+        public static async Task<RestorationFixture> CreateAsync(IBrowser browser, string root, bool modern, bool active = true, bool complete = false, bool nativeModal = false)
         {
-            var fixture = new RestorationFixture(browser, root, modern, active, complete);
+            var fixture = new RestorationFixture(browser, root, modern, active, complete, nativeModal);
             await fixture.RestartAsync(); await fixture.Page.GotoAsync(Target); return fixture;
         }
 
@@ -290,6 +311,19 @@ internal static class TemporaryColumnRestorationBrowserChecks
                 "A verified restoration must durably finish and remove its journal.");
             Require(ForeignPosts == 0 && GlobalPosts == 0 && JournalBeforeCommands == Activations + AddAttempts + Removals + Disables,
                 "Each native command must have one preceding durable intent and must target only this personal Ticket view.");
+        }
+
+        public void AssertNativeModalEvidence(bool requirePersistenceRead = false)
+        {
+            Require(nativeModal && new Uri(PreferencesUrl).Query == "?itemtype=Ticket&_in_modal=1",
+                "This regression must exercise GLPI's native iframe modal parameter, not the simplified historical fixture URL.");
+            Require(PreferenceReads.Any(read => !read.TopLevel) && PreferenceReads.Any(read => read.TopLevel)
+                && PreferenceReads.All(read => read.Url == PreferencesUrl)
+                && JournalPreferenceUrls.Count > 0 && JournalPreferenceUrls.All(address => address == PreferencesUrl),
+                "The observed iframe GET, durable command journal and direct recovery GET must all preserve the same exact native modal URL.");
+            if (requirePersistenceRead)
+                Require(PreferenceReads.Any(read => !read.TopLevel && read.Adds == 2 && read.Removals == 0),
+                    "Modern preparation must reread the server-rendered modal after both additions and before restoration.");
         }
 
         public string Label(string value) => value switch
@@ -373,7 +407,8 @@ internal static class TemporaryColumnRestorationBrowserChecks
             var body = "<form name='searchformTicket'>" + Hidden("criteria[0][field]", "12") + Hidden("criteria[0][value]", "1") + "</form>" + Card();
             if (!modern) return Html(body + "<span class='fa-wrench pointer' onclick=\"$('#search_config_top').dialog('open');\">Colonnes</span>"
                 + "<div id='dialog' class='ui-dialog' role='dialog' hidden><button class='ui-dialog-titlebar-close'>Fermer</button><div id='search_config_top'><iframe id='Iframesearch_config_top'></iframe></div></div>"
-                + "<script>window.$=()=>({dialog:()=>{document.querySelector('#dialog').hidden=false;document.querySelector('iframe').src='/glpi/front/displaypreference.form.php?itemtype=Ticket';}});document.querySelector('.ui-dialog-titlebar-close').onclick=()=>location.reload();</script>");
+                + "<script>window.$=()=>({dialog:()=>{document.querySelector('#dialog').hidden=false;document.querySelector('iframe').src="
+                + JsonSerializer.Serialize(PreferencesPath) + ";}});document.querySelector('.ui-dialog-titlebar-close').onclick=()=>location.reload();</script>");
             return Html(body + """
                 <script>
                 function bindColumns(){document.querySelector('#column-opener').onclick=()=>{
@@ -385,7 +420,7 @@ internal static class TemporaryColumnRestorationBrowserChecks
                   modal.hidden=false;
                 };}bindColumns();
                 </script>
-                """);
+                """.Replace("/glpi/front/displaypreference.form.php?itemtype=Ticket", WebUtility.HtmlEncode(PreferencesPath), StringComparison.Ordinal));
         }
 
         private void VerifyDurableIntent(string kind, string option = "", string identity = "")
@@ -394,6 +429,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
             Require(record is not null && record.UsersId == "17" && record.PendingCommand is { } command && command.Kind == kind
                 && (kind != "add" || command.OptionValue == option) && (kind != "remove" || command.TargetIdentity == identity),
                 "The exact native command must already be committed to disk before the fixture receives its POST.");
+            Require(record!.PreferencesUrl == PreferencesUrl,
+                "The durable intent must preserve the observed preferences URL exactly, including any native modal parameter.");
+            JournalPreferenceUrls.Add(record.PreferencesUrl);
             var serialized = File.ReadAllText(store.PathFor(Settings));
             Require(!serialized.Contains("private-csrf-token", StringComparison.Ordinal) && !serialized.Contains("Private ticket title", StringComparison.Ordinal)
                 && !serialized.Contains("criteria[", StringComparison.Ordinal), "The rollback journal must not persist CSRF tokens, ticket cells or raw criteria.");
@@ -421,6 +459,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
                 var query = Pairs(uri.Query);
                 Require(route.Request.Method == "GET" && query.GetValueOrDefault("display_type") == "-4" && query.GetValueOrDefault("criteria[0][value]") == "1",
                     "Every native export must retain the original all-pages Ticket scope.");
+                if (nativeModal && modern)
+                    Require(PreferenceReads.Any(read => !read.TopLevel && read.Url == PreferencesUrl && read.Adds == 2 && read.Removals == 0),
+                        "The modern modal must complete a real GET confirming both saved columns before any native export.");
                 Exports++; Events.Add("export"); ExportHeaders = Columns.Select(Label).Prepend("Titre").ToArray();
                 ExportedCsv = "\uFEFF" + string.Join(';', ExportHeaders) + "\r\nPrivate ticket title;" + string.Join(';', Columns.Select(Value)) + "\r\n";
                 await route.FulfillAsync(new() { ContentType = "text/csv; charset=utf-8", Headers = new Dictionary<string, string>
@@ -432,6 +473,10 @@ internal static class TemporaryColumnRestorationBrowserChecks
             if (route.Request.Method != "POST")
             {
                 PreferenceGets++; Events.Add("preferences");
+                PreferenceReads.Add((route.Request.Url, route.Request.Frame.ParentFrame is null, Adds, Removals));
+                if (nativeModal)
+                    Require(route.Request.Method == "GET" && route.Request.Url == PreferencesUrl,
+                        "Every modal verification or recovery read must keep the exact native Ticket URL and _in_modal=1.");
                 if (BlockRecoveryUntilReconnect)
                 {
                     BlockedRecoveryReads++;

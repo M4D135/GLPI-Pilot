@@ -111,7 +111,7 @@ jobs:
           python -m unittest discover -s tests/ReleasePackChecks -p "test_*.py"
           if ($LASTEXITCODE -ne 0) { throw 'Explicit publication guards failed' }
       - name: Colonnes GLPI et attente des exports natifs
-        # Preparation now includes cleanup, plus thirteen durable recovery scenarios.
+        # Preparation includes cleanup and durable recovery, including the native modal URL.
         # Each test and the application's deadlines remain independently bounded.
         timeout-minutes: 17
         run: |
@@ -203,7 +203,7 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
 
       - name: Vérifier le navigateur et les exports sur des pages synthétiques
-        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 69 cas
+        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 72 cas
         # colonnes incluent la restauration et disposent de 900 s. Chaque cas garde 35 s.
         # Cette enveloppe couvre leur somme ; builds, fiches et DOM gardent leurs limites séparées.
         timeout-minutes: 40

@@ -71,6 +71,9 @@ internal static class ColumnPreparationBrowserChecks
     {
         using var storage = new ColumnTestStorageScope();
         var modern = scenario is "modern" or "all" or "not-persisted" or "missing-after-add" or "missing-after-unpersisted" or "already-present" or "already-unpersisted";
+        // GLPI's iframe modal appends this presentation flag to the observed GET.
+        // Keep the short URL in the other cases as a compatibility variant.
+        var preferencesPath = "/glpi/front/displaypreference.form.php?itemtype=Ticket" + (scenario is "legacy" or "modern" ? "&_in_modal=1" : "");
         var alreadyActive = scenario is "renewed" or "missing" or "missing-automatic" or "missing-after-add" or "missing-after-unpersisted" or "missing-scope-close" or "missing-scope-before-close" or "already-present" or "already-unpersisted" or "user-change" or "missing-cancel";
         var persisted = new List<string> { "2", "12" };
         if (scenario is "already-present" or "already-unpersisted") persisted.AddRange(new[] { "8", "64", "65", "900" });
@@ -183,7 +186,8 @@ internal static class ColumnPreparationBrowserChecks
                 : "location.reload();";
             if (!modern) return Html(criteria + card.Replace("class='search-card'", "class='legacy-search'", StringComparison.Ordinal)
                 + "<span class='fa-wrench pointer' onclick=\"$('#search_config_top').dialog('open');\">Colonnes</span><div class='ui-dialog' role='dialog' id='dialog' hidden><button class='ui-dialog-titlebar-close'>Fermer</button><div id='search_config_top'><iframe id='Iframesearch_config_top'></iframe></div></div>"
-                + "<script>window.$=()=>({dialog:()=>{document.querySelector('#dialog').hidden=false;document.querySelector('iframe').src='/glpi/front/displaypreference.form.php?itemtype=Ticket';}});document.querySelector('.ui-dialog-titlebar-close').onclick=()=>{" + legacyClose + "};</script>");
+                + "<script>window.$=()=>({dialog:()=>{document.querySelector('#dialog').hidden=false;document.querySelector('iframe').src="
+                + JsonSerializer.Serialize(preferencesPath) + ";}});document.querySelector('.ui-dialog-titlebar-close').onclick=()=>{" + legacyClose + "};</script>");
             return Html(criteria + card + """
                 <script>
                 function bindColumns(){document.querySelector('#opener').onclick=()=>{
@@ -196,7 +200,7 @@ internal static class ColumnPreparationBrowserChecks
                   modal.hidden=false;
                 };}bindColumns();
                 </script>
-                """);
+                """.Replace("/glpi/front/displaypreference.form.php?itemtype=Ticket", WebUtility.HtmlEncode(preferencesPath), StringComparison.Ordinal));
         }
         await host.RouteAsync("**/*", async route =>
         {
@@ -248,7 +252,13 @@ internal static class ColumnPreparationBrowserChecks
                     if (scenario == "scope-change" && adds == 1)
                         await page.Locator("input[name='criteria[0][value]']").EvaluateAsync("input => input.value='5'");
                 }
-                else reads++;
+                else
+                {
+                    reads++;
+                    if (scenario is "legacy" or "modern")
+                        Require(route.Request.Method == "GET" && route.Request.Url == Origin + preferencesPath,
+                            "The principal native modal cases must retain _in_modal=1 on every preferences GET, including persistence and recovery.");
+                }
                 await route.FulfillAsync(new() { ContentType = modern && route.Request.Method == "POST" ? "application/json" : "text/html; charset=utf-8", Body = modern && route.Request.Method == "POST" ? "{}" : Preferences() });
             }
             else if (uri.AbsolutePath.EndsWith("/ajax/search.php", StringComparison.Ordinal))
