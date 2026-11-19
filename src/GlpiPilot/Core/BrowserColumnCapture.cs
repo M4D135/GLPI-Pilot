@@ -19,7 +19,10 @@ public sealed partial class BrowserService
         {
             CheckColumnFrame(frame, origin, ct);
             var value = await snapshot.GetPropertyAsync(property).WaitAsync(ct);
-            var element = value.AsElement();
+            // A missing control is returned as a JSHandle for JavaScript null.
+            // Playwright's AsElement casts instead of returning null for that
+            // handle, so use its actual interface before taking ownership.
+            var element = value as IElementHandle;
             if (element is null) await value.DisposeAsync();
             return element;
         }
