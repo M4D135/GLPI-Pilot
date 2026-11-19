@@ -62,6 +62,9 @@ else checks.AddRange(referenceChecks);
 var columnChecks = ColumnPreparationChecks.Cases(temporary).ToList();
 if (args.Contains("--column-preparation-only", StringComparer.Ordinal)) checks = columnChecks;
 else checks.AddRange(columnChecks);
+var ticketReferenceChecks = TicketReferenceChecks.Cases().ToList();
+if (args.Contains("--ticket-reference-only", StringComparer.Ordinal)) checks = ticketReferenceChecks;
+else if (!args.Contains("--site-reference-only", StringComparer.Ordinal) && !args.Contains("--column-preparation-only", StringComparer.Ordinal)) checks.AddRange(ticketReferenceChecks);
 int failures = 0;
 try
 {

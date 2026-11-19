@@ -66,13 +66,15 @@ internal static class CollectionRecoveryBrowserChecks
 
     private static async Task CheckTab(IBrowser browser, string scenario)
     {
+        using var storage = new ColumnTestStorageScope();
         var folder = Path.Combine(Path.GetTempPath(), "GLPI-tab-recovery-" + Guid.NewGuid().ToString("N"));
         var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
         await using var service = new BrowserService();
         service.AttachForTesting(context, Target);
         var page = await context.NewPageAsync();
         var priority = false;
-        var render = 0; var preferenceReads = 0; var tabGets = 0; var posts = 0; var exports = 0; var foreignRequests = 0;
+        var render = 0; var preferenceReads = 0; var tabGets = 0; var posts = 0; var removals = 0; var exports = 0; var foreignRequests = 0;
+        var readsAtExport = 0; var rendersAtExport = 0; var framesAtExport = 0; var openersAtExport = 0; var dialogAtExport = true;
         var shouldPrepare = scenario is "renewed" or "already-active" or "already-open" or "compact";
         var phases = new List<AutomaticRunPhase>();
         string Form(string body) => "<form method='post' action='/glpi/front/displaypreference.form.php'>"
@@ -179,13 +181,23 @@ internal static class CollectionRecoveryBrowserChecks
                     if (route.Request.Method == "POST")
                     {
                         var values = Pairs(route.Request.PostData);
-                        Require(values.GetValueOrDefault("itemtype") == "Ticket" && values.GetValueOrDefault("users_id") == "17"
-                            && values.GetValueOrDefault("num") == "3" && values.GetValueOrDefault("add") == "Ajouter" && !priority,
-                            "Only one offered column may be added to the personal Ticket view.");
-                        posts++; priority = true;
+                        Require(values.GetValueOrDefault("itemtype") == "Ticket" && values.GetValueOrDefault("users_id") == "17",
+                            "Every native command must retain the same personal Ticket identity.");
+                        if (values.ContainsKey("purge"))
+                        {
+                            Require(values.GetValueOrDefault("id") == "702" && priority && exports == 1,
+                                "Only the temporary priority row may be restored after its real export.");
+                            removals++; priority = false;
+                        }
+                        else
+                        {
+                            Require(values.GetValueOrDefault("num") == "3" && values.GetValueOrDefault("add") == "Ajouter" && !priority,
+                                "Only one offered column may be added to the personal Ticket view.");
+                            posts++; priority = true;
+                        }
                     }
                     else preferenceReads++;
-                    await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Preferences(!priority) });
+                    await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Preferences(!priority && removals == 0) });
                 }
                 else if (uri.AbsolutePath.EndsWith("/ajax/common.tabs.php", StringComparison.Ordinal))
                 {
@@ -200,6 +212,10 @@ internal static class CollectionRecoveryBrowserChecks
                     var values = Pairs(uri.Query);
                     Require(route.Request.Method == "GET" && values.GetValueOrDefault("display_type") == "-4"
                         && values.GetValueOrDefault("criteria[0][value]") == "1", "The actual all-pages native export must preserve the search.");
+                    readsAtExport = preferenceReads; rendersAtExport = render;
+                    framesAtExport = page.Frames.Count(frame => frame.Url.Contains("/displaypreference.form.php", StringComparison.Ordinal));
+                    openersAtExport = await page.EvaluateAsync<int>("Number(sessionStorage.getItem('columnOpenerClicks')||0)");
+                    dialogAtExport = await page.Locator("#dialog").IsVisibleAsync();
                     exports++; await SendCsv(route, priority);
                 }
                 else await route.AbortAsync();
@@ -224,19 +240,17 @@ internal static class CollectionRecoveryBrowserChecks
             }
             var result = await automatic.RunAsync(settings, null, CancellationToken.None);
             var receipt = result.Data.Provenance.ColumnPreparation;
-            Require(exports == 1 && posts == (shouldPrepare ? 1 : 0) && tabGets == (scenario is "renewed" or "compact" ? 1 : 0)
+            Require(exports == 1 && posts == (shouldPrepare ? 1 : 0) && removals == (shouldPrepare ? 1 : 0)
+                && !priority && !service.HasPendingTemporaryColumns(settings) && tabGets == (scenario is "renewed" or "compact" ? 1 : 0)
                 && foreignRequests == 0 && await page.EvaluateAsync<int>("Number(sessionStorage.getItem('unexpectedTabClicks')||0)") == 0,
                 "Tab recovery must submit each native command once, with no global or foreign action.");
             Require(receipt is not null && receipt.State == (shouldPrepare ? "ready" : "unavailable")
                 && receipt.AddedCount == (shouldPrepare ? 1 : 0), "Preparation must report its actual outcome without blocking a safe native export.");
-            var dialogVisible = await page.Locator("#dialog").IsVisibleAsync();
-            var preferenceFrames = page.Frames.Count(frame => frame.Url.Contains("/displaypreference.form.php", StringComparison.Ordinal));
-            var openerClicks = await page.EvaluateAsync<int>("Number(sessionStorage.getItem('columnOpenerClicks')||0)");
-            Require(preferenceReads == 1 && render >= (scenario == "already-open" ? 3 : 2) && !dialogVisible
-                && preferenceFrames == 0 && openerClicks == (scenario == "already-open" ? 0 : 1),
-                $"The native dialog must close and really reload the search before export. Preference GETs={preferenceReads}, list renders={render}, dialog visible={dialogVisible}, preference frames={preferenceFrames}, opener clicks={openerClicks}.");
+            Require(readsAtExport == 1 && rendersAtExport >= (scenario == "already-open" ? 3 : 2) && !dialogAtExport
+                && framesAtExport == 0 && openersAtExport == (scenario == "already-open" ? 0 : 1),
+                $"The native dialog must close and really reload the search before export. Preference GETs={readsAtExport}, list renders={rendersAtExport}, dialog visible={dialogAtExport}, preference frames={framesAtExport}, opener clicks={openersAtExport}.");
             Require(result.Data.Rows.Count == 1 && result.Data.Headers.Count == (shouldPrepare ? 4 : 3)
-                && File.Exists(result.PrimaryPath) && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(priority).TrimStart('\uFEFF')
+                && File.Exists(result.PrimaryPath) && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(shouldPrepare).TrimStart('\uFEFF')
                 && phases.Contains(AutomaticRunPhase.Ready), "The real native CSV must be preserved and imported before Ready.");
         }
         finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
@@ -244,6 +258,7 @@ internal static class CollectionRecoveryBrowserChecks
 
     private static async Task CheckTable(IBrowser browser, string scenario)
     {
+        using var storage = new ColumnTestStorageScope();
         var folder = Path.Combine(Path.GetTempPath(), "GLPI-table-recovery-" + Guid.NewGuid().ToString("N"));
         var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
         await using var service = new BrowserService();

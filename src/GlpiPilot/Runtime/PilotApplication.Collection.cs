@@ -72,26 +72,48 @@ public sealed partial class PilotApplication
             if (table.Page is null || table.Page.IsClosed || SnapshotStore.SourceKey(table.Page.Url) != SnapshotStore.SourceKey(_inspectedPageUrl))
                 throw new InvalidOperationException("Le tableau a changé de recherche ; inspectez de nouveau l’onglet.");
             var settings = Settings.Copy();
-            var preparation = await Browser.PrepareColumnsAsync(table, settings, Progress(), ct).ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested();
-            table = preparation.Table; settings.RememberTable(table);
-            // Keep the same logical selection during a retry. Updating its
-            // native table reference does not invalidate the UI revision; the
-            // persisted recipe and revision advance only after extraction.
-            _selectedTable = table; _inspectedPageUrl = table.Page!.Url;
-            var data = await Browser.ExtractAsync(table, Flag(a, "followingPages", true), settings, Progress(), ct).ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested();
-            ColumnPreparationPolicy.ApplyReceipt(data, preparation.Receipt);
-            var locations = CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides);
-            await RememberSourceAsync(locations.Data, settings, locations, ct).ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested();
-            Settings.RememberTable(table); CaptureCurrentSource(); SaveSettings();
-            _selectedTable = table; _inspectedPageUrl = table.Page!.Url; _collectionRevision++;
-            SetResult(locations.Data, locations, context: settings);
-            await ArchiveActiveAsync(ct).ConfigureAwait(false); return SessionState();
+            Task<ColumnRestorationResult>? cleanup = null;
+            Task<ColumnRestorationResult> RestoreOnce() => cleanup ??= Browser.CompleteTemporaryColumnCollectionAsync(settings, Progress());
+            try
+            {
+                var preparation = await Browser.PrepareColumnsAsync(table, settings, Progress(), ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                table = preparation.Table; settings.RememberTable(table);
+                // Keep the same logical selection during a retry. Updating its
+                // native table reference does not invalidate the UI revision; the
+                // persisted recipe and revision advance only after extraction.
+                _selectedTable = table; _inspectedPageUrl = table.Page!.Url;
+                var data = await Browser.ExtractAsync(table, Flag(a, "followingPages", true), settings, Progress(), ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                ColumnPreparationPolicy.ApplyReceipt(data, preparation.Receipt);
+                ColumnRestorationReceipt.Apply(data, await RestoreOnce().ConfigureAwait(false));
+                ct.ThrowIfCancellationRequested();
+                var locations = CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides);
+                await RememberSourceAsync(locations.Data, settings, locations, ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                Settings.RememberTable(table); CaptureCurrentSource(); SaveSettings();
+                _selectedTable = table; _inspectedPageUrl = table.Page!.Url; _collectionRevision++;
+                SetResult(locations.Data, locations, context: settings);
+                await ArchiveActiveAsync(ct).ConfigureAwait(false); return SessionState();
+            }
+            finally { await RestoreOnce().ConfigureAwait(false); }
         });
         Register("collect.campaign", async (a, ct) => { if (a.TryGetProperty("revision", out _)) CheckRevision(a); return await RunCampaignAsync(ct).ConfigureAwait(false); });
-        Register("collect.captureDownload", async (_, ct) => { var page = Browser.ActivePage ?? throw new InvalidOperationException("Ouvrez le navigateur GLPI."); await Browser.ShowBrowserAsync(page, ct).ConfigureAwait(false); var path = await Browser.CaptureDownloadAsync(page, Settings.ExportFolder, ct).ConfigureAwait(false); var data = NativeCsvImportService.Read(path, AppPaths.SafeUrl(page.Url), Settings.ExpectedTotal, Settings.MaxRows, false, ct, diagnostics: Log); var settings = Settings.Copy(); var locations = CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides); await RememberSourceAsync(locations.Data, settings, locations, ct).ConfigureAwait(false); SetResult(locations.Data, locations, context: settings); return new { path, session = SessionState() }; });
+        Register("collect.captureDownload", async (_, ct) =>
+        {
+            var page = Browser.ActivePage ?? throw new InvalidOperationException("Ouvrez le navigateur GLPI.");
+            var settings = Settings.Copy();
+            await Browser.ShowBrowserAsync(page, ct).ConfigureAwait(false);
+            var observedSource = AppPaths.SafeUrl(page.Url);
+            var path = await Browser.CaptureDownloadAsync(page, settings.ExportFolder, ct).ConfigureAwait(false);
+            // The native controller may replace the list URL during download.
+            // Manual capture still carries no automatic search/scope certification.
+            var data = NativeCsvImportService.Read(path, observedSource, settings.ExpectedTotal, settings.MaxRows, false, ct, diagnostics: Log);
+            var locations = CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides);
+            await RememberSourceAsync(locations.Data, settings, locations, ct).ConfigureAwait(false);
+            SetResult(locations.Data, locations, context: settings);
+            return new { path, session = SessionState() };
+        });
     }
     private IProgress<ExtractionProgress> Progress() => new InlineProgress<ExtractionProgress>(p => Publish("operation.progress", new { p.Pages, p.Rows, p.Expected, p.Message }));
     private async Task<object> PagesAsync()

@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.11 · Windows x64
+# GLPI Pilot 4.0.12 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.11 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.12 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,14 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.12 : colonnes utiles temporaires et ouverture des tickets
+
+La collecte choisit par défaut **« Colonnes utiles à ma configuration »** : les champs opérationnels des vues et filtres, complétés par les champs explicitement utilisés dans la configuration. Les textes Description et Solution sont demandés lorsque la configuration les utilise. Le choix « Toutes les colonnes proposées par GLPI » reste disponible. L’ancien défaut local est migré une seule fois ; les recherches mémorisées et les choix explicitement importés ou restaurés restent conservés.
+
+Avant toute modification, Pilot sauvegarde la vue personnelle et journalise ses propres ajouts. Il les retire après la collecte, y compris lors d’un échec ou d’une annulation. Une récupération inachevée reprend à la prochaine connexion, par les préférences natives, avant de charger la liste des tickets. Les préférences inconnues et les modifications faites ailleurs ne sont pas effacées. Le reçu indique si la vue a été restaurée ou si une intervention reste en attente. Le repli sans export natif lit les pages sans imposer un affichage intégral à GLPI.
+
+L’ouverture d’une fiche reconnaît aussi la liste des tickets obtenue après une connexion à l’accueil GLPI, lorsque la collecte a vérifié la recherche et son contexte. La source du tableau est conservée avant le téléchargement natif, afin qu’une adresse de contrôleur d’export ne remplace pas celle de la recherche. Voir les [notes 4.0.12](docs/RELEASE-4.0.12.md).
 
 ## 4.0.11 : toutes les colonnes et contrôles natifs revalidés
 

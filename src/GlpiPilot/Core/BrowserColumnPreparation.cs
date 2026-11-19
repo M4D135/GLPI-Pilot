@@ -398,45 +398,60 @@ public sealed partial class BrowserService
         // Observe GLPI's own request. No endpoint, payload, CSRF token or form
         // is synthesized. The modern route returns no application JSON status;
         // its persisted list is checked again after reopening below.
-        var response = await activity.RunAndWaitForResponseAsync(
-            async () =>
-            {
-                var role = activate ? "activate" : "add";
-                for (var attempt = 0; attempt < 3; attempt++)
+        IResponse response;
+        try
+        {
+            response = await activity.RunAndWaitForResponseAsync(
+                async () =>
                 {
-                    await using var capture = await CaptureColumnPreferencesAsync(frame, origin, role, ct);
-                    ValidatePersonalColumnView(fresh, capture.State);
-                    await using var command = await capture.ElementAsync(ct);
-                    var commandReady = command is not null && await ColumnControlReadyAsync(command, ct);
-                    await validateScope();
-                    var verified = await capture.ValidateAsync(ct);
-                    var ready = verified.State;
-                    // Even a hidden or detached captured node must be followed
-                    // by scope validation: a replacement global view is a hard
-                    // refusal, never an optional-control fallback.
-                    ValidatePersonalColumnView(fresh, ready);
-                    if (activate ? ready.ActivateSelector.Length == 0 : ready.AddSelector.Length == 0 || ready.SelectedValue != option!.Value
-                        || !ColumnPreparationPolicy.Available(ready).Any(item => SameColumnOption(option!, item)))
-                        throw new ColumnOptionUnavailableException("La commande « " + ColumnRoleLabel(role) + " » a changé avant sa validation ; aucun ajout n’a été envoyé pour cette option.");
-                    if (!verified.SameElement || !commandReady)
+                    var role = activate ? "activate" : "add";
+                    for (var attempt = 0; attempt < 3; attempt++)
                     {
-                        if (attempt == 2) throw new ColumnOptionUnavailableException("Le contrôle « " + ColumnRoleLabel(role) + " » est encore renouvelé ; aucun ajout n’a été envoyé pour cette option.");
-                        await Task.Delay(120, ct);
-                        continue;
+                        await using var capture = await CaptureColumnPreferencesAsync(frame, origin, role, ct);
+                        ValidatePersonalColumnView(fresh, capture.State);
+                        await using var command = await capture.ElementAsync(ct);
+                        var commandReady = command is not null && await ColumnControlReadyAsync(command, ct);
+                        await validateScope();
+                        if (_temporaryColumns is { } journal) await ValidateTemporaryColumnContextAsync(frame, journal, ct);
+                        var verified = await capture.ValidateAsync(ct);
+                        var ready = verified.State;
+                        // Even a hidden or detached captured node must be followed
+                        // by scope validation: a replacement global view is a hard
+                        // refusal, never an optional-control fallback.
+                        ValidatePersonalColumnView(fresh, ready);
+                        if (activate ? ready.ActivateSelector.Length == 0 : ready.AddSelector.Length == 0 || ready.SelectedValue != option!.Value
+                            || !ColumnPreparationPolicy.Available(ready).Any(item => SameColumnOption(option!, item)))
+                            throw new ColumnOptionUnavailableException("La commande « " + ColumnRoleLabel(role) + " » a changé avant sa validation ; aucun ajout n’a été envoyé pour cette option.");
+                        if (!verified.SameElement || !commandReady)
+                        {
+                            if (attempt == 2) throw new ColumnOptionUnavailableException("Le contrôle « " + ColumnRoleLabel(role) + " » est encore renouvelé ; aucun ajout n’a été envoyé pour cette option.");
+                            await Task.Delay(120, ct);
+                            continue;
+                        }
+                        fresh = ready;
+                        RecordTemporaryColumnIntent(fresh, activate ? "activate" : "add", option);
+                        // The response is observed independently. A timeout after
+                        // dispatch never enters the pre-dispatch renewal loop.
+                        await command!.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct);
+                        ct.ThrowIfCancellationRequested();
+                        return;
                     }
-                    fresh = ready;
-                    // The response is observed independently. A timeout after
-                    // dispatch never enters the pre-dispatch renewal loop.
-                    await command!.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct);
-                    ct.ThrowIfCancellationRequested();
-                    return;
-                }
-            },
-            reply => reply.Request.Method == "POST" && Origin(reply.Url) == origin && reply.Request.Frame == frame
-                && new Uri(reply.Url).AbsolutePath.EndsWith(fresh.Layout == "modern" ? "/ajax/displaypreference.php" : "/front/displaypreference.form.php", StringComparison.Ordinal),
-            ct);
+                },
+                reply => reply.Request.Method == "POST" && Origin(reply.Url) == origin && reply.Request.Frame == frame
+                    && new Uri(reply.Url).AbsolutePath.EndsWith(fresh.Layout == "modern" ? "/ajax/displaypreference.php" : "/front/displaypreference.form.php", StringComparison.Ordinal),
+                ct);
+        }
+        catch
+        {
+            // An explicit native authorization refusal is different from a
+            // lost response. Recovery still rereads the unchanged persisted
+            // view before discarding this refused add; it never sends it again.
+            if (activity.CommandRejected && _temporaryColumns?.PendingCommand is not null) RecordTemporaryColumnResponse();
+            throw;
+        }
         if (response.Status is < 200 or >= 400)
             throw new InvalidOperationException("GLPI n’a pas confirmé la commande personnelle des colonnes (réponse HTTP " + response.Status + ").");
+        RecordTemporaryColumnResponse();
         activity.BeginPhase(activate ? "Confirmation de la vue personnelle" : "Confirmation de la colonne ajoutée");
         while (activity.CanWait)
         {
@@ -448,10 +463,21 @@ public sealed partial class BrowserService
                 + string.Join(',', after.Selected.Select(ColumnIdentity)) + "|" + string.Join(',', after.Options.Select(item => item.Value)));
             if (PersonalColumnScope(after) && after.UsersId == fresh.UsersId && after.ActivateSelector.Length == 0)
             {
-                if (activate) return new(after, false);
+                if (activate)
+                {
+                    ConfirmTemporaryColumnCommand(after);
+                    if (!after.RestorationSupported || after.DisableSelector.Length == 0
+                        && (_temporaryColumns is null || TemporaryColumnPolicy.ActivationCopyForDisable(_temporaryColumns, after) is null))
+                        throw new InvalidOperationException("La vue créée ne présente pas ses commandes natives de retour. Aucun ajout n’est effectué ; la restauration reste enregistrée pour une relecture sûre.");
+                    return new(after, false);
+                }
                 if (after.Selected.Count >= fresh.Selected.Count + 1 && SelectedColumnsPreserved(fresh, after)
                     && (after.SelectedIdsKnown ? after.Selected.Any(item => item.Value == option!.Value)
-                        : !after.Options.Any(item => item.Value == option!.Value))) return new(after, true);
+                        : !after.Options.Any(item => item.Value == option!.Value)))
+                {
+                    ConfirmTemporaryColumnCommand(after);
+                    return new(after, true);
+                }
             }
             await Task.Delay(120, ct);
         }
@@ -546,6 +572,8 @@ public sealed partial class BrowserService
         IProgress<ExtractionProgress>? progress, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        if (NeedsTemporaryColumnRecovery(settings))
+            throw new InvalidOperationException("Une restauration de colonnes est en attente. Reconnecter GLPI permet de la vérifier avant une nouvelle collecte.");
         var mode = settings.ColumnPreparationMode;
         var receipt = new ColumnPreparationReceipt { Mode = mode, ColumnCount = table.Headers.Count };
         void Report(string message) { Log?.Invoke("COLONNES · " + AppPaths.SafeLog(message)); progress?.Report(new(0, 0, null, message)); }
@@ -566,7 +594,7 @@ public sealed partial class BrowserService
         var window = await InspectColumnsAsync(frame, table.FrameOrigin, table.Selector, ct);
         if (!window.Supported)
         {
-            Unavailable(window.Reason); receipt.MissingRoles = ColumnPreparationPolicy.MissingRoles(table.Headers, settings.Dashboard);
+            Unavailable(window.Reason); receipt.MissingRoles = ColumnPreparationPolicy.MissingRoles(table.Headers, settings.Dashboard, settings.Queries);
             Report(receipt.Message); ct.ThrowIfCancellationRequested(); return new(table, receipt);
         }
         var initialScope = await CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
@@ -592,18 +620,35 @@ public sealed partial class BrowserService
             var added = new List<NativeColumnOption>();
             var satisfied = new List<NativeColumnOption>();
             if (opened.Frame is null || !PersonalColumnScope(preferences)) Unavailable(preferences.Reason);
+            else if (!preferences.RestorationSupported)
+            {
+                receipt.State = "restoration-unsupported";
+                receipt.Message = "Préparation des colonnes indisponible : " + preferences.RestorationReason
+                    + " Aucune colonne n’est ajoutée ; la collecte conserve la vue actuelle.";
+                receipt.Warnings.Add(receipt.Message);
+            }
             else
             {
                 try
                 {
+                    try { await BeginTemporaryColumnsAsync(original, opened.Frame, preferences, initialScope, settings, ct); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                    {
+                        receipt.State = "backup-failed";
+                        receipt.Message = "La sauvegarde initiale des colonnes n’a pas pu être enregistrée. Aucun ajout n’est envoyé ; la collecte conserve la vue actuelle.";
+                        receipt.Warnings.Add(receipt.Message);
+                        throw new ColumnBackupUnavailableException(receipt.Message);
+                    }
+                    Report("État initial des colonnes sauvegardé ; la vue sera rétablie après la collecte.");
                     if (preferences.ActivateSelector.Length > 0)
                     {
                         await CheckPreparationScopeAsync();
-                        Report("Activation de la vue personnelle GLPI ; les colonnes et leur ordre sont conservés.");
+                        Report("Activation temporaire de la vue personnelle GLPI ; le retour à l’état initial est journalisé.");
                         preferences = (await SubmitColumnControlAsync(opened.Frame, table.FrameOrigin, preferences, null, activity, CheckPreparationScopeAsync, ct)).Preferences;
+                        receipt.TemporaryView = true;
                     }
                     var initiallyOffered = ColumnPreparationPolicy.Available(preferences).Select(option => option.Value).ToHashSet(StringComparer.Ordinal);
-                    while (ColumnPreparationPolicy.Next(mode, original.Headers, preferences, settings.Dashboard, satisfied) is { } option)
+                    while (ColumnPreparationPolicy.Next(mode, original.Headers, preferences, settings.Dashboard, satisfied, settings.Queries) is { } option)
                     {
                         ct.ThrowIfCancellationRequested();
                         if (!initiallyOffered.Contains(option.Value))
@@ -612,11 +657,12 @@ public sealed partial class BrowserService
                         await CheckPreparationScopeAsync();
                         var command = await SubmitColumnControlAsync(opened.Frame, table.FrameOrigin, preferences, option, activity, CheckPreparationScopeAsync, ct);
                         preferences = command.Preferences;
-                        if (command.Added) added.Add(option);
+                        if (command.Added) { added.Add(option); receipt.TemporaryView = true; }
                         satisfied.Add(option);
                     }
                     receipt.State = "ready";
                 }
+                catch (ColumnBackupUnavailableException) { /* Explicit zero-mutation fallback, distinct from unsupported native controls. */ }
                 catch (ColumnOptionUnavailableException error)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -666,11 +712,11 @@ public sealed partial class BrowserService
                 throw new InvalidOperationException("Les critères ou le contexte de recherche ont changé pendant la préparation des colonnes. La collecte s’arrête pour ne pas lire un autre périmètre.");
             var after = await ReadVerificationSampleAsync(table, ct);
             receipt.AddedCount = added.Count; receipt.ColumnCount = after.Headers.Count;
-            receipt.MissingRoles = ColumnPreparationPolicy.MissingRoles(after.Headers, settings.Dashboard);
+            receipt.MissingRoles = ColumnPreparationPolicy.MissingRoles(after.Headers, settings.Dashboard, settings.Queries);
             receipt.SourceChanged = ColumnPreparationPolicy.SourceChanged(before, after, settings.Dashboard);
             if (receipt.SourceChanged)
                 receipt.Warnings.Add("La liste des tickets a évolué pendant la préparation des colonnes, avec les mêmes critères observables. L’export utilise un nouvel échantillon ; la couverture de cette exécution reste à vérifier.");
-            if (receipt.State == "ready") receipt.Message = $"{added.Count:N0} colonnes ajoutées à la vue personnelle · {after.Headers.Count:N0} colonnes relues dans GLPI."
+            if (receipt.State == "ready") receipt.Message = $"{added.Count:N0} colonnes temporaires ajoutées · {after.Headers.Count:N0} colonnes relues dans GLPI."
                 + (mode == "all" ? " Toutes les options disponibles ont été traitées." : " Préparation de supervision terminée.");
             else if (added.Count > 0)
             {

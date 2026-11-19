@@ -25,7 +25,7 @@ internal static class ColumnPreparationRaceBrowserChecks
         yield return ("Colonnes GLPI : activité native · annulation pendant un ajout en cours, aucun renvoi", () => Check(browser, "cancel-post"));
         yield return ("Colonnes GLPI : activité native · requêtes de fond étrangères à la phase ignorées", () => Check(browser, "unrelated-polling"));
         yield return ("Colonnes GLPI : repère de tableau cloné · copie masquée conservée après renouvellement Ajax", () => Check(browser, "table-hidden-clone"));
-        yield return ("Colonnes GLPI : repère de tableau cloné · deux collectes, un ajout personnel et deux exports", () => Check(browser, "table-hidden-clone-repeated"));
+        yield return ("Colonnes GLPI : repère de tableau cloné · deux collectes, deux ajouts temporaires restaurés et deux exports", () => Check(browser, "table-hidden-clone-repeated"));
     }
 
     private static void Require(bool condition, string message)
@@ -45,6 +45,7 @@ internal static class ColumnPreparationRaceBrowserChecks
 
     private static async Task Check(IBrowser browser, string scenario)
     {
+        using var storage = new ColumnTestStorageScope();
         var folder = Path.Combine(Path.GetTempPath(), "GLPI-column-races-" + Guid.NewGuid().ToString("N"));
         var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
         await using var service = new BrowserService();
@@ -55,7 +56,7 @@ internal static class ColumnPreparationRaceBrowserChecks
         var releasePost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var postFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var priority = false;
-        var render = 0; var preferenceGets = 0; var tabGets = 0; var posts = 0; var exports = 0; var foreignRequests = 0; var unrelatedRequests = 0;
+        var render = 0; var preferenceGets = 0; var preferenceGetsAtExport = 0; var tabGets = 0; var posts = 0; var removals = 0; var exports = 0; var foreignRequests = 0; var unrelatedRequests = 0;
         var phases = new List<AutomaticRunPhase>();
         var diagnostics = new List<string>();
         service.Log += diagnostics.Add;
@@ -74,7 +75,7 @@ internal static class ColumnPreparationRaceBrowserChecks
                 // The native preferences load occurs after the host verified
                 // its initial table. An Ajax renderer retains the old result
                 // markup while the active table keeps its existing identity.
-                if(!parent.document.querySelector('[data-retained-column-results]')){
+                if(window!==parent&&!parent.document.querySelector('[data-retained-column-results]')){
                   const table=parent.document.querySelector('.tab_cadre_fixehov'), owner=table.closest('form');
                   const stale=owner.cloneNode(true);stale.hidden=true;stale.dataset.retainedColumnResults='true';owner.before(stale);
                   parent.sessionStorage.setItem('retainedTableClones',String(Number(parent.sessionStorage.getItem('retainedTableClones')||0)+1));
@@ -84,7 +85,7 @@ internal static class ColumnPreparationRaceBrowserChecks
                 """ : "";
             if (scenario == "unrelated-polling")
                 return Html("<div id='tabsbody' aria-busy='true'>Chargement de la vue personnelle…</div>");
-            if (scenario != "body-loading" || priority)
+            if (scenario != "body-loading" || priority || removals > 0)
                 return Html("<div id='tabsbody' data-priority='" + (priority ? "true" : "false") + "'>" + PersonalBody() + "</div>" + retainTableClone);
             // Let the host observe the real loading state once, then let the
             // fixture's ordinary native Ajax handler finish the personal view.
@@ -204,8 +205,17 @@ internal static class ColumnPreparationRaceBrowserChecks
                     if (route.Request.Method == "POST")
                     {
                         var values = Pairs(route.Request.PostData);
-                        Require(values.GetValueOrDefault("itemtype") == "Ticket" && values.GetValueOrDefault("users_id") == "17"
-                            && values.GetValueOrDefault("num") == "3" && values.GetValueOrDefault("add") == "Ajouter" && !priority,
+                        Require(values.GetValueOrDefault("itemtype") == "Ticket" && values.GetValueOrDefault("users_id") == "17",
+                            "Every native command must retain the same personal Ticket identity.");
+                        if (values.ContainsKey("purge"))
+                        {
+                            Require(values.GetValueOrDefault("id") == "702" && priority,
+                                "Restoration must remove only the known temporary priority row.");
+                            removals++; priority = false;
+                            await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Preferences() });
+                            return;
+                        }
+                        Require(values.GetValueOrDefault("num") == "3" && values.GetValueOrDefault("add") == "Ajouter" && !priority,
                             "Only the offered native personal addition may be submitted, once.");
                         posts++; postStarted.TrySetResult();
                         try
@@ -230,7 +240,7 @@ internal static class ColumnPreparationRaceBrowserChecks
                         // Outlast both the native click's 7-second action
                         // budget and the 5-second list inactivity setting.
                         // The host must bind and observe the request itself.
-                        if (scenario == "slow-get") await Task.Delay(12200);
+                        if (scenario == "slow-get" && preferenceGets == 1) await Task.Delay(12200);
                         await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Preferences() });
                     }
                 }
@@ -255,7 +265,7 @@ internal static class ColumnPreparationRaceBrowserChecks
                     var values = Pairs(uri.Query);
                     Require(route.Request.Method == "GET" && values.GetValueOrDefault("display_type") == "-4"
                         && values.GetValueOrDefault("criteria[0][value]") == "1", "The all-pages export must keep the same search scope.");
-                    exports++;
+                    preferenceGetsAtExport = preferenceGets; exports++;
                     await route.FulfillAsync(new() { ContentType = "text/csv; charset=utf-8",
                         Headers = new Dictionary<string, string> { ["Content-Disposition"] = "attachment; filename=\"glpi.csv\"" }, Body = Csv(priority) });
                 }
@@ -320,8 +330,9 @@ internal static class ColumnPreparationRaceBrowserChecks
                 return;
             }
             var result = await run;
-            Require(posts == 1 && preferenceGets == 1 && tabGets == (scenario == "body-loading" ? 1 : 0) && exports == 1 && foreignRequests == 0,
-                "Recovery or slow activity must finish each real request once, with no extra personal mutation or export.");
+            Require(posts == 1 && preferenceGetsAtExport == 1 && tabGets == (scenario == "body-loading" ? 1 : 0)
+                && exports == 1 && removals == 1 && !priority && !service.HasPendingTemporaryColumns(settings) && foreignRequests == 0,
+                "Recovery or slow activity must prepare and export once, then remove exactly its temporary row and complete the journal.");
             Require(result.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 1, ColumnCount: 4, SourceChanged: false }
                 && result.Data.Rows.Count == 1 && result.Data.Headers.Count == 4 && phases.Contains(AutomaticRunPhase.Ready),
                 "The prepared columns must be confirmed and the actual native CSV imported before publishing Ready.");
@@ -349,11 +360,13 @@ internal static class ColumnPreparationRaceBrowserChecks
             {
                 phases.Clear();
                 await page.EvaluateAsync("sessionStorage.removeItem('retainedTableRevalidated')");
+                var previousGets = preferenceGets;
                 var repeated = await automatic.RunAsync(settings, null, cancellation.Token);
-                Require(posts == 1 && preferenceGets == 2 && exports == 2 && foreignRequests == 0
-                    && repeated.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 0, ColumnCount: 4, SourceChanged: false }
+                Require(posts == 2 && removals == 2 && preferenceGetsAtExport == previousGets + 1 && exports == 2
+                    && !priority && !service.HasPendingTemporaryColumns(settings) && foreignRequests == 0
+                    && repeated.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 1, ColumnCount: 4, SourceChanged: false }
                     && repeated.Data.Rows.Count == 1 && phases.Contains(AutomaticRunPhase.Ready),
-                    "A second collection in the same browser context must reuse persisted personal columns, without another addition and with exactly one new native export.");
+                    "A second collection must prepare its temporary column again, export once, then restore it without replaying the completed cleanup.");
                 Require(File.Exists(result.PrimaryPath) && File.Exists(repeated.PrimaryPath)
                     && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(true).TrimStart('\uFEFF')
                     && await File.ReadAllTextAsync(repeated.PrimaryPath) == Csv(true).TrimStart('\uFEFF')

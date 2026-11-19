@@ -20,7 +20,7 @@ public static class TicketReferenceResolver
             throw Error("La source de ce tableau est inconnue. Recharge la recherche GLPI avant d’ouvrir une fiche ticket.");
         var source = ReadHttpUrl(data.SourceUrl, "La source du tableau");
         var portal = ReadHttpUrl(settings.PortalUrl, "L’adresse GLPI configurée");
-        if (!SameOrigin(source, portal) || !source.AbsolutePath.Equals(portal.AbsolutePath, StringComparison.Ordinal))
+        if (!MatchesConfiguredSource(data, source, portal))
             throw Error("Ce tableau ne provient pas de la recherche GLPI configurée. Recharge la source avant d’ouvrir une fiche ticket.");
         if (data.Headers is null || data.Headers.Count == 0 || row.Count != data.Headers.Count)
             throw Error("La ligne sélectionnée ne correspond pas aux colonnes du tableau. Relance l’extraction.");
@@ -46,6 +46,26 @@ public static class TicketReferenceResolver
         }
         string validated = ValidateTemplate(template, source.AbsoluteUri);
         return new(id, validated.Replace("{id}", id, StringComparison.Ordinal));
+    }
+
+    private static bool MatchesConfiguredSource(ExtractionResult data, Uri source, Uri portal)
+    {
+        if (!SameOrigin(source, portal)) return false;
+        if (source.AbsolutePath.Equals(portal.AbsolutePath, StringComparison.Ordinal)) return true;
+        // Navigation may resolve a configured GLPI home page to its native
+        // ticket list. Accept that observed list only for the same verified
+        // browser request and installation. Initial scope evidence can survive
+        // a report redirect that prevents the final check; this does not certify
+        // completeness. Never infer a list from an export, preferences page,
+        // imported file or another deployment on this host.
+        if (data.Provenance is not { SourceKind: "browser", SearchVerified: true } provenance
+            || !(provenance.ScopeVerified || provenance.InitialScopeVerified)
+            || string.IsNullOrWhiteSpace(provenance.RequestedUrl)
+            || !TargetUrlPolicy.IsPortalRoot(portal.AbsoluteUri)
+            || !TargetUrlPolicy.IsTicketList(source.AbsoluteUri, portal.AbsoluteUri)) return false;
+        var requested = ReadHttpUrl(provenance.RequestedUrl, "La recherche enregistrée avec le tableau");
+        return string.Equals(TargetUrlPolicy.PersistedTarget(requested.AbsoluteUri),
+            TargetUrlPolicy.PersistedTarget(portal.AbsoluteUri), StringComparison.Ordinal);
     }
 
     internal static string NormalizeId(string? value)

@@ -154,6 +154,13 @@ public sealed partial class BrowserService : IAsyncDisposable
         SetActivePage(page);
         if (BackgroundMode) await SetPageWindowAsync(page, false, cancellationToken);
         else await ShowBrowserAsync(page, cancellationToken);
+        if (NeedsTemporaryColumnRecovery(settings))
+        {
+            var recovery = await RecoverTemporaryColumnsAsync(page, settings, null, cancellationToken);
+            if (recovery.Pending)
+                throw new InvalidOperationException(recovery.Message);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
         await NavigateTargetAsync(page, uri.AbsoluteUri, cancellationToken);
     }
 

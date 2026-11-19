@@ -33,6 +33,9 @@ public sealed class NativeColumnPreferences
     [JsonPropertyName("personalTabValue")] public string PersonalTabValue { get; set; } = "";
     [JsonPropertyName("formSelector")] public string FormSelector { get; set; } = "";
     [JsonPropertyName("activateSelector")] public string ActivateSelector { get; set; } = "";
+    [JsonPropertyName("disableSelector")] public string DisableSelector { get; set; } = "";
+    [JsonPropertyName("restorationSupported")] public bool RestorationSupported { get; set; }
+    [JsonPropertyName("restorationReason")] public string RestorationReason { get; set; } = "";
     [JsonPropertyName("selectSelector")] public string SelectSelector { get; set; } = "";
     [JsonPropertyName("selectHidden")] public bool SelectHidden { get; set; }
     [JsonPropertyName("selectedValue")] public string SelectedValue { get; set; } = "";
@@ -56,6 +59,10 @@ public sealed class NativeSelectedColumn
     [JsonPropertyName("label")] public string Label { get; set; } = "";
     [JsonPropertyName("preferenceId")] public string PreferenceId { get; set; } = "";
     [JsonPropertyName("fixed")] public bool Fixed { get; set; }
+    [JsonPropertyName("removeSelector")] public string RemoveSelector { get; set; } = "";
 }
 
 public sealed record ColumnPreparationResult(TableChoice Table, ColumnPreparationReceipt Receipt);
+
+/// <summary>Public recovery status; deliberately excludes user IDs, addresses and form data.</summary>
+public sealed record ColumnRestorationResult(string State, string Message, bool Pending = false, int RestoredCount = 0);

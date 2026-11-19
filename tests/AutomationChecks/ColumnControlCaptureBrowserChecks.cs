@@ -25,7 +25,7 @@ internal static class ColumnControlCaptureBrowserChecks
         yield return ("Colonnes GLPI : capture native · doublons visibles dans des racines shadow étrangères", () => Check(browser, "shadow-decoys"));
         yield return ("Colonnes GLPI : capture native · deux ouvertures actives après capture, aucun clic", () => Check(browser, "visible-ambiguity"));
         yield return ("Colonnes GLPI : capture native · remplacement global avant ajout, aucun POST", () => Check(browser, "global-replacement"));
-        yield return ("Colonnes GLPI : capture native · clones répétés, deux collectes et un seul ajout", () => Check(browser, "repeat-hidden"));
+        yield return ("Colonnes GLPI : capture native · clones répétés, deux collectes et deux ajouts temporaires restaurés", () => Check(browser, "repeat-hidden"));
     }
 
     private static void Require(bool condition, string message)
@@ -127,13 +127,14 @@ internal static class ColumnControlCaptureBrowserChecks
 
     private static async Task Check(IBrowser browser, string scenario)
     {
+        using var storage = new ColumnTestStorageScope();
         var folder = Path.Combine(Path.GetTempPath(), "GLPI-column-capture-" + Guid.NewGuid().ToString("N"));
         var context = await browser.NewContextAsync(new() { AcceptDownloads = true });
         await using var service = new BrowserService();
         service.AttachForTesting(context, Target);
         var page = await context.NewPageAsync();
         var priority = false;
-        var render = 0; var preferenceGets = 0; var tabGets = 0; var posts = 0; var invalidPosts = 0; var exports = 0; var foreignRequests = 0;
+        var render = 0; var preferenceGets = 0; var preferenceGetsAtExport = 0; var tabGets = 0; var posts = 0; var removals = 0; var invalidPosts = 0; var exports = 0; var foreignRequests = 0;
         var phases = new List<AutomaticRunPhase>();
         var select2 = scenario is "hidden-select" or "shadow-decoys" or "repeat-hidden";
         var tab = scenario is "hidden-personal-tab" or "shadow-decoys";
@@ -147,7 +148,7 @@ internal static class ColumnControlCaptureBrowserChecks
                 "<tr><td>" + label + "</td><td>" + Form(Hidden("id", (700 + index).ToString()) + "<button name='purge' type='submit'>Supprimer</button>")
                 + "</td><td></td><td></td></tr>")) + "</table>";
 
-        string Preferences() => Html((tab && !priority
+        string Preferences() => Html((tab && !priority && removals == 0
             ? "<div id='tabspanel'><a id='native-personal-tab' href='" + PersonalTab + "'>Vue personnelle</a></div>"
                 + "<div id='tabsbody'>" + Hidden("itemtype", "Ticket") + Hidden("users_id", "0") + "Vue globale</div>"
             : "<div id='tabsbody'>" + PersonalBody() + "</div>") + "<script>const personalTab=" + JsonSerializer.Serialize(PersonalTab) + ";" + """
@@ -212,11 +213,20 @@ internal static class ColumnControlCaptureBrowserChecks
                 {
                     if (route.Request.Method == "POST")
                     {
-                        posts++;
                         var values = Pairs(route.Request.PostData);
                         if (values.GetValueOrDefault("itemtype") != "Ticket" || values.GetValueOrDefault("users_id") != "17"
-                            || values.GetValueOrDefault("num") != "3" || values.GetValueOrDefault("add") != "Ajouter" || priority) invalidPosts++;
-                        else priority = true;
+                            || values.ContainsKey("disable")) invalidPosts++;
+                        else if (values.ContainsKey("purge"))
+                        {
+                            if (values.GetValueOrDefault("id") != "702" || !priority) invalidPosts++;
+                            else { removals++; priority = false; }
+                        }
+                        else
+                        {
+                            posts++;
+                            if (values.GetValueOrDefault("num") != "3" || values.GetValueOrDefault("add") != "Ajouter" || priority) invalidPosts++;
+                            else priority = true;
+                        }
                     }
                     else preferenceGets++;
                     await route.FulfillAsync(new() { ContentType = "text/html; charset=utf-8", Body = Preferences() });
@@ -234,7 +244,7 @@ internal static class ColumnControlCaptureBrowserChecks
                     var values = Pairs(uri.Query);
                     Require(route.Request.Method == "GET" && values.GetValueOrDefault("display_type") == "-4"
                         && values.GetValueOrDefault("criteria[0][value]") == "1", "The native all-pages export must preserve the search.");
-                    exports++;
+                    preferenceGetsAtExport = preferenceGets; exports++;
                     await route.FulfillAsync(new() { ContentType = "text/csv; charset=utf-8",
                         Headers = new Dictionary<string, string> { ["Content-Disposition"] = "attachment; filename=\"glpi.csv\"" }, Body = Csv(priority) });
                 }
@@ -275,8 +285,9 @@ internal static class ColumnControlCaptureBrowserChecks
                 return;
             }
             var result = await automatic.RunAsync(settings, null, CancellationToken.None);
-            Require(posts == 1 && invalidPosts == 0 && preferenceGets == 1 && tabGets == (tab ? 1 : 0) && exports == 1 && foreignRequests == 0,
-                "Every captured native action must finish once, without a duplicate personal mutation or foreign request.");
+            Require(posts == 1 && removals == 1 && invalidPosts == 0 && preferenceGetsAtExport == 1 && tabGets == (tab ? 1 : 0)
+                && exports == 1 && !priority && !service.HasPendingTemporaryColumns(settings) && foreignRequests == 0,
+                "Every captured preparation must finish once, followed by its verified restoration, without a duplicate mutation or foreign request.");
             Require(result.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 1, ColumnCount: 4, SourceChanged: false }
                 && result.Data.Rows.Count == 1 && phases.Contains(AutomaticRunPhase.Ready)
                 && File.Exists(result.PrimaryPath) && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(true).TrimStart('\uFEFF'),
@@ -301,20 +312,22 @@ internal static class ColumnControlCaptureBrowserChecks
             if (scenario == "repeat-hidden")
             {
                 phases.Clear();
+                var previousGets = preferenceGets;
                 var repeated = await automatic.RunAsync(settings, null, CancellationToken.None);
-                Require(posts == 1 && invalidPosts == 0 && preferenceGets == 2 && exports == 2 && foreignRequests == 0
-                    && repeated.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 0, ColumnCount: 4, SourceChanged: false }
+                Require(posts == 2 && removals == 2 && invalidPosts == 0 && preferenceGetsAtExport == previousGets + 1 && exports == 2
+                    && !priority && !service.HasPendingTemporaryColumns(settings) && foreignRequests == 0
+                    && repeated.Data.Provenance.ColumnPreparation is { State: "ready", AddedCount: 1, ColumnCount: 4, SourceChanged: false }
                     && repeated.Data.Rows.Count == 1 && phases.Contains(AutomaticRunPhase.Ready),
-                    "The second collection must keep persisted personal columns and perform one new export without a repeated POST.");
+                    "Each collection must add its temporary column once, export once, then restore the original view without replaying an earlier cleanup.");
                 Require(await Counter("captureOpenClicks") == 2 && await Counter("captureCloseClicks") == 2
-                    && await Counter("captureNativeSelections") == 1 && await Counter("captureDecoyActions") == 0
+                    && await Counter("captureNativeSelections") == 2 && await Counter("captureDecoyActions") == 0
                     && File.Exists(result.PrimaryPath) && File.Exists(repeated.PrimaryPath)
                     && await File.ReadAllTextAsync(result.PrimaryPath) == Csv(true).TrimStart('\uFEFF')
                     && await File.ReadAllTextAsync(repeated.PrimaryPath) == Csv(true).TrimStart('\uFEFF'),
-                    "Both native CSV receipts must remain intact and no stale control or persisted option may be invoked twice.");
+                    "Both native CSV receipts must remain intact and each preparation must use only its fresh, captured controls.");
                 foreach (var role in HiddenRoles)
-                    Require(await Counter("captureRace_" + role) == (WindowRoles.Contains(role) ? 2 : 1),
-                        "The repeated collection must independently exercise its " + role + " capture without repeating a personal addition.");
+                    Require(await Counter("captureRace_" + role) == 2,
+                        "The repeated collection must independently exercise its " + role + " capture after the previous temporary addition was restored.");
             }
         }
         finally

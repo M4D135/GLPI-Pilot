@@ -31,6 +31,7 @@ public sealed partial class BrowserService
         private readonly IFrame _tableFrame;
         private readonly string _origin;
         private readonly string _listPath;
+        private readonly bool _directPreferences;
         private readonly TimeSpan _inactivity;
         private readonly Action<string>? _report;
         private readonly object _gate = new();
@@ -44,15 +45,19 @@ public sealed partial class BrowserService
         private string _signature = "";
         private string _phase = "lecture de la fenêtre des colonnes";
         private InvalidOperationException? _failure;
+        private bool _commandRejected;
         private bool _disposed;
 
-        public ColumnPreparationActivity(IPage page, IFrame tableFrame, string origin, int inactivitySeconds, Action<string>? report)
+        public ColumnPreparationActivity(IPage page, IFrame tableFrame, string origin, int inactivitySeconds, Action<string>? report,
+            bool directPreferences = false)
         {
             if (tableFrame.Page != page || !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
                 || uri.Scheme is not ("https" or "http") || uri.UserInfo.Length != 0)
                 throw new ArgumentException("Le contexte de préparation des colonnes n’est pas valide.");
             _page = page; _tableFrame = tableFrame; _origin = uri.GetLeftPart(UriPartial.Authority);
             _listPath = new Uri(tableFrame.Url).AbsolutePath;
+            _directPreferences = directPreferences;
+            if (directPreferences) _preferencesFrame = tableFrame;
             _inactivity = TimeSpan.FromSeconds(Math.Clamp(inactivitySeconds, 5, 600));
             _report = report;
             page.Request += OnRequest;
@@ -63,6 +68,7 @@ public sealed partial class BrowserService
 
         public string Phase { get { lock (_gate) return _phase; } }
         public bool HasPendingRequest { get { lock (_gate) return _requests.Values.Any(request => request.Pending && Owned(request)); } }
+        public bool CommandRejected { get { lock (_gate) return _commandRejected; } }
 
         public void BeginPhase(string phase, bool includeTableRequests = false)
         {
@@ -77,7 +83,7 @@ public sealed partial class BrowserService
 
         public void BindPreferencesFrame(IFrame frame)
         {
-            if (frame.Page != _page || frame.ParentFrame != _tableFrame || frame.IsDetached
+            if (frame.Page != _page || (frame.ParentFrame != _tableFrame && !(_directPreferences && frame == _tableFrame)) || frame.IsDetached
                 || frame.Url != "about:blank" && !LocalAddress(frame.Url, out _))
                 throw new InvalidOperationException("Le cadre personnel des colonnes n’appartient plus au contexte GLPI vérifié.");
             lock (_gate)
@@ -165,7 +171,7 @@ public sealed partial class BrowserService
             catch (PlaywrightException) { return false; }
             if (frame.Page != _page || frame != _tableFrame && frame.ParentFrame != _tableFrame) return false;
             var path = address.AbsolutePath;
-            if (frame == _tableFrame)
+            if (frame == _tableFrame && !_directPreferences)
                 return _includeTableRequests && (request.IsNavigationRequest && path == _listPath
                     || path.EndsWith("/ajax/search.php", StringComparison.Ordinal));
             // A direct child is accepted only for native preferences. Requests
@@ -215,6 +221,7 @@ public sealed partial class BrowserService
                         ? $"GLPI a refusé la préparation des colonnes (HTTP {response.Status}, {_phase}). Vérifier la connexion et les droits de la vue personnelle."
                         : $"GLPI a renvoyé une erreur pendant la préparation des colonnes (HTTP {response.Status}, {_phase}). Aucun ajout n’est renvoyé automatiquement.";
                 if (!Owned(request)) return;
+                if (request.Command && response.Status is 401 or 403) _commandRejected = true;
                 _progressAt = Stopwatch.GetTimestamp();
                 if (request.Failure is not null) Fail(request.Failure);
                 foreach (var waiter in _waiters)

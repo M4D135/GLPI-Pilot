@@ -21,7 +21,7 @@ public static partial class ConfigurationReview
         new(ConfigurationParts.Theme, "Thème clair / sombre", current.Theme, incoming.Theme)
     };
     private static string Address(AppSettings value) => AppPaths.SafeUrl(value.PortalUrl);
-    private static string Extraction(AppSettings value) => $"{value.AutoMode} · colonnes : {value.ColumnPreparationMode switch { "all" => "toutes", "current" => "vue actuelle", _ => "supervision" }} · {value.MaxPages} pages · {value.MaxRows:N0} lignes max · {value.TimeoutSeconds} s SSO";
+    private static string Extraction(AppSettings value) => $"{value.AutoMode} · colonnes : {value.ColumnPreparationMode switch { "all" => "toutes les colonnes GLPI", "current" => "vue actuelle", _ => "utiles à ma configuration" }} · {value.MaxPages} pages · {value.MaxRows:N0} lignes max · {value.TimeoutSeconds} s SSO";
     private static string Rules(AppSettings value) => $"{value.Dashboard.ColumnMappings.Count} colonnes · {value.Dashboard.DateCulture} · seuils {value.Dashboard.StaleDays}/{value.Dashboard.OldDays} j";
     private static string Boards(AppSettings value) => $"{value.Dashboard.Layout.Boards.Count} globaux / {value.Dashboard.PersonalLayout.Boards.Count} personnels · {value.Dashboard.Business.WeatherRules.Count} règles de pilotage";
     private static bool BusinessConfigured(BusinessDashboardSettings value) => value.WeatherRules.Count > 0 || value.BoardOverrides.Count > 0

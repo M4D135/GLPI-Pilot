@@ -37,7 +37,7 @@ export async function renderDataWorkspace(ctx) {
     { key: 'portalUrl', label: simulation ? 'Adresse de la source simulée' : 'Adresse de la recherche GLPI', required: true, help: simulation ? demo ? 'La collecte utilise le scénario fictif, sans connexion à un portail réel.' : 'La collecte réutilise les lignes du fichier chargé, sans connexion à un portail réel.' : 'Adresse complète de la recherche GLPI, filtres compris.' },
     { key: 'browserChannel', label: 'Navigateur', type: 'select', options: browserOptions(state) },
     { key: 'autoMode', label: 'Collecte', type: 'select', options: [{ value: 'native', label: 'Export natif GLPI' }, { value: 'pagination', label: 'Tableau et pagination' }] },
-    { key: 'columnPreparationMode', label: 'Colonnes avant la collecte', type: 'select', value: 'all', options: [{ value: 'all', label: 'Toutes les colonnes proposées par GLPI' }, { value: 'supervision', label: 'Colonnes de supervision' }, { value: 'current', label: 'Vue actuelle' }], help: simulation ? 'La simulation conserve les colonnes du scénario.' : 'Les colonnes déjà présentes sont conservées. Seuls les champs manquants sont ajoutés dans la vue personnelle, sans changer les filtres des tickets. Si cette commande n’est pas disponible, la collecte conserve la vue actuelle et le signale.' }
+    { key: 'columnPreparationMode', label: 'Colonnes avant la collecte', type: 'select', value: 'supervision', options: [{ value: 'supervision', label: 'Colonnes utiles à ma configuration' }, { value: 'current', label: 'Vue actuelle' }, { value: 'all', label: 'Toutes les colonnes proposées par GLPI' }], help: simulation ? 'La simulation conserve les colonnes du scénario.' : 'Par défaut, les champs opérationnels reconnus par GLPI Pilot sont ajoutés selon vos correspondances. Description et Solution sont demandées si votre configuration les utilise. Colonnes présentes et filtres conservés. Si la commande est indisponible, la collecte garde la vue actuelle et le signale.' }
   ], { ...state.settings, portalUrl: simulation ? state.settings.portalUrl || 'https://simulation.glpi.local/front/ticket.php' : state.settings.portalUrl });
   const savedSettings = result => { revision = result.revision; };
   const saveConnection = async () => { const result = await call('settings.save', { revision, settings: { ...state.settings, ...connection.read() } }); savedSettings(result); connection.markSaved(); };
@@ -75,12 +75,28 @@ export async function renderDataWorkspace(ctx) {
   grid.append(live, alternatives);
   root.append(current);
   const columnReceipt = state.session.provenance?.columnPreparation;
-  if (columnReceipt) root.append(card('Colonnes de la dernière collecte',
-    el('p', { class: columnReceipt.state === 'unavailable' ? 'notice warning' : 'help', text: columnReceipt.message }),
-    columnReceipt.missingRoles?.length ? el('details', {},
-      el('summary', { text: `${columnReceipt.missingRoles.length} champs de supervision non retrouvés dans cette vue` }),
-      el('p', { class: 'help', text: 'Ces champs ne sont pas proposés par le profil GLPI ou ne correspondent pas aux colonnes reconnues. Les données présentes restent utilisables.' }),
-      el('ul', {}, ...columnReceipt.missingRoles.map(label => el('li', { text: label })))) : null));
+  if (columnReceipt) {
+    const pending = columnReceipt.recoveryPending || ['pending', 'recovery-pending'].includes(columnReceipt.restorationState);
+    const restored = !pending && ['restored', 'restored-preserving-changes'].includes(columnReceipt.restorationState);
+    const restoration = pending ? el('div', { class: 'notice warning', role: 'alert', 'data-column-restoration': 'pending' },
+      el('p', { text: 'Restauration de la vue GLPI en attente : elle doit être terminée avant la prochaine collecte.' }),
+      columnReceipt.restorationMessage ? el('p', { text: columnReceipt.restorationMessage }) : null)
+      : restored ? el('div', { 'data-column-restoration': columnReceipt.restorationState },
+        badge(columnReceipt.restorationState === 'restored' ? 'Vue GLPI restaurée' : 'Colonnes temporaires retirées', 'success'),
+        columnReceipt.restorationMessage ? el('p', { class: 'help', text: columnReceipt.restorationMessage }) : null)
+      : columnReceipt.restorationMessage ? el('p', { class: 'help', text: columnReceipt.restorationMessage }) : null;
+    const columnCard = card('Colonnes de la dernière collecte',
+      el('p', { class: columnReceipt.state === 'unavailable' ? 'notice warning' : 'help', text: columnReceipt.message }),
+      columnReceipt.temporaryView ? el('p', { class: 'help', text: 'Préparation temporaire des colonnes pour cette collecte.' }) : null,
+      restoration,
+      columnReceipt.restoredCount > 0 ? el('p', { class: 'help', 'data-restored-columns': columnReceipt.restoredCount,
+        text: `${formatNumber(columnReceipt.restoredCount)} colonne${columnReceipt.restoredCount > 1 ? 's' : ''} temporaire${columnReceipt.restoredCount > 1 ? 's' : ''} retirée${columnReceipt.restoredCount > 1 ? 's' : ''}.` }) : null,
+      columnReceipt.missingRoles?.length ? el('details', {},
+        el('summary', { text: `${columnReceipt.missingRoles.length} champs utiles à la configuration non retrouvés dans cette vue` }),
+        el('p', { class: 'help', text: 'Ces champs ne sont pas proposés par le profil GLPI ou ne correspondent pas aux colonnes reconnues. Les données présentes restent utilisables.' }),
+        el('ul', {}, ...columnReceipt.missingRoles.map(label => el('li', { text: label })))) : null);
+    columnCard.dataset.columnPreparationReceipt = 'true'; root.append(columnCard);
+  }
   const sourceCache = await sourceCacheCard(ctx); if (signal.aborted) return () => panels.dispose();
   if (sourceCache) root.append(sourceCache);
   if(isFileSource(state.session))root.append(card('Source CSV / Excel',

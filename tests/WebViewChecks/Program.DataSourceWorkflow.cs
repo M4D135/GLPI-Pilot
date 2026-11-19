@@ -172,9 +172,10 @@ internal static partial class Program
             && await Button("Lancer la collecte").EvaluateAsync<bool>("node=>node.classList.contains('primary')&&node.getBoundingClientRect().bottom<innerHeight-35")
             && await Button("Importer CSV / Excel").EvaluateAsync<bool>("node=>!node.classList.contains('primary')")
             && await Button("Se connecter").CountAsync() == 0
-            && await page.GetByLabel("Colonnes avant la collecte", new() { Exact = true }).InputValueAsync() == "all"
+            && await page.GetByLabel("Colonnes avant la collecte", new() { Exact = true }).InputValueAsync() == "supervision"
+            && await page.Locator("select[name=columnPreparationMode] option:checked").InnerTextAsync() == "Colonnes utiles à ma configuration"
             && await page.Locator(".workspace-live-source").EvaluateAsync<bool>("node=>!!(node.compareDocumentPosition(document.querySelector('[data-source-method=file]'))&Node.DOCUMENT_POSITION_FOLLOWING)&&node.getBoundingClientRect().top<document.querySelector('.workspace-data-metrics').getBoundingClientRect().top"),
-            "GLPI is the first data workflow with all native columns selected by default and a visible primary collection action; file import remains available as a secondary action.");
+            "GLPI is the first data workflow with useful configuration columns selected by default and a visible primary collection action; file import remains available as a secondary action.");
         await Capture("data-glpi-first-light");
         await Button("Collecter plusieurs recherches").ClickAsync(); await Group().WaitForAsync();
         Require(await Group().GetByText("Aucune recherche mémorisée", new() { Exact = true }).IsVisibleAsync()
@@ -273,6 +274,47 @@ internal static partial class Program
         await Button("Collecter la simulation").ClickAsync(); await Idle();
         Require(await OnPage("data") && app.IsTestMode && app.Result!.Rows.Count == 60 && operations.Contains("collect.run"),
             "The primary collection refreshes Data in place with the actual C# result instead of opening Pilotage.");
+
+        // Explicit presentation fixtures use the production C# receipt and
+        // camel-case bootstrap serialization; they never touch a GLPI view.
+        var originalColumnReceipt = app.Result!.Provenance.ColumnPreparation;
+        async Task ShowColumnReceipt(ColumnPreparationReceipt? receipt)
+        {
+            app.Result!.Provenance.ColumnPreparation = receipt;
+            var bootstrap = await Call(app, "app.bootstrap");
+            bridge!.Publish("session.changed", bootstrap.GetProperty("session")); await delivery;
+            await DataPage(); await Idle();
+        }
+        var columnReceipt = new ColumnPreparationReceipt
+        {
+            Mode = "supervision", State = "prepared", AddedCount = 3, ColumnCount = 7, TemporaryView = true,
+            Message = "Trois champs utiles ajoutés pour la collecte synthétique.",
+            RestorationState = "restored", RestoredCount = 3, RestorationMessage = "Vue initiale relue après retrait des colonnes temporaires."
+        };
+        await ShowColumnReceipt(columnReceipt);
+        var receiptCard = page.Locator("[data-column-preparation-receipt]");
+        Require(await receiptCard.GetByText("Vue GLPI restaurée", new() { Exact = true }).IsVisibleAsync()
+            && await receiptCard.Locator("[data-column-restoration=restored] .badge.success").CountAsync() == 1
+            && await receiptCard.Locator("[data-restored-columns='3']").InnerTextAsync() == "3 colonnes temporaires retirées."
+            && (await receiptCard.InnerTextAsync()).Contains(columnReceipt.RestorationMessage, StringComparison.Ordinal),
+            "A confirmed C# restoration receipt displays its success badge, actual removal count and engine message.");
+        columnReceipt.RestorationState = "recovery-pending"; columnReceipt.RecoveryPending = true; columnReceipt.RestoredCount = 1;
+        columnReceipt.RestorationMessage = "Connexion interrompue avant la confirmation finale.";
+        await ShowColumnReceipt(columnReceipt);
+        Require(await receiptCard.Locator("[data-column-restoration=pending].notice.warning[role=alert]").IsVisibleAsync()
+            && (await receiptCard.InnerTextAsync()).Contains("elle doit être terminée avant la prochaine collecte", StringComparison.Ordinal)
+            && (await receiptCard.InnerTextAsync()).Contains(columnReceipt.RestorationMessage, StringComparison.Ordinal)
+            && await receiptCard.Locator(".badge.success").CountAsync() == 0
+            && await receiptCard.Locator("[data-restored-columns='1']").InnerTextAsync() == "1 colonne temporaire retirée.",
+            "Pending partial recovery remains an explicit warning before another collection without claiming the GLPI view is restored.");
+        columnReceipt.RestorationState = "restored"; await ShowColumnReceipt(columnReceipt);
+        Require(await receiptCard.Locator("[data-column-restoration=pending]").CountAsync() == 1
+            && await receiptCard.Locator(".badge.success").CountAsync() == 0,
+            "An outstanding recovery flag takes precedence over a contradictory restoration label.");
+        await ShowColumnReceipt(new() { Mode = "supervision", State = "prepared", Message = "Ancien reçu de préparation sans preuve de restauration." });
+        Require(await receiptCard.Locator("[data-column-restoration], .badge.success").CountAsync() == 0,
+            "An older preparation receipt without restoration evidence does not acquire a fabricated success badge.");
+        await ShowColumnReceipt(originalColumnReceipt);
 
         var previousDataResult = app.Result;
         failSingleCollection = true;

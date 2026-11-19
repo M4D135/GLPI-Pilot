@@ -4,7 +4,7 @@
   // Read-only discovery of the native GLPI display-preference controls.
   // The host clicks/selects through Playwright. No form, URL, request or DOM
   // mutation is manufactured by this adapter; users_id=0 is never actionable.
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const TABLES = 'table.search-results,table.tab_cadrehov,table.tab_cadre_fixehov';
   const PREF_PATH = /\/front\/displaypreference\.form\.php\/?$/;
   const tidy = value => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -170,7 +170,8 @@
   function inspectPersonalPreferences(references = {}) {
     const state = { supported: false, reason: '', proof: '', ambiguousRole: '', matchCount: 0,
       layout: '', itemType: '', usersId: '', personalScope: false, personalActive: false,
-      personalTabSelector: '', personalTabSelectSelector: '', personalTabValue: '', formSelector: '', activateSelector: '', selectSelector: '', selectHidden: false, addSelector: '',
+      personalTabSelector: '', personalTabSelectSelector: '', personalTabValue: '', formSelector: '', activateSelector: '', disableSelector: '',
+      restorationSupported: false, restorationReason: '', selectSelector: '', selectHidden: false, addSelector: '',
       options: [], selected: [], selectedValue: '', selectedIdsKnown: false };
     const url = localUrl(location.href);
     // Legacy POST navigation does not retain the GET itemtype parameter.
@@ -205,28 +206,69 @@
       const activate = only(activates);
       if (!activate || disabled(activate) || !modern && !validForm(activate.form, usersId)) return { ...state, ...ambiguity('activate', activates.length), reason: 'La création native de la vue personnelle n’est pas disponible.' };
       references.activate = activate;
-      return { ...state, supported: true, proof: 'native-personal-activation', formSelector: selector(modern ? body : activate.form), activateSelector: selector(activate) };
+      // The reviewed native activation creates an ordinary personal view.
+      // Its resulting disable control must be observed before any addition;
+      // no inverse POST is manufactured from this capability declaration.
+      return { ...state, supported: true, restorationSupported: true, proof: 'native-personal-activation',
+        formSelector: selector(modern ? body : activate.form), activateSelector: selector(activate) };
     }
     state.personalActive = true;
+    const disables = controls('disable');
+    if (disables.length > 1)
+      return { ...state, ...ambiguity('disable', disables.length), reason: 'Plusieurs commandes de désactivation personnelle sont visibles.' };
+    const disable = only(disables);
+    if (disable && !disabled(disable) && (modern || validForm(disable.form, usersId))) {
+      references.disable = disable;
+      state.disableSelector = selector(disable);
+    }
     if (modern) {
       state.selectedIdsKnown = true;
-      state.selected = find(body, 'ul.list-group > li[data-opt-id]').filter(visible).map(node => ({
-        value: node.getAttribute('data-opt-id'), label: tidy(node.querySelector('span.flex-fill,span')?.textContent),
-        preferenceId: '', fixed: node.getAttribute('data-fixed') === 'true'
-      }));
+      if (find(body, 'ul.list-group > li[data-opt-id]').some(node => !visible(node)))
+        return { ...state, reason: 'Une colonne masquée reste présente dans la liste native soumise par GLPI. Sa sauvegarde exacte ne peut pas être certifiée.' };
+      state.selected = find(body, 'ul.list-group > li[data-opt-id]').filter(visible).map(node => {
+        const value = node.getAttribute('data-opt-id'), fixed = node.getAttribute('data-fixed') === 'true';
+        const removals = find(node, 'button[name="remove_opt"]').filter(control => visible(control) && !disabled(control)
+          && control.closest('li[data-opt-id]') === node && !control.hasAttribute('form') && !control.hasAttribute('formaction'));
+        if (removals.length > 1) Object.assign(state, ambiguity('remove', removals.length));
+        const remove = !fixed ? only(removals) : null;
+        if (remove && positive(value)) references['remove:option:' + value] = remove;
+        return { value, label: tidy(node.querySelector('span.flex-fill,span')?.textContent),
+          preferenceId: '', fixed, removeSelector: selector(remove) };
+      });
       const duplicates = duplicateCount(state.selected.map(item => item.value));
       if (state.selected.some(item => !positive(item.value)) || duplicates > 1)
         return { ...state, ...ambiguity('options', duplicates), reason: 'La liste des colonnes présentes n’est pas identifiable sans ambiguïté.' };
     } else {
       const forms = find(body, 'form');
       if (!forms.length || forms.some(form => !validForm(form, usersId))) return { ...state, reason: 'Les formulaires de colonnes ne correspondent pas tous à la même vue personnelle.' };
+      if (find(body, 'tr').some(row => !visible(row) && row.querySelector('input[name="id"]')))
+        return { ...state, reason: 'Une préférence personnelle masquée empêche une sauvegarde complète de l’ordre initial.' };
       state.selected = find(body, 'tr').filter(visible).flatMap(row => {
         const cells = [...row.children].filter(node => node.tagName === 'TD');
         if (cells.length < 2 || cells[0].querySelector('form,input,select,button') || !tidy(cells[0].textContent)) return [];
-        const ids = find(row, 'input[name="id"]').map(node => node.value);
-        return [{ value: '', label: tidy(cells[0].textContent), preferenceId: ids[0] || '', fixed: ids.length === 0 }];
+        const ids = [...new Set(find(row, 'input[name="id"]').map(node => node.value))];
+        if (ids.length > 1 || ids.some(id => !positive(id))) {
+          Object.assign(state, ambiguity('options', Math.max(2, ids.length)));
+          return [];
+        }
+        const removals = find(row, 'button[name="purge"],input[type="submit"][name="purge"]').filter(control =>
+          visible(control) && !disabled(control) && validForm(control.form, usersId)
+          && hiddenValue(control.form, 'id') === ids[0]);
+        if (removals.length > 1) Object.assign(state, ambiguity('remove', removals.length));
+        const remove = only(removals);
+        if (remove && ids.length === 1) references['remove:preference:' + ids[0]] = remove;
+        return [{ value: '', label: tidy(cells[0].textContent), preferenceId: ids[0] || '', fixed: ids.length === 0,
+          removeSelector: selector(remove) }];
       });
     }
+    if (state.ambiguousRole) return { ...state, reason: 'La commande de retrait personnel n’est pas identifiable sans ambiguïté.' };
+    const identities = state.selected.map(item => item.preferenceId ? 'preference:' + item.preferenceId
+      : item.value ? 'option:' + item.value : item.fixed ? 'fixed:' + item.label : '');
+    const duplicateIdentity = duplicateCount(identities);
+    if (identities.some(id => !id) || duplicateIdentity > 1)
+      return { ...state, ...ambiguity('options', duplicateIdentity), reason: 'Les identifiants des colonnes initiales ne peuvent pas être sauvegardés sans ambiguïté.' };
+    state.restorationSupported = state.selected.length > 0 && state.selected.some(item => item.removeSelector);
+    state.restorationReason = state.restorationSupported ? '' : 'Aucune commande native de retrait individuel des colonnes n’est vérifiable.';
     const selects = find(body, 'select[name="num"]');
     const additions = controls(modern ? 'add_opt' : 'add');
     // A CSS-hidden enabled select inside the active form is still submitted by
@@ -236,7 +278,7 @@
       return { ...state, ...ambiguity(selects.length > 1 ? 'select' : 'add', selects.length > 1 ? selects.length : additions.length),
         reason: 'GLPI ne propose pas une commande personnelle d’ajout de colonne vérifiable.' };
     const select = only(selects), add = only(additions);
-    if (!select && !add && !modern && state.selected.length && controls('disable').length === 1)
+    if (!select && !add && state.selected.length && (state.disableSelector || state.restorationSupported))
       return { ...state, supported: true, proof: 'native-personal-columns-complete', formSelector: selector(body) };
     if (!select || !add || !selectUsable(select) || disabled(add) || select.multiple ||
       !modern && (select.form !== add.form || !validForm(add.form, usersId)))
@@ -275,7 +317,9 @@
   }
 
   function capturePreferences(role = '') {
-    return capture(inspectPersonalPreferences, role, ['personal-tab', 'personal-tab-select', 'activate', 'select', 'add']);
+    const roles = ['personal-tab', 'personal-tab-select', 'activate', 'select', 'add', 'disable'];
+    if (/^remove:(?:option|preference):[1-9]\d*$/.test(role)) roles.push(role);
+    return capture(inspectPersonalPreferences, role, roles);
   }
 
   window.__glpiPilotColumns = { version: VERSION, inspect, inspectPreferences, captureWindow, capturePreferences };

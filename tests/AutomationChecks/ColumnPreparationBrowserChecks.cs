@@ -18,7 +18,7 @@ internal static class ColumnPreparationBrowserChecks
     {
         yield return ("Colonnes GLPI : activation personnelle legacy, ajouts supervision et tableau régénéré", () => Check(browser, "legacy"));
         yield return ("Colonnes GLPI : iframe 11 réutilisé, vraie relecture GET et persistance", () => Check(browser, "modern"));
-        yield return ("Colonnes GLPI : défaut toutes traite aussi les options sans rôle de supervision", () => Check(browser, "all"));
+        yield return ("Colonnes GLPI : option toutes traite aussi les colonnes sans rôle de supervision", () => Check(browser, "all"));
         yield return ("Colonnes GLPI : HTTP 200 et DOM optimiste sans persistance sont refusés", () => Check(browser, "not-persisted"));
         yield return ("Colonnes GLPI : vue globale seule préservée, collecte actuelle explicitement signalée", () => Check(browser, "global-only"));
         yield return ("Colonnes GLPI : changement de critères arrête les ajouts avant la collecte", () => Check(browser, "scope-change"));
@@ -39,6 +39,7 @@ internal static class ColumnPreparationBrowserChecks
         foreach (var check in CollectionRecoveryBrowserChecks.Cases(browser)) yield return check;
         foreach (var check in ColumnPreparationRaceBrowserChecks.Cases(browser)) yield return check;
         foreach (var check in ColumnControlCaptureBrowserChecks.Cases(browser)) yield return check;
+        foreach (var check in TemporaryColumnRestorationBrowserChecks.Cases(browser)) yield return check;
     }
 
     private static void Require(bool value, string message)
@@ -67,13 +68,14 @@ internal static class ColumnPreparationBrowserChecks
 
     private static async Task Check(IBrowser browser, string scenario)
     {
+        using var storage = new ColumnTestStorageScope();
         var modern = scenario is "modern" or "all" or "not-persisted" or "missing-after-add" or "missing-after-unpersisted" or "already-present" or "already-unpersisted";
         var alreadyActive = scenario is "renewed" or "missing" or "missing-automatic" or "missing-after-add" or "missing-after-unpersisted" or "missing-scope-close" or "missing-scope-before-close" or "already-present" or "already-unpersisted" or "user-change" or "missing-cancel";
         var persisted = new List<string> { "2", "12" };
         if (scenario is "already-present" or "already-unpersisted") persisted.AddRange(new[] { "8", "64", "65", "900" });
         var displayed = persisted.ToList();
         var active = alreadyActive;
-        var render = 0; var reads = 0; var mutations = 0; var adds = 0;
+        var render = 0; var reads = 0; var mutations = 0; var adds = 0; var removals = 0; var disables = 0;
         var methods = new List<string>();
         var diagnostics = new List<string>();
         var host = await browser.NewContextAsync();
@@ -98,8 +100,8 @@ internal static class ColumnPreparationBrowserChecks
             string body;
             if (!active) body = modern ? Identity() + "<button type='button' name='activate'>Créer la vue personnelle</button>"
                 : Form("<input type='submit' name='activate' value='Créer la vue personnelle'>");
-            else if (modern) body = Identity() + "<select name='num'>" + Options() + "</select><button name='add_opt' type='button'>Ajouter</button><ul class='list-group'>"
-                + "<li data-opt-id='1' data-fixed='true'><span>Titre</span></li>" + string.Concat(persisted.Select(id => "<li data-opt-id='" + id + "'><span class='flex-fill'>" + FullLabel(id) + "</span></li>")) + "</ul>";
+            else if (modern) body = Identity() + "<button name='disable' type='button'>Désactiver</button><select name='num'>" + Options() + "</select><button name='add_opt' type='button'>Ajouter</button><ul class='list-group'>"
+                + "<li data-opt-id='1' data-fixed='true'><span>Titre</span></li>" + string.Concat(persisted.Select(id => "<li data-opt-id='" + id + "'><span class='flex-fill'>" + FullLabel(id) + "</span><button name='remove_opt' type='button'>Supprimer</button></li>")) + "</ul>";
             else body = "<table><tr><th>" + Form("<input name='disable' type='submit' value='Désactiver'>") + "</th></tr><tr><td colspan='4'>"
                 + Form("<select name='num' id='dropdown_num_" + reads + "'>" + Options() + "</select><input type='submit' name='add' value='Ajouter'>")
                 + "</td></tr><tr><td>Titre</td><td colspan='3'></td></tr>"
@@ -117,10 +119,22 @@ internal static class ColumnPreparationBrowserChecks
                   const select=document.querySelector('select[name=num]'), value=select.value;
                   const li=document.createElement('li');li.dataset.optId=value;
                   const span=document.createElement('span');span.className='flex-fill';span.textContent=select.selectedOptions[0].dataset.fullLabel;li.append(span);
+                  const remove=document.createElement('button');remove.type='button';remove.name='remove_opt';remove.textContent='Supprimer';li.append(remove);
                   document.querySelector('.list-group').append(li);
                   const body=new URLSearchParams({action:'update_order',itemtype:'Ticket',users_id:'17'});
                   document.querySelectorAll('li[data-opt-id]:not([data-fixed])').forEach(item=>body.append('opts[]',item.dataset.optId));
                   const reply=await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body});await reply.text();
+                });
+                document.addEventListener('click',async event=>{
+                  const button=event.target.closest('button[name=remove_opt]');if(!button)return;
+                  button.closest('li[data-opt-id]').remove();
+                  const body=new URLSearchParams({action:'update_order',itemtype:'Ticket',users_id:'17'});
+                  document.querySelectorAll('li[data-opt-id]:not([data-fixed])').forEach(item=>body.append('opts[]',item.dataset.optId));
+                  const reply=await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body});await reply.text();
+                });
+                document.querySelector('[name=disable]')?.addEventListener('click',async()=>{
+                  const reply=await fetch('/glpi/ajax/displaypreference.php',{method:'POST',body:new URLSearchParams({disable:'1',itemtype:'Ticket',users_id:'17'})});
+                  await reply.text();location.reload();
                 });
                 </script>
                 """ : scenario == "renewed" ? """
@@ -199,12 +213,31 @@ internal static class ColumnPreparationBrowserChecks
                     Require(Value("itemtype") == "Ticket" && Value("users_id") == "17", "Only native personal Ticket commands may be submitted.");
                     mutations++;
                     if (Value("activate").Length > 0) active = true;
+                    else if (pairs.Any(pair => pair.Key == "disable"))
+                    {
+                        Require(active && persisted.SequenceEqual(new[] { "2", "12" }), "A temporary personal view may be disabled only after its original columns have been restored.");
+                        active = false; disables++;
+                    }
                     else if (modern)
                     {
-                        Require(Value("action") == "update_order", "Only the native modern add handler may update its order.");
-                        var submitted = pairs.Where(pair => pair.Key == "opts[]").Select(pair => pair.Value).ToList(); adds++;
+                        Require(Value("action") == "update_order", "Only a native modern column handler may update its order.");
+                        var submitted = pairs.Where(pair => pair.Key == "opts[]").Select(pair => pair.Value).ToList();
+                        if (submitted.Count == displayed.Count + 1) adds++;
+                        else
+                        {
+                            Require(submitted.Count == persisted.Count - 1 && persisted.Except(submitted).Count() == 1
+                                && persisted.Except(submitted).All(id => id is not ("2" or "12")), "Restoration may remove only one temporary column at a time.");
+                            removals++;
+                        }
                         displayed = submitted;
                         if (scenario is not ("not-persisted" or "missing-after-unpersisted")) persisted = submitted.ToList();
+                    }
+                    else if (pairs.Any(pair => pair.Key == "purge"))
+                    {
+                        Require(int.TryParse(Value("id"), out var nativeId), "The native preference row must carry its real identifier.");
+                        var index = nativeId - 700;
+                        Require(index >= 2 && index < persisted.Count, "Restoration may remove only a temporary personal preference row.");
+                        persisted.RemoveAt(index); displayed = persisted.ToList(); removals++;
                     }
                     else
                     {
@@ -230,7 +263,7 @@ internal static class ColumnPreparationBrowserChecks
         });
         await page.GotoAsync(Target);
         var settings = new AppSettings { PortalUrl = Target, AutoMode = "pagination", ListTimeoutSeconds = 5, TimeoutSeconds = 5 };
-        if (scenario != "all") settings.ColumnPreparationMode = "supervision";
+        settings.ColumnPreparationMode = scenario == "all" ? "all" : "supervision";
         if (scenario == "current") settings.ColumnPreparationMode = "current";
         var original = await service.ChooseAutoTableAsync(page, settings, CancellationToken.None);
         using var cancellation = new CancellationTokenSource();
@@ -306,6 +339,15 @@ internal static class ColumnPreparationBrowserChecks
                 if (scenario == "renewed") Require(diagnostics.Any(message => message.Contains("repères natifs renouvelés", StringComparison.Ordinal)), "A native control refresh must be distinguished from an option disappearing.");
             }
             Require(!methods.Any(method => method.Contains("massiveaction", StringComparison.Ordinal)), "No business or global action may be submitted.");
+            if (service.HasPendingTemporaryColumns(settings))
+            {
+                var restoration = await service.RestoreTemporaryColumnsAsync(settings, null, CancellationToken.None);
+                Require(!restoration.Pending && !service.HasPendingTemporaryColumns(settings)
+                    && persisted.Take(2).SequenceEqual(new[] { "2", "12" }) && active == alreadyActive,
+                    "Every successful temporary preparation must restore its original personal activation and initial column order.");
+                Require(removals == adds && disables == (alreadyActive ? 0 : 1),
+                    "Restoration must reverse each owned addition once, and disable only a view activated by this preparation.");
+            }
         }
         catch (OperationCanceledException) when (scenario == "cancel") { Require(adds == 1, "Cancellation must stop before the second native addition."); }
         catch (OperationCanceledException) when (scenario == "missing-cancel") { Require(adds == 0, "Cancellation must not be converted to a successful fallback."); }

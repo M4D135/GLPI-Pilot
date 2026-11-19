@@ -421,7 +421,8 @@ try {
                 @{ Project = 'StartupResilienceChecks'; Log = 'startup-resilience-checks.log'; Summary = 'startup resilience checks passed.' },
                 @{ Project = 'FoundationChecks'; Log = 'foundation-checks.log'; Summary = ''; Pattern = '(?m)^40/40 Foundation checks passed\.\r?$' },
                 @{ Project = 'WorkplaceChecks'; Log = 'workplace-checks.log'; Summary = 'workplace checks passed.' },
-                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '75/75 vérifications de configuration réussies.' },
+                @{ Project = 'ConfigurationChecks'; Log = 'configuration-checks.log'; Summary = '81/81 vérifications de configuration réussies.' },
+                @{ Project = 'ColumnRestorationChecks'; Log = 'column-restoration-checks.log'; Summary = '20/20 vérifications pures de restauration des colonnes réussies.' },
                 @{ Project = 'DashboardChecks'; Log = 'dashboard-checks.log'; Summary = '164/164' },
                 @{ Project = 'DashboardLayoutChecks'; Log = 'dashboard-layout-checks.log'; Summary = '47/47 checks passed.' },
                 @{ Project = 'WorkbookProfileChecks'; Log = 'workbook-profile-checks.log'; Summary = '21/21 workbook profile checks passed.' },
@@ -476,10 +477,11 @@ try {
                     try {
                         Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
                         foreach ($group in @(
-                            @{ Name = 'core'; Count = 52; TimeoutSeconds = 360 },
-                            # The 55 column cases took 397 s in the successful preflight.
-                            # Keep every case and its deadline; only the group needs more time.
-                            @{ Name = 'columns'; Count = 55; TimeoutSeconds = 600 },
+                            @{ Name = 'core'; Count = 53; TimeoutSeconds = 360 },
+                            # The original 55 cases now also restore their personal view;
+                            # 13 recovery scenarios verify the new durable lifecycle.
+                            # Keep each case's 35 s deadline and allow the full group to finish.
+                            @{ Name = 'columns'; Count = 68; TimeoutSeconds = 900 },
                             @{ Name = 'native-timing'; Count = 11; TimeoutSeconds = 360 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name
@@ -593,7 +595,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--administration-only', '--screenshots', (Join-Path $logs 'administration-standard-preview')) `
                 -LogName 'administration-standard-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '6/6 administration WebView checks passed.'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--data-source-workflow-only', '--screenshots', (Join-Path $logs 'data-sources-standard-preview')) `
-                -LogName 'data-source-standard-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^42/42 data source workflow WebView checks passed\.\r?$'
+                -LogName 'data-source-standard-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^46/46 data source workflow WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--workspace-refresh-only', '--screenshots', (Join-Path $logs 'workspace-refresh-standard-preview')) `
                 -LogName 'workspace-refresh-standard-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 workspace refresh WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--weather-selection-only', '--screenshots', (Join-Path $logs 'weather-selection-standard-preview')) `
@@ -604,7 +606,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--administration-only', '--screenshots', (Join-Path $logs 'administration-admin-preview')) `
                 -LogName 'administration-admin-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '8/8 administration WebView checks passed.'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--data-source-workflow-only', '--screenshots', (Join-Path $logs 'data-sources-admin-preview')) `
-                -LogName 'data-source-admin-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^42/42 data source workflow WebView checks passed\.\r?$'
+                -LogName 'data-source-admin-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^46/46 data source workflow WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--workspace-refresh-only', '--screenshots', (Join-Path $logs 'workspace-refresh-admin-preview')) `
                 -LogName 'workspace-refresh-admin-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 workspace refresh WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--weather-selection-only', '--screenshots', (Join-Path $logs 'weather-selection-admin-preview')) `

@@ -1,8 +1,10 @@
 namespace GlpiPilot.Core;
 
-/// <summary>Choose only offered native options; resolution shares the supervision's conservative mapping rules.</summary>
+/// <summary>Choose offered fields used by the application, respecting the active source's conservative mapping rules.</summary>
 public static class ColumnPreparationPolicy
 {
+    // Operational roles support the built-in views, cohorts and filters even
+    // when their current widget is hidden. Large texts are opt-in below.
     private static readonly HashSet<string> Roles = new(StringComparer.Ordinal)
     {
         "id", "title", "status", "priority", "urgency", "impact", "type", "created", "updated", "resolved", "closed", "due",
@@ -10,6 +12,54 @@ public static class ColumnPreparationPolicy
         "satisfaction", "satisfaction-invited", "followupAuthor", "taskAuthor", "ttrProgress", "takeIntoAccount",
         "reportedAge", "reportedGroupCount", "reportedAuthorCount"
     };
+
+    private static HashSet<string> UsefulRoles(DashboardSettings settings, QueryLibrarySettings? queries)
+    {
+        var roles = new HashSet<string>(Roles, StringComparer.Ordinal);
+        foreach (var role in DashboardService.Roles)
+            if (settings.ColumnMappings.TryGetValue(role.Key, out var configured) && !string.IsNullOrWhiteSpace(configured))
+                roles.Add(role.Key);
+        if (UsesSolution(settings)) roles.Add("solution");
+        foreach (var query in queries?.Queries ?? new())
+        {
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            void Field(string field)
+            {
+                if (!visited.Add(field)) return;
+                if (field is "role:description" or "role:solution") roles.Add(field[5..]);
+                if (field.StartsWith("calc:", StringComparison.Ordinal)
+                    && query.ComputedFields.FirstOrDefault(computed => computed.Key == field[5..]) is { } computed)
+                { Field(computed.Field); Field(computed.OtherField); }
+            }
+            Field(query.GroupBy); Field(query.GroupBySecondary); Field(query.GroupByTertiary);
+            if (query.Aggregate is not ("count" or "percent")) Field(query.AggregateField);
+            foreach (var condition in query.Conditions)
+            {
+                Field(condition.Field);
+                if (condition.ValueSource == "field") Field(condition.Value);
+                if (condition.Value2Source == "field") Field(condition.Value2);
+            }
+        }
+        return roles;
+    }
+
+    private static bool UsesSolution(DashboardSettings settings)
+    {
+        static bool Metric(string kind, string key) => (kind is "metric" or "history")
+            && key is "with-solution" or "completed-no-solution";
+        static bool Filters(IEnumerable<DashboardScopeFilter>? filters) =>
+            filters?.Any(filter => Metric(filter.Kind, filter.SourceKey)) == true;
+        static bool Board(DashboardBoardSettings board) => Filters(board.Filters)
+            || board.ComparisonEnabled && Filters(board.ComparisonFilters)
+            || Filters(board.SavedSelection?.CrossFilters)
+            || board.Widgets.Any(widget => !widget.Hidden
+                && !board.Sections.Any(section => section.Hidden && section.Key == widget.Section)
+                && (Metric(widget.Kind, widget.SourceKey) || Filters(widget.Filters)));
+        // Saved compositions belong to this source's current configuration;
+        // unrelated catalog favorites and inactive filter presets do not.
+        return settings.Layout.Boards.Concat(settings.PersonalLayout.Boards).Concat(settings.Business.BoardOverrides).Any(Board)
+            || settings.Business.WeatherRules.Any(rule => (rule.Visible || rule.WeatherEnabled) && Metric(rule.Kind, rule.SourceKey));
+    }
 
     public static string Header(NativeColumnOption option)
     {
@@ -26,23 +76,27 @@ public static class ColumnPreparationPolicy
     }
 
     public static NativeColumnOption? Next(string mode, IReadOnlyList<string> headers, NativeColumnPreferences preferences,
-        DashboardSettings settings, IReadOnlyList<NativeColumnOption> added)
+        DashboardSettings settings, IReadOnlyList<NativeColumnOption> added, QueryLibrarySettings? queries = null)
     {
         if (mode == "current") return null;
         if (mode is not ("supervision" or "all")) throw new InvalidOperationException("Le mode de préparation des colonnes est inconnu.");
         var existing = added.Select(option => option.Value).ToHashSet(StringComparer.Ordinal);
         var available = Available(preferences).Where(option => !existing.Contains(option.Value)).ToArray();
         if (mode == "all") return available.FirstOrDefault();
+        var roles = UsefulRoles(settings, queries);
         var present = DashboardService.ResolveColumns(headers.Concat(added.Select(Header)).ToArray(), settings)
             .Where(column => column.Index.HasValue).Select(column => column.Role).ToHashSet(StringComparer.Ordinal);
         var candidates = DashboardService.ResolveColumns(available.Select(Header).ToArray(), settings);
-        var missing = candidates.FirstOrDefault(column => Roles.Contains(column.Role) && !present.Contains(column.Role) && column.Index.HasValue);
+        var missing = candidates.FirstOrDefault(column => roles.Contains(column.Role) && !present.Contains(column.Role) && column.Index.HasValue);
         return missing?.Index is int index ? available[index] : null;
     }
 
-    public static List<string> MissingRoles(IReadOnlyList<string> headers, DashboardSettings settings) =>
-        DashboardService.ResolveColumns(headers, settings).Where(column => Roles.Contains(column.Role) && !column.Index.HasValue)
+    public static List<string> MissingRoles(IReadOnlyList<string> headers, DashboardSettings settings, QueryLibrarySettings? queries = null)
+    {
+        var roles = UsefulRoles(settings, queries);
+        return DashboardService.ResolveColumns(headers, settings).Where(column => roles.Contains(column.Role) && !column.Index.HasValue)
             .Select(column => column.Label).ToList();
+    }
 
     public static void ApplyReceipt(ExtractionResult data, ColumnPreparationReceipt receipt)
     {

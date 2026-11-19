@@ -12,6 +12,29 @@ public sealed class AutomaticExtractionService(BrowserService browser)
 
     public async Task<AutomaticRunResult> RunAsync(AppSettings settings, IProgress<ExtractionProgress>? progress, CancellationToken ct, IReadOnlyList<CityTicketOverride>? overrides = null)
     {
+        AutomaticRunResult? run = null;
+        Task<ColumnRestorationResult>? cleanup = null;
+        Task<ColumnRestorationResult> RestoreOnce() => cleanup ??= browser.CompleteTemporaryColumnCollectionAsync(settings, progress);
+        try
+        {
+            run = await RunCoreAsync(settings, progress, ct, overrides, RestoreOnce);
+            return run;
+        }
+        finally
+        {
+            var restoration = await RestoreOnce();
+            if (run is not null)
+            {
+                ColumnRestorationReceipt.Apply(run.Data, restoration);
+                ct.ThrowIfCancellationRequested();
+                if (!restoration.Pending) PhaseChanged?.Invoke(AutomaticRunPhase.Ready);
+            }
+        }
+    }
+
+    private async Task<AutomaticRunResult> RunCoreAsync(AppSettings settings, IProgress<ExtractionProgress>? progress, CancellationToken ct,
+        IReadOnlyList<CityTicketOverride>? overrides, Func<Task<ColumnRestorationResult>> restoreColumns)
+    {
         var clock = Stopwatch.StartNew();
         var startedAt = DateTimeOffset.Now;
         var runId = Guid.NewGuid().ToString("N")[..8];
@@ -53,7 +76,11 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         var table = await browser.WaitForAutoTableAsync(page, navigation, ct);
         var preparation = await browser.PrepareColumnsAsync(table, settings, progress, ct);
         table = preparation.Table;
+        // Native export can navigate its page to a report/download controller.
+        // Keep the source of the verified table, not that transient destination.
+        var observedTableSource = AppPaths.SafeUrl(table.Frame?.Url ?? table.Page?.Url ?? page.Url);
         var scopeEvidence = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
+        var initialScopeVerified = searchVerified && scopeEvidence.Known && scopeEvidence.Fingerprint.Length > 0;
         var observedSort = await browser.ReadObservedSortAsync(table, ct);
         Log?.Invoke($"PÉRIMÈTRE · critères observables={scopeEvidence.Known} ; empreinte conservée, valeurs absentes du journal.");
         settings.RememberTable(table);
@@ -107,10 +134,10 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             var native = await browser.InspectNativeExportAsync(table, ct);
             if (settings.NativeSubmitSelector.Length == 0 && native.Unavailable && native.DisplayPlan != null)
             {
-                Stage("Export non reconnu : GLPI affiche automatiquement toute la liste…", AutomaticRunPhase.Retrieval);
-                (data, table) = await browser.ReadAllDisplayedAsync(table, settings, progress, ct);
-                settings.RememberTable(table);
-                method = "display-all"; prefix = "GLPI-liste-complete";
+                if (!settings.Automation.AutomaticPaginationFallback)
+                    throw new InvalidOperationException("L’export natif est indisponible. Active le repli par pages ou réduis la recherche ; le nombre de lignes affichées dans GLPI reste inchangé.");
+                Log?.Invoke("AFFICHAGE · limite de lignes GLPI conservée ; lecture paginée de la recherche au lieu d’un affichage intégral.");
+                data = await ReadPaginationAsync(true);
             }
             else
             {
@@ -123,7 +150,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     NativeFileSaved?.Invoke(nativePath);
                     Log?.Invoke("EXPORT · fichier natif conservé dans le dossier des exports, avant l’import.");
                     Stage("Chargement du fichier reçu et contrôle du périmètre…", AutomaticRunPhase.Validation);
-                    data = await Task.Run(() => NativeCsvImportService.Read(download.Path, AppPaths.SafeUrl(page.Url), download.ExpectedTotal,
+                    data = await Task.Run(() => NativeCsvImportService.Read(download.Path, observedTableSource, download.ExpectedTotal,
                         settings.MaxRows, true, ct, diagnostics: message => Log?.Invoke(message)), ct);
                     method = "native-csv";
                     var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct,
@@ -224,12 +251,15 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             RunId = runId, RequestedUrl = TargetUrlPolicy.PersistedTarget(settings.PortalUrl),
             StartedAt = startedAt, FinishedAt = DateTimeOffset.Now, SearchVerified = searchVerified,
             SourceKind = "browser", Method = method,
+            InitialScopeVerified = initialScopeVerified,
             ScopeVerified = stableScope && scopeEvidence.Known && afterScope.Known, ScopeFingerprint = scopeEvidence.Fingerprint,
             OriginalFileName = nativePath == null ? "" : Path.GetFileName(nativePath),
             ObservedSort = observedSort, Resumed = data.Provenance.Resumed, ResumeStartedAt = data.Provenance.ResumeStartedAt,
             StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
         };
         ColumnPreparationPolicy.ApplyReceipt(data, preparation.Receipt);
+        ColumnRestorationReceipt.Apply(data, await restoreColumns());
+        ct.ThrowIfCancellationRequested();
         if (divergences.Count > 0 && data.Quality is { } observedQuality)
         {
             try
@@ -289,7 +319,6 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         if (activePhase.Length > 0) phaseSeconds[activePhase] = phaseSeconds.GetValueOrDefault(activePhase) + (clock.Elapsed - phaseStarted).TotalSeconds;
         data.Provenance.StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         data.Provenance.FinishedAt = DateTimeOffset.Now;
-        PhaseChanged?.Invoke(AutomaticRunPhase.Ready);
         return new(data, table, primaryPath, nativePath, excelPath, cities);
     }
 

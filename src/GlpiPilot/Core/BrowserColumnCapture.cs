@@ -63,6 +63,8 @@ public sealed partial class BrowserService
         "personal-tab" => "onglet personnel",
         "personal-tab-select" => "menu de l’onglet personnel",
         "activate" => "activation de la vue personnelle",
+        "disable" => "retour à la vue globale initiale",
+        "remove" => "retrait d’une colonne temporaire",
         "select" => "choix de la colonne",
         "add" => "ajout de la colonne",
         "options" => "options de colonne",

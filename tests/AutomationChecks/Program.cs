@@ -66,6 +66,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Automatisation : page personnalisée explicitement mémorisée à la racine", CheckMappedRoot),
     ("Automatisation : première collecte SSO puis choix mémorisé à la collecte suivante", CheckRememberedCollection),
     ("Automatisation : racine, filtres répétés et provenance de la collecte", CheckRootCollection),
+    ("Automatisation : accueil, export redirigé et fiche ticket avec preuve initiale", CheckRootExportRedirectReference),
     ("Automatisation : mot de passe et choix ambigus restent intacts", CheckUnsafeSsoForms),
     ("Automatisation : aucun profil administrateur ni lien externe n’est utilisé", CheckUnrelatedMenu),
     ("Un clic GLPI 10 : page 2 visible, cinq lignes natives et Excel automatique", CheckNative10),
@@ -94,8 +95,8 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("CSV reçu binaire : fichier intact, échec explicite et aucun repli silencieux", () => CheckUnreadableNativePreserved(true)),
     ("CSV illisible : même avec un contrôle d’affichage, aucun faux Excel", CheckUnreadableNativeRejected),
     ("Export indisponible stable : arrêt rapide et diagnostic sans valeurs privées", CheckUnsupportedNative),
-    ("Afficher tout : option native existante, 828 lignes vérifiées puis Excel", CheckDisplayAll),
-    ("Afficher tout incomplet ou au-delà de la limite : aucun fichier complet", CheckDisplayAllRejected),
+    ("Option Afficher tout présente : repli paginé sans changer la limite GLPI", CheckDisplayAll),
+    ("Limite de collecte ou repli désactivé : aucun affichage massif ni fichier complet", CheckDisplayAllRejected),
     ("Gestion de fenêtre bloquée : délai borné, sémaphore libéré et annulation rapide", CheckWindowManagementTimeout)
 };
 var columnChecks = ColumnPreparationBrowserChecks.Cases(browser).ToList();
@@ -735,6 +736,69 @@ async Task CheckRootCollection()
     Equal(root, run.Data.Provenance.RequestedUrl);
     Equal(list, h.Service.ResolvedTargetUrl);
     True(seen.Contains(list), "Tous les critères répétés doivent parvenir à la liste résolue.");
+}
+
+async Task CheckRootExportRedirectReference()
+{
+    const string criteria = "criteria%5B0%5D%5Bfield%5D=12&criteria%5B0%5D%5Bvalue%5D=1";
+    const string root = "http://glpi.test/glpi/?" + criteria;
+    const string list = "http://glpi.test/glpi/front/ticket.php?" + criteria + "&start=0";
+    const string preparationUrl = "http://glpi.test/glpi/front/report.dynamic.php?prepare=1&" + criteria;
+    const string downloadUrl = "http://glpi.test/glpi/front/report.dynamic.php?item_type=Ticket&start=0&" + criteria + "&display_type=-4";
+    const string csv = "\uFEFFID;Titre\r\n0003;Un incident affiché\r\n";
+    string html = fixture10.Replace("data-count=\"1234\"", "data-count=\"1\"", StringComparison.Ordinal)
+        .Replace("De 1 à 20 sur 1 234", "De 1 à 1 sur 1", StringComparison.Ordinal)
+        .Replace("start=0&amp;display_type=", "start=0&amp;" + criteria.Replace("&", "&amp;", StringComparison.Ordinal) + "&amp;display_type=", StringComparison.Ordinal)
+        .Replace("</script>", "document.querySelector('#all-csv').addEventListener('click', event => { event.preventDefault(); location.assign("
+            + JsonSerializer.Serialize(preparationUrl) + "); });</script>", StringComparison.Ordinal);
+    var seen = new ConcurrentQueue<string>();
+    await using var h = await Create(route =>
+    {
+        seen.Enqueue(route.Request.Url);
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath == "/glpi/")
+            return Html(route, "<title>GLPI</title><a href='/logout.php'>Déconnexion</a><nav><a href='/glpi/front/ticket.php'>Tickets</a></nav>");
+        if (uri.AbsolutePath == "/glpi/front/ticket.php") return Html(route, html);
+        if (route.Request.Url == preparationUrl)
+        {
+            // Commit a real intermediary document before its one CSV request.
+            // The attachment leaves that document on report.dynamic.php; no
+            // history rewrite or second native CSV request simulates the fault.
+            return Html(route, "<!doctype html><title>GLPI — Préparation de l’export</title><p>Export en préparation</p><script>addEventListener('load', () => location.assign("
+                + JsonSerializer.Serialize(downloadUrl) + "));</script>");
+        }
+        if (route.Request.Url == downloadUrl) return Download(route, csv);
+        return route.FulfillAsync(new() { Status = 404 });
+    }, root);
+    var settings = Settings(root); settings.AutoSaveXlsx = false; settings.Cities.Enabled = false;
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+
+    Equal(1, run.Data.Rows.Count); Equal(1, run.Data.ExpectedTotal);
+    Equal("0003", run.Data.Rows[0][0]);
+    True(run.NativePath != null, "Le parcours doit avoir reçu le CSV natif non vide.");
+    Equal(csv, Encoding.UTF8.GetString(await File.ReadAllBytesAsync(run.NativePath!)));
+    Equal(root, settings.PortalUrl); Equal(root, run.Data.Provenance.RequestedUrl);
+    Equal(list, h.Service.ResolvedTargetUrl);
+    Equal(preparationUrl, h.Page.Url);
+    Equal("http://glpi.test/glpi/front/ticket.php", run.Data.SourceUrl);
+    Equal("browser", run.Data.Provenance.SourceKind); Equal("native-csv", run.Data.Provenance.Method);
+    True(run.Data.Provenance.SearchVerified && run.Data.Provenance.InitialScopeVerified
+        && run.Data.Provenance.ScopeFingerprint.Length > 0,
+        "La recherche et le périmètre initial doivent être prouvés avant de quitter la liste.");
+    True(!run.Data.Complete && !run.Data.Provenance.ScopeVerified && run.Data.Quality?.ScopeStable == false
+        && run.Data.Status.StartsWith("Extraction à vérifier", StringComparison.Ordinal),
+        "La preuve initiale ne doit pas certifier le relevé lorsque le contrôle final est indisponible.");
+    True(run.Data.Warnings.Any(warning => warning.Contains("contrôle final du tableau est indisponible", StringComparison.Ordinal)),
+        "Le document d’export doit avoir réellement remplacé le tableau avant le contrôle final.");
+    var requests = seen.ToList();
+    Equal(1, requests.Count(url => url == preparationUrl)); Equal(1, requests.Count(url => url == downloadUrl));
+    True(requests.Contains(list) && requests.IndexOf(root) < requests.IndexOf(list)
+        && requests.IndexOf(list) < requests.IndexOf(preparationUrl) && requests.IndexOf(preparationUrl) < requests.IndexOf(downloadUrl),
+        "La collecte doit naviguer de l’accueil vers la liste filtrée, puis le document d’export et son unique téléchargement.");
+    var ticket = TicketReferenceResolver.Resolve(run.Data, run.Data.Rows[0], settings);
+    Equal("3", ticket.Id); Equal("http://glpi.test/glpi/front/ticket.form.php?id=3", ticket.Url);
+    True(!run.Data.Complete && !run.Data.Provenance.ScopeVerified,
+        "Résoudre la fiche ne doit pas modifier la couverture non confirmée du relevé.");
 }
 
 async Task CheckUnsafeSsoForms()
@@ -1470,7 +1534,31 @@ async Task CheckUnsupportedNative()
 
 async Task CheckDisplayAll()
 {
-    string html = WithoutNativeCsv(fixtureLegacyRealistic);
+    string html = WithScript(WithoutNativeCsv(fixtureLegacyRealistic), """
+        const start = Number(new URLSearchParams(location.search).get('start') || 0);
+        const total = 45, size = Math.min(20, total - start);
+        renderLegacyRows(size, total);
+        document.querySelectorAll('#legacy-rows tr').forEach((row, index) => {
+          const number = start + index + 1;
+          [...row.cells].forEach((cell, column) => cell.textContent = column === 0
+            ? (6000000 + number).toLocaleString('fr-FR') : 'Fixture ' + number + ' / ' + (column + 1));
+        });
+        for (const suffix of ['top', 'bottom']) {
+          document.getElementById('legacy-range-' + suffix).textContent = 'De ' + (start + 1) + ' à ' + (start + size) + ' sur ' + total;
+          const pager = document.getElementById('legacy-pager-' + suffix);
+          [...pager.querySelectorAll('th.right')].forEach((cell, index) => {
+            const next = index === 0 ? start + 20 : 40;
+            cell.innerHTML = start + size < total
+              ? '<a href="ticket.php?start=' + next + '"><i title="' + (index === 0 ? 'Suivant' : 'Fin') + '">›</i></a>'
+              : '<span title="Fin">›</span>';
+          });
+          [...pager.querySelectorAll('th.left')].forEach((cell, index) => {
+            cell.innerHTML = start > 0
+              ? '<a href="ticket.php?start=' + (index === 0 ? 0 : start - 20) + '"><i title="' + (index === 0 ? 'Début' : 'Précédent') + '">‹</i></a>'
+              : '<span title="Début">‹</span>';
+          });
+        }
+        """);
     int displayRequests = 0, nativeRequests = 0;
     await using var h = await Create(route =>
     {
@@ -1478,20 +1566,23 @@ async Task CheckDisplayAll()
         if (uri.AbsolutePath.EndsWith("/report.dynamic.php", StringComparison.Ordinal)) nativeRequests++;
         if (route.Request.Method == "POST")
         {
-            True(route.Request.PostData?.Contains("glpilist_limit=9999999", StringComparison.Ordinal) == true, "Seule l’option existante Afficher tout doit être demandée.");
             displayRequests++;
-            return Html(route, WithScript(html, "renderLegacyRows(828, 828); document.querySelectorAll('.tab_cadre_pager th.right a').forEach(a => a.replaceWith(document.createTextNode(a.textContent)));"));
         }
         return Html(route, html);
     }, legacyTarget);
     var settings = Settings(legacyTarget); settings.MaxRows = 1000;
+    var table = (await h.Service.InspectAsync(h.Page, CancellationToken.None)).Single(item => item.Selector == "#legacy-results");
+    var inspection = await h.Service.InspectNativeExportAsync(table, CancellationToken.None);
+    True(inspection.Unavailable && inspection.DisplayPlan != null, "La fixture doit proposer Afficher tout sans export CSV toutes-pages.");
     var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
-    Equal(828, run.Data.Rows.Count); Equal(828, run.Data.ExpectedTotal);
+    Equal(45, run.Data.Rows.Count); Equal(45, run.Data.ExpectedTotal); Equal(3, run.Data.Pages);
     True(run.Data.Complete, string.Join(" | ", run.Data.Warnings));
-    Equal(1, displayRequests); Equal(0, nativeRequests);
-    True(run.NativePath == null, "Afficher tout ne doit pas inventer un fichier natif téléchargé.");
-    AssertWorkbook(run.ExcelPath!, 828);
+    Equal("pagination-fallback", run.Data.Provenance.Method);
+    Equal(0, displayRequests); Equal(0, nativeRequests);
+    True(run.NativePath == null, "Le repli paginé ne doit pas inventer un fichier natif téléchargé.");
+    AssertWorkbook(run.ExcelPath!, 45, "Fixture 1 / 2", "Fixture 45 / 16");
     Equal(1, Directory.GetFiles(settings.ExportFolder, "*.csv").Length);
+    Equal("20", await h.Page.Locator("#legacy-limit-top").InputValueAsync());
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
 }
 
@@ -1504,21 +1595,21 @@ async Task CheckDisplayAllRejected()
         if (route.Request.Method == "POST")
         {
             displayRequests++;
-            // The server retained its 20-row limit despite accepting the list choice.
-            return Html(route, WithScript(html, "document.querySelectorAll('select[name=glpilist_limit]').forEach(select => select.value='9999999');"));
         }
         return Html(route, html);
     }, legacyTarget);
     var capped = Settings(legacyTarget); capped.MaxRows = 100; capped.TimeoutSeconds = 2;
     var capFailure = await MustRejectRun(() => new AutomaticExtractionService(h.Service).RunAsync(capped, null, CancellationToken.None));
-    True(capFailure.Message.Contains("828", StringComparison.Ordinal), "La limite mémoire doit être expliquée avec le total attendu.");
+    True(capFailure.Message.Contains("limite", StringComparison.OrdinalIgnoreCase), "La limite de collecte doit être expliquée sans modifier l’affichage GLPI.");
     Equal(0, displayRequests);
     Equal(0, Directory.Exists(capped.ExportFolder) ? Directory.GetFiles(capped.ExportFolder).Length : 0);
-    var incomplete = Settings(legacyTarget); incomplete.MaxRows = 1000; incomplete.TimeoutSeconds = 2;
-    var failure = await MustRejectRun(() => new AutomaticExtractionService(h.Service).RunAsync(incomplete, null, CancellationToken.None));
-    True(failure.Message.Contains("20", StringComparison.Ordinal) && failure.Message.Contains("828", StringComparison.Ordinal), "L’affichage partiel doit annoncer 20 lignes sur 828.");
-    Equal(1, displayRequests);
-    Equal(0, Directory.Exists(incomplete.ExportFolder) ? Directory.GetFiles(incomplete.ExportFolder).Length : 0);
+    var disabled = Settings(legacyTarget); disabled.MaxRows = 1000; disabled.TimeoutSeconds = 2;
+    disabled.Automation.AutomaticPaginationFallback = false;
+    var failure = await MustRejectRun(() => new AutomaticExtractionService(h.Service).RunAsync(disabled, null, CancellationToken.None));
+    True(failure.Message.Contains("repli par pages", StringComparison.Ordinal), "Un repli désactivé doit expliquer comment activer la pagination sans changer la limite GLPI.");
+    Equal(0, displayRequests);
+    Equal(0, Directory.Exists(disabled.ExportFolder) ? Directory.GetFiles(disabled.ExportFolder).Length : 0);
+    Equal("20", await h.Page.Locator("#legacy-limit-top").InputValueAsync());
 }
 
 static async Task<InvalidOperationException> MustRejectRun(Func<Task<AutomaticRunResult>> run)

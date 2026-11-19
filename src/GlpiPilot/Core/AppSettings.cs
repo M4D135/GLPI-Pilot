@@ -9,7 +9,7 @@ public sealed class AppSettings : IJsonOnDeserialized
     public const int MinimumInterfaceZoomPercent = 75;
     public const int MaximumInterfaceZoomPercent = 150;
     public const int InterfaceZoomStep = 5;
-    public const int CurrentColumnPreparationDefaultsVersion = 1;
+    public const int CurrentColumnPreparationDefaultsVersion = 2;
     public string PortalUrl { get; set; } = "";
     public string BrowserChannel { get; set; } = "msedge";
     private string _theme = "dark";
@@ -19,7 +19,7 @@ public sealed class AppSettings : IJsonOnDeserialized
     public string Theme { get => _theme; set { _theme = value; _themeSpecified = value is "light" or "dark"; } }
     public int InterfaceZoomPercent { get; set; } = 100;
     public string AutoMode { get; set; } = "native";
-    public string ColumnPreparationMode { get; set; } = "all";
+    public string ColumnPreparationMode { get; set; } = "supervision";
     // Local upgrade receipt. Portable configurations and saved searches carry
     // the chosen mode, never the recipient's acknowledgement of this default.
     public int ColumnPreparationDefaultsVersion { get; set; } = CurrentColumnPreparationDefaultsVersion;
@@ -114,7 +114,7 @@ public sealed class AppSettings : IJsonOnDeserialized
         BrowserChannel ??= "msedge";
         _theme ??= "dark";
         AutoMode ??= "native";
-        if (string.IsNullOrWhiteSpace(ColumnPreparationMode)) ColumnPreparationMode = "all";
+        if (string.IsNullOrWhiteSpace(ColumnPreparationMode)) ColumnPreparationMode = "supervision";
         ReadySelector ??= "";
         NextSelector ??= "";
         SelectorOrigin ??= "";
@@ -469,10 +469,10 @@ public static class SettingsRecovery
         if (document.TryGetProperty(nameof(AppSettings.ColumnPreparationDefaultsVersion), out var marker)
             && marker.ValueKind == JsonValueKind.Number && marker.TryGetInt32(out var version)
             && version >= AppSettings.CurrentColumnPreparationDefaultsVersion) return;
-        // Earlier local profiles always serialized "supervision", including
-        // the old default. Upgrade that current preference once. A later
-        // explicit choice, a named recipe or an imported choice stays intact.
-        if (applyUpgrade && settings.ColumnPreparationMode == "supervision") settings.ColumnPreparationMode = "all";
+        // Version 1 selected every offered GLPI field by default. Limit that
+        // local default once to the fields used by the active configuration.
+        // Later explicit choices, named recipes and explicit restores stay intact.
+        if (applyUpgrade && settings.ColumnPreparationMode == "all") settings.ColumnPreparationMode = "supervision";
         settings.ColumnPreparationDefaultsVersion = AppSettings.CurrentColumnPreparationDefaultsVersion;
     }
     private static void RestoreLegacyActiveAcquisition(JsonElement document, AppSettings settings)

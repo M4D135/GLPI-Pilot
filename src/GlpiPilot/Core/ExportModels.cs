@@ -72,6 +72,9 @@ public sealed class ExtractionProvenance
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset FinishedAt { get; set; } = DateTimeOffset.Now;
     public bool SearchVerified { get; set; }
+    // Identifies the observed search before export. This does not certify that
+    // its perimeter stayed stable or that all rows were received.
+    public bool InitialScopeVerified { get; set; }
     public bool ScopeVerified { get; set; }
     public string ScopeFingerprint { get; set; } = "";
     public string OriginalFileName { get; set; } = "";
@@ -90,6 +93,11 @@ public sealed class ColumnPreparationReceipt
     public int AddedCount { get; set; }
     public int ColumnCount { get; set; }
     public bool SourceChanged { get; set; }
+    public bool TemporaryView { get; set; }
+    public string RestorationState { get; set; } = "not-needed";
+    public string RestorationMessage { get; set; } = "";
+    public int RestoredCount { get; set; }
+    public bool RecoveryPending { get; set; }
     public string Message { get; set; } = "";
     public List<string> MissingRoles { get; set; } = new();
     public List<string> Warnings { get; set; } = new();

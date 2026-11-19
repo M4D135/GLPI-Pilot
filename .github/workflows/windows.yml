@@ -86,7 +86,7 @@ jobs:
     if: needs.already-qualified.outputs.skip != 'true'
     name: Prévalidation rapide · sources et actualisation
     runs-on: windows-2025
-    timeout-minutes: 18
+    timeout-minutes: 25
     defaults:
       run:
         shell: pwsh
@@ -111,20 +111,23 @@ jobs:
           python -m unittest discover -s tests/ReleasePackChecks -p "test_*.py"
           if ($LASTEXITCODE -ne 0) { throw 'Explicit publication guards failed' }
       - name: Colonnes GLPI et attente des exports natifs
-        # Eleven additional native capture regressions run here; application timeouts stay unchanged.
-        timeout-minutes: 10
+        # Preparation now includes cleanup, plus thirteen durable recovery scenarios.
+        # Each test and the application's deadlines remain independently bounded.
+        timeout-minutes: 17
         run: |
           $ErrorActionPreference = 'Stop'
           $browsers = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Google\Chrome\Application\chrome.exe')
           $browser = $browsers | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $browser) { throw 'No Chromium browser on runner' }
           $env:GLPI_TEST_CHROMIUM = $browser
-          $env:GLPI_TEST_FILTER = 'Attente export GLPI'
+          Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
+          $env:GLPI_TEST_GROUP = 'native-timing'
           dotnet run --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
           if ($LASTEXITCODE -ne 0) { throw 'Native export timing regression checks failed' }
-          $env:GLPI_TEST_FILTER = 'Colonnes GLPI'
+          $env:GLPI_TEST_GROUP = 'columns'
           dotnet run --no-build --project tests/AutomationChecks/AutomationChecks.csproj -c Release -p:PlaywrightPlatform=win
           if ($LASTEXITCODE -ne 0) { throw 'Native column preparation regression checks failed' }
+          Remove-Item Env:GLPI_TEST_GROUP -ErrorAction SilentlyContinue
       - name: WebView sources et refresh · Standard/Admin
         timeout-minutes: 14
         run: |
@@ -200,8 +203,8 @@ jobs:
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BclChecks
 
       - name: Vérifier le navigateur et les exports sur des pages synthétiques
-        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 55 cas
-        # colonnes disposent de 600 s (397 s observées dans le préflight réussi). Chaque cas garde 35 s.
+        # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 68 cas
+        # colonnes incluent la restauration et disposent de 900 s. Chaque cas garde 35 s.
         # Cette enveloppe couvre leur somme ; builds, fiches et DOM gardent leurs limites séparées.
         timeout-minutes: 40
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks
