@@ -30,7 +30,7 @@ let identityTrigger,identityPickerOpen=false,identityRead=0,identityTimer;
 const narrowNavigation=matchMedia('(max-width:800px)');
 let modalEditor=false,dirtyEditor=false,calendarEditor=false,lastEditor=false;
 function reportEditor(){const open=modalEditor||dirtyEditor||calendarEditor||!!document.activeElement?.matches('form input,form textarea,form select');if(open===lastEditor||!api.available)return;lastEditor=open;api.call('host.editor',{open}).catch(error=>notify(error.message,'danger'));}
-const logs=[];let sourceSelector,refreshButton,sourceBusy=false;let root,content,navigation,statusLabel,sourceLabel,pageTitle,groupTitle,sidebar,overlay,cancel,progress,logPanel,testBanner,testFileName,testFileDetails,testExit;
+const logs=[];let sourceSelector,refreshButton,sourceBusy=false,startupCollectionRunning=false;let root,content,navigation,statusLabel,sourceLabel,pageTitle,groupTitle,sidebar,overlay,cancel,progress,logPanel,testBanner,testFileName,testFileDetails,testExit;
 function notify(message,tone='success'){if(typeof message==='object')message=message.message||JSON.stringify(message);const toast=el('div',{class:`toast ${tone}`,role:tone==='danger'?'alert':'status'},el('span',{text:message}),button('Fermer',()=>toast.remove(),{icon:'close'}));document.querySelector('#notifications').append(toast);setTimeout(()=>toast.remove(),tone==='danger'?15000:7000);}
 function applyAppearance(){const settings=state.settings;if(!settings)return;const p=settings.interface||{};const preference=themePreference(settings),theme=resolvedTheme(preference);document.documentElement.dataset.theme=theme;document.documentElement.dataset.themePref=preference;syncThemeSwitch();document.documentElement.dataset.density=p.density||'balanced';document.documentElement.dataset.accent=p.accent||'blue';document.documentElement.dataset.contrast=String(theme==='contrast'||!!p.highContrast);const policy=p.reduceMotion?'reduce':p.followWindowsMotion===false?'full':'system';document.documentElement.dataset.motionPolicy=policy;document.documentElement.dataset.motion=policy==='reduce'||(policy==='system'&&matchMedia('(prefers-reduced-motion:reduce)').matches)?'reduce':'normal';document.documentElement.dataset.vision=p.colorVision||'standard';document.body.classList.toggle('focus-mode',!!p.focusMode);syncNavigation();}
 async function appearance(change){await api.call('app.appearance',change);}
@@ -125,13 +125,17 @@ function sourceMode(session=state.session){
  if(session.fileSource||session.sourceKind==='file')return 'csv';
  return 'live';
 }
-async function collectLive(){
+async function collectLive(operation='collect.run',args={}){
  if(sourceBusy)return;
  const pageSignal=controller?.signal;
- const collection=state.session.demo||state.session.testMode?'Collecte simulée':'Collecte GLPI';
- sourceBusy=true;refreshButton&&(refreshButton.disabled=true);
+ const collection=operation==='collect.startup'?'Collecte GLPI au démarrage':state.session.demo||state.session.testMode?'Collecte simulée':'Collecte GLPI';
+ sourceBusy=true;startupCollectionRunning=operation==='collect.startup';refreshButton&&(refreshButton.disabled=true);sessionChanged();
  try{
-  const result=await api.call('collect.run',{});
+  const result=await api.call(operation,args);
+  if(operation==='collect.startup'){
+   if(result?.startupCollection)state.startupCollection=result.startupCollection;
+   if(!result?.started)return result;
+  }
   notify(collection+' terminée. Les données affichées ont été actualisées.');
   // Collection updates data, not the user's destination. A late result must
   // also leave alone any page opened while the collection was running.
@@ -139,7 +143,21 @@ async function collectLive(){
   return result;
  }catch(error){
   if(error.name!=='AbortError')notify(collection+' impossible : '+error.message+' · Le relevé précédent reste consultable.','danger');
- }finally{sourceBusy=false;refreshButton&&(refreshButton.disabled=false);sessionChanged();}
+ }finally{sourceBusy=false;startupCollectionRunning=false;refreshButton&&(refreshButton.disabled=false);sessionChanged();}
+}
+async function collectOnStartup(){
+ const startup=state.startupCollection;
+ if(!startup?.eligible||startup.attempted||!startup.token||sourceBusy)return;
+ // The backend owns this launch token across page reloads. Claim it locally
+ // before sending through the usual cancellable collection bridge.
+ startup.attempted=true;
+ const owner=controller;let leaving=false;const onLeave=()=>{leaving=true;};
+ window.addEventListener('pagehide',onLeave,{once:true});
+ // Home paints its shell before its initial cards finish loading. Wait for
+ // those reads after app.ready, without waiting for subsequent user actions.
+ try{await api.settled();}finally{window.removeEventListener('pagehide',onLeave);}
+ if(leaving||controller!==owner||owner?.signal.aborted)return;
+ return collectLive('collect.startup',{token:startup.token});
 }
 async function selectDataSource(mode){
  if(mode==='cache'){
@@ -280,7 +298,15 @@ async function navigate(id,nextParams={},options={}){
  const target=navigationTarget(id,nextParams);id=target.id;nextParams=target.params;
  if(changingContext&&!options.restoreContext)return;
  if(!registry.has(id)){notify('Cet espace n’est pas disponible.','danger');return;}
- const request=++navRequest;try{await flushCurrentPage();}catch(error){if(error.name!=='AbortError')notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation();pageTitle.textContent=navigationLabel(page);updatePageContext();document.title=`${page.title} · GLPI Pilot`;content.setAttribute('aria-busy','true');
+ const request=++navRequest;
+ // Tickets first loads local workspace preferences. Interrupt startup before
+ // those reads queue behind it, while C# retains its gate until cleanup ends.
+ if(id==='records'&&startupCollectionRunning&&state.startupCollection?.token){
+  try{const result=await api.call('collect.startup.interrupt',{token:state.startupCollection.token});if(result?.startupCollection)state.startupCollection=result.startupCollection;}
+  catch(error){if(error.name!=='AbortError')notify('La collecte au démarrage doit être arrêtée avant de consulter les tickets : '+error.message,'danger');}
+ }
+ if(request!==navRequest)return;
+ try{await flushCurrentPage();}catch(error){if(error.name!=='AbortError')notify('La sauvegarde n’a pas abouti : '+error.message,'danger');return;}if(request!==navRequest)return;controller?.abort();dirtyEditor=false;reportEditor();cleanup=null;controller=new AbortController();const signal=controller.signal;const local=++revision;current=id;params=nextParams;const page=registry.get(id);closeNavigation(true);buildNavigation();pageTitle.textContent=navigationLabel(page);updatePageContext();document.title=`${page.title} · GLPI Pilot`;content.setAttribute('aria-busy','true');
  const pageRoot=el('div',{class:`page-content${options.preserveScroll?'':' page-enter'}`,dataset:{page:id,workspace:id}});content.replaceChildren(pageRoot);if(!options.preserveScroll)document.querySelector('.workspace').scrollTop=0;document.scrollingElement.scrollTop=0;
  try{
   const pending=Promise.resolve(page.render({root:pageRoot,api:sessionApi,state,signal,navigate,notify,chooseIdentity,refresh:()=>refreshCurrentPage(signal),params:nextParams,pages,exitSimulation:exitLocalTest}));rendering=pending;
@@ -330,6 +356,7 @@ async function start(){
  sidebar.addEventListener('focusin',event=>{const target=event.target.closest('[data-tip]');if(target?.matches(':focus-visible'))showRailTip(target);else hideRailTip();});sidebar.addEventListener('focusout',hideRailTip);sidebar.addEventListener('click',hideRailTip);navigation.addEventListener('scroll',hideRailTip,{passive:true});
  buildNavigation();sessionChanged();syncThemeSwitch();refreshIdentity();await navigate('home');await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));await api.call('app.ready');document.body.dataset.ready='true';
  if(state.deployment?.offer?.available)offerDeploymentConfiguration({api:sessionApi,state,navigate,signal:controller.signal,root:content,notify},state.deployment);
+ else collectOnStartup();
  }catch(error){root.className='';root.replaceChildren(el('main',{class:'workspace'},empty('L’interface n’a pas pu démarrer','Le diagnostic de démarrage est disponible dans le dossier de données de GLPI Pilot.'),el('p',{class:'notice danger',text:error.message})));}
 }
 api.on('settings.changed',data=>{state.settings=data.settings;applyAppearance();if(navigation)buildNavigation();refreshIdentity();const zoom=document.querySelector('#zoom-label');if(zoom)zoom.querySelector('span').textContent=`${state.settings.interfaceZoomPercent} %`;});

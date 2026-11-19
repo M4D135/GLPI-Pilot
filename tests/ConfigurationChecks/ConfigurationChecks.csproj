@@ -20,6 +20,9 @@
     <Compile Include="../../src/GlpiPilot/Core/BrowserModels.cs" Link="Core/BrowserModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/BrowserColumnModels.cs" Link="Core/BrowserColumnModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ColumnPreparationPolicy.cs" Link="Core/ColumnPreparationPolicy.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/StartupCollectionPolicy.cs" Link="Core/StartupCollectionPolicy.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/ExtractionVerificationService.cs" Link="Core/ExtractionVerificationService.cs" />
+    <Compile Include="../../src/GlpiPilot/Core/NativeCellDivergenceReport.cs" Link="Core/NativeCellDivergenceReport.cs" />
     <Compile Include="../../src/GlpiPilot/Core/ExportModels.cs" Link="Core/ExportModels.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TargetUrlPolicy.cs" Link="Core/TargetUrlPolicy.cs" />
     <Compile Include="../../src/GlpiPilot/Core/TicketDetailModels.cs" Link="Core/TicketDetailModels.cs" />

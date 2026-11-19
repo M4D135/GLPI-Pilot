@@ -64,6 +64,7 @@ internal static partial class Program
             { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
         var settings = new AppSettings { Theme = "dark", PortalUrl = "https://library-fixture.invalid/front/ticket.php", ExportFolder = Path.Combine(_root, "Exports") }; settings.Interface.FollowWindowsTheme = false;
+        settings.Automation.CollectOnStartup = false;
         settings.TicketDetails.AutoLoadOnSelection = false;
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);
         app.LoadQualityFixture(QualityFixture()); var revision = app.Revision; var receipt = app.Result;

@@ -6,10 +6,13 @@ host?.addEventListener('message',receive);
 export const api={
  available:!!host,
  call(op,args={},options={}){if(!host)return Promise.reject(new Error('Ouvrez cette interface depuis GLPI-Pilot.exe pour accéder au moteur C#.'));if(options.signal?.aborted)return Promise.reject(new DOMException('Opération annulée.','AbortError'));
-  return new Promise((resolve,reject)=>{const id=`p${Date.now().toString(36)}_${++sequence}`;const abort=()=>{if(!pending.has(id))return;pending.delete(id);host.postMessage({type:'cancel',id});cleanup();reject(new DOMException('Opération annulée.','AbortError'));};const cleanup=()=>options.signal?.removeEventListener('abort',abort);pending.set(id,{resolve,reject,cleanup,abort,op});options.signal?.addEventListener('abort',abort,{once:true});try{host.postMessage({id,op,args});}catch(error){pending.delete(id);cleanup();reject(error);}});
+  return new Promise((resolve,reject)=>{const id=`p${Date.now().toString(36)}_${++sequence}`;let finish;const settled=new Promise(done=>finish=done);const abort=()=>{if(!pending.has(id))return;pending.delete(id);host.postMessage({type:'cancel',id});cleanup();reject(new DOMException('Opération annulée.','AbortError'));};const cleanup=()=>{options.signal?.removeEventListener('abort',abort);finish();};pending.set(id,{resolve,reject,cleanup,abort,op,settled});options.signal?.addEventListener('abort',abort,{once:true});try{host.postMessage({id,op,args});}catch(error){pending.delete(id);cleanup();reject(error);}});
  },
  on(name,handler){if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name).add(handler);return()=>listeners.get(name)?.delete(handler);},
  cancelAll(){for(const request of [...pending.values()])if(!['app.bootstrap','app.ready','host.editor'].includes(request.op))request.abort();},
+ // Only requests already in flight belong to this snapshot; later user actions
+ // are not queued ahead of a deferred automatic collection.
+ settled(){return Promise.all([...pending.values()].map(request=>request.settled));},
  get pending(){return pending.size;}
 };
 window.addEventListener('pagehide',()=>api.cancelAll());

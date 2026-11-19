@@ -26,6 +26,14 @@ public static class ExtractionVerificationService
     public static void Preflight(AppSettings settings, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(settings); ct.ThrowIfCancellationRequested();
+        ValidateConfiguration(settings);
+        VerifyExportDestination(settings, ct);
+    }
+
+    /// <summary>Read-only configuration checks, also used before offering startup collection.</summary>
+    public static void ValidateConfiguration(AppSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
         TargetUrlPolicy.Validate(settings.PortalUrl);
         if (!BrowserChannels.IsSupported(settings.BrowserChannel)) throw new InvalidOperationException("Choisissez Edge, Chrome ou Firefox dans les réglages du navigateur.");
         if (settings.AutoMode is not ("native" or "pagination")) throw new InvalidOperationException("La méthode d’extraction configurée est inconnue.");
@@ -39,6 +47,10 @@ public static class ExtractionVerificationService
             && (settings.NativeMenuSelector.Length > 0 || settings.NativeFormatSelector.Length > 0 || settings.NativeScopeSelector.Length > 0))
             throw new InvalidOperationException("Les repères d’export personnalisés sont incomplets : renseignez le bouton d’export ou effacez les repères pour revenir à la détection automatique.");
         if (string.IsNullOrWhiteSpace(settings.ExportFolder)) throw new InvalidOperationException("Choisissez un dossier d’export avant de lancer l’extraction.");
+    }
+
+    private static void VerifyExportDestination(AppSettings settings, CancellationToken ct)
+    {
         try
         {
             Directory.CreateDirectory(settings.ExportFolder);

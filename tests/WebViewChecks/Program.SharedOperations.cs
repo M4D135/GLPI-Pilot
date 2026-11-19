@@ -60,6 +60,7 @@ internal static partial class Program
             Cities = new() { Cities = [new() { Id = "11111111111111111111111111111111", Name = "Alpha", Latitude = 50, Longitude = 2 }] }
         };
         settings.TicketDetails.AutoLoadOnSelection = false;
+        settings.Automation.CollectOnStartup = false;
         settings.Dashboard.ColumnMappings = new(StringComparer.Ordinal)
         { ["id"] = "ID", ["title"] = "Titre", ["status"] = "Statut", ["priority"] = "Priorité", ["assignee"] = "Technicien", ["location"] = "Lieu", ["category"] = "Catégorie" };
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);

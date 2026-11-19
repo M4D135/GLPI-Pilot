@@ -13,9 +13,10 @@ public static class ColumnPreparationPolicy
         "reportedAge", "reportedGroupCount", "reportedAuthorCount"
     };
 
-    private static HashSet<string> UsefulRoles(DashboardSettings settings, QueryLibrarySettings? queries)
+    private static (HashSet<string> Roles, HashSet<string> ExactHeaders) UsefulFields(DashboardSettings settings, QueryLibrarySettings? queries)
     {
         var roles = new HashSet<string>(Roles, StringComparer.Ordinal);
+        var exactHeaders = new HashSet<string>(StringComparer.Ordinal);
         foreach (var role in DashboardService.Roles)
             if (settings.ColumnMappings.TryGetValue(role.Key, out var configured) && !string.IsNullOrWhiteSpace(configured))
                 roles.Add(role.Key);
@@ -27,6 +28,7 @@ public static class ColumnPreparationPolicy
             {
                 if (!visited.Add(field)) return;
                 if (field is "role:description" or "role:solution") roles.Add(field[5..]);
+                if (field.StartsWith("column:", StringComparison.Ordinal) && field.Length > 7) exactHeaders.Add(field[7..]);
                 if (field.StartsWith("calc:", StringComparison.Ordinal)
                     && query.ComputedFields.FirstOrDefault(computed => computed.Key == field[5..]) is { } computed)
                 { Field(computed.Field); Field(computed.OtherField); }
@@ -36,11 +38,12 @@ public static class ColumnPreparationPolicy
             foreach (var condition in query.Conditions)
             {
                 Field(condition.Field);
-                if (condition.ValueSource == "field") Field(condition.Value);
-                if (condition.Value2Source == "field") Field(condition.Value2);
+                if (condition.Operator is not ("empty" or "not-empty") && condition.ValueSource == "field") Field(condition.Value);
+                if (condition.Operator is "number-between" or "number-outside" or "date-between" or "date-outside"
+                    && condition.Value2Source == "field") Field(condition.Value2);
             }
         }
-        return roles;
+        return (roles, exactHeaders);
     }
 
     private static bool UsesSolution(DashboardSettings settings)
@@ -83,19 +86,30 @@ public static class ColumnPreparationPolicy
         var existing = added.Select(option => option.Value).ToHashSet(StringComparer.Ordinal);
         var available = Available(preferences).Where(option => !existing.Contains(option.Value)).ToArray();
         if (mode == "all") return available.FirstOrDefault();
-        var roles = UsefulRoles(settings, queries);
-        var present = DashboardService.ResolveColumns(headers.Concat(added.Select(Header)).ToArray(), settings)
+        var useful = UsefulFields(settings, queries);
+        var currentHeaders = headers.Concat(added.Select(Header)).ToArray();
+        var present = DashboardService.ResolveColumns(currentHeaders, settings)
             .Where(column => column.Index.HasValue).Select(column => column.Role).ToHashSet(StringComparer.Ordinal);
         var candidates = DashboardService.ResolveColumns(available.Select(Header).ToArray(), settings);
-        var missing = candidates.FirstOrDefault(column => roles.Contains(column.Role) && !present.Contains(column.Role) && column.Index.HasValue);
-        return missing?.Index is int index ? available[index] : null;
+        var missing = candidates.FirstOrDefault(column => useful.Roles.Contains(column.Role) && !present.Contains(column.Role) && column.Index.HasValue);
+        if (missing?.Index is int index) return available[index];
+        // A column: reference has the same exact, case-sensitive identity as in
+        // QueryService. Do not substitute an alias, strip its namespace, or choose
+        // one of two offered fields that would produce the same header.
+        var offered = available.GroupBy(Header, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        return available.FirstOrDefault(option => useful.ExactHeaders.Contains(Header(option))
+            && !currentHeaders.Contains(Header(option), StringComparer.Ordinal) && offered[Header(option)] == 1);
     }
 
     public static List<string> MissingRoles(IReadOnlyList<string> headers, DashboardSettings settings, QueryLibrarySettings? queries = null)
     {
-        var roles = UsefulRoles(settings, queries);
-        return DashboardService.ResolveColumns(headers, settings).Where(column => roles.Contains(column.Role) && !column.Index.HasValue)
+        var useful = UsefulFields(settings, queries);
+        var missing = DashboardService.ResolveColumns(headers, settings).Where(column => useful.Roles.Contains(column.Role) && !column.Index.HasValue)
             .Select(column => column.Label).ToList();
+        missing.AddRange(useful.ExactHeaders.Where(header => headers.Count(value => string.Equals(value, header, StringComparison.Ordinal)) != 1)
+            .Select(header => "Colonne exacte « " + header + " »"));
+        return missing;
     }
 
     public static void ApplyReceipt(ExtractionResult data, ColumnPreparationReceipt receipt)

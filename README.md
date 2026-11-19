@@ -36,6 +36,10 @@ Avant toute modification, Pilot sauvegarde la vue personnelle et journalise ses 
 
 L’ouverture d’une fiche reconnaît aussi la liste des tickets obtenue après une connexion à l’accueil GLPI, lorsque la collecte a vérifié la recherche et son contexte. La source du tableau est conservée avant le téléchargement natif, afin qu’une adresse de contrôleur d’export ne remplace pas celle de la recherche. Voir les [notes 4.0.12](docs/RELEASE-4.0.12.md).
 
+La collecte de la recherche active peut démarrer automatiquement à l’ouverture de Pilot lorsque la configuration est prête. L’option **« Collecter au démarrage »**, activée par défaut, se règle dans l’automatisation. Le dernier relevé reste disponible pendant la préparation et si la connexion échoue. Une seule tentative est effectuée par lancement, avec les filtres enregistrés, la progression et l’arrêt habituels.
+
+Ouvrir Rechercher ou Tickets interrompt cette collecte automatique et laisse son nettoyage se terminer avant la consultation. Une fiche peut aussi ouvrir directement son onglet lorsque le navigateur était fermé, sans charger une liste lourde ni attendre une restauration de colonnes encore en suspens. Les colonnes explicitement utilisées dans les requêtes enregistrées, y compris celles des plugins, sont prises en compte par leur en-tête exact.
+
 ## 4.0.11 : toutes les colonnes et contrôles natifs revalidés
 
 **Toutes les colonnes proposées par GLPI** devient le choix par défaut. L’ancien réglage courant « Colonnes de supervision » d’un profil local passe une fois à ce nouveau défaut ; les choix ultérieurs, les recherches mémorisées et les choix explicitement importés ou restaurés sont conservés. Les ajouts restent limités aux colonnes manquantes de la vue personnelle, dans le périmètre de la recherche filtrée.

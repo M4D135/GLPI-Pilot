@@ -120,7 +120,7 @@ public sealed partial class BrowserService
         try
         {
             ct.ThrowIfCancellationRequested();
-            if (_context == null) await OpenAsync(settings, ct, background: true);
+            if (!HasMatchingBrowserContext(settings)) await EnsureBrowserContextAsync(settings, ct, background: true);
             if (_context == null) throw new InvalidOperationException("Le navigateur piloté n’est pas disponible.");
             if (TicketPage == null)
             {

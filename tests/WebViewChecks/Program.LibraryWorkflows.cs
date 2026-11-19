@@ -79,9 +79,19 @@ internal static partial class Program
         var settings = new AppSettings
         {
             PortalUrl = WorkflowSource, Theme = "dark", ListTimeoutSeconds = 5, DetailTimeoutSeconds = 5,
-            MaxPages = 10, MaxRows = 1000, ExportFolder = Path.Combine(_root, "Exports")
+            MaxPages = 10, MaxRows = 1000, ExportFolder = Path.Combine(_root, "Exports"), Automation = new() { CollectOnStartup = false }
         };
-        await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings, portal.Service);
+        var captureTrace = new ConcurrentQueue<string>();
+        portal.Service.Log += message => { captureTrace.Enqueue(message); while (captureTrace.Count > 30) captureTrace.TryDequeue(out _); };
+        await using var app = new PilotApplication(host, (name, data) =>
+        {
+            if (name is "operation.progress" or "operation.state")
+            {
+                captureTrace.Enqueue(name + " " + JsonSerializer.Serialize(data, PilotApplication.Json));
+                while (captureTrace.Count > 30) captureTrace.TryDequeue(out _);
+            }
+            bridge?.Publish(name, data);
+        }, settings, portal.Service);
         // The synthetic portal has a deliberate fifteen-second index latch. Use
         // an explicitly configured, still rate-limited test policy rather than
         // changing production defaults or extending any journey deadline.
@@ -154,7 +164,24 @@ internal static partial class Program
         }
         async Task WaitCaptureFinished()
         {
-            await WaitForPageAsync(page, "document.querySelector('.library-progress')?.hidden===true && !!document.querySelector('.library-capture-summary:not([hidden])')");
+            try
+            {
+                await WaitForPageAsync(page, "document.querySelector('.library-progress')?.hidden===true && !!document.querySelector('.library-capture-summary:not([hidden])')",
+                    diagnostic: "() => JSON.stringify({busy:document.querySelector('#app')?.dataset.busy,progress:document.querySelector('.library-progress')?.innerText,summary:document.querySelector('.library-capture-summary')?.innerText,errors:[...document.querySelectorAll('.notice.danger,.toast.danger')].map(e=>e.innerText)})");
+            }
+            catch (TimeoutException)
+            {
+                var latest = await store.LatestCaptureAsync();
+                Console.WriteLine("TRACE library wait " + JsonSerializer.Serialize(new
+                {
+                    app.CurrentOperation, app.IsBusy, portal.AllIndexRequests,
+                    details = portal.DetailRequests.ToArray(), status = latest?.Status, read = latest?.Read, targeted = latest?.Targeted,
+                    lastReplies = observed.TakeLast(8).Select(call => call.Operation).ToArray(), trace = captureTrace.ToArray()
+                }, PilotApplication.Json));
+                try { await Capture("library-workflows-wait-failure"); }
+                catch (Exception error) { Console.WriteLine("TRACE library failure capture: " + error.GetType().Name); }
+                throw;
+            }
             await delivery;
         }
 

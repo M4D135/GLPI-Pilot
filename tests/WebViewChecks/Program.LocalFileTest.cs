@@ -64,7 +64,7 @@ internal static partial class Program
             if (name == "operation.progress") Console.WriteLine("TRACE import progress " + JsonSerializer.Serialize(data, PilotApplication.Json));
             bridge?.Publish(name, data);
         }, new AppSettings
-        { Theme = "dark", PortalUrl = QualityFixture().SourceUrl, ExportFolder = Path.Combine(_root, "Exports") });
+        { Theme = "dark", PortalUrl = QualityFixture().SourceUrl, ExportFolder = Path.Combine(_root, "Exports"), Automation = new() { CollectOnStartup = false } });
         mapApplication = app;
         app.LoadQualityFixture(QualityFixture()); var original = app.Result;
         var originalLibrary = (await Call(app, "library.get")).GetProperty("stats").GetProperty("ticketCount").GetInt32();

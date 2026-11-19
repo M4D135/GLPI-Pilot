@@ -126,10 +126,12 @@ public sealed partial class PilotApplication : IAsyncDisposable
             // also reaches a scheduled collection, which has no WebBridge request ID.
             if (operation == "operations.cancel") return handler(arguments, ct);
             if (TryCollectionControl(operation, arguments, ct, out var collectionControl)) return collectionControl;
+            if (TryStartupCollectionAdmission(operation, arguments, out var startupReply)) return Task.FromResult(startupReply);
             var ownedArguments = arguments.Clone();
             var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
             var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _pendingExecutions.Add(finished.Task, linked);
+            if (operation == "collect.startup") _startupCollectionCancellation = linked;
             return ExecuteRegisteredAsync(operation, handler, ownedArguments, linked, finished);
         }
     }
@@ -172,6 +174,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
             {
                 lock (_executionAdmission)
                 {
+                    if (ReferenceEquals(_startupCollectionCancellation, cancellation)) _startupCollectionCancellation = null;
                     _pendingExecutions.Remove(finished.Task); cancellation.Dispose(); finished.TrySetResult();
                 }
             }

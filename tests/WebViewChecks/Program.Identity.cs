@@ -36,6 +36,7 @@ internal static partial class Program
             { if (!page.IsClosed) await page.EvaluateAsync("json=>window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
         var settings = new AppSettings { Theme = "light", PortalUrl = "https://identity-fixture.invalid/front/ticket.php", ExportFolder = Path.Combine(_root, "Exports") };
+        settings.Automation.CollectOnStartup = false;
         settings.Interface.OnboardingCompleted = true;
         settings.Dashboard.ColumnMappings = new() { ["id"] = "ID", ["title"] = "Titre", ["status"] = "Statut", ["assignee"] = "Technicien" };
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);

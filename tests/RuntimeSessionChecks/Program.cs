@@ -302,6 +302,7 @@ tests.AddRange(SharedConflictRuntimeChecks.Create());
 tests.AddRange(WorkspaceOverviewChecks.Create());
 tests.AddRange(TicketSearchChecks.Create());
 tests.AddRange(TicketCacheRuntimeChecks.Create());
+tests.AddRange(StartupCollectionChecks.Create());
 var chromium = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM");
 if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await SessionBrowserChecks.Create(chromium));
 if (!string.IsNullOrWhiteSpace(chromium)) tests.AddRange(await LibraryCaptureRuntimeChecks.CreateBrowser(chromium));
@@ -315,6 +316,7 @@ if (args.Contains("--file-source-only", StringComparer.Ordinal)) tests = tests.W
 if (args.Contains("--site-patch-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Site patch:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--source-cache-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Source cache:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--deployment-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Deployment:", StringComparison.Ordinal)).ToList();
+if (args.Contains("--startup-collection-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Startup collection:", StringComparison.Ordinal)).ToList();
 int failures = 0;
 foreach (var test in tests)
 {

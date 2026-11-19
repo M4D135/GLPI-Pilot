@@ -16,6 +16,7 @@ internal static partial class Program
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new()
         { Headless = true, ExecutablePath = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM"), Args = ["--no-sandbox", "--disable-dev-shm-usage"] });
+        await CheckStartupTicketNavigationInterfaceAsync(browser, web, settings);
         await using var context = await browser.NewContextAsync(new()
         { ViewportSize = new() { Width = 1440, Height = 1000 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.Reduce });
         var page = await context.NewPageAsync(); page.SetDefaultTimeout(15000);
@@ -23,6 +24,11 @@ internal static partial class Program
         var campaigns = new ConcurrentQueue<JsonElement>(); var externalRequests = 0; var blockedLiveCalls = 0;
         var waitForCancellation = false; var returnFailedCampaign = false;
         var failSingleCollection = false;
+        var startupRuns = 0; var startupUiReady = false; AppSettings? startupSettings = null;
+        var startupEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startupStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var initialCardEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var initialCardRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource? singleCollectionEntered = null, singleCollectionRelease = null, singleCollectionStopped = null;
         var cancellationPrepared = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         long cancellationRevision = 0;
@@ -44,6 +50,15 @@ internal static partial class Program
             { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
         await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);
+        var restoreStartupFixture = app.ConfigureStartupCollectionFixture(async (_, ct) =>
+        {
+            Interlocked.Increment(ref startupRuns); startupSettings = app.Settings.Copy();
+            startupUiReady = await page.EvaluateAsync<bool>("() => document.body.dataset.ready==='true'&&!!document.querySelector('.page-content[data-page=home]')&&!document.querySelector('#content').hasAttribute('aria-busy')");
+            bridge?.Publish("operation.progress", new { message = "Collecte synthétique au démarrage en cours…" });
+            startupEntered.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, ct); return new { collected = true }; }
+            finally { startupStopped.TrySetResult(); }
+        });
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
         {
             operations.Enqueue(op);
@@ -84,6 +99,8 @@ internal static partial class Program
             try
             {
                 var result = await app.ExecuteAsync(op, data, ct);
+                if (op == "calendar.summary" && initialCardEntered.TrySetResult())
+                    await initialCardRelease.Task.WaitAsync(ct);
                 if (op == "collect.campaign") campaigns.Enqueue(JsonSerializer.SerializeToElement(result, PilotApplication.Json));
                 return result;
             }
@@ -166,6 +183,55 @@ internal static partial class Program
         }
 
         await OpenApplication();
+        await initialCardEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await page.EvaluateAsync("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        var waitedForInitialCards = startupRuns == 0 && !operations.Contains("collect.startup");
+        initialCardRelease.TrySetResult();
+        await startupEntered.Task.WaitAsync(TimeSpan.FromSeconds(15)); await delivery;
+        var startupOperations = operations.ToList();
+        Require(waitedForInitialCards && startupUiReady && startupRuns == 1 && startupOperations.IndexOf("app.ready") < startupOperations.IndexOf("collect.startup")
+            && startupSettings is { } observedStartup && observedStartup.PortalUrl == settings.PortalUrl && observedStartup.ActiveSourceId == settings.ActiveSourceId
+            && !startupOperations.Any(operation => operation is "collect.campaign" or "automation.recipe" or "library.capture" or "library.sync" or "library.loadRecords"),
+            "Startup waits for the initial Home cards without blocking app.ready, then enters the real token-guarded C# handler once for the active saved search without a campaign or library collection.");
+        await WaitForPageAsync(page, "document.querySelector('.status-text')?.textContent.includes('Collecte synthétique au démarrage')");
+        Require(await page.Locator(".statusbar progress").IsVisibleAsync()
+            && await page.Locator(".statusbar").GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).IsVisibleAsync()
+            && await page.GetByLabel("Source des données", new() { Exact = true }).IsDisabledAsync()
+            && await page.Locator(".page-heading button[aria-label=Actualiser]").IsDisabledAsync(),
+            "Startup collection uses the normal visible progress and cancellation controls while preventing a second source refresh.");
+        await page.Locator(".statusbar").GetByRole(AriaRole.Button, new() { Name = "Annuler", Exact = true }).ClickAsync();
+        await startupStopped.Task.WaitAsync(TimeSpan.FromSeconds(15)); await Idle();
+        await WaitForPageAsync(page, "document.querySelector('#app')?.dataset.busy!=='true'");
+        restoreStartupFixture();
+        Require(app.Result is null && await OnPage("home") && operations.Contains("operations.cancel")
+            && await page.Locator("#notifications .toast.danger").CountAsync() == 0
+            && !(await page.Locator("#notifications").InnerTextAsync()).Contains("terminée", StringComparison.Ordinal),
+            "Cancelling startup through the real bridge stops its collection without a false completion, failure toast or page change.");
+        await OpenApplication(reload: true); await Idle();
+        var startupAfterReload = (await Call(app, "app.bootstrap")).GetProperty("startupCollection");
+        Require(startupRuns == 1 && operations.Count(operation => operation == "collect.startup") == 1
+            && startupAfterReload.GetProperty("attempted").GetBoolean() && !startupAfterReload.GetProperty("eligible").GetBoolean(),
+            "Reloading and bootstrapping the same application after cancellation never re-arms startup collection.");
+        await ClickNavigationAsync(page, "settings"); await WaitForNavigationTargetAsync(page, "settings");
+        await page.Locator(".settings-workspace[data-ready=true]").WaitForAsync();
+        await page.Locator("#cfg-search").FillAsync("Collecter au démarrage");
+        await page.Locator("#cfg-search-list [role=option]").Filter(new() { HasText = "Collecter au démarrage" }).ClickAsync();
+        await page.Locator("[data-open-panel=automation]").ClickAsync();
+        var automation = page.GetByRole(AriaRole.Dialog, new() { Name = "Programmer les collectes", Exact = true });
+        var startupChoice = automation.GetByRole(AriaRole.Checkbox, new() { Name = "Collecter au démarrage", Exact = true });
+        await startupChoice.WaitForAsync();
+        Require(await startupChoice.IsCheckedAsync() && app.Settings.Automation.CollectOnStartup
+            && (await automation.InnerTextAsync()).Contains("recherche GLPI active avec ses filtres enregistrés", StringComparison.Ordinal),
+            "Settings search reaches the enabled-by-default startup option and explains its active-search scope.");
+        await startupChoice.UncheckAsync();
+        await automation.GetByRole(AriaRole.Button, new() { Name = "Enregistrer", Exact = true }).ClickAsync(); await Idle();
+        await CloseDialog(automation);
+        await page.Locator("[data-open-panel=automation]").ClickAsync(); await startupChoice.WaitForAsync();
+        Require(!await startupChoice.IsCheckedAsync() && !app.Settings.Automation.CollectOnStartup && !AppSettings.Load().Automation.CollectOnStartup
+            && app.Settings.PortalUrl == settings.PortalUrl && startupRuns == 1,
+            "Disabling startup collection persists through the real automation settings and reopening, without altering the search or launching another collection.");
+        await CloseDialog(automation);
+        await ClickNavigationAsync(page, "home"); await WaitForNavigationTargetAsync(page, "home"); await Idle();
         await Button("Collecter depuis GLPI").ClickAsync(); await WaitForNavigationTargetAsync(page, "data");
         await page.Locator(".data-workspace[data-ready=true]").WaitForAsync();
         Require(await page.Locator(".workspace-live-source").GetByRole(AriaRole.Heading, new() { Name = "GLPI en direct", Exact = true }).IsVisibleAsync()
@@ -493,5 +559,108 @@ internal static partial class Program
         Require(errors.IsEmpty && externalRequests == 0 && blockedLiveCalls == 0,
             "The complete source workflow has no JavaScript error, external request or attempted real-portal collection in the isolated test.");
         await actualBridge.DisposeAsync(); await delivery;
+    }
+
+    private static async Task CheckStartupTicketNavigationInterfaceAsync(IBrowser browser, string web, AppSettings settings)
+    {
+        await using var context = await browser.NewContextAsync(new()
+        { ViewportSize = new() { Width = 1440, Height = 1000 }, Locale = "fr-FR", ReducedMotion = ReducedMotion.Reduce });
+        var page = await context.NewPageAsync(); page.SetDefaultTimeout(15000);
+        var errors = new ConcurrentQueue<string>(); var operations = new ConcurrentQueue<string>(); var externalRequests = 0;
+        page.PageError += (_, error) => errors.Enqueue(error);
+        await context.RouteAsync("**/*", async route =>
+        {
+            var uri = new Uri(route.Request.Url);
+            if (uri.Host != "glpi-pilot.local") { Interlocked.Increment(ref externalRequests); await route.AbortAsync(); return; }
+            var relative = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'); if (relative.Length == 0) relative = "index.html";
+            var path = Path.GetFullPath(Path.Combine(web, relative));
+            if (!path.StartsWith(web + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path)) { await route.FulfillAsync(new() { Status = 404 }); return; }
+            var mime = Path.GetExtension(path) switch { ".html" => "text/html", ".js" => "text/javascript", ".css" => "text/css", ".svg" => "image/svg+xml", _ => "application/octet-stream" };
+            await route.FulfillAsync(new() { ContentType = mime, BodyBytes = await File.ReadAllBytesAsync(path) });
+        });
+        var host = new TestHost(_root) { Page = page }; WebBridge? bridge = null; Task delivery = Task.CompletedTask; var gate = new object();
+        void Post(string json)
+        {
+            lock (gate) delivery = delivery.ContinueWith(async _ =>
+            { if (!page.IsClosed) await page.EvaluateAsync("json => window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
+        }
+        await using var app = new PilotApplication(host, (name, data) => bridge?.Publish(name, data), settings);
+        var observed = new ExtractionResult
+        {
+            Headers = ["ID", "Titre", "Statut"], Rows = [new[] { "41101", "Ticket conservé pendant la collecte", "Nouveau" }],
+            SourceUrl = settings.PortalUrl, Complete = true,
+            Provenance = new() { SourceKind = "glpi", RequestedUrl = settings.PortalUrl, SearchVerified = true, ScopeVerified = true, ScopeFingerprint = "startup-navigation-fixture" }
+        };
+        app.LoadStartupTicketSourceFixture(observed);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restoring = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restoreRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startupRuns = 0; var completedReads = 0;
+        app.ConfigureStartupCollectionFixture(async (_, ct) =>
+        {
+            Interlocked.Increment(ref startupRuns); entered.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, ct); return null; }
+            finally { restoring.TrySetResult(); await restoreRelease.Task; }
+        });
+        await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, data, ct) =>
+        {
+            operations.Enqueue(op);
+            if (op == "app.ready") return new { ready = true };
+            if (op == "host.editor") { app.EditorOpen = data.GetProperty("open").GetBoolean(); return new { updated = true }; }
+            if (op is "collect.run" or "collect.connect" or "collect.campaign") throw new InvalidOperationException("Unexpected portal operation in startup navigation fixture.");
+            var result = await app.ExecuteAsync(op, data, ct);
+            if (op == "records.list") Interlocked.Increment(ref completedReads);
+            return result;
+        }, Post); bridge = actualBridge;
+        await page.ExposeBindingAsync("__pilotSend", (BindingSource _, string json) => bridge.Receive(json));
+        await page.AddInitScriptAsync("""
+            (() => { const listeners = new Set(); window.chrome ||= {}; window.chrome.webview = {
+              postMessage: message => window.__pilotSend(JSON.stringify(message)),
+              addEventListener: (name, handler) => { if (name === 'message') listeners.add(handler); },
+              removeEventListener: (name, handler) => listeners.delete(handler)
+            }; window.__pilotDeliver = message => { for (const listener of listeners) listener({ data: message }); }; })();
+            """);
+        try
+        {
+            await page.GotoAsync("https://glpi-pilot.local/index.html", new() { WaitUntil = WaitUntilState.Commit });
+            await ReadyAsync(page); await entered.Task.WaitAsync(TimeSpan.FromSeconds(15)); await delivery;
+            Require(startupRuns == 1 && app.IsBusy && app.CurrentOperation == "collect.startup" && ReferenceEquals(observed, app.Result),
+                "Automatic startup starts with the preceding GLPI observation intact and the Home interface ready.");
+            // Do not use the helper that waits for the destination to finish:
+            // restoration is deliberately held until the gate assertion below.
+            await page.Locator(".nav-item[data-page='records']").ClickAsync();
+            await restoring.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Require(operations.Contains("collect.startup.interrupt") && !operations.Contains("operations.cancel")
+                && app.IsBusy && app.CurrentOperation == "collect.startup" && completedReads == 0 && ReferenceEquals(observed, app.Result),
+                "Opening Rechercher sends the startup-only interruption before workspace reads and retains the execution gate until restoration finishes.");
+        }
+        finally { restoreRelease.TrySetResult(); }
+        await WaitForNavigationTargetAsync(page, "records");
+        await WaitForPageAsync(page, "() => !!document.querySelector('.tickets-record-grid tbody tr')&&!document.querySelector('#content').hasAttribute('aria-busy')");
+        var rows = await page.Locator(".tickets-record-grid").InnerTextAsync();
+        var cleanInterruption = await page.Locator("#notifications .toast.danger").CountAsync() == 0
+            && !(await page.Locator("#notifications").InnerTextAsync()).Contains("terminée", StringComparison.Ordinal);
+        await page.ReloadAsync(new() { WaitUntil = WaitUntilState.Commit }); await ReadyAsync(page);
+        await WaitForPageAsync(page, "async()=>!(await import('/js/bridge.js')).api.pending"); await delivery;
+        Require(rows.Contains("Ticket conservé pendant la collecte", StringComparison.Ordinal) && completedReads > 0
+            && startupRuns == 1 && operations.Count(operation => operation == "collect.startup") == 1
+            && cleanInterruption && ReferenceEquals(observed, app.Result) && !app.Browser.IsOpen && externalRequests == 0 && errors.IsEmpty
+            && await page.Locator("#notifications .toast.danger").CountAsync() == 0,
+            "Ticket navigation displays the conserved observation after cleanup, without a portal read, error toast or automatic restart after interface reload.");
+        await actualBridge.DisposeAsync(); await delivery;
+    }
+}
+
+namespace GlpiPilot.Runtime
+{
+    public sealed partial class PilotApplication
+    {
+        public void LoadStartupTicketSourceFixture(ExtractionResult data) => SetResult(data);
+        public Action ConfigureStartupCollectionFixture(Func<JsonElement, CancellationToken, Task<object?>> collect)
+        {
+            var previous = _handlers["collect.run"]; var browserAvailable = _startupBrowserAvailable; var networkAvailable = _networkAvailable;
+            _handlers["collect.run"] = collect; _startupBrowserAvailable = _ => true; _networkAvailable = () => true;
+            return () => { _handlers["collect.run"] = previous; _startupBrowserAvailable = browserAvailable; _networkAvailable = networkAvailable; };
+        }
     }
 }

@@ -79,6 +79,7 @@ public sealed partial class PilotApplication
         ct.ThrowIfCancellationRequested(); var read = DeploymentConfigurationService.Read(path, AppPaths.DataRoot);
         var current = DeploymentConfigurationService.Capture(Settings, AppPaths.DataRoot);
         current.Settings = Settings.Copy();
+        read.Configuration.Settings.Automation.CollectOnStartup = Settings.Automation.CollectOnStartup;
         current.Library = DeploymentConfigurationService.WithoutSecrets(new LibraryPreferencesStore().Load(), ["ProtectedPassword", "PasswordBinding"]);
         var sections = new List<object>();
         void Add(string key, string title, object before, object after)

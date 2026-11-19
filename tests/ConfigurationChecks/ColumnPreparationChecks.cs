@@ -12,6 +12,10 @@ internal static class ColumnPreparationChecks
         yield return ("Colonnes GLPI : tous les rôles opérationnels, sans textes lourds ni champs arbitraires", UsefulRoles);
         yield return ("Colonnes GLPI : textes ajoutés seulement par correspondance ou usage configuré", ConfiguredText);
         yield return ("Colonnes GLPI : rôles des requêtes, opérandes et calculs explicitement utilisés", QueryText);
+        yield return ("Colonnes GLPI : colonnes exactes des regroupements, filtres et agrégats", QueryExactColumns);
+        yield return ("Colonnes GLPI : dépendances exactes des calculs référencés, hors littéraux et calculs inactifs", QueryExactComputations);
+        yield return ("Colonnes GLPI : en-tête exact unique, sans substitution ni ajout répété", QueryExactIdentity);
+        yield return ("Colonnes GLPI : reçu des colonnes exactes absentes ou ambiguës", QueryExactReceipt);
         yield return ("Colonnes GLPI : toutes les options offertes, sans doublon ni plafond caché", All);
         yield return ("Colonnes GLPI : ID demandeur, mappages explicites et ambiguïtés préservés", Conservative);
         yield return ("Colonnes GLPI : ajouts conservent les colonnes initiales dans leur ordre", HeaderOrder);
@@ -208,7 +212,7 @@ internal static class ColumnPreparationChecks
             query => { query.GroupBy = "role:status"; query.GroupBySecondary = "role:solution"; },
             query => { query.GroupBy = "role:status"; query.GroupBySecondary = "role:type"; query.GroupByTertiary = "role:solution"; },
             query => query.Conditions.Add(new() { Field = "role:title", ValueSource = "field", Value = "role:solution" }),
-            query => query.Conditions.Add(new() { Field = "role:title", Value2Source = "field", Value2 = "role:solution" }),
+            query => query.Conditions.Add(new() { Field = "role:title", Operator = "number-between", Value2Source = "field", Value2 = "role:solution" }),
             query => { query.Aggregate = "sum"; query.AggregateField = "role:solution"; },
             query => { query.GroupBy = "calc:texte"; query.ComputedFields.Add(new() { Key = "texte", Field = "role:solution" }); }
         })
@@ -224,6 +228,133 @@ internal static class ColumnPreparationChecks
         } };
         Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
             "Une valeur littérale, un champ de calcul inactif ou un calcul non référencé ne doivent pas activer les textes lourds.");
+    }
+    private static void QueryExactColumns()
+    {
+        var preferences = new NativeColumnPreferences { Options = new()
+        {
+            Option("21", "Description"), Option("40", "Solution"),
+            Option("900", "Coût validé", "Extension métier"), Option("901", "Texte inutilisé", "Autre extension")
+        } };
+        foreach (var (header, id) in new[] { ("Description", "21"), ("Solution", "40"), ("Extension métier - Coût validé", "900") })
+        foreach (var configure in new Action<SavedQuery, string>[]
+        {
+            (query, field) => query.GroupBy = field,
+            (query, field) => { query.GroupBy = "role:status"; query.GroupBySecondary = field; },
+            (query, field) => { query.GroupBy = "role:status"; query.GroupBySecondary = "role:type"; query.GroupByTertiary = field; },
+            (query, field) => query.Conditions.Add(new() { Field = field }),
+            (query, field) => query.Conditions.Add(new() { Field = "role:title", ValueSource = "field", Value = field }),
+            (query, field) => query.Conditions.Add(new() { Field = "role:title", Operator = "number-between", Value2Source = "field", Value2 = field }),
+            (query, field) => { query.Aggregate = "sum"; query.AggregateField = field; }
+        })
+        {
+            var query = new SavedQuery(); configure(query, "column:" + header);
+            var queries = new QueryLibrarySettings { Queries = new() { query } };
+            var added = new List<NativeColumnOption>();
+            while (ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), added, queries) is { } next) added.Add(next);
+            Check(added.Select(option => option.Value).SequenceEqual(new[] { id }),
+                "La requête doit préparer uniquement la colonne exacte qu’elle utilise, y compris un champ de plugin sans rôle natif.");
+        }
+    }
+    private static void QueryExactComputations()
+    {
+        var preferences = new NativeColumnPreferences { Options = new()
+        {
+            Option("21", "Description"), Option("40", "Solution"),
+            Option("900", "Coût validé", "Extension métier"), Option("901", "Texte inutilisé", "Autre extension")
+        } };
+        var query = new SavedQuery
+        {
+            GroupBy = "calc:combine",
+            ComputedFields = new()
+            {
+                new() { Key = "combine", Function = "concat", Field = "calc:description", OtherField = "column:Solution" },
+                new() { Key = "description", Function = "lower", Field = "column:Description" },
+                new() { Key = "inactif", Field = "column:Extension métier - Coût validé" }
+            },
+            AggregateField = "column:Autre extension - Texte inutilisé",
+            Conditions = new() { new() { Field = "role:title", Value = "column:Autre extension - Texte inutilisé" } }
+        };
+        var queries = new QueryLibrarySettings { Queries = new() { query } };
+        var added = new List<NativeColumnOption>();
+        while (ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), added, queries) is { } next) added.Add(next);
+        Check(added.Select(option => option.Value).SequenceEqual(new[] { "21", "40" }),
+            "Les deux opérandes d’un calcul utilisé sont préparés, sans calcul inactif, valeur littérale ni champ d’agrégat du comptage.");
+        query.GroupBy = "";
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
+            "Supprimer le dernier usage d’un calcul doit arrêter la préparation de ses textes lourds.");
+        query.Aggregate = "sum"; query.AggregateField = "calc:inactif";
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries)?.Value == "900",
+            "Un calcul nouvellement utilisé dans l’agrégat doit obtenir sa colonne exacte.");
+        foreach (var op in new[] { "empty", "not-empty" })
+        {
+            queries.Queries = new() { new() { Conditions = new() { new()
+            {
+                Field = "role:title", Operator = op, ValueSource = "field", Value = "column:Description",
+                Value2Source = "field", Value2 = "role:solution"
+            } } } };
+            Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
+                "Les opérateurs vide/non vide ne lisent aucune borne, même si un ancien choix de champ reste enregistré.");
+        }
+        foreach (var op in new[] { "equals", "number-gte", "date-before", "last-days" })
+        {
+            queries.Queries = new() { new() { Conditions = new() { new()
+            { Field = "role:title", Operator = op, Value2Source = "field", Value2 = "column:Solution" } } } };
+            Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
+                "Un opérateur à une seule borne doit ignorer le champ exact conservé dans sa seconde borne inactive.");
+        }
+        foreach (var op in new[] { "number-between", "number-outside", "date-between", "date-outside" })
+        {
+            queries.Queries = new() { new() { Conditions = new() { new()
+            { Field = "role:title", Operator = op, Value2Source = "field", Value2 = "column:Solution" } } } };
+            Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries)?.Value == "40",
+                "Les opérateurs d’intervalle utilisent bien la deuxième borne exacte.");
+        }
+    }
+    private static void QueryExactIdentity()
+    {
+        const string header = "Extension métier - Coût validé";
+        var queries = new QueryLibrarySettings { Queries = new() { new() { GroupBy = "column:" + header } } };
+        var preferences = new NativeColumnPreferences { Options = new()
+        { Option("900", "Coût validé", "Extension métier"), Option("901", "Coût validé", "Extension métier") } };
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
+            "Deux options natives portant le même en-tête exact restent ambiguës : aucune ne doit être ajoutée.");
+        var ambiguousRole = new NativeColumnPreferences { Options = new() { Option("12", "Statut"), Option("112", "Statut") } };
+        var roleQuery = new QueryLibrarySettings { Queries = new() { new() { GroupBy = "column:Statut" } } };
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), ambiguousRole, new(), Array.Empty<NativeColumnOption>(), roleQuery) is null,
+            "Le rôle opérationnel Statut ne doit pas contourner l’ambiguïté de la colonne exacte demandée.");
+        preferences.Options.RemoveAt(1);
+        var chosen = ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries);
+        Check(chosen?.Value == "900");
+        Check(ColumnPreparationPolicy.Next("supervision", new[] { header }, preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null);
+        Check(ColumnPreparationPolicy.Next("supervision", new[] { header, header }, preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
+            "Une ambiguïté déjà présente dans le relevé ne doit pas déclencher un troisième ajout.");
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), new[] { chosen! }, queries) is null);
+        foreach (var mismatch in new[] { "extension métier - Coût validé", "Extension métier - Cout valide", " " + header, "Coût validé" })
+        {
+            queries.Queries[0].GroupBy = "column:" + mismatch;
+            Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null,
+                "Une référence exacte ne doit pas utiliser la comparaison normalisée des rôles ni ignorer le namespace.");
+        }
+        queries.Queries[0].GroupBy = "column:" + header;
+        preferences.Options[0].Disabled = true;
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null);
+        preferences.Options[0].Disabled = false; preferences.SelectedIdsKnown = true;
+        preferences.Selected.Add(new() { Value = "900", Label = "Coût validé" });
+        Check(ColumnPreparationPolicy.Next("supervision", Array.Empty<string>(), preferences, new(), Array.Empty<NativeColumnOption>(), queries) is null);
+    }
+    private static void QueryExactReceipt()
+    {
+        const string header = "Extension métier - Coût validé";
+        const string receipt = "Colonne exacte « Extension métier - Coût validé »";
+        var queries = new QueryLibrarySettings { Queries = new() { new() { GroupBy = "column:" + header } } };
+        Check(ColumnPreparationPolicy.MissingRoles(Array.Empty<string>(), new(), queries).Contains(receipt));
+        Check(!ColumnPreparationPolicy.MissingRoles(new[] { header }, new(), queries).Contains(receipt));
+        Check(ColumnPreparationPolicy.MissingRoles(new[] { header, header }, new(), queries).Contains(receipt),
+            "Un en-tête exact dupliqué est indisponible pour QueryService et ne doit pas être confirmé dans le reçu.");
+        Check(ColumnPreparationPolicy.MissingRoles(new[] { header.ToLowerInvariant() }, new(), queries).Contains(receipt));
+        queries.Queries[0].GroupBy = "";
+        Check(!ColumnPreparationPolicy.MissingRoles(Array.Empty<string>(), new(), queries).Contains(receipt));
     }
     private static void All()
     {

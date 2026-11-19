@@ -34,6 +34,7 @@ internal static partial class Program
             { if (!page.IsClosed) await page.EvaluateAsync("json=>window.__pilotDeliver(JSON.parse(json))", json); }, TaskScheduler.Default).Unwrap();
         }
         var settings = new AppSettings { Theme = "light", ExportFolder = Path.Combine(_root, "Exports"), PortalUrl = "https://deployment-fixture.invalid/front/ticket.php" };
+        settings.Automation.CollectOnStartup = false;
         settings.Interface.OnboardingCompleted = true; settings.Cities.Cities.Add(new() { Name = "Ville actuelle" }); settings.Save();
         await using var app = new PilotApplication(host, (name, value) => bridge?.Publish(name, value), settings);
         await using var actualBridge = new WebBridge(app.Operations.Concat(["app.ready", "host.editor"]), async (op, value, ct) =>

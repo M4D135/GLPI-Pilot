@@ -19,7 +19,8 @@ public sealed partial class PilotApplication
     {
         RegisterSourceCacheOperations();
         RegisterDeploymentConfigurationOperations();
-        Register("app.bootstrap", async (_, ct) => { await RestoreStartupSourceAsync(ct).ConfigureAwait(false); return new { version = AppPaths.ApplicationVersion, settings = Settings, session = SessionState(), deployment = DeploymentState(), capabilities = Operations.Order().ToArray(), runtime = "C# · WebView2", operations = _journal.Entries.Take(30) }; });
+        RegisterStartupCollectionOperations();
+        Register("app.bootstrap", async (_, ct) => { await RestoreStartupSourceAsync(ct).ConfigureAwait(false); return new { version = AppPaths.ApplicationVersion, settings = Settings, session = SessionState(), startupCollection = PrepareStartupCollection(), deployment = DeploymentState(), capabilities = Operations.Order().ToArray(), runtime = "C# · WebView2", operations = _journal.Entries.Take(30) }; });
         Register("app.demo", (_, ct) => EnterDemoSimulationAsync(ct));
         Register("app.diagnostic", (_, _) => Task.FromResult<object?>(new { text = DiagnosticReport.Create(Settings, Result, string.Join(Environment.NewLine, _logs)), operations = _journal.Entries }));
         Register("app.copy", async (a, ct) => { await Host.SetClipboardAsync(Text(a, "text", 2_000_000)); return new { copied = true }; });

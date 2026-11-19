@@ -62,6 +62,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Actions : résultat ambigu sans aucune relance automatique", AssistedAmbiguousNeverRetries),
     ("Documents : téléchargement explicite authentifié et refus du HTML SSO", AuthenticatedDocumentDownload)
 };
+checks.AddRange(ColdTicketChecks.Cases(browser, modern, listUrl, detailUrl));
 var filter = Environment.GetEnvironmentVariable("GLPI_TEST_FILTER");
 if (!string.IsNullOrWhiteSpace(filter)) checks = checks.Where(check => check.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
 int failed = 0;

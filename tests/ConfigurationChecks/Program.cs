@@ -65,6 +65,10 @@ else checks.AddRange(columnChecks);
 var ticketReferenceChecks = TicketReferenceChecks.Cases().ToList();
 if (args.Contains("--ticket-reference-only", StringComparer.Ordinal)) checks = ticketReferenceChecks;
 else if (!args.Contains("--site-reference-only", StringComparer.Ordinal) && !args.Contains("--column-preparation-only", StringComparer.Ordinal)) checks.AddRange(ticketReferenceChecks);
+var startupChecks = StartupCollectionConfigurationChecks.Cases(temporary).ToList();
+if (args.Contains("--startup-collection-only", StringComparer.Ordinal)) checks = startupChecks;
+else if (!args.Contains("--site-reference-only", StringComparer.Ordinal) && !args.Contains("--column-preparation-only", StringComparer.Ordinal)
+    && !args.Contains("--ticket-reference-only", StringComparer.Ordinal)) checks.AddRange(startupChecks);
 int failures = 0;
 try
 {

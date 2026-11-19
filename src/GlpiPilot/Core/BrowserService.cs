@@ -17,6 +17,7 @@ public sealed partial class BrowserService : IAsyncDisposable
     private IBrowserContext? _context;
     private readonly string _bridge;
     private readonly PaginationCheckpointStore _checkpoints;
+    private readonly Func<CancellationToken, Task<IBrowserContext>>? _contextFactoryForTesting;
     private DateTimeOffset _openedAt;
     private string _portalOrigin = "";
     private string _channel = "";
@@ -50,13 +51,47 @@ public sealed partial class BrowserService : IAsyncDisposable
 
     public static string Origin(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http" ? u.GetLeftPart(UriPartial.Authority) : "";
 
+    internal BrowserService(Func<CancellationToken, Task<IBrowserContext>> contextFactoryForTesting) : this()
+    {
+        if (AppPaths.TestDataRoot is null)
+            throw new InvalidOperationException("Une ouverture de navigateur de test nécessite son dossier isolé.");
+        _contextFactoryForTesting = contextFactoryForTesting ?? throw new ArgumentNullException(nameof(contextFactoryForTesting));
+    }
+
     public async Task OpenAsync(AppSettings settings, CancellationToken cancellationToken, bool background = true)
+    {
+        var uri = await EnsureBrowserContextAsync(settings, cancellationToken, background);
+        var context = _context ?? throw new InvalidOperationException("Le navigateur piloté n’est pas disponible.");
+        var page = _freshCollectionPageRequired ? await NewCollectionPageAsync(context)
+            : ActivePage ?? context.Pages.FirstOrDefault(p => CanUseCollectionPage(p) && TargetUrlPolicy.SamePage(p.Url, _targetUrl))
+            ?? context.Pages.FirstOrDefault(CanUseCollectionPage) ?? await NewCollectionPageAsync(context);
+        _freshCollectionPageRequired = false;
+        SetActivePage(page);
+        if (BackgroundMode) await SetPageWindowAsync(page, false, cancellationToken);
+        else await ShowBrowserAsync(page, cancellationToken);
+        if (NeedsTemporaryColumnRecovery(settings))
+        {
+            var recovery = await RecoverTemporaryColumnsAsync(page, settings, null, cancellationToken);
+            if (recovery.Pending)
+                throw new InvalidOperationException(recovery.Message);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        await NavigateTargetAsync(page, uri.AbsoluteUri, cancellationToken);
+    }
+
+    private bool HasMatchingBrowserContext(AppSettings settings) => _context is not null
+        && _channel == settings.BrowserChannel && _profileInstallation == ObjectIdentity.InstallationKey(settings.PortalUrl);
+
+    // Establish only the dedicated session. Ticket reads use their own validated
+    // URL and SSO flow, without loading a potentially heavy collection list or
+    // changing preferences recorded in a pending column recovery journal.
+    private async Task<Uri> EnsureBrowserContextAsync(AppSettings settings, CancellationToken cancellationToken, bool background)
     {
         if (AppPaths.SimulationRoot is not null)
             throw new InvalidOperationException("Un adaptateur de simulation doit traiter cette opération avant toute ouverture du navigateur réel.");
         var uri = TargetUrlPolicy.Validate(settings.PortalUrl);
         var installation = ObjectIdentity.InstallationKey(settings.PortalUrl);
-        if (_context != null && (_channel != settings.BrowserChannel || _profileInstallation != installation))
+        if (_context != null && !HasMatchingBrowserContext(settings))
         {
             Log?.Invoke("SOURCE · changement d’installation : fermeture du contexte précédent et ouverture du profil isolé correspondant.");
             await DisposeAsync();
@@ -82,9 +117,15 @@ public sealed partial class BrowserService : IAsyncDisposable
             if (background) BackgroundLaunchStateChanged?.Invoke(true);
             try
             {
-                _playwright ??= await Playwright.CreateAsync();
-                if (settings.BrowserChannel == BrowserChannels.Firefox)
+                if (_contextFactoryForTesting is not null)
                 {
+                    if (AppPaths.TestDataRoot is null)
+                        throw new InvalidOperationException("Le dossier isolé du navigateur de test n’est plus actif.");
+                    _context = await _contextFactoryForTesting(cancellationToken);
+                }
+                else if (settings.BrowserChannel == BrowserChannels.Firefox)
+                {
+                    _playwright ??= await Playwright.CreateAsync();
                     // Firefox ne connaît ni le canal Playwright, ni le sableau, ni les arguments de Chromium.
                     Log?.Invoke("Pilotage Firefox avec le build embarqué dans le pack, sans toucher au Firefox de l’utilisateur.");
                     _context = await _playwright.Firefox.LaunchPersistentContextAsync(profile, new()
@@ -97,6 +138,7 @@ public sealed partial class BrowserService : IAsyncDisposable
                 }
                 else
                 {
+                    _playwright ??= await Playwright.CreateAsync();
                     _context = await _playwright.Chromium.LaunchPersistentContextAsync(profile, new()
                     {
                         Channel = settings.BrowserChannel == BrowserChannels.Chrome ? "chrome" : "msedge",
@@ -147,21 +189,7 @@ public sealed partial class BrowserService : IAsyncDisposable
         _openedAt = DateTimeOffset.UtcNow;
         _targetUrl = uri.AbsoluteUri;
         _authenticationNavigationObserved = false;
-        var page = _freshCollectionPageRequired ? await NewCollectionPageAsync(_context)
-            : ActivePage ?? _context.Pages.FirstOrDefault(p => CanUseCollectionPage(p) && TargetUrlPolicy.SamePage(p.Url, _targetUrl))
-            ?? _context.Pages.FirstOrDefault(CanUseCollectionPage) ?? await NewCollectionPageAsync(_context);
-        _freshCollectionPageRequired = false;
-        SetActivePage(page);
-        if (BackgroundMode) await SetPageWindowAsync(page, false, cancellationToken);
-        else await ShowBrowserAsync(page, cancellationToken);
-        if (NeedsTemporaryColumnRecovery(settings))
-        {
-            var recovery = await RecoverTemporaryColumnsAsync(page, settings, null, cancellationToken);
-            if (recovery.Pending)
-                throw new InvalidOperationException(recovery.Message);
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-        await NavigateTargetAsync(page, uri.AbsoluteUri, cancellationToken);
+        return uri;
     }
 
     private void ConfigureContext(IBrowserContext context)

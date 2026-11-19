@@ -66,6 +66,7 @@ const INDEX = [
   ['Dossier des exports', 'dossier exports emplacement', 'collecte', 'export-folder'],
   ['Repères avancés de l’installation GLPI', 'reperes selecteurs cadre tableau page suivante export natif', 'collecte', 'selectors'],
   ['Collectes programmées', 'programmer calendrier automatique recette sante sources', 'collecte', 'automation'],
+  ['Collecter au démarrage', 'collecter demarrage ouverture lancement automatique recherche active filtres', 'collecte', 'automation'],
   ['Sections lues dans un ticket', 'sections fiche ticket suivis taches solutions traitement lecture', 'tickets', 'ticket-reading'],
   ['Modèle d’adresse de fiche', 'adresse url modele fiche identifiant colonne', 'tickets', 'urlTemplate'],
   ['Archiver les collectes', 'archives historique archiver', 'historique', 'enabled'],
@@ -216,8 +217,8 @@ export async function renderSettingsWorkspace(ctx) {
     const host = el('div', { class: 'cfg-slot', dataset: { setting, editorCard: title } });
     editorHosts.set(title, host); into(section, host);
   }
-  into('collecte', card('Collectes programmées', el('p', { class: 'help', text: 'Planifiez les collectes, vérifiez leur recette et la santé des sources sans ouvrir GLPI.' }),
-    el('div', { class: 'workspace-settings-tools cfg-tools' }, tool('Programmer les collectes', 'Calendrier, recette et santé des sources', 'automation', 'clock'))));
+  into('collecte', card('Collecte au démarrage et programmation', el('p', { class: 'help', text: 'Choisissez si la recherche active doit être collectée à l’ouverture, puis réglez les horaires et la recette des collectes programmées.' }),
+    el('div', { class: 'workspace-settings-tools cfg-tools' }, tool('Programmer les collectes', 'Démarrage, calendrier, recette et santé des sources', 'automation', 'clock'))));
   into('equipe', card('Partage entre postes', el('p', { class: 'help', text: 'Un dossier réseau facultatif ou PostgreSQL partage le planning et les données communes de l’équipe. Le réglage se fait dans Données.' }),
     el('div', { class: 'workspace-settings-tools cfg-tools' }, tool('Partage entre postes', 'Dossier réseau facultatif ou PostgreSQL · planning et données communes', 'connection', 'users'))));
   into('entretien', card('Entretien', el('div', { class: 'workspace-settings-tools cfg-tools' },

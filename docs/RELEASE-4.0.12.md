@@ -6,6 +6,8 @@ Le choix par défaut devient **« Colonnes utiles à ma configuration »**. Il c
 
 Le choix « Toutes les colonnes proposées par GLPI » reste disponible. L’ancien défaut local « Toutes » passe une seule fois au nouveau défaut utile. Un choix explicite ultérieur, les recherches mémorisées et les réglages explicitement importés ou restaurés sont conservés.
 
+Les champs choisis par leur en-tête exact dans les requêtes enregistrées sont aussi pris en compte, y compris les colonnes de plugins et les dépendances des calculs utilisés. Une option native ambiguë n’est pas choisie au hasard. Les valeurs littérales et les calculs inutilisés ne demandent pas de colonne supplémentaire.
+
 ## Préparation temporaire et récupération
 
 La collecte sauvegarde durablement l’état initial de la vue personnelle avant d’envoyer une commande native : activation, identifiants de préférences et ordre des colonnes. Chaque commande est journalisée avant son envoi, puis confirmée par l’état réellement observé. Le journal ne contient ni valeurs de tickets ni jetons de session.
@@ -30,21 +32,37 @@ La connexion peut partir de l’accueil GLPI puis être résolue vers la liste n
 
 L’adresse source est mémorisée avant le téléchargement natif. Un contrôleur d’export tel que `report.dynamic.php` ne remplace donc plus l’adresse du tableau dans le résultat. La preuve du périmètre initial sert à identifier la source ; elle ne certifie ni l’exhaustivité du résultat ni la stabilité finale de la recherche. Les autres contrôles de qualité restent inchangés.
 
+L’ouverture d’une fiche lorsque le navigateur est fermé initialise directement sa session et son onglet de consultation. Elle ne charge pas la liste des tickets ni les préférences des colonnes. Une récupération de vue encore en attente n’empêche donc pas cette lecture ; son journal reste conservé pour la prochaine collecte. Les contrôles de référence, d’installation, d’origine et le parcours SSO restent appliqués.
+
+## Collecte à l’ouverture
+
+L’option **« Collecter au démarrage »** est activée par défaut et peut être désactivée dans les réglages d’automatisation. Une fois l’interface prête, Pilot lance une seule collecte de la recherche GLPI active lorsque l’adresse, le navigateur et les paramètres nécessaires sont configurés. Les filtres et le mode de colonnes enregistrés sont utilisés.
+
+La copie du dernier relevé GLPI peut être affichée immédiatement et reste disponible si la collecte échoue. Une source issue d’un fichier, une démonstration, une configuration incomplète ou une opération déjà engagée ne provoque pas ce démarrage automatique. Une nouvelle navigation dans l’interface ne relance pas la collecte. La progression, l’arrêt et la connexion SSO suivent le parcours habituel.
+
+Cette actualisation concerne le relevé de la recherche active. La collecte des fiches détaillées conserve son périmètre et sa programmation propres ; l’ouverture de Pilot n’enclenche pas une collecte globale de la bibliothèque.
+
+L’ouverture des écrans de recherche ou de tickets prend la priorité sur cette collecte automatique : Pilot l’arrête, termine le nettoyage des colonnes temporaires, puis rend la consultation disponible avec le dernier relevé. La collecte automatique ne redémarre pas pendant le même lancement. Une collecte demandée manuellement conserve ses commandes habituelles de progression et d’arrêt.
+
 ## Qualification et mise à jour
 
 Les contrôles purs couvrent le choix des colonnes, la migration, la source des tickets, la durabilité du journal, les identités natives, l’ordre et les refus de restauration ambiguë. Les scénarios navigateur couvrent les vues legacy et modernes, les annulations, les interruptions, la reprise avant navigation, les changements concurrents et les reçus affichés en mode Standard et Admin.
 
 | Parcours obligatoire | Seuil requis |
 | --- | --- |
-| Configuration et source des fiches | 81/81 |
+| Configuration, source des fiches et lancement | 94/94 |
+| Lecture des fiches et ouverture sans liste | 36/36 |
 | Journal et règles de restauration, sans navigateur | 20/20 |
 | Automatisation générale et provenance avant export | 53/53 |
 | Colonnes GLPI et récupération | 68/68 |
 | Attente et identité des exports natifs | 11/11 |
-| Données et sources · Standard | 46/46 |
-| Données et sources · Admin | 46/46 |
+| Démarrage, admission, annulation et consultation prioritaire | 25/25 |
+| Données et sources · Standard | 55/55 |
+| Données et sources · Admin | 55/55 |
 
 Les 55 anciens scénarios de colonnes sont conservés et treize scénarios de restauration sont ajoutés. La préparation comprend maintenant son nettoyage ; le groupe dispose de 900 secondes et le préflight exécute les groupes complets, y compris les nouveaux cas. Chaque cas garde sa limite propre de 35 secondes. Les autres groupes gardent leurs limites et les délais de l’application restent bornés séparément. Les seuils ci-dessus sont des critères de qualification, dont la réussite se vérifie dans le run du commit publié.
+
+Les contrôles de démarrage sont aussi inclus dans la suite complète du moteur. Ils vérifient le jeton unique, les refus sans mise en attente, les modifications de source et de configuration, les caches locaux, l’annulation et la conservation du relevé précédent. Le parcours WebView attend la fin des lectures initiales de l’accueil avant d’envoyer sa demande ; une action ultérieure de l’utilisateur peut annuler cette intention.
 
 La publication nécessite la qualification Windows et PostgreSQL complète sur le commit exact, puis la vérification de l’archive originale PROD-LIGHT. Les scénarios utilisent des données synthétiques ; ils ne se connectent pas au portail privé de l’organisation. La page Releases fait foi pour la disponibilité du pack.
 

@@ -251,6 +251,9 @@ public sealed class HistorySettings
 
 public sealed class AutomationSettings
 {
+    // A workstation preference. Missing legacy values use the new default;
+    // an explicitly saved false remains false through copies and normalization.
+    public bool CollectOnStartup { get; set; } = true;
     public bool ScheduledExtraction { get; set; }
     public int IntervalMinutes { get; set; } = 60;
     public bool RunCampaign { get; set; }

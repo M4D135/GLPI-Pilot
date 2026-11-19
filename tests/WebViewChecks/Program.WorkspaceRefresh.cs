@@ -11,6 +11,7 @@ internal static partial class Program
         var webArgument = Array.IndexOf(args, "--web-root");
         var web = Path.GetFullPath(webArgument >= 0 && webArgument + 1 < args.Length ? args[webArgument + 1] : Path.Combine(AppContext.BaseDirectory, "../../../../../web"));
         var settings = new AppSettings { Theme = "light", PortalUrl = "https://glpi-refresh-fixture.invalid/front/ticket.php", ExportFolder = Path.Combine(_root, "Exports") };
+        settings.Automation.CollectOnStartup = false;
         settings.Interface.OnboardingCompleted = true; settings.Interface.FollowWindowsTheme = false;
         settings.Cities = new() { Enabled = true, TitleColumn = "Titre", LocationColumn = "Lieu" };
         var city = new CityDefinition { Name = "Ville de contrôle", Latitude = 44.1, Longitude = 5.1 };

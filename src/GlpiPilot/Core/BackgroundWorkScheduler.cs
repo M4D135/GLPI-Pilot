@@ -10,6 +10,7 @@ public sealed class BackgroundWorkScheduler : IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private Job? _running;
     private long _sequence;
+    public bool HasPendingWork { get { lock (_gate) return _running is not null || _queue.Count > 0; } }
     public BackgroundWorkScheduler() => _ = Task.Run(WorkerAsync);
     public Task<T> RunAsync<T>(string category, bool visible, Func<CancellationToken, T> work, CancellationToken ct = default)
     {

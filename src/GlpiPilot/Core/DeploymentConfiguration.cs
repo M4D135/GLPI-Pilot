@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace GlpiPilot.Core;
@@ -57,7 +58,11 @@ public static partial class DeploymentConfigurationService
     }
     public static byte[] Serialize(DeploymentConfiguration configuration)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(configuration, Json);
+        var document = JsonSerializer.SerializeToNode(configuration, Json)!;
+        // A shared pack must not silently opt another workstation in or out of
+        // collection when its user next opens the application.
+        document[nameof(DeploymentConfiguration.Settings)]?[nameof(AppSettings.Automation)]?.AsObject().Remove(nameof(AutomationSettings.CollectOnStartup));
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, Json);
         if (bytes.Length > MaximumBytes) throw new InvalidDataException("La configuration complète dépasse 8 Mio.");
         return bytes;
     }
