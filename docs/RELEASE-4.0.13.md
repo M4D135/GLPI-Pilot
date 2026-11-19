@@ -14,9 +14,11 @@ La sauvegarde accepte `itemtype=Ticket`, seul ou accompagné une seule fois de `
 
 Les adresses étrangères, les identifiants intégrés à l’URL, les fragments, les autres types, les paramètres inconnus ou sensibles, les doublons et les valeurs modales différentes restent refusés. La correction ne change pas les commandes natives d’ajout ou de suppression ni les garanties de sauvegarde avant modification.
 
-## Vérifications requises
+## Qualification et publication vérifiées
 
-| Contrôle | Seuil de qualification |
+La [qualification Windows et PostgreSQL](https://github.com/M4D135/GLPI-Pilot/actions/runs/44544663495), tentative `1`, a réussi ses **16/16 jobs** sur le commit `b1f1890b2b1d80e97ebb4103adbbd8d4597312c1`. La [publication](https://github.com/M4D135/GLPI-Pilot/actions/runs/44552441910), tentative `1`, a également réussi : la [release v4.0.13](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.13) est disponible depuis le 19 novembre 2026 à 16 h 14 (Europe/Paris). Le ZIP original inspecté a été publié sans reconstruction, puis retéléchargé, comparé octet pour octet et vérifié de nouveau.
+
+| Contrôle | Résultat observé |
 | --- | --- |
 | Journal et règles pures de restauration | 24/24 |
 | Colonnes et récupération dans le navigateur | 72/72 |
@@ -25,7 +27,7 @@ Les adresses étrangères, les identifiants intégrés à l’URL, les fragments
 
 Les nouveaux cas purs vérifient les variantes natives autorisées, les refus et la conservation exacte de l’adresse dans le journal. Trois scénarios navigateur couvrent l’export puis le nettoyage d’une vue ancienne, la relecture serveur puis la restauration d’une vue moderne et la reprise d’un journal interrompu dans une nouvelle session. Les cas principaux de préparation ancienne et moderne utilisent également le paramètre natif. Les adresses courtes restent couvertes par les autres scénarios.
 
-La qualification Windows et PostgreSQL complète reste obligatoire sur le commit exact. Les seuils ci-dessus sont des critères, pas une déclaration de réussite. Les tests utilisent des pages synthétiques et ne se connectent pas au portail privé de l’organisation. La publication exige l’inspection du ZIP original PROD-LIGHT et sa promotion sans reconstruction ; la page Releases fait foi pour sa disponibilité.
+Les tests utilisent des pages synthétiques et ne se connectent pas au portail privé de l’organisation. Le [reçu de qualification et publication](QUALIFICATION-4.0.13.md) détaille les résultats, l’archive originale, son empreinte et les contrôles des fichiers publics.
 
 ## Mise à jour
 
