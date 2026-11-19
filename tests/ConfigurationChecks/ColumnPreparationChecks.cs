@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using GlpiPilot.Core;
 
@@ -5,7 +6,7 @@ internal static class ColumnPreparationChecks
 {
     public static IEnumerable<(string Name, Action Run)> Cases(string temporary)
     {
-        yield return ("Colonnes GLPI : défaut supervision, copie et anciens profils indépendants", Defaults);
+        yield return ("Colonnes GLPI : défaut toutes, migration unique et choix enregistrés préservés", () => Defaults(temporary));
         yield return ("Colonnes GLPI : partage du mode global et par recherche, valeurs strictes", () => Portable(temporary));
         yield return ("Colonnes GLPI : supervision ajoute les rôles manquants avec leur namespace", Supervision);
         yield return ("Colonnes GLPI : toutes les options offertes, sans doublon ni plafond caché", All);
@@ -25,17 +26,46 @@ internal static class ColumnPreparationChecks
     }
     private static NativeColumnOption Option(string value, string label, string group = "", bool disabled = false) =>
         new() { Value = value, Label = label, Group = group, Disabled = disabled };
-    private static void Defaults()
+    private static void Defaults(string temporary)
     {
         var settings = JsonSerializer.Deserialize<AppSettings>("{}")!;
-        Check(settings.ColumnPreparationMode == "supervision");
+        Check(settings.ColumnPreparationMode == "all");
+        foreach (var json in new[] { "{}", "{\"ColumnPreparationMode\":null}", "{\"ColumnPreparationMode\":\"\"}", "{\"ColumnPreparationMode\":\"  \"}" })
+            Check(SettingsRecovery.Read(Encoding.UTF8.GetBytes(json)).ColumnPreparationMode == "all");
         settings.ColumnPreparationMode = "all"; Check(settings.Copy().ColumnPreparationMode == "all");
         var saved = new SourceProfile { Name = "Liste synthétique", Url = "https://glpi.example.test/front/ticket.php" };
         settings.PortalUrl = saved.Url; saved.Capture(settings);
         Check(saved.Acquisition["ColumnPreparationMode"] == "all");
         settings.ColumnPreparationMode = "current"; saved.Copy().ApplyTo(settings); Check(settings.ColumnPreparationMode == "all");
-        saved.Acquisition.Remove("ColumnPreparationMode"); saved.ApplyTo(settings);
-        Check(settings.ColumnPreparationMode == "supervision", "Un ancien profil ne doit pas hériter du mode toutes d’une autre source.");
+        saved.Acquisition.Remove("ColumnPreparationMode"); settings.ColumnPreparationMode = "current"; saved.ApplyTo(settings);
+        Check(settings.ColumnPreparationMode == "all", "Une recherche sans mode enregistré doit utiliser le nouveau défaut, sans hériter du mode d’une autre source.");
+
+        saved.Acquisition["ColumnPreparationMode"] = "supervision";
+        var legacy = JsonSerializer.Serialize(new { ColumnPreparationMode = "supervision", PortalUrl = saved.Url, ActiveSourceId = saved.Id, Sources = new[] { saved } });
+        var path = Path.Combine(temporary, "columns-local-settings.json"); File.WriteAllText(path, legacy);
+        var upgraded = SettingsRecovery.Load(path);
+        Check(upgraded.ColumnPreparationMode == "all"
+            && upgraded.ColumnPreparationDefaultsVersion == AppSettings.CurrentColumnPreparationDefaultsVersion
+            && upgraded.Sources.Single().Acquisition["ColumnPreparationMode"] == "supervision"
+            && File.ReadAllText(path) == legacy,
+            "La migration locale doit changer le défaut courant une seule fois, sans modifier les recherches ni écrire pendant la lecture.");
+        SettingsRecovery.Save(path, upgraded);
+        using var persisted = JsonDocument.Parse(File.ReadAllText(path));
+        Check(persisted.RootElement.GetProperty("ColumnPreparationDefaultsVersion").GetInt32() == AppSettings.CurrentColumnPreparationDefaultsVersion);
+        upgraded.ColumnPreparationMode = "supervision"; upgraded.Normalize(); SettingsRecovery.Save(path, upgraded);
+        Check(SettingsRecovery.Load(path).ColumnPreparationMode == "supervision" && upgraded.Copy().ColumnPreparationMode == "supervision",
+            "Un choix explicite de supervision après la mise à jour doit survivre à la copie, l’enregistrement et la réouverture.");
+        upgraded.Sources.Single().ApplyTo(upgraded); Check(upgraded.ColumnPreparationMode == "supervision");
+        File.WriteAllText(path, "{\"ColumnPreparationMode\":\"current\"}");
+        Check(SettingsRecovery.Load(path).ColumnPreparationMode == "current", "La vue actuelle explicitement enregistrée doit rester inchangée.");
+        File.WriteAllText(path, "{\"ColumnPreparationMode\":\"supervision\",\"ColumnPreparationDefaultsVersion\":0}");
+        Check(SettingsRecovery.Load(path).ColumnPreparationMode == "all");
+
+        File.WriteAllText(path, legacy);
+        var restored = SettingsRecovery.Read(path, applyColumnPreparationUpgrade: false);
+        Check(restored.ColumnPreparationMode == "supervision"); SettingsRecovery.Save(path, restored);
+        Check(SettingsRecovery.Load(path).ColumnPreparationMode == "supervision",
+            "Une restauration explicite d’une ancienne configuration doit conserver son choix, y compris après le prochain démarrage.");
     }
     private static void Portable(string temporary)
     {
@@ -47,10 +77,25 @@ internal static class ColumnPreparationChecks
         Check(imported.ColumnPreparationMode == "all" && imported.Sources.Single().Acquisition["ColumnPreparationMode"] == "all");
         Check(ConfigurationReview.Apply(new() { ColumnPreparationMode = "current" }, imported, ConfigurationParts.Extraction, false).ColumnPreparationMode == "all");
         var json = File.ReadAllText(path);
+        Check(!json.Contains("ColumnPreparationDefaultsVersion", StringComparison.Ordinal), "Le reçu local de migration ne doit pas être partagé.");
         File.WriteAllText(path, json.Replace("\"ColumnPreparationMode\": \"all\"", "\"ColumnPreparationMode\": \"global\"", StringComparison.Ordinal));
         Refuse(() => ConfigurationTransferService.Import(path, new()));
         source.ColumnPreparationMode = "current"; profile.Acquisition["ColumnPreparationMode"] = "script";
         Refuse(() => ConfigurationTransferService.Export(path, source));
+
+        source.ColumnPreparationMode = "supervision"; profile.Acquisition["ColumnPreparationMode"] = "supervision";
+        ConfigurationTransferService.Export(path, source); imported = ConfigurationTransferService.Import(path, new());
+        Check(imported.ColumnPreparationMode == "supervision" && imported.Sources.Single().Acquisition["ColumnPreparationMode"] == "supervision"
+            && SettingsRecovery.Read(JsonSerializer.SerializeToUtf8Bytes(imported)).ColumnPreparationMode == "supervision");
+        File.WriteAllText(path, "{\"PortalUrl\":\"https://glpi.example.test/front/ticket.php\",\"ColumnPreparationMode\":\"supervision\",\"ColumnPreparationDefaultsVersion\":0}");
+        imported = ConfigurationTransferService.Import(path, new());
+        Check(imported.ColumnPreparationMode == "supervision" && imported.ColumnPreparationDefaultsVersion == AppSettings.CurrentColumnPreparationDefaultsVersion,
+            "Un choix importé explicitement ne doit pas être remplacé par la migration du profil local.");
+        File.WriteAllText(path, "{\"PortalUrl\":\"https://glpi.example.test/front/ticket.php\"}");
+        var current = new AppSettings { ColumnPreparationMode = "current" };
+        Check(ConfigurationTransferService.Import(path, current).ColumnPreparationMode == "all");
+        Check(ConfigurationTransferService.Import(path, current, out _).ColumnPreparationMode == "current",
+            "Un aperçu d’import partiel qui ne fournit pas le mode doit conserver le choix courant.");
     }
     private static void Supervision()
     {

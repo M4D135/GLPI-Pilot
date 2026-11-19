@@ -27,13 +27,17 @@ public sealed partial class BrowserService
     private async Task<NativeColumnInspection> InspectColumnsAsync(IFrame frame, string origin, string selector, CancellationToken ct)
     {
         await EnsureColumnReaderAsync(frame, origin, ct);
-        return await ReadJsonAsync<NativeColumnInspection>(frame, "selector => window.__glpiPilotColumns.inspect(selector)", selector, ct);
+        var result = await ReadJsonAsync<NativeColumnInspection>(frame, "selector => window.__glpiPilotColumns.inspect(selector)", selector, ct);
+        RejectColumnAmbiguity(result);
+        return result;
     }
 
     private async Task<NativeColumnPreferences> InspectColumnPreferencesAsync(IFrame frame, string origin, CancellationToken ct)
     {
         await EnsureColumnReaderAsync(frame, origin, ct);
-        return await ReadJsonAsync<NativeColumnPreferences>(frame, "() => window.__glpiPilotColumns.inspectPreferences()", null, ct);
+        var result = await ReadJsonAsync<NativeColumnPreferences>(frame, "() => window.__glpiPilotColumns.inspectPreferences()", null, ct);
+        RejectColumnAmbiguity(result);
+        return result;
     }
 
     private static bool PersonalColumnScope(NativeColumnPreferences preferences) => preferences.Supported && preferences.PersonalScope
@@ -72,23 +76,6 @@ public sealed partial class BrowserService
             Log?.Invoke("COLONNES · repères natifs renouvelés ; la même vue personnelle a été revalidée.");
     }
 
-    private static async Task<IElementHandle?> ColumnElementAsync(IFrame frame, string origin, string selector, CancellationToken ct)
-    {
-        ct.ThrowIfCancellationRequested();
-        if (frame.IsDetached || Origin(frame.Url) != origin)
-            throw new InvalidOperationException("Le contexte des colonnes a changé avant la lecture du contrôle natif.");
-        if (selector.Length == 0) return null;
-        // A locator's ElementHandle/IsEnabled auto-waits for its old selector.
-        // Native AJAX can retire that selector after discovery. Take a current,
-        // nonwaiting snapshot instead and let the caller reread the native DOM.
-        var handles = await frame.Locator(selector).ElementHandlesAsync().WaitAsync(ct);
-        if (handles.Count == 1) return handles[0];
-        foreach (var handle in handles) await handle.DisposeAsync();
-        if (handles.Count > 1)
-            throw new InvalidOperationException("Plusieurs éléments correspondent au contrôle natif des colonnes. Aucune commande n’est exécutée.");
-        return null;
-    }
-
     private static async Task<bool> ColumnControlReadyAsync(IElementHandle control, CancellationToken ct) =>
         await control.EvaluateAsync<bool>("""
             element => {
@@ -102,22 +89,6 @@ public sealed partial class BrowserService
               return element.getClientRects().length > 0;
             }
             """).WaitAsync(ct);
-
-    private static async Task ClickColumnControlAsync(IFrame frame, string origin, string selector, CancellationToken ct, bool optionalCommand = false)
-    {
-        ct.ThrowIfCancellationRequested();
-        if (frame.IsDetached || Origin(frame.Url) != origin) throw new InvalidOperationException("Le contexte des colonnes a changé avant l’action native.");
-        await using var control = await ColumnElementAsync(frame, origin, selector, ct);
-        if (control is null || !await ColumnControlReadyAsync(control, ct))
-        {
-            if (optionalCommand) throw new ColumnOptionUnavailableException("La commande personnelle a disparu avant le clic ; aucun ajout n’a été envoyé pour cette option.");
-            throw new InvalidOperationException("La commande native des colonnes n’est plus disponible sans ambiguïté.");
-        }
-        // The caller observes the native request independently. If Playwright
-        // ends its action wait after dispatch, the command is never repeated.
-        await control.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct);
-        ct.ThrowIfCancellationRequested();
-    }
 
     private async Task ObserveColumnActionAsync(TableChoice table, ColumnPreparationActivity activity,
         Func<Task> command, CancellationToken ct, bool discoverPreferencesFrame = false)
@@ -135,8 +106,15 @@ public sealed partial class BrowserService
                 // the already rendered native frame while that click settles,
                 // so slow initial GETs remain visible to the activity observer.
                 var frame = await ResolveFrameAsync(table, ct);
-                var window = await InspectCurrentColumnWindowAsync(table, frame, ct);
-                await using var element = await ColumnElementAsync(frame, table.FrameOrigin, window.IframeSelector, ct);
+                await using var capture = await CaptureCurrentColumnWindowAsync(table, frame, "iframe", ct);
+                await using var element = await capture.ElementAsync(ct);
+                var current = await capture.ValidateAsync(ct);
+                if (!SameColumnWindow(capture.State, current))
+                {
+                    _ = activity.CanWait;
+                    await Task.WhenAny(action, Task.Delay(120, ct)).WaitAsync(ct);
+                    continue;
+                }
                 if (element is not null && await element.ContentFrameAsync().WaitAsync(ct) is { IsDetached: false } preferencesFrame)
                 {
                     if (preferencesFrame.ParentFrame != frame)
@@ -161,8 +139,11 @@ public sealed partial class BrowserService
         foreach (var candidate in inspected.Where(item => item.Headers.Count >= minimumColumns
             && ColumnPreparationPolicy.PreservesHeaders(original.Headers, item.Headers)))
         {
-            await using var element = await ColumnElementAsync(frame, original.FrameOrigin, candidate.Selector, ct);
+            await using var capture = await CaptureColumnWindowAsync(frame, original.FrameOrigin, candidate.Selector, "table", ct);
+            await using var element = await capture.ElementAsync(ct);
             if (element is null) continue;
+            var current = await capture.ValidateAsync(ct);
+            if (!current.SameElement || !current.SameTable) continue;
             var nativeTicket = await element.EvaluateAsync<bool>("""
                 (table, exactReference) => {
                   if (!table.isConnected) return false;
@@ -181,49 +162,43 @@ public sealed partial class BrowserService
         return candidates.SingleOrDefault();
     }
 
-    private async Task<NativeColumnInspection> InspectCurrentColumnWindowAsync(TableChoice table, IFrame frame, CancellationToken ct)
-    {
-        var window = await InspectColumnsAsync(frame, table.FrameOrigin, table.Selector, ct);
-        if (window.TableSelector.Length > 0) return window;
-        var current = await FindCurrentColumnTableAsync(table, table.Headers.Count, ct);
-        if (current is null) return window;
-        RememberCurrentTableReference(table, current);
-        return await InspectColumnsAsync(frame, table.FrameOrigin, table.Selector, ct);
-    }
-
     private async Task<(IFrame? Frame, NativeColumnPreferences Preferences)> OpenColumnPreferencesAsync(
         TableChoice table, ColumnPreparationActivity activity, CancellationToken ct)
     {
         activity.BeginPhase("Ouverture de la fenêtre personnelle des colonnes");
         var frame = await ResolveFrameAsync(table, ct);
-        var window = await InspectCurrentColumnWindowAsync(table, frame, ct);
-        if (!window.Supported) return (null, new() { Reason = window.Reason });
-        if (window.OpenerSelector.Length > 0)
+        NativeColumnInspection window = new();
+        while (activity.CanWait)
         {
-            // Revalidate the native meaning, not the generated locator. GLPI
-            // may renew the opener or finish opening its modal between reads.
-            var fresh = await InspectCurrentColumnWindowAsync(table, frame, ct);
-            if (!fresh.Supported) return (null, new() { Reason = fresh.Reason });
-            if (fresh.IframeSelector.Length == 0)
+            await using var capture = await CaptureCurrentColumnWindowAsync(table, frame, "opener", ct);
+            window = capture.State;
+            activity.Observe(window.Proof + "|" + window.TableSelector + "|" + window.OpenerSelector + "|" + window.IframeSelector);
+            if (!window.Supported) return (null, new() { Reason = window.Reason });
+            if (window.IframeSelector.Length > 0 || window.OpenerSelector.Length == 0) break;
+            await using var opener = await capture.ElementAsync(ct);
+            try
             {
-                if (fresh.Proof != window.Proof || fresh.OpenerSelector.Length == 0)
-                    return (null, new() { Reason = "La commande personnelle des colonnes n’est plus disponible avant son ouverture." });
-                try
+                var openerReady = opener is not null && await ColumnControlReadyAsync(opener, ct);
+                var verified = await capture.ValidateAsync(ct);
+                if (!SameColumnWindow(window, verified) || !openerReady)
                 {
-                    await ObserveColumnActionAsync(table, activity,
-                        () => ClickColumnControlAsync(frame, table.FrameOrigin, fresh.OpenerSelector, ct, optionalCommand: true), ct,
-                        discoverPreferencesFrame: true);
+                    // Nothing was dispatched: the next native capture can follow
+                    // a renewed opener or an already opened preferences window.
+                    await Task.Delay(120, ct);
+                    continue;
                 }
-                catch (ColumnOptionUnavailableException)
-                { return (null, new() { Reason = "La commande personnelle des colonnes a disparu avant son ouverture." }); }
-                catch (Exception error) when (error is PlaywrightException or TimeoutException)
-                {
-                    // Opening the native preferences only reads them. The
-                    // modal may already be loading after an action timeout;
-                    // inspect it below without clicking the opener again.
-                    Log?.Invoke("COLONNES · ouverture en cours ; relecture de la fenêtre native sans nouveau clic.");
-                }
+                await ObserveColumnActionAsync(table, activity,
+                    () => opener!.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct), ct,
+                    discoverPreferencesFrame: true);
             }
+            catch (ColumnOptionUnavailableException) { await Task.Delay(120, ct); continue; }
+            catch (Exception error) when (error is PlaywrightException or TimeoutException)
+            {
+                // The native click may already have opened its document.
+                // Observe the result below without dispatching another click.
+                Log?.Invoke("COLONNES · ouverture en cours ; relecture de la fenêtre native sans nouveau clic.");
+            }
+            break;
         }
         IFrame? preferencesFrame = null;
         NativeColumnPreferences preferences = new() { Reason = "La fenêtre personnelle des colonnes n’a pas fini de se charger." };
@@ -231,7 +206,8 @@ public sealed partial class BrowserService
         while (activity.CanWait)
         {
             ct.ThrowIfCancellationRequested();
-            window = await InspectCurrentColumnWindowAsync(table, frame, ct);
+            await using var windowCapture = await CaptureCurrentColumnWindowAsync(table, frame, "iframe", ct);
+            window = windowCapture.State;
             var windowObservation = "fenêtre|" + window.Proof + "|" + window.IframeSelector + "|" + window.CloseSelector;
             var preferencesObserved = false;
             if (!window.Supported)
@@ -241,8 +217,9 @@ public sealed partial class BrowserService
             }
             if (window.IframeSelector.Length > 0)
             {
-                await using var element = await ColumnElementAsync(frame, table.FrameOrigin, window.IframeSelector, ct);
+                await using var element = await windowCapture.ElementAsync(ct);
                 if (element is null) { await Task.Delay(120, ct); continue; }
+                if (!SameColumnWindow(window, await windowCapture.ValidateAsync(ct))) { await Task.Delay(120, ct); continue; }
                 preferencesFrame = await element.ContentFrameAsync().WaitAsync(ct);
                 if (preferencesFrame is { IsDetached: false })
                 {
@@ -291,14 +268,22 @@ public sealed partial class BrowserService
                         preferences = fresh;
                         try
                         {
-                            if (fresh.PersonalTabSelector.Length > 0)
-                                await ClickColumnControlAsync(preferencesFrame, table.FrameOrigin, fresh.PersonalTabSelector, ct, optionalCommand: true);
+                            var role = fresh.PersonalTabSelector.Length > 0 ? "personal-tab" : "personal-tab-select";
+                            await using var tabCapture = await CaptureColumnPreferencesAsync(preferencesFrame, table.FrameOrigin, role, ct);
+                            if (PersonalColumnScope(tabCapture.State)) { preferences = tabCapture.State; continue; }
+                            await using var tabControl = await tabCapture.ElementAsync(ct);
+                            var tabReady = tabControl is not null && await ColumnControlReadyAsync(tabControl, ct);
+                            var verifiedTab = await tabCapture.ValidateAsync(ct);
+                            if (PersonalColumnScope(verifiedTab.State)) { preferences = verifiedTab.State; continue; }
+                            if (!verifiedTab.SameElement || !tabReady || !PersonalColumnTabAvailable(verifiedTab.State))
+                                throw new ColumnOptionUnavailableException("L’onglet personnel a changé avant sa sélection.");
+                            fresh = verifiedTab.State;
+                            preferences = fresh;
+                            if (role == "personal-tab")
+                                await tabControl!.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct);
                             else
                             {
-                                await using var select = await ColumnElementAsync(preferencesFrame, table.FrameOrigin, fresh.PersonalTabSelectSelector, ct);
-                                if (select is null || !await ColumnControlReadyAsync(select, ct))
-                                    throw new ColumnOptionUnavailableException("Le menu personnel a changé avant sa sélection.");
-                                await select.SelectOptionAsync(new SelectOptionValue { Value = fresh.PersonalTabValue }, new() { Timeout = 5000 }).WaitAsync(ct);
+                                await tabControl!.SelectOptionAsync(new SelectOptionValue { Value = fresh.PersonalTabValue }, new() { Timeout = 5000 }).WaitAsync(ct);
                                 // The native change may replace the compact
                                 // menu. Read the resulting personal view below,
                                 // never wait for the old control's InputValue.
@@ -373,17 +358,25 @@ public sealed partial class BrowserService
                     var previous = fresh;
                     try
                     {
-                        // A native rerender may replace the ID during change.
-                        // Re-read the verified form afterwards instead of asking
-                        // the old locator for its now-detached input value.
-                        await using var select = await ColumnElementAsync(frame, origin, fresh.SelectSelector, ct);
-                        if (select is null)
+                        await using var selectCapture = await CaptureColumnPreferencesAsync(frame, origin, "select", ct);
+                        ValidatePersonalColumnView(previous, selectCapture.State);
+                        await using var select = await selectCapture.ElementAsync(ct);
+                        var verifiedSelect = await selectCapture.ValidateAsync(ct);
+                        fresh = verifiedSelect.State;
+                        ValidatePersonalColumnView(previous, fresh);
+                        if (fresh.SelectedIdsKnown && fresh.Selected.Any(item => item.Value == option!.Value))
+                            return new(fresh, false);
+                        if (!ColumnPreparationPolicy.Available(fresh).Any(item => SameColumnOption(option!, item)))
+                            throw new ColumnOptionUnavailableException("L’option choisie a changé avant sa sélection ; aucun ajout n’a été envoyé.");
+                        if (!verifiedSelect.SameElement || select is null)
                         {
-                            fresh = await InspectColumnPreferencesAsync(frame, origin, ct);
-                            ValidatePersonalColumnView(previous, fresh);
                             if (attempt == 2) throw new ColumnOptionUnavailableException("Le menu personnel a disparu avant le choix de colonne ; aucun ajout n’a été envoyé.");
+                            await Task.Delay(120, ct);
                             continue;
                         }
+                        // Selection is applied to the inspected node itself.
+                        // A native change may replace it; re-read the resulting
+                        // personal view instead of waiting on its old selector.
                         await select.SelectOptionAsync(new SelectOptionValue { Value = option.Value },
                             new() { Timeout = 3000, Force = fresh.SelectHidden }).WaitAsync(ct);
                         ct.ThrowIfCancellationRequested();
@@ -408,14 +401,36 @@ public sealed partial class BrowserService
         var response = await activity.RunAndWaitForResponseAsync(
             async () =>
             {
-                var ready = await InspectColumnPreferencesAsync(frame, origin, ct);
-                ValidatePersonalColumnView(fresh, ready);
-                if (activate ? ready.ActivateSelector.Length == 0 : ready.AddSelector.Length == 0 || ready.SelectedValue != option!.Value
-                    || !ColumnPreparationPolicy.Available(ready).Any(item => SameColumnOption(option!, item)))
-                    throw new ColumnOptionUnavailableException("La commande a changé avant sa validation ; aucun ajout n’a été envoyé pour cette option.");
-                await validateScope();
-                fresh = ready;
-                await ClickColumnControlAsync(frame, origin, activate ? ready.ActivateSelector : ready.AddSelector, ct, optionalCommand: true);
+                var role = activate ? "activate" : "add";
+                for (var attempt = 0; attempt < 3; attempt++)
+                {
+                    await using var capture = await CaptureColumnPreferencesAsync(frame, origin, role, ct);
+                    ValidatePersonalColumnView(fresh, capture.State);
+                    await using var command = await capture.ElementAsync(ct);
+                    var commandReady = command is not null && await ColumnControlReadyAsync(command, ct);
+                    await validateScope();
+                    var verified = await capture.ValidateAsync(ct);
+                    var ready = verified.State;
+                    // Even a hidden or detached captured node must be followed
+                    // by scope validation: a replacement global view is a hard
+                    // refusal, never an optional-control fallback.
+                    ValidatePersonalColumnView(fresh, ready);
+                    if (activate ? ready.ActivateSelector.Length == 0 : ready.AddSelector.Length == 0 || ready.SelectedValue != option!.Value
+                        || !ColumnPreparationPolicy.Available(ready).Any(item => SameColumnOption(option!, item)))
+                        throw new ColumnOptionUnavailableException("La commande « " + ColumnRoleLabel(role) + " » a changé avant sa validation ; aucun ajout n’a été envoyé pour cette option.");
+                    if (!verified.SameElement || !commandReady)
+                    {
+                        if (attempt == 2) throw new ColumnOptionUnavailableException("Le contrôle « " + ColumnRoleLabel(role) + " » est encore renouvelé ; aucun ajout n’a été envoyé pour cette option.");
+                        await Task.Delay(120, ct);
+                        continue;
+                    }
+                    fresh = ready;
+                    // The response is observed independently. A timeout after
+                    // dispatch never enters the pre-dispatch renewal loop.
+                    await command!.ClickAsync(new() { Timeout = 7000 }).WaitAsync(ct);
+                    ct.ThrowIfCancellationRequested();
+                    return;
+                }
             },
             reply => reply.Request.Method == "POST" && Origin(reply.Url) == origin && reply.Request.Frame == frame
                 && new Uri(reply.Url).AbsolutePath.EndsWith(fresh.Layout == "modern" ? "/ajax/displaypreference.php" : "/front/displaypreference.form.php", StringComparison.Ordinal),
@@ -452,16 +467,16 @@ public sealed partial class BrowserService
         {
             ct.ThrowIfCancellationRequested();
             var frame = await ResolveFrameAsync(table, ct);
-            var window = await InspectCurrentColumnWindowAsync(table, frame, ct);
+            await using var capture = await CaptureCurrentColumnWindowAsync(table, frame, "close", ct);
+            var window = capture.State;
             activity.Observe(window.Proof + "|" + window.TableSelector + "|" + window.IframeSelector + "|" + window.CloseSelector);
             if (window.Supported && window.IframeSelector.Length == 0) return;
             if (window.TableSelector.Length == 0) { await Task.Delay(120, ct); continue; }
             if (!window.Supported || window.CloseSelector.Length == 0)
                 throw new InvalidOperationException("La fermeture native de la fenêtre des colonnes n’a pas pu être confirmée. Fermer cette fenêtre dans GLPI puis relancer la collecte.");
-            // The native inspection identifies the current visible table. GLPI
-            // can retain a hidden AJAX copy with the original selector, so use
-            // this fresh, unique reference when observing the list replacement.
-            await using var previousTable = waitForRefresh ? await ColumnElementAsync(frame, table.FrameOrigin, window.TableSelector, ct) : null;
+            // The table and close command come from the same native capture.
+            // A hidden obsolete copy cannot change either retained identity.
+            await using var previousTable = waitForRefresh ? await capture.ElementAsync(ct, "table") : null;
             if (waitForRefresh && (previousTable is null || !await previousTable.EvaluateAsync<bool>("element => element.isConnected").WaitAsync(ct)))
             {
                 // GLPI can renew the table while its modal is open. Reinspect
@@ -469,11 +484,12 @@ public sealed partial class BrowserService
                 await Task.Delay(120, ct);
                 continue;
             }
-            await using var close = await ColumnElementAsync(frame, table.FrameOrigin, window.CloseSelector, ct);
+            await using var close = await capture.ElementAsync(ct);
             if (close is null || !await ColumnControlReadyAsync(close, ct)) { await Task.Delay(120, ct); continue; }
             // Re-observation may have taken time. Closing a legacy dialog can
             // reload the search, so recheck immediately before this one click.
             await validateScope();
+            if (!SameColumnWindow(window, await capture.ValidateAsync(ct))) { await Task.Delay(120, ct); continue; }
             try
             {
                 await ObserveColumnActionAsync(table, activity,
@@ -672,6 +688,13 @@ public sealed partial class BrowserService
         {
             await IsolateColumnPreparationAsync(original.Page!);
             throw;
+        }
+        catch (ColumnAmbiguityException error)
+        {
+            if (activity.HasPendingRequest) await IsolateColumnPreparationAsync(original.Page!);
+            var message = "Préparation des colonnes interrompue pendant « " + activity.Phase + " » : " + error.Message;
+            Log?.Invoke("COLONNES · " + AppPaths.SafeLog(message));
+            throw new InvalidOperationException(message);
         }
         catch (TimeoutException)
         {

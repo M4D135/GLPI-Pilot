@@ -93,9 +93,7 @@ internal static class ColumnPreparationRaceBrowserChecks
                 let columnReader, started=false;
                 Object.defineProperty(window,'__glpiPilotColumns',{
                   configurable:true,get(){return columnReader;},set(value){
-                    const inspect=value.inspectPreferences;
-                    value.inspectPreferences=function(){
-                      const snapshot=inspect();
+                    function observe(snapshot){
                       if(!started){
                         started=true;parent.sessionStorage.setItem('emptyBodyObserved','1');
                         fetch(personalTab).then(reply=>reply.text()).then(body=>{
@@ -103,7 +101,10 @@ internal static class ColumnPreparationRaceBrowserChecks
                         });
                       }
                       return snapshot;
-                    };
+                    }
+                    const inspect=value.inspectPreferences, capture=value.capturePreferences;
+                    value.inspectPreferences=()=>observe(inspect());
+                    value.capturePreferences=function(role){const result=capture(role);observe(result.state);return result;};
                     columnReader=value;
                   }
                 });
@@ -157,9 +158,8 @@ internal static class ColumnPreparationRaceBrowserChecks
                 let columnReader, renewed=false;
                 Object.defineProperty(window,'__glpiPilotColumns',{
                   configurable:true,get(){return columnReader;},set(value){
-                    const inspect=value.inspect;
-                    value.inspect=function(selector){
-                      const snapshot=inspect(selector), frame=document.querySelector('iframe');
+                    function observe(snapshot,selector){
+                      const frame=document.querySelector('iframe');
                       if((scenario==='table-hidden-clone'||scenario==='table-hidden-clone-repeated')&&snapshot.iframeSelector&&
                           snapshot.tableSelector&&snapshot.tableSelector!==selector&&document.querySelectorAll(selector).length===2){
                         const tables=document.querySelectorAll(snapshot.tableSelector);
@@ -180,7 +180,10 @@ internal static class ColumnPreparationRaceBrowserChecks
                         if(renewed)sessionStorage.setItem('columnRaceObserved','1');
                       }
                       return snapshot;
-                    };
+                    }
+                    const inspect=value.inspect, capture=value.captureWindow;
+                    value.inspect=selector=>observe(inspect(selector),selector);
+                    value.captureWindow=function(selector,role){const result=capture(selector,role);observe(result.state,selector);return result;};
                     columnReader=value;
                   }
                 });

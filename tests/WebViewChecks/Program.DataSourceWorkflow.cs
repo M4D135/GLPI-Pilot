@@ -172,8 +172,9 @@ internal static partial class Program
             && await Button("Lancer la collecte").EvaluateAsync<bool>("node=>node.classList.contains('primary')&&node.getBoundingClientRect().bottom<innerHeight-35")
             && await Button("Importer CSV / Excel").EvaluateAsync<bool>("node=>!node.classList.contains('primary')")
             && await Button("Se connecter").CountAsync() == 0
+            && await page.GetByLabel("Colonnes avant la collecte", new() { Exact = true }).InputValueAsync() == "all"
             && await page.Locator(".workspace-live-source").EvaluateAsync<bool>("node=>!!(node.compareDocumentPosition(document.querySelector('[data-source-method=file]'))&Node.DOCUMENT_POSITION_FOLLOWING)&&node.getBoundingClientRect().top<document.querySelector('.workspace-data-metrics').getBoundingClientRect().top"),
-            "GLPI is the first data workflow with a visible primary collection action; file import remains available as a secondary action.");
+            "GLPI is the first data workflow with all native columns selected by default and a visible primary collection action; file import remains available as a secondary action.");
         await Capture("data-glpi-first-light");
         await Button("Collecter plusieurs recherches").ClickAsync(); await Group().WaitForAsync();
         Require(await Group().GetByText("Aucune recherche mémorisée", new() { Exact = true }).IsVisibleAsync()
@@ -272,6 +273,31 @@ internal static partial class Program
         await Button("Collecter la simulation").ClickAsync(); await Idle();
         Require(await OnPage("data") && app.IsTestMode && app.Result!.Rows.Count == 60 && operations.Contains("collect.run"),
             "The primary collection refreshes Data in place with the actual C# result instead of opening Pilotage.");
+
+        var previousDataResult = app.Result;
+        failSingleCollection = true;
+        await Button("Collecter la simulation").ClickAsync(); await Idle(); failSingleCollection = false;
+        var collectionError = page.Locator(".workspace-live-source > .notice.danger[role=alert]");
+        var previousErrorVisible = await collectionError.CountAsync() == 1
+            && (await collectionError.InnerTextAsync()).Contains("Échec de collecte synthétique", StringComparison.Ordinal);
+        await page.Locator(".workspace-source-alternatives").EvaluateAsync("""
+            node=>{const alert=document.createElement('p');alert.className='notice danger';alert.setAttribute('role','alert');
+              alert.dataset.retryScopeFixture='true';alert.textContent='Autre erreur à conserver';node.append(alert);}
+            """);
+        singleCollectionEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        singleCollectionRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        singleCollectionStopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await Button("Collecter la simulation").ClickAsync();
+        await singleCollectionEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var retryClearedOnlyOldError = await collectionError.CountAsync() == 0
+            && await page.Locator("[data-retry-scope-fixture]").CountAsync() == 1 && ReferenceEquals(previousDataResult, app.Result);
+        singleCollectionRelease.TrySetException(new InvalidOperationException("Nouvel échec synthétique de la tentative de collecte."));
+        await singleCollectionStopped.Task.WaitAsync(TimeSpan.FromSeconds(15)); await Idle(); singleCollectionRelease = null;
+        Require(previousErrorVisible && retryClearedOnlyOldError && ReferenceEquals(previousDataResult, app.Result)
+            && await collectionError.CountAsync() == 1
+            && (await collectionError.InnerTextAsync()).Contains("Nouvel échec synthétique", StringComparison.Ordinal)
+            && await page.Locator("[data-retry-scope-fixture]").CountAsync() == 1,
+            "Retrying Data collection clears only its previous card error while pending, keeps the last data, and displays a new failure normally.");
 
         await ClickNavigationAsync(page, "home"); await WaitForNavigationTargetAsync(page, "home"); await Idle();
         foreach (var entry in new[] { "source-selector", "global-refresh", "command-palette" })

@@ -477,7 +477,7 @@ try {
                         Remove-Item Env:GLPI_TEST_FILTER -ErrorAction SilentlyContinue
                         foreach ($group in @(
                             @{ Name = 'core'; Count = 52 },
-                            @{ Name = 'columns'; Count = 44 },
+                            @{ Name = 'columns'; Count = 55 },
                             @{ Name = 'native-timing'; Count = 11 }
                         )) {
                             $env:GLPI_TEST_GROUP = $group.Name
@@ -591,7 +591,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--administration-only', '--screenshots', (Join-Path $logs 'administration-standard-preview')) `
                 -LogName 'administration-standard-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '6/6 administration WebView checks passed.'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--data-source-workflow-only', '--screenshots', (Join-Path $logs 'data-sources-standard-preview')) `
-                -LogName 'data-source-standard-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 data source workflow WebView checks passed\.\r?$'
+                -LogName 'data-source-standard-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^42/42 data source workflow WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--workspace-refresh-only', '--screenshots', (Join-Path $logs 'workspace-refresh-standard-preview')) `
                 -LogName 'workspace-refresh-standard-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 workspace refresh WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=false', '--', '--weather-selection-only', '--screenshots', (Join-Path $logs 'weather-selection-standard-preview')) `
@@ -602,7 +602,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--administration-only', '--screenshots', (Join-Path $logs 'administration-admin-preview')) `
                 -LogName 'administration-admin-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '8/8 administration WebView checks passed.'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--data-source-workflow-only', '--screenshots', (Join-Path $logs 'data-sources-admin-preview')) `
-                -LogName 'data-source-admin-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 data source workflow WebView checks passed\.\r?$'
+                -LogName 'data-source-admin-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^42/42 data source workflow WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--workspace-refresh-only', '--screenshots', (Join-Path $logs 'workspace-refresh-admin-preview')) `
                 -LogName 'workspace-refresh-admin-webview-checks.log' -TimeoutSeconds 300 -ExpectedPattern '(?m)^([1-9]\d*)/\1 workspace refresh WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '-p:PilotAdmin=true', '--', '--weather-selection-only', '--screenshots', (Join-Path $logs 'weather-selection-admin-preview')) `

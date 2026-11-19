@@ -106,9 +106,7 @@ internal static class CollectionRecoveryBrowserChecks
                 });
                 Object.defineProperty(window,'__glpiPilotColumns',{
                   configurable:true,get(){return reader;},set(value){
-                    const inspect=value.inspectPreferences;
-                    value.inspectPreferences=function(){
-                      const snapshot=inspect();
+                    function observe(snapshot){
                       if(!rerendered&&snapshot.personalTabSelector&&!snapshot.personalScope){
                         rerendered=true;
                         const link=document.querySelector('#personal_tab_before');
@@ -132,7 +130,10 @@ internal static class CollectionRecoveryBrowserChecks
                         }
                       }
                       return snapshot;
-                    };
+                    }
+                    const inspect=value.inspectPreferences, capture=value.capturePreferences;
+                    value.inspectPreferences=()=>observe(inspect());
+                    value.capturePreferences=function(role){const result=capture(role);observe(result.state);return result;};
                     reader=value;
                   }
                 });

@@ -7,6 +7,8 @@ public sealed class NativeColumnInspection
     [JsonPropertyName("supported")] public bool Supported { get; set; }
     [JsonPropertyName("reason")] public string Reason { get; set; } = "";
     [JsonPropertyName("proof")] public string Proof { get; set; } = "";
+    [JsonPropertyName("ambiguousRole")] public string AmbiguousRole { get; set; } = "";
+    [JsonPropertyName("matchCount")] public int MatchCount { get; set; }
     [JsonPropertyName("tableSelector")] public string TableSelector { get; set; } = "";
     [JsonPropertyName("openerSelector")] public string OpenerSelector { get; set; } = "";
     [JsonPropertyName("modalSelector")] public string ModalSelector { get; set; } = "";
@@ -19,6 +21,8 @@ public sealed class NativeColumnPreferences
     [JsonPropertyName("supported")] public bool Supported { get; set; }
     [JsonPropertyName("reason")] public string Reason { get; set; } = "";
     [JsonPropertyName("proof")] public string Proof { get; set; } = "";
+    [JsonPropertyName("ambiguousRole")] public string AmbiguousRole { get; set; } = "";
+    [JsonPropertyName("matchCount")] public int MatchCount { get; set; }
     [JsonPropertyName("layout")] public string Layout { get; set; } = "";
     [JsonPropertyName("itemType")] public string ItemType { get; set; } = "";
     [JsonPropertyName("usersId")] public string UsersId { get; set; } = "";

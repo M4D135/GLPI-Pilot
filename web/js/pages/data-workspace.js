@@ -37,7 +37,7 @@ export async function renderDataWorkspace(ctx) {
     { key: 'portalUrl', label: simulation ? 'Adresse de la source simulée' : 'Adresse de la recherche GLPI', required: true, help: simulation ? demo ? 'La collecte utilise le scénario fictif, sans connexion à un portail réel.' : 'La collecte réutilise les lignes du fichier chargé, sans connexion à un portail réel.' : 'Adresse complète de la recherche GLPI, filtres compris.' },
     { key: 'browserChannel', label: 'Navigateur', type: 'select', options: browserOptions(state) },
     { key: 'autoMode', label: 'Collecte', type: 'select', options: [{ value: 'native', label: 'Export natif GLPI' }, { value: 'pagination', label: 'Tableau et pagination' }] },
-    { key: 'columnPreparationMode', label: 'Colonnes avant la collecte', type: 'select', options: [{ value: 'current', label: 'Vue actuelle' }, { value: 'supervision', label: 'Colonnes de supervision' }, { value: 'all', label: 'Toutes les colonnes proposées par GLPI' }], help: simulation ? 'La simulation conserve les colonnes du scénario.' : 'GLPI mémorise les ajouts dans la vue personnelle, sans retirer de colonne ni changer les filtres. Le mode « Toutes » peut prendre plus de temps. Si cette commande n’est pas disponible, la collecte conserve la vue actuelle et le signale.' }
+    { key: 'columnPreparationMode', label: 'Colonnes avant la collecte', type: 'select', value: 'all', options: [{ value: 'all', label: 'Toutes les colonnes proposées par GLPI' }, { value: 'supervision', label: 'Colonnes de supervision' }, { value: 'current', label: 'Vue actuelle' }], help: simulation ? 'La simulation conserve les colonnes du scénario.' : 'Les colonnes déjà présentes sont conservées. Seuls les champs manquants sont ajoutés dans la vue personnelle, sans changer les filtres des tickets. Si cette commande n’est pas disponible, la collecte conserve la vue actuelle et le signale.' }
   ], { ...state.settings, portalUrl: simulation ? state.settings.portalUrl || 'https://simulation.glpi.local/front/ticket.php' : state.settings.portalUrl });
   const savedSettings = result => { revision = result.revision; };
   const saveConnection = async () => { const result = await call('settings.save', { revision, settings: { ...state.settings, ...connection.read() } }); savedSettings(result); connection.markSaved(); };
@@ -56,7 +56,11 @@ export async function renderDataWorkspace(ctx) {
   });
   signal.addEventListener('abort', stopSettings, { once: true });
   const live = card(simulation ? 'Collecter dans la simulation' : 'GLPI en direct', field('Recherche mémorisée', source), connection.element,
-    toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => { await saveConnection(); await call('collect.run'); await ctx.refresh(); }, { primary: true, icon: 'download' })),
+    toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => {
+      // Retrying replaces this card's previous failure, without clearing the journal or other alerts.
+      for (const notice of live.querySelectorAll(':scope > .notice.danger[role="alert"]')) notice.remove();
+      await saveConnection(); await call('collect.run'); await ctx.refresh();
+    }, { primary: true, icon: 'download' })),
     el('p', { class: 'help data-connection-help', text: simulation ? 'Connexion et téléchargements simulés. Profil habituel inchangé.' : 'La collecte ouvre la connexion GLPI. En cas de demande SSO, terminer la connexion dans le navigateur.' }),
     toolbar(button('Recherches mémorisées', manageSearches, { icon: 'layers', attributes: { 'data-open-panel': 'sources' } }),
       button('Collecter plusieurs recherches', () => openGroupedCollection(ctx, { beforeOpen: prepareConnection, onSaved: savedSettings, manageSources: () => openTool('sources') }), { icon: 'layers' }),

@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.10 · Windows x64
+# GLPI Pilot 4.0.11 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.10 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.11 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.11 : toutes les colonnes et contrôles natifs revalidés
+
+**Toutes les colonnes proposées par GLPI** devient le choix par défaut. L’ancien réglage courant « Colonnes de supervision » d’un profil local passe une fois à ce nouveau défaut ; les choix ultérieurs, les recherches mémorisées et les choix explicitement importés ou restaurés sont conservés. Les ajouts restent limités aux colonnes manquantes de la vue personnelle, dans le périmètre de la recherche filtrée.
+
+La collecte garde les éléments DOM exacts reconnus par l’inspection native et les revalide avant d’agir. Une copie masquée ou un doublon dans un composant étranger ne détourne plus le contrôle retenu. Les véritables ambiguïtés actives restent bloquantes, avec un diagnostic précisant le contrôle et la phase. Au lancement d’une nouvelle tentative, seul l’ancien bandeau d’erreur de la carte de collecte est effacé ; les données précédentes et le journal restent disponibles. Voir les [notes 4.0.11](docs/RELEASE-4.0.11.md) et leurs conditions de qualification.
 
 ## 4.0.10 : reprise de la collecte avec une ancienne table masquée
 

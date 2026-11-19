@@ -18,7 +18,7 @@ internal static class ColumnPreparationBrowserChecks
     {
         yield return ("Colonnes GLPI : activation personnelle legacy, ajouts supervision et tableau régénéré", () => Check(browser, "legacy"));
         yield return ("Colonnes GLPI : iframe 11 réutilisé, vraie relecture GET et persistance", () => Check(browser, "modern"));
-        yield return ("Colonnes GLPI : mode toutes traite aussi les options sans rôle de supervision", () => Check(browser, "all"));
+        yield return ("Colonnes GLPI : défaut toutes traite aussi les options sans rôle de supervision", () => Check(browser, "all"));
         yield return ("Colonnes GLPI : HTTP 200 et DOM optimiste sans persistance sont refusés", () => Check(browser, "not-persisted"));
         yield return ("Colonnes GLPI : vue globale seule préservée, collecte actuelle explicitement signalée", () => Check(browser, "global-only"));
         yield return ("Colonnes GLPI : changement de critères arrête les ajouts avant la collecte", () => Check(browser, "scope-change"));
@@ -38,6 +38,7 @@ internal static class ColumnPreparationBrowserChecks
         yield return ("Colonnes GLPI : refus avant clic préservé par l’attente native sans envoi", () => CheckBeforeClickWaiter(browser));
         foreach (var check in CollectionRecoveryBrowserChecks.Cases(browser)) yield return check;
         foreach (var check in ColumnPreparationRaceBrowserChecks.Cases(browser)) yield return check;
+        foreach (var check in ColumnControlCaptureBrowserChecks.Cases(browser)) yield return check;
     }
 
     private static void Require(bool value, string message)
@@ -229,7 +230,7 @@ internal static class ColumnPreparationBrowserChecks
         });
         await page.GotoAsync(Target);
         var settings = new AppSettings { PortalUrl = Target, AutoMode = "pagination", ListTimeoutSeconds = 5, TimeoutSeconds = 5 };
-        if (scenario == "all") settings.ColumnPreparationMode = "all";
+        if (scenario != "all") settings.ColumnPreparationMode = "supervision";
         if (scenario == "current") settings.ColumnPreparationMode = "current";
         var original = await service.ChooseAutoTableAsync(page, settings, CancellationToken.None);
         using var cancellation = new CancellationTokenSource();

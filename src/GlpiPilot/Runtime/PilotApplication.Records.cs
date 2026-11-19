@@ -202,7 +202,8 @@ public sealed partial class PilotApplication
         {
             var name = Text(args, "backup", 500);
             path = SettingsRecovery.List(AppPaths.SettingsFile).SingleOrDefault(b => Path.GetFileName(b.Path) == name)?.Path ?? throw new InvalidDataException("Version de configuration introuvable.");
-            _configurationDraft = SettingsRecovery.Read(path);
+            // Restoring a selected backup is an explicit choice, including its column mode.
+            _configurationDraft = SettingsRecovery.Read(path, applyColumnPreparationUpgrade: false);
         }
         else
         {

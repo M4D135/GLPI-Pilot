@@ -9,6 +9,7 @@ public sealed class AppSettings : IJsonOnDeserialized
     public const int MinimumInterfaceZoomPercent = 75;
     public const int MaximumInterfaceZoomPercent = 150;
     public const int InterfaceZoomStep = 5;
+    public const int CurrentColumnPreparationDefaultsVersion = 1;
     public string PortalUrl { get; set; } = "";
     public string BrowserChannel { get; set; } = "msedge";
     private string _theme = "dark";
@@ -18,7 +19,10 @@ public sealed class AppSettings : IJsonOnDeserialized
     public string Theme { get => _theme; set { _theme = value; _themeSpecified = value is "light" or "dark"; } }
     public int InterfaceZoomPercent { get; set; } = 100;
     public string AutoMode { get; set; } = "native";
-    public string ColumnPreparationMode { get; set; } = "supervision";
+    public string ColumnPreparationMode { get; set; } = "all";
+    // Local upgrade receipt. Portable configurations and saved searches carry
+    // the chosen mode, never the recipient's acknowledgement of this default.
+    public int ColumnPreparationDefaultsVersion { get; set; } = CurrentColumnPreparationDefaultsVersion;
     public bool AutoSaveXlsx { get; set; } = true;
     public string ReadySelector { get; set; } = "";
     public string NextSelector { get; set; } = "";
@@ -110,7 +114,7 @@ public sealed class AppSettings : IJsonOnDeserialized
         BrowserChannel ??= "msedge";
         _theme ??= "dark";
         AutoMode ??= "native";
-        if (string.IsNullOrWhiteSpace(ColumnPreparationMode)) ColumnPreparationMode = "supervision";
+        if (string.IsNullOrWhiteSpace(ColumnPreparationMode)) ColumnPreparationMode = "all";
         ReadySelector ??= "";
         NextSelector ??= "";
         SelectorOrigin ??= "";
@@ -437,7 +441,7 @@ public static class SettingsRecovery
     private const int MaximumBytes = 4 * 1024 * 1024;
     private static readonly object Gate = new();
     public static string LastRecoveryMessage { get; private set; } = "";
-    public static AppSettings Read(string path)
+    public static AppSettings Read(string path, bool applyColumnPreparationUpgrade = true)
     {
         using var file = File.OpenRead(path);
         if (file.Length == 0 || file.Length > MaximumBytes) throw new InvalidDataException("Le fichier de réglages est vide ou trop volumineux.");
@@ -447,17 +451,29 @@ public static class SettingsRecovery
             if (memory.Length + read > MaximumBytes) throw new InvalidDataException("Le fichier de réglages dépasse 4 Mio.");
             memory.Write(buffer, 0, read);
         }
-        return Read(memory.ToArray());
+        return Read(memory.ToArray(), applyColumnPreparationUpgrade: applyColumnPreparationUpgrade);
     }
-    internal static AppSettings Read(ReadOnlyMemory<byte> content, bool validateReference = false)
+    internal static AppSettings Read(ReadOnlyMemory<byte> content, bool validateReference = false, bool applyColumnPreparationUpgrade = true)
     {
         using var document = JsonDocument.Parse(content, new JsonDocumentOptions { MaxDepth = 32 });
         var settings = document.RootElement.Deserialize<AppSettings>(new JsonSerializerOptions { MaxDepth = 32 })
             ?? throw new InvalidDataException("Les réglages sont absents.");
         if (validateReference) settings.Cities?.Validate();
         settings.Normalize();
+        UpgradeColumnPreparationDefault(document.RootElement, settings, applyColumnPreparationUpgrade);
         RestoreLegacyActiveAcquisition(document.RootElement, settings);
         return settings;
+    }
+    private static void UpgradeColumnPreparationDefault(JsonElement document, AppSettings settings, bool applyUpgrade)
+    {
+        if (document.TryGetProperty(nameof(AppSettings.ColumnPreparationDefaultsVersion), out var marker)
+            && marker.ValueKind == JsonValueKind.Number && marker.TryGetInt32(out var version)
+            && version >= AppSettings.CurrentColumnPreparationDefaultsVersion) return;
+        // Earlier local profiles always serialized "supervision", including
+        // the old default. Upgrade that current preference once. A later
+        // explicit choice, a named recipe or an imported choice stays intact.
+        if (applyUpgrade && settings.ColumnPreparationMode == "supervision") settings.ColumnPreparationMode = "all";
+        settings.ColumnPreparationDefaultsVersion = AppSettings.CurrentColumnPreparationDefaultsVersion;
     }
     private static void RestoreLegacyActiveAcquisition(JsonElement document, AppSettings settings)
     {
