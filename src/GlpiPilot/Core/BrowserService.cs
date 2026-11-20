@@ -667,6 +667,23 @@ public sealed partial class BrowserService : IAsyncDisposable
                 if (saveTask != null) { try { await saveTask; } catch (PlaywrightException) { } }
                 throw;
             }
+            catch (PlaywrightException error) when (verifyAttempt is not null)
+            {
+                ct.ThrowIfCancellationRequested();
+                verifyAttempt();
+                string? transferFailure = null;
+                try { transferFailure = await download.FailureAsync().WaitAsync(transferToken); }
+                catch (PlaywrightException) { /* No proved transfer failure: preserve the original SaveAs error. */ }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+                ct.ThrowIfCancellationRequested();
+                verifyAttempt();
+                if (!string.IsNullOrEmpty(transferFailure))
+                    throw new NativeExportInterruptionException(NativeExportFailureKind.Transport,
+                        "Le transfert du fichier natif GLPI n’a pas abouti. Aucun fichier n’a été validé.", innerException: error);
+                // A browser/storage exception without a failed Download is not
+                // permission to switch readers or hide a local write failure.
+                throw;
+            }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
             Log?.Invoke($"EXPORT · fichier reçu ({new FileInfo(path).Length:N0} octets, extension {extension}).");
             verifyAttempt?.Invoke();
@@ -677,8 +694,17 @@ public sealed partial class BrowserService : IAsyncDisposable
             var pending = download ?? (_downloadWaiter.Task.IsCompletedSuccessfully ? _downloadWaiter.Task.Result : null);
             if (pending != null) { try { await pending.CancelAsync(); } catch (PlaywrightException) { } }
             if (stopPendingRequest is not null) await stopPendingRequest();
+            ct.ThrowIfCancellationRequested();
             if (error is OperationCanceledException && !ct.IsCancellationRequested && deadline.IsCancellationRequested)
-                throw new TimeoutException("Le téléchargement GLPI n’a pas abouti dans le délai d’export. Augmente ce délai dans Réglages ou copie le diagnostic.");
+            {
+                // A known session/origin/ambiguity failure must never be hidden
+                // by an action that happened to reach the deadline afterwards.
+                verifyAttempt?.Invoke();
+                const string message = "Le téléchargement GLPI n’a pas abouti dans le délai d’export. Augmente ce délai dans Réglages ou copie le diagnostic.";
+                if (verifyAttempt is not null)
+                    throw new NativeExportInterruptionException(NativeExportFailureKind.Deadline, message, innerException: error);
+                throw new TimeoutException(message, error);
+            }
             throw;
         }
         finally { _downloadWaiter = null; _downloadPage = null; _downloadAccept = null; _downloadProgress = null; }

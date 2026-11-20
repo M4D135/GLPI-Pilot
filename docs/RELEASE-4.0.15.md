@@ -2,7 +2,11 @@
 
 ## Pagination avant l’extraction de secours
 
-La collecte de bibliothèque lit d’abord l’index GLPI, puis les fiches une par une. Elle prépare maintenant le nombre de tickets par page avant de lire cet index. Le repli paginé utilisé lorsque la commande d’export CSV native est absente emploie le même contrôle.
+La collecte de bibliothèque lit d’abord l’index GLPI, puis les fiches une par une. Elle prépare maintenant le nombre de tickets par page avant de lire cet index. Le mode parse du tableau utilise le même contrôle : il lit les tickets de la recherche sélectionnée, ligne par ligne et page par page.
+
+Si la commande CSV est absente ou ambiguë, si son transfert échoue ou dépasse son délai, ou si le fichier reçu est illisible ou ne couvre pas les identifiants et le total attendus, Pilot passe automatiquement à cette lecture du tableau lorsque le repli automatique est activé (valeur par défaut). Il reprend la même recherche depuis sa première page, sans ouvrir une collecte globale de bibliothèque. Il ne renvoie pas la commande d’export. Une simple information annonce le changement de méthode ; un résultat ensuite vérifié se termine normalement, sans avertissement ajouté pour ce seul basculement.
+
+Le reçu natif déjà téléchargé reste intact. Le résultat du mode parse est enregistré dans un autre fichier et porte sa propre méthode dans la provenance. La session, le filtre, les identifiants d’origine, le total et le résultat final sont de nouveau contrôlés. Une annulation, un refus de session ou de droits, une redirection non autorisée, un transfert ambigu ou un dossier d’export inaccessible ne deviennent pas un succès de secours. Les différences de valeurs dans un CSV utilisable restent documentées comme telles.
 
 Pilot utilise uniquement les options du sélecteur natif associé au tableau Ticket : 1 000, sinon la plus petite option supérieure ; une limite déjà au moins égale à 1 000 est conservée. Si aucune option n’atteint ce seuil, la plus grande limite disponible est utilisée. Un contrôle absent ou ambigu laisse la pagination actuelle en place. Aucune option ni adresse de commande n’est inventée.
 

@@ -106,14 +106,19 @@ public sealed class AutomaticExtractionService(BrowserService browser)
         {
             if (fallback)
             {
-                Stage("Export natif indisponible : retour à la première page pour lire toute la recherche…", AutomaticRunPhase.Retrieval);
+                Stage("L’export classique n’est pas disponible pour cette collecte. La lecture continue en mode parse du tableau…", AutomaticRunPhase.Retrieval);
                 var pagination = settings.Copy(); pagination.AutoMode = "pagination";
                 pagination.PortalUrl = TargetUrlPolicy.FirstPage(navigation.PortalUrl);
                 page = await browser.OpenTargetAsync(pagination, ct);
                 table = await browser.WaitForAutoTableAsync(page, pagination, ct);
                 var resumedScope = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
-                if (scopeEvidence.Fingerprint.Length > 0 && scopeEvidence.Fingerprint != resumedScope.Fingerprint)
+                if (!scopeEvidence.Known || !resumedScope.Known || scopeEvidence.Fingerprint.Length == 0
+                    || scopeEvidence.Fingerprint != resumedScope.Fingerprint
+                    || !TargetUrlPolicy.IncludesSearch(page.Url, pagination.PortalUrl))
                     throw new InvalidOperationException("Le périmètre a changé lors du retour à la première page. Le repli paginé s’arrête avant de lire une autre recherche.");
+                var resumedSample = await browser.ReadVerificationSampleAsync(table, ct);
+                if (visibleBefore is not null && !ColumnPreparationPolicy.PreservesHeaders(visibleBefore.Headers, resumedSample.Headers))
+                    throw new InvalidOperationException("Les colonnes de la recherche initiale ne sont plus toutes présentes. La lecture du tableau s’arrête avant de publier un relevé incomplet.");
                 scopeEvidence = resumedScope;
                 searchVerified = TargetUrlPolicy.IncludesSearch(page.Url, pagination.PortalUrl);
                 settings.RememberTable(table); fallbackUsed = true;
@@ -126,8 +131,29 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 throw new InvalidOperationException("Le périmètre a changé pendant la préparation de la pagination. Le repli s’arrête avant de lire une autre recherche.");
             method = fallback ? "pagination-fallback" : "pagination";
             var result = await browser.ExtractAsync(table, true, settings, progress, ct);
+            ct.ThrowIfCancellationRequested();
             result.Scope = "Recherche rechargée avec start=0, puis pages suivantes";
             if (result.Headers.Count == 0) throw new InvalidOperationException("L’extraction n’a produit aucune colonne exploitable.");
+            if (fallback && visibleBefore is not null)
+            {
+                if (!ColumnPreparationPolicy.PreservesHeaders(visibleBefore.Headers, result.Headers))
+                    throw new InvalidDataException("Les colonnes de la recherche initiale ne sont plus toutes présentes. Aucun relevé complet n’a été publié.");
+                result.Quality = new()
+                {
+                    SourceRows = result.Rows.Count, ExpectedRows = result.ExpectedTotal, AllPagesRequested = true,
+                    RowCountVerified = result.ExpectedTotal.HasValue ? result.Rows.Count == result.ExpectedTotal.Value : null
+                };
+                var sample = ExtractionVerificationService.VerifyNativeSample(visibleBefore, result, settings.Dashboard, ct);
+                result.Quality.InitialSample = sample.Observation();
+                if (sample.IdentityVerified != true)
+                    throw new InvalidDataException("Les identifiants de la recherche initiale ne sont pas confirmés dans la lecture du tableau. Aucun relevé complet n’a été publié.");
+                if (!sample.Matches || !sample.Available)
+                {
+                    result.Complete = false;
+                    result.Warnings.Add("Les valeurs de la recherche initiale et du tableau lu ne concordent pas entièrement. Le relevé reste à vérifier.");
+                }
+            }
+            if (fallback) result.Status += " · mode parse du tableau";
             return result;
         }
         if (empty != null)
@@ -145,7 +171,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             if (settings.NativeSubmitSelector.Length == 0 && native.Unavailable && native.DisplayPlan != null)
             {
                 if (!settings.Automation.AutomaticPaginationFallback)
-                    throw new InvalidOperationException("L’export natif est indisponible. Active le repli par pages ou réduis la recherche ; le nombre de lignes affichées dans GLPI reste inchangé.");
+                    throw new InvalidOperationException("L’export natif est indisponible. Active la lecture de secours du tableau ou réduis la recherche.");
                 Log?.Invoke("AFFICHAGE · préparation de la pagination native avant la lecture de secours ; la limite réellement appliquée sera vérifiée.");
                 data = await ReadPaginationAsync(true);
             }
@@ -160,32 +186,53 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                     NativeFileSaved?.Invoke(nativePath);
                     Log?.Invoke("EXPORT · fichier natif conservé dans le dossier des exports, avant l’import.");
                     Stage("Chargement du fichier reçu et contrôle du périmètre…", AutomaticRunPhase.Validation);
-                    data = await Task.Run(() => NativeCsvImportService.Read(download.Path, observedTableSource, download.ExpectedTotal,
-                        settings.MaxRows, true, ct, diagnostics: message => Log?.Invoke(message)), ct);
-                    method = "native-csv";
-                    var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct,
-                        cell => divergences.Add("initial", cell));
-                    data.Quality!.InitialSample = check.Observation();
-                    Log?.Invoke("ÉCHANTILLON · " + check.Explanation);
-                    foreach (var diagnostic in check.Diagnostics) Log?.Invoke("ÉCHANTILLON DÉTAIL · " + diagnostic);
-                    // A wrong sample identifies a different file. Value differences
-                    // can instead come from GLPI's HTML/CSV representations: retain
-                    // the usable CSV, but do not certify it as a comparable snapshot.
-                    if (check.Missing > 0)
-                        throw new InvalidDataException(check.Explanation + " Le fichier natif reste conservé ; aucun relevé complet n’a été publié.");
-                    if (!check.Available || !check.Matches)
+                    try
                     {
-                        data.Complete = false;
-                        data.Warnings.Add(check.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.");
-                        data.Status = $"Import terminé · {data.Rows.Count:N0} lignes chargées";
+                        data = await Task.Run(() => NativeCsvImportService.Read(download.Path, observedTableSource, download.ExpectedTotal,
+                            settings.MaxRows, true, ct, diagnostics: message => Log?.Invoke(message)), ct);
+                        method = "native-csv";
+                    }
+                    catch (InvalidDataException) when (settings.Automation.AutomaticPaginationFallback && !ct.IsCancellationRequested)
+                    {
+                        // Keep the received bytes as evidence. The replacement
+                        // comes from a fresh, independently verified search and
+                        // is written to another file; no CSV rows are repaired.
+                        Log?.Invoke("EXPORT · reçu non exploitable conservé intact ; poursuite par lecture du tableau.");
+                        data = await ReadPaginationAsync(true);
+                    }
+                    if (!fallbackUsed)
+                    {
+                        var check = ExtractionVerificationService.VerifyNativeSample(visibleBefore!, data, settings.Dashboard, ct,
+                            cell => divergences.Add("initial", cell));
+                        data.Quality!.InitialSample = check.Observation();
+                        Log?.Invoke("ÉCHANTILLON · " + check.Explanation);
+                        foreach (var diagnostic in check.Diagnostics) Log?.Invoke("ÉCHANTILLON DÉTAIL · " + diagnostic);
+                        // An unusable native receipt is never repaired or certified.
+                        // A separate read can replace it only after the original
+                        // search and its sampled identities have been revalidated.
+                        if (settings.Automation.AutomaticPaginationFallback
+                            && (check.Missing > 0 || data.Quality.RowCountVerified == false))
+                        {
+                            Log?.Invoke("EXPORT · le reçu classique ne confirme pas la recherche attendue ; poursuite par lecture du tableau, fichier reçu conservé.");
+                            data = await ReadPaginationAsync(true);
+                        }
+                        else if (check.Missing > 0)
+                            throw new InvalidDataException(check.Explanation + " Le fichier natif reste conservé ; aucun relevé complet n’a été publié.");
+                        else if (!check.Available || !check.Matches)
+                        {
+                            data.Complete = false;
+                            data.Warnings.Add(check.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.");
+                            data.Status = $"Import terminé · {data.Rows.Count:N0} lignes chargées";
+                        }
                     }
                 }
-                catch (NativeExportUnavailableException) when (download == null && settings.Automation.AutomaticPaginationFallback
-                    && settings.NativeSubmitSelector.Length == 0 && settings.NativeMenuSelector.Length == 0
-                    && settings.NativeFormatSelector.Length == 0 && settings.NativeScopeSelector.Length == 0 && !ct.IsCancellationRequested)
+                catch (NativeExportRecoverableException error) when (download == null && settings.Automation.AutomaticPaginationFallback
+                    && !ct.IsCancellationRequested)
                 {
-                    // A transfer failure, malformed CSV, wrong sample or partial receipt
-                    // never enters this branch. Only absence of a native command does.
+                    // Only a classified export failure reaches this branch after
+                    // its transfer has been retired. Session, origin, identity,
+                    // storage and cancellation failures retain their own outcome.
+                    Log?.Invoke("EXPORT · basculement automatique vers la lecture du tableau ; motif=" + error.Kind + ".");
                     data = await ReadPaginationAsync(true);
                 }
             }
@@ -231,7 +278,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 data.Warnings.Add((observedInitially ? "Le total GLPI a changé entre le début et la fin de l’extraction."
                     : "Le total GLPI final diffère du total attendu utilisé pour cette extraction.") + " Les données sont conservées avec une couverture non confirmée.");
             }
-            if (method == "native-csv")
+            if (method is "native-csv" or "pagination-fallback")
             {
                 var finalSample = ExtractionVerificationService.VerifyNativeSample(visibleAfter, data, settings.Dashboard, ct,
                     cell => divergences.Add("final", cell));
@@ -241,16 +288,16 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 if (!finalSample.Available)
                 {
                     data.Complete = false;
-                    if (stableScope && !totalChanged) data.Status = $"Import terminé · {data.Rows.Count:N0} lignes chargées";
-                    data.Warnings.Add(finalSample.Explanation + " Le contrôle de l’échantillon n’est plus disponible après le transfert ; la couverture reste à vérifier.");
+                    if (stableScope && !totalChanged) data.Status = $"Lecture terminée · {data.Rows.Count:N0} lignes chargées";
+                    data.Warnings.Add(finalSample.Explanation + " Le contrôle de l’échantillon final n’est plus disponible ; la couverture reste à vérifier.");
                 }
                 else if (!finalSample.Matches)
                 {
                     data.Complete = false;
                     if (stableScope && !totalChanged) data.Status = finalSample.Missing > 0
-                        ? "Export natif chargé — identifiants de l’échantillon final à vérifier"
-                        : $"Import terminé · {data.Rows.Count:N0} lignes chargées";
-                    var warning = finalSample.Explanation + " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier.";
+                        ? "Relevé chargé — identifiants de l’échantillon final à vérifier"
+                        : $"Lecture terminée · {data.Rows.Count:N0} lignes chargées";
+                    var warning = finalSample.Explanation + " Le relevé est chargé ; sa concordance avec l’affichage reste à vérifier.";
                     if (!data.Warnings.Contains(warning, StringComparer.Ordinal)) data.Warnings.Add(warning);
                 }
             }
@@ -263,7 +310,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             SourceKind = "browser", Method = method,
             InitialScopeVerified = initialScopeVerified,
             ScopeVerified = stableScope && scopeEvidence.Known && afterScope.Known, ScopeFingerprint = scopeEvidence.Fingerprint,
-            OriginalFileName = nativePath == null ? "" : Path.GetFileName(nativePath),
+            OriginalFileName = nativePath == null || method != "native-csv" ? "" : Path.GetFileName(nativePath),
             ObservedSort = observedSort, Resumed = data.Provenance.Resumed, ResumeStartedAt = data.Provenance.ResumeStartedAt,
             StageSeconds = phaseSeconds.Concat(browser.ConnectionStageSeconds.Select(pair => new KeyValuePair<string, double>("SSO/" + pair.Key, pair.Value))).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
         };
@@ -287,7 +334,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             }
         }
         data.Warnings = data.Warnings.Distinct(StringComparer.Ordinal).ToList();
-        if (nativePath != null) primaryPath = nativePath;
+        if (nativePath != null && method == "native-csv") primaryPath = nativePath;
         else if (data.Headers.Count > 0)
         {
             Stage("Enregistrement du relevé contrôlé…", AutomaticRunPhase.Saving);

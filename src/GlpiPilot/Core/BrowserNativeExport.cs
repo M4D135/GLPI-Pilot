@@ -44,6 +44,7 @@ public sealed partial class BrowserService
     public async Task<NativeDownloadResult> ExportAllNativeAsync(TableChoice table, AppSettings settings, CancellationToken ct,
         IProgress<ExtractionProgress>? progress = null)
     {
+        ct.ThrowIfCancellationRequested();
         var custom = settings.NativeMenuSelector.Length > 0 || settings.NativeSubmitSelector.Length > 0 || settings.NativeFormatSelector.Length > 0 || settings.NativeScopeSelector.Length > 0;
         var frame = await ResolveFrameAsync(table, ct);
         NativeExportInspection inspection;
@@ -77,8 +78,9 @@ public sealed partial class BrowserService
             if (!inspection.Supported || inspection.Plans.Count != 1)
             {
                 LogNativeInspection(inspection);
-                if (inspection.Unavailable)
-                    throw new NativeExportUnavailableException("Aucune commande CSV Toutes les pages n’est identifiable sur ce tableau.");
+                if (inspection.Unavailable || inspection.Reason is "Plusieurs exports natifs distincts correspondent au tableau."
+                    or "Plusieurs menus d’export doivent être distingués.")
+                    throw new NativeExportUnavailableException("Aucune commande CSV Toutes les pages n’est identifiable sans ambiguïté sur ce tableau.");
                 throw new InvalidOperationException("L’export CSV de toutes les pages n’a pas été identifié sans ambiguïté. " + inspection.Reason + " Copie le diagnostic ; les repères d’export peuvent être mémorisés dans Réglages.");
             }
             plan = inspection.Plans[0];
@@ -98,63 +100,75 @@ public sealed partial class BrowserService
             table.Page!, frame, table.FrameOrigin, destination[1], destination[0],
             error => receiver.TrySetException(error), message => Log?.Invoke(message));
         var exportToken = ct;
-        var path = await CaptureDownloadCoreAsync(table.Page!, settings.ExportFolder, async token =>
+        string path;
+        try
         {
-            exportToken = token;
-            var stage = "sélection du format CSV";
-            try
+            path = await CaptureDownloadCoreAsync(table.Page!, settings.ExportFolder, async token =>
             {
-                if (plan.Kind == "form")
+                exportToken = token;
+                var stage = "sélection du format CSV";
+                try
                 {
-                    if (plan.ScopeSelector.Length > 0)
+                    if (plan.Kind == "form")
                     {
-                        stage = "sélection de Toutes les pages";
-                        Log?.Invoke("EXPORT · étape : " + stage + ".");
-                        await SelectNativeExportOptionAsync(frame, plan.ScopeSelector, plan.ScopeValue, true, attempt, token);
+                        if (plan.ScopeSelector.Length > 0)
+                        {
+                            stage = "sélection de Toutes les pages";
+                            Log?.Invoke("EXPORT · étape : " + stage + ".");
+                            await SelectNativeExportOptionAsync(frame, plan.ScopeSelector, plan.ScopeValue, true, attempt, token);
+                        }
+                        if (attempt.RequestObserved || receiver.Task.IsCompletedSuccessfully) return;
+                        if (plan.FormatSelector.Length > 0)
+                        {
+                            stage = "sélection du format CSV";
+                            Log?.Invoke("EXPORT · étape : " + stage + ".");
+                            await SelectNativeExportOptionAsync(frame, plan.FormatSelector, plan.FormatValue, plan.FormatHidden, attempt, token);
+                        }
+                        if (attempt.RequestObserved || receiver.Task.IsCompletedSuccessfully) return;
+                        if (plan.SubmitSelector.Length == 0) throw new InvalidOperationException("Le bouton de validation de l’export est introuvable.");
                     }
-                    if (attempt.RequestObserved || receiver.Task.IsCompletedSuccessfully) return;
-                    if (plan.FormatSelector.Length > 0)
-                    {
-                        stage = "sélection du format CSV";
-                        Log?.Invoke("EXPORT · étape : " + stage + ".");
-                        await SelectNativeExportOptionAsync(frame, plan.FormatSelector, plan.FormatValue, plan.FormatHidden, attempt, token);
-                    }
-                    if (attempt.RequestObserved || receiver.Task.IsCompletedSuccessfully) return;
-                    if (plan.SubmitSelector.Length == 0) throw new InvalidOperationException("Le bouton de validation de l’export est introuvable.");
+                    stage = "déclenchement de l’export CSV";
+                    Log?.Invoke("EXPORT · étape : " + stage + ".");
+                    await ClickNativeControlAsync(frame, plan.Kind == "direct" ? plan.DirectSelector : plan.SubmitSelector, false, table.FrameOrigin, token, attempt);
                 }
-                stage = "déclenchement de l’export CSV";
-                Log?.Invoke("EXPORT · étape : " + stage + ".");
-                await ClickNativeControlAsync(frame, plan.Kind == "direct" ? plan.DirectSelector : plan.SubmitSelector, false, table.FrameOrigin, token, attempt);
-            }
-            catch (Exception error) when (error is TimeoutException or PlaywrightException)
-            {
-                token.ThrowIfCancellationRequested();
-                if (!attempt.RequestObserved && !receiver.Task.IsCompletedSuccessfully
-                    && !await attempt.WaitForRequestAsync(TimeSpan.FromSeconds(5), token))
+                catch (Exception error) when (error is TimeoutException or PlaywrightException)
                 {
+                    token.ThrowIfCancellationRequested();
+                    if (!attempt.RequestObserved && !receiver.Task.IsCompletedSuccessfully
+                        && !await attempt.WaitForRequestAsync(TimeSpan.FromSeconds(5), token))
+                    {
+                        attempt.ThrowIfFailed();
+                        Log?.Invoke("EXPORT · arrêt pendant " + stage + " ; aucune requête d’export confirmée. " + AppPaths.SafeError(error));
+                        throw new InvalidOperationException("GLPI n’a pas confirmé le " + (stage == "déclenchement de l’export CSV" ? stage : "choix demandé")
+                            + ". Aucun export n’a été relancé automatiquement. Vérifier la fenêtre GLPI puis réessayer.");
+                    }
+                    // The short UI action has finished (including its own timeout).
+                    // Its native request is already in flight: do not click twice or
+                    // impose the locator deadline on the actual file transfer.
                     attempt.ThrowIfFailed();
-                    Log?.Invoke("EXPORT · arrêt pendant " + stage + " ; aucune requête d’export confirmée. " + AppPaths.SafeError(error));
-                    throw new InvalidOperationException("GLPI n’a pas confirmé le " + (stage == "déclenchement de l’export CSV" ? stage : "choix demandé")
-                        + ". Aucun export n’a été relancé automatiquement. Vérifier la fenêtre GLPI puis réessayer.");
+                    Log?.Invoke("EXPORT · commande déjà envoyée malgré la fin d’attente du contrôle ; attente du téléchargement dans le délai d’export.");
                 }
-                // The short UI action has finished (including its own timeout).
-                // Its native request is already in flight: do not click twice or
-                // impose the locator deadline on the actual file transfer.
-                attempt.ThrowIfFailed();
-                Log?.Invoke("EXPORT · commande déjà envoyée malgré la fin d’attente du contrôle ; attente du téléchargement dans le délai d’export.");
-            }
-            token.ThrowIfCancellationRequested();
-        }, settings.DownloadTimeoutSeconds, ct, attempt.AcceptsDownload,
-            async () =>
-            {
-                // A cancelled action can precede delivery of its Request event.
-                // Never reuse its page for a new receiver, even when no request
-                // was confirmed before this attempt failed.
-                RetireNativeExportPageFamily(table.Page!);
-                if (attempt.RequestObserved || exportToken.IsCancellationRequested)
-                    await StopPendingNativeExportAsync(table.Page!);
-            },
-            message => progress?.Report(new(0, 0, null, message)), receiver, attempt.ThrowIfFailed);
+                token.ThrowIfCancellationRequested();
+            }, settings.DownloadTimeoutSeconds, ct, attempt.AcceptsDownload,
+                async () =>
+                {
+                    // A cancelled action can precede delivery of its Request event.
+                    // Never reuse its page for a new receiver, even when no request
+                    // was confirmed before this attempt failed.
+                    RetireNativeExportPageFamily(table.Page!);
+                    if (attempt.RequestObserved || exportToken.IsCancellationRequested)
+                        await StopPendingNativeExportAsync(table.Page!);
+                },
+                message => progress?.Report(new(0, 0, null, message)), receiver, attempt.ThrowIfFailed);
+        }
+        catch (NativeExportInterruptionException error)
+        {
+            // CaptureDownloadCoreAsync has cancelled its receiver/transfer and
+            // retired the source page before a parser is allowed to take over.
+            ct.ThrowIfCancellationRequested();
+            throw new NativeExportRecoverableException(error.Kind, error.Message, error.HttpStatus, error);
+        }
+        ct.ThrowIfCancellationRequested();
         attempt.ThrowIfFailed();
         return new(path, expected, plan.Kind);
     }

@@ -48,7 +48,35 @@ public sealed class NativeDisplayPlan
 }
 
 public sealed record NativeDownloadResult(string Path, int? ExpectedTotal, string PlanKind);
-public sealed class NativeExportUnavailableException(string message) : InvalidOperationException(message) { }
+
+public enum NativeExportFailureKind { Unavailable, Transport, Http, Deadline }
+
+// This exception is exposed only before a command is sent, or after the failed
+// native transfer has been cleaned up and its page family has been retired.
+// The caller must still revalidate the search before reading the table instead.
+public class NativeExportRecoverableException : InvalidOperationException
+{
+    public NativeExportFailureKind Kind { get; }
+    public int? HttpStatus { get; }
+
+    public NativeExportRecoverableException(NativeExportFailureKind kind, string message, int? httpStatus = null, Exception? innerException = null)
+        : base(message, innerException)
+    { Kind = kind; HttpStatus = httpStatus; }
+}
+
+public sealed class NativeExportUnavailableException(string message)
+    : NativeExportRecoverableException(NativeExportFailureKind.Unavailable, message) { }
+
+// An observed failure is not yet a safe handoff: the browser can still deliver
+// a late attachment. Only ExportAllNativeAsync converts this internal signal
+// after CaptureDownloadCoreAsync has completed its failure cleanup.
+internal sealed class NativeExportInterruptionException(NativeExportFailureKind kind, string message, int? httpStatus = null, Exception? innerException = null)
+    : InvalidOperationException(message, innerException)
+{
+    public NativeExportFailureKind Kind { get; } = kind;
+    public int? HttpStatus { get; } = httpStatus;
+}
+
 public sealed record AutomaticRunResult(ExtractionResult Data, TableChoice Table, string PrimaryPath, string? NativePath, string? ExcelPath, CityEnrichmentResult? Cities = null)
 {
     // The live collection table can carry temporary columns. Persist this

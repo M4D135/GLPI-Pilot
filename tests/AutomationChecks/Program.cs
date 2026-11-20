@@ -76,9 +76,9 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Annulation avant CSV vide : aucune écriture démarrée après la demande", CheckCancelledEmptySave),
     ("Un clic : villes MA/Mars/Marseille enrichies dans CSV et Excel, reçu intact", () => CheckNativeCities(true)),
     ("Un clic sans Excel : CSV enrichi principal et métadonnées natives préservées", () => CheckNativeCities(false)),
-    ("Un clic GLPI 11 : section All pages choisie et CSV incomplet signalé", CheckNative11Partial),
+    ("Un clic GLPI 11, repli désactivé : section All pages choisie et CSV incomplet signalé", CheckNative11Partial),
     ("Formulaire natif ancien : choix CSV toutes-pages puis téléchargement", CheckNativeLegacy),
-    ("Export toutes-pages ambigu : arrêt avant téléchargement", CheckNativeAmbiguous),
+    ("Export toutes-pages ambigu, repli désactivé : arrêt avant téléchargement", CheckNativeAmbiguous),
     ("Mode pagination automatique : retour page 1 avec filtres et cinq lignes", CheckAutomaticPagination),
     ("Chargement AJAX : tableau de présentation ignoré en attendant la recherche", CheckAjaxReadiness),
     ("Repères personnalisés : menu submit et formaction métier refusés sans clic", CheckCustomSafety),
@@ -91,12 +91,21 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Legacy réel : six tableaux, export adjacent CSV -3 et 828 lignes", () => CheckRealisticLegacy(false)),
     ("Legacy ancien : Select2 masqué, disquette input image et 828 lignes natives", () => CheckRealisticLegacy(true)),
     ("CSV natif 831 lignes : contrôles C0/C1 conservés, fichier intact et Excel valide", CheckNativeTextControls),
-    ("CSV reçu HTML : fichier intact, échec explicite et aucun repli silencieux", () => CheckUnreadableNativePreserved(false)),
-    ("CSV reçu binaire : fichier intact, échec explicite et aucun repli silencieux", () => CheckUnreadableNativePreserved(true)),
-    ("CSV illisible : même avec un contrôle d’affichage, aucun faux Excel", CheckUnreadableNativeRejected),
+    ("CSV reçu HTML, repli désactivé : fichier intact et échec explicite", () => CheckUnreadableNativePreserved(false)),
+    ("CSV reçu binaire, repli désactivé : fichier intact et échec explicite", () => CheckUnreadableNativePreserved(true)),
+    ("CSV illisible, repli désactivé : même avec un contrôle d’affichage, aucun faux Excel", CheckUnreadableNativeRejected),
     ("Export indisponible stable : arrêt rapide et diagnostic sans valeurs privées", CheckUnsupportedNative),
     ("Option Afficher tout présente : repli paginé sans changer la limite GLPI", CheckDisplayAll),
     ("Repli sans CSV : réglage natif vérifié à 1000 avant la lecture des tickets", CheckFallbackNativePageLimit),
+    ("Repli après HTTP500 : lecture à 1000, un export et un réglage seulement", () => CheckRecoverableNativeFallback("http")),
+    ("Repli après rupture réseau : page fraîche, un export et 45 lignes relues", () => CheckRecoverableNativeFallback("transport")),
+    ("Repli après délai export : page fraîche et aucun renvoi de la commande", () => CheckRecoverableNativeFallback("deadline")),
+    ("Repli après CSV illisible : reçu intact et nouveau CSV principal vérifié", () => CheckRecoverableNativeFallback("invalid")),
+    ("Repli après CSV partiel : reçu de 20 lignes conservé et 45 lignes relues", () => CheckRecoverableNativeFallback("partial")),
+    ("Repli après commandes CSV ambiguës : aucun export, un réglage à 1000 et 45 lignes lues", () => CheckRecoverableNativeFallback("ambiguous")),
+    ("Repli désactivé après HTTP500 : échec explicite sans lecture de secours", () => CheckRecoverableNativeFallback("disabled")),
+    ("Repli après HTTP500 : périmètre changé au retour, lecture refusée", () => CheckRecoverableNativeFallback("scope")),
+    ("Repli après HTTP500 : colonne initiale disparue, arrêt avant réglage et lecture", () => CheckRecoverableNativeFallback("headers")),
     ("Limite de collecte ou repli désactivé : aucun affichage massif ni fichier complet", CheckDisplayAllRejected),
     ("Gestion de fenêtre bloquée : délai borné, sémaphore libéré et annulation rapide", CheckWindowManagementTimeout)
 };
@@ -972,7 +981,8 @@ async Task CheckNative11Partial()
         { downloads.Enqueue(route.Request.Url); return Download(route, csvPartial); }
         return Html(route, html);
     }, target);
-    var run = await new AutomaticExtractionService(h.Service).RunAsync(Settings(), null, CancellationToken.None);
+    var settings = Settings(); settings.Automation.AutomaticPaginationFallback = false;
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
     Equal(2, run.Data.Rows.Count); Equal(5, run.Data.ExpectedTotal);
     True(!run.Data.Complete && run.Data.Warnings.Count > 0, "Un CSV plus court que le compteur GLPI doit rester incomplet.");
     True(run.ExcelPath != null && Path.GetFileName(run.ExcelPath).StartsWith("GLPI-a-verifier-", StringComparison.Ordinal), "Le fichier incomplet doit être distingué à l’enregistrement.");
@@ -1018,6 +1028,7 @@ async Task CheckNativeAmbiguous()
     }, target);
     var settings = Settings();
     settings.TimeoutSeconds = 4;
+    settings.Automation.AutomaticPaginationFallback = false;
     var phases = new List<AutomaticRunPhase>();
     var automatic = new AutomaticExtractionService(h.Service);
     automatic.PhaseChanged += phases.Add;
@@ -1456,6 +1467,7 @@ async Task CheckUnreadableNativePreserved(bool binary)
         return Html(route, html);
     }, legacyTarget);
     var settings = Settings(legacyTarget); settings.MaxRows = 1000;
+    settings.Automation.AutomaticPaginationFallback = false;
     var automatic = new AutomaticExtractionService(h.Service);
     automatic.Log += h.Logs.Enqueue;
     var phases = new List<AutomaticRunPhase>(); automatic.PhaseChanged += phases.Add;
@@ -1493,6 +1505,7 @@ async Task CheckUnreadableNativeRejected()
             return Html(route, html);
         }, legacyTarget);
         var settings = Settings(legacyTarget); settings.MaxRows = 1000; settings.TimeoutSeconds = 2;
+        settings.Automation.AutomaticPaginationFallback = false;
         Exception? failure = null;
         try { await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None); }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException) { failure = ex; }
@@ -1685,23 +1698,7 @@ async Task CheckFallbackNativePageLimit()
             True((route.Request.PostData ?? "").Split('&').Contains("glpilist_limit=1000", StringComparer.Ordinal), "Le réglage doit envoyer une option native observée à 1000.");
             limit = 1000;
         }
-        string html = WithScript(WithoutNativeCsv(fixtureLegacyRealistic), """
-            const limit = __LIMIT__, total = 45;
-            renderLegacyRows(Math.min(limit, total), total);
-            for (const suffix of ['top', 'bottom']) {
-              const select = document.getElementById('legacy-limit-' + suffix);
-              select.append(new Option('1000', '1000')); select.value = String(limit);
-              const pager = document.getElementById('legacy-pager-' + suffix);
-              [...pager.querySelectorAll('th.right')].forEach(cell => {
-                cell.innerHTML = limit < total ? '<a href="ticket.php?start=20"><i title="Suivant">›</i></a>' : '<span title="Fin">›</span>';
-              });
-            }
-            document.querySelectorAll('#legacy-rows tr').forEach((row, index) => {
-              const id = 6000001 + index;
-              row.cells[0].innerHTML = '<a href="ticket.form.php?id=' + id + '">' + id + '</a>';
-            });
-            """.Replace("__LIMIT__", limit.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
-        return Html(route, html);
+        return Html(route, FallbackNativePageLimitHtml(limit, nativeAvailable: false));
     }, source);
     var settings = Settings(source); settings.MaxRows = 1000;
     var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
@@ -1713,6 +1710,180 @@ async Task CheckFallbackNativePageLimit()
     Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
     True(run.NativePath is null && h.Logs.Any(line => line.Contains("Pagination native vérifiée", StringComparison.Ordinal)), "Le repli doit conserver la preuve de la limite appliquée sans inventer un CSV natif.");
     AssertWorkbook(run.ExcelPath!, 45, "Fixture 1 / 2", "Fixture 45 / 16");
+}
+
+string FallbackNativePageLimitHtml(int limit, bool nativeAvailable, bool changedScope = false) =>
+    WithScript(nativeAvailable ? fixtureLegacyRealistic : WithoutNativeCsv(fixtureLegacyRealistic), """
+        const limit = __LIMIT__, total = 45;
+        renderLegacyRows(Math.min(limit, total), total);
+        for (const suffix of ['top', 'bottom']) {
+          const select = document.getElementById('legacy-limit-' + suffix);
+          select.append(new Option('1000', '1000')); select.value = String(limit);
+          const pager = document.getElementById('legacy-pager-' + suffix);
+          [...pager.querySelectorAll('th.right')].forEach(cell => {
+            cell.innerHTML = limit < total ? '<a href="ticket.php?start=20"><i title="Suivant">›</i></a>' : '<span title="Fin">›</span>';
+          });
+        }
+        document.querySelectorAll('#legacy-rows tr').forEach((row, index) => {
+          const id = 6000001 + index;
+          row.cells[0].innerHTML = '<a href="ticket.form.php?id=' + id + '">' + id + '</a>';
+        });
+        if (__CHANGED_SCOPE__) {
+          const criterion = document.querySelector('#legacy-search-form [name="criteria[0][value]"]');
+          criterion.append(new Option('Autre filtre', 'all')); criterion.value = 'all';
+        }
+        """.Replace("__LIMIT__", limit.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("__CHANGED_SCOPE__", changedScope ? "true" : "false", StringComparison.Ordinal));
+
+async Task CheckRecoverableNativeFallback(string scenario)
+{
+    const string source = legacyTarget + "?sort=1&order=DESC&start=0&criteria%5B0%5D%5Bvalue%5D=notold";
+    const string privateSentinel = "PRIVATE-FALLBACK-INVALID-RECEIPT";
+    const string invalidReceipt = "<!doctype html><html><body>" + privateSentinel + "</body></html>";
+    var partialReceipt = "\uFEFF" + string.Join(';', Enumerable.Range(1, 16).Select(column => column == 1 ? "ID" : "Champ " + column)) + "\r\n"
+        + string.Join("\r\n", Enumerable.Range(1, 20).Select(row => string.Join(';', Enumerable.Range(1, 16)
+            .Select(column => column == 1 ? (6000000 + row).ToString(System.Globalization.CultureInfo.InvariantCulture) : $"Fixture {row} / {column}")))) + "\r\n";
+    using var stopResponses = new CancellationTokenSource();
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    var delayedResponseEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    int limit = 20, limitPosts = 0, nativeRequests = 0, resumedGets = 0, detailRequests = 0, businessRequests = 0, nativeRequestsAtLimit = -1;
+    IPage? exportPage = null;
+    bool reusedExportPage = false, limitWasNative1000 = true;
+    await using var h = await Create(async route =>
+    {
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath.EndsWith("/report.dynamic.php", StringComparison.Ordinal))
+        {
+            nativeRequests++;
+            exportPage = route.Request.Frame.Page;
+            if (scenario == "deadline")
+            {
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, stopResponses.Token); }
+                catch (OperationCanceledException) when (stopResponses.IsCancellationRequested)
+                { try { await route.AbortAsync(); } catch (PlaywrightException) { } }
+                finally { delayedResponseEnded.TrySetResult(); }
+            }
+            else if (scenario == "transport") await route.AbortAsync("connectionreset");
+            else if (scenario is "invalid" or "partial") await Download(route, scenario == "partial" ? partialReceipt : invalidReceipt);
+            else await route.FulfillAsync(new() { Status = 500, ContentType = "text/html", Body = "<html><body>Export temporairement indisponible</body></html>" });
+            return;
+        }
+        if (uri.AbsolutePath.EndsWith("/ticket.form.php", StringComparison.Ordinal)) detailRequests++;
+        if (uri.AbsolutePath.EndsWith("/massiveaction.php", StringComparison.Ordinal)) businessRequests++;
+        if (!uri.AbsolutePath.EndsWith("/ticket.php", StringComparison.Ordinal)) { await route.AbortAsync(); return; }
+        if (nativeRequests > 0 && route.Request.Method == "GET" && route.Request.IsNavigationRequest)
+        {
+            resumedGets++;
+            reusedExportPage |= ReferenceEquals(route.Request.Frame.Page, exportPage);
+        }
+        if (route.Request.Method == "POST")
+        {
+            limitPosts++;
+            nativeRequestsAtLimit = nativeRequests;
+            limitWasNative1000 &= (route.Request.PostData ?? "").Split('&').Contains("glpilist_limit=1000", StringComparer.Ordinal);
+            limit = 1000;
+        }
+        string html = FallbackNativePageLimitHtml(limit, nativeAvailable: true, changedScope: scenario == "scope" && nativeRequests > 0);
+        if (scenario == "ambiguous") html = WithScript(html, """
+            const original = document.getElementById('legacy-export'), duplicate = original.cloneNode(true);
+            duplicate.id += '-duplicate';
+            duplicate.querySelectorAll('[id]').forEach(control => control.id += '-duplicate');
+            original.after(duplicate);
+            """);
+        if (scenario == "headers" && nativeRequests > 0) html = WithScript(html,
+            "document.querySelectorAll('#legacy-results tr').forEach(row => row.lastElementChild?.remove());");
+        await Html(route, html);
+    }, source);
+    var settings = Settings(source); settings.MaxRows = 1000; settings.AutoSaveXlsx = false;
+    settings.DownloadTimeoutSeconds = scenario == "deadline" ? 5 : 10;
+    settings.Automation.AutomaticPaginationFallback = scenario != "disabled";
+    var automatic = new AutomaticExtractionService(h.Service);
+    automatic.Log += h.Logs.Enqueue;
+    var phases = new List<AutomaticRunPhase>(); automatic.PhaseChanged += phases.Add;
+    var saved = new List<string>(); automatic.NativeFileSaved += saved.Add;
+    var progress = new List<ExtractionProgress>();
+    try
+    {
+        if (scenario == "ambiguous")
+        {
+            var visibleTable = (await h.Service.InspectAsync(h.Page, cancellation.Token)).Single(item => item.Selector == "#legacy-results");
+            var native = await h.Service.InspectNativeExportAsync(visibleTable, cancellation.Token);
+            True(!native.Supported && native.Reason.Contains("Plusieurs", StringComparison.Ordinal),
+                "La fixture doit exposer deux commandes natives réellement ambiguës, sans rendre le tableau ambigu.");
+        }
+        AutomaticRunResult? run = null;
+        Exception? failure = null;
+        try { run = await automatic.RunAsync(settings, new ImmediateAutomationProgress(progress.Add), cancellation.Token); }
+        catch (Exception error) { failure = error; }
+        Equal(scenario == "ambiguous" ? 0 : 1, nativeRequests); Equal(0, detailRequests); Equal(0, businessRequests);
+        if (scenario is "disabled" or "scope" or "headers")
+        {
+            True(failure is InvalidOperationException && run is null, "Le repli désactivé, hors périmètre ou privé d’une colonne initiale doit échouer explicitement.");
+            var expectedCause = scenario switch { "scope" => "périmètre", "headers" => "colonnes", _ => "500" };
+            True(failure!.Message.Contains(expectedCause, StringComparison.OrdinalIgnoreCase),
+                "L’échec doit conserver sa cause observée : HTTP500, changement de périmètre ou perte de colonnes.");
+            Equal(0, limitPosts); Equal(0, saved.Count);
+            Equal(0, phases.Count(phase => phase == AutomaticRunPhase.Ready));
+            True(progress.All(item => item.Rows == 0), "Aucune ligne d’une recherche de secours refusée ne doit être annoncée.");
+            Equal(0, Directory.GetFiles(settings.ExportFolder).Length);
+            if (scenario is "scope" or "headers") True(resumedGets > 0, "Le changement doit être réellement observé après retour à la liste.");
+            else Equal(0, resumedGets);
+            return;
+        }
+        if (failure is not null) throw new Exception("Le repli après " + scenario + " n’a pas abouti.", failure);
+        True(run is not null);
+        Equal(1, limitPosts); Equal(45, run!.Data.Rows.Count); Equal(45, run.Data.ExpectedTotal); Equal(1, run.Data.Pages);
+        Equal(scenario == "ambiguous" ? 0 : 1, nativeRequestsAtLimit);
+        True(limitWasNative1000, "Le repli doit régler une seule fois l’option native existante à 1000, après observation de l’échec classique.");
+        Equal("pagination-fallback", run.Data.Provenance.Method);
+        Equal("", run.Data.Provenance.OriginalFileName);
+        True(run.Data.Complete && run.Data.Provenance.ScopeVerified, string.Join(" | ", run.Data.Warnings));
+        Equal("6000001", run.Data.Rows[0][0]); Equal("6000045", run.Data.Rows[^1][0]);
+        True(progress.Any(item => item.Pages == 1 && item.Rows == 45 && item.Expected == 45),
+            "Le repli doit alimenter la progression normale avec les 45 lignes réellement lues.");
+        Equal(1, phases.Count(phase => phase == AutomaticRunPhase.Ready));
+        Equal("1000", await run.Table.Page!.Locator("#legacy-limit-top").InputValueAsync());
+        Equal(0, await run.Table.Page.EvaluateAsync<int>("() => window.businessSubmits"));
+        True(h.Logs.Any(line => line.Contains("Pagination native vérifiée", StringComparison.Ordinal)), "Le réglage à 1000 doit être confirmé dans le journal.");
+        True(File.Exists(run.PrimaryPath) && run.PrimaryPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase), "Le relevé de secours vérifié doit être enregistré en CSV principal.");
+        True(run.ExcelPath is null && Directory.GetFiles(settings.ExportFolder, "*.xlsx").Length == 0);
+        if (scenario is "invalid" or "partial")
+        {
+            Equal(1, saved.Count); Equal(saved[0], run.NativePath);
+            True(run.NativePath != run.PrimaryPath, "Le reçu invalide ou partiel doit rester distinct du nouveau CSV principal.");
+            var receivedBytes = await File.ReadAllBytesAsync(run.NativePath!);
+            True(Encoding.UTF8.GetBytes(scenario == "partial" ? partialReceipt : invalidReceipt).SequenceEqual(receivedBytes),
+                "Le reçu natif invalide ou partiel doit être conservé octet pour octet.");
+            Equal(2, Directory.GetFiles(settings.ExportFolder, "*.csv").Length);
+            True(!(await File.ReadAllTextAsync(run.PrimaryPath)).Contains(privateSentinel, StringComparison.Ordinal),
+                "Le fichier principal doit contenir les lignes de GLPI, sans recopier le reçu invalide.");
+            var diagnostic = DiagnosticReport.Create(settings, run.Data, string.Join('\n', h.Logs));
+            True(!diagnostic.Contains(privateSentinel, StringComparison.Ordinal), "Le diagnostic ne doit pas exposer le contenu du reçu invalide.");
+        }
+        else
+        {
+            Equal(0, saved.Count); True(run.NativePath is null);
+            Equal(1, Directory.GetFiles(settings.ExportFolder, "*.csv").Length);
+        }
+        if (scenario is "deadline" or "transport")
+        {
+            True(exportPage is not null && !ReferenceEquals(run.Table.Page, exportPage) && !reusedExportPage && resumedGets > 0,
+                "Après interruption de l’export, le relevé doit être lu sur une page fraîche sans réutiliser la page de la commande incertaine.");
+            True(ReferenceEquals(await h.Service.FindBestPageAsync(settings, exportPage, cancellation.Token), run.Table.Page),
+                "Même proposée comme préférence, l’ancienne page retirée doit rester exclue de la sélection pendant sa fermeture différée.");
+        }
+    }
+    catch
+    {
+        foreach (var line in h.Logs.TakeLast(20)) Console.Error.WriteLine("TRACE synthetic fallback " + scenario + ": " + line);
+        throw;
+    }
+    finally
+    {
+        stopResponses.Cancel();
+        if (scenario == "deadline" && nativeRequests > 0) await delayedResponseEnded.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Console.WriteLine($"TRACE synthetic fallback {scenario}: exports={nativeRequests}, page-limit={limitPosts}, resumed-pages={resumedGets}, native-files={saved.Count}, ready={phases.Count(phase => phase == AutomaticRunPhase.Ready)}");
+    }
 }
 
 async Task CheckDisplayAllRejected()
@@ -1810,6 +1981,11 @@ static void Equal<T>(T expected, T actual)
 static void True(bool condition, [System.Runtime.CompilerServices.CallerArgumentExpression("condition")] string reason = "")
 {
     if (!condition) throw new Exception(reason);
+}
+
+sealed class ImmediateAutomationProgress(Action<ExtractionProgress> report) : IProgress<ExtractionProgress>
+{
+    public void Report(ExtractionProgress value) => report(value);
 }
 
 sealed class Harness(IBrowserContext context, IPage page, BrowserService service, ConcurrentQueue<string> logs) : IAsyncDisposable

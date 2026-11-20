@@ -393,9 +393,17 @@ internal static partial class Program
             InitialSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 17, ComparedCells = 442 },
             FinalSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 17, ComparedCells = 442 }
         };
-        async Task<JsonElement> ReadReceiptStatus(bool complete) => await page.EvaluateAsync<JsonElement>(
-            "async json => (await import('/js/ui.js')).extractionStatus(JSON.parse(json))", JsonSerializer.Serialize(
-                new { rows = 17, expectedTotal = 17, complete, quality = confirmedQuality, provenance = new { columnPreparation = columnReceipt } }, PilotApplication.Json));
+        async Task<JsonElement> ReadReceiptStatus(bool complete, string method = "native-csv", bool cachedSource = false) => await page.EvaluateAsync<JsonElement>(
+            """
+            async json => {
+                const session = JSON.parse(json), ui = await import('/js/ui.js');
+                return { ...ui.extractionStatus(session), noticeText: ui.extractionNotice({ ...session, loaded: true }, null, { detailed: true }).textContent };
+            }
+            """, JsonSerializer.Serialize(new
+            {
+                rows = 17, expectedTotal = 17, complete, cachedSource, date = new DateTimeOffset(2026, 11, 19, 12, 0, 0, TimeSpan.Zero),
+                quality = confirmedQuality, provenance = new ExtractionProvenance { Method = method, ColumnPreparation = columnReceipt }
+            }, PilotApplication.Json));
         var confirmedReceipt = await ReadReceiptStatus(true);
         Require(confirmedReceipt.GetProperty("label").GetString() == "Réception complète"
             && confirmedReceipt.GetProperty("scope").GetString() == "Périmètre stable"
@@ -403,12 +411,25 @@ internal static partial class Program
             && confirmedReceipt.GetProperty("restorationPending").GetBoolean()
             && confirmedReceipt.GetProperty("restoration").GetString() == "Vue GLPI : restauration en attente",
             "A verified 17-row native receipt reports complete reception, stable scope and verified coverage independently from pending GLPI view restoration.");
+        const string parseMethodLabel = "Collecte poursuivie en mode parse du tableau.";
+        var parsedReceipt = await ReadReceiptStatus(true, "pagination-fallback");
+        var cachedParsedReceipt = await ReadReceiptStatus(true, "pagination-fallback", cachedSource: true);
+        Require(parsedReceipt.GetProperty("label").GetString() == "Réception complète"
+            && parsedReceipt.GetProperty("tone").GetString() == "success"
+            && parsedReceipt.GetProperty("attention").GetString() == ""
+            && parsedReceipt.GetProperty("methodLabel").GetString() == parseMethodLabel
+            && parsedReceipt.GetProperty("details").GetString()!.Contains(parseMethodLabel, StringComparison.Ordinal)
+            && parsedReceipt.GetProperty("noticeText").GetString()!.Contains(parseMethodLabel, StringComparison.Ordinal)
+            && cachedParsedReceipt.GetProperty("tone").GetString() == "info"
+            && cachedParsedReceipt.GetProperty("methodLabel").GetString() == parseMethodLabel
+            && cachedParsedReceipt.GetProperty("noticeText").GetString()!.Contains(parseMethodLabel, StringComparison.Ordinal),
+            "A successful table-parsing fallback stays non-alerting and its serialized provenance keeps the method explanation in the real receipt notice, including cached consultation.");
         confirmedQuality.ScopeStable = false;
-        var changedReceipt = await ReadReceiptStatus(false);
+        var changedReceipt = await ReadReceiptStatus(false, "pagination-fallback");
         Require(changedReceipt.GetProperty("label").GetString() == "Collecte à vérifier"
             && changedReceipt.GetProperty("scope").GetString() == "Périmètre à vérifier"
             && changedReceipt.GetProperty("tone").GetString() == "warning",
-            "A complete row count never hides a changed perimeter even when a separate view-restoration warning is present.");
+            "A complete row count never hides a changed perimeter even when table parsing succeeded and a separate view-restoration warning is present.");
         await ShowColumnReceipt(columnReceipt);
         Require(await receiptCard.Locator("[data-column-restoration=pending].notice.warning[role=alert]").IsVisibleAsync()
             && (await receiptCard.InnerTextAsync()).Contains("elle doit être terminée avant la prochaine collecte", StringComparison.Ordinal)

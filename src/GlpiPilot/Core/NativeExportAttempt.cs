@@ -13,7 +13,7 @@ internal sealed class NativeExportAttempt : IDisposable
         public IPage? Page { get; set; } = page;
         public bool Verified { get; set; } = verified;
         public bool Rejected { get; set; }
-        public string? Failure { get; set; }
+        public InvalidOperationException? Failure { get; set; }
         public HashSet<string> Urls { get; } = new(StringComparer.Ordinal);
     }
 
@@ -113,7 +113,7 @@ internal sealed class NativeExportAttempt : IDisposable
                 if (!_requests.TryGetValue(previous, out var chain)) return;
                 _requests[request] = chain;
                 if (address is null || request.Method != "GET" || !request.IsNavigationRequest)
-                    chain.Failure = "La redirection de l’export a quitté la destination GLPI autorisée. Aucun fichier n’est accepté.";
+                    chain.Failure = new InvalidOperationException("La redirection de l’export a quitté la destination GLPI autorisée. Aucun fichier n’est accepté.");
                 else chain.Urls.Add(RequestUrl(address));
                 CheckState();
                 return;
@@ -138,9 +138,11 @@ internal sealed class NativeExportAttempt : IDisposable
         lock (_gate)
         {
             if (_disposed || _failed || response.Status < 400 || !_requests.TryGetValue(response.Request, out var chain)) return;
-            chain.Failure = response.Status is 401 or 403
-                ? $"GLPI a refusé l’export (HTTP {response.Status}). Vérifier la connexion et les droits d’export dans le navigateur."
-                : $"GLPI n’a pas pu produire l’export (HTTP {response.Status}). Aucun fichier n’a été validé.";
+            if (response.Status is 401 or 403)
+                chain.Failure = new InvalidOperationException($"GLPI a refusé l’export (HTTP {response.Status}). Vérifier la connexion et les droits d’export dans le navigateur.");
+            else
+                chain.Failure ??= new NativeExportInterruptionException(NativeExportFailureKind.Http,
+                    $"GLPI n’a pas pu produire l’export (HTTP {response.Status}). Aucun fichier n’a été validé.", response.Status);
             CheckState();
         }
     }
@@ -156,7 +158,10 @@ internal sealed class NativeExportAttempt : IDisposable
             if (failure.Contains("ERR_ABORTED", StringComparison.OrdinalIgnoreCase)
                 || failure.Contains("NS_BINDING_ABORTED", StringComparison.OrdinalIgnoreCase)
                 || failure.Contains("NS_ERROR_ABORT", StringComparison.OrdinalIgnoreCase)) return;
-            chain.Failure = "La requête d’export GLPI a échoué avant le téléchargement. Vérifier la connexion puis relancer la collecte.";
+            // Popup ownership can be proved after its response and failure
+            // events. Preserve any earlier session/origin failure until then.
+            chain.Failure ??= new NativeExportInterruptionException(NativeExportFailureKind.Transport,
+                "La requête d’export GLPI a échoué avant le téléchargement. Aucun fichier n’a été validé.");
             CheckState();
         }
     }
@@ -219,7 +224,7 @@ internal sealed class NativeExportAttempt : IDisposable
         if (candidates.Length > 0) _requestSignal.TrySetResult(true);
         if (candidates.Length > 1)
         {
-            Fail("Plusieurs requêtes natives d’export distinctes ont été observées. La réception est arrêtée pour ne pas confondre leurs fichiers.");
+            Fail(new InvalidOperationException("Plusieurs requêtes natives d’export distinctes ont été observées. La réception est arrêtée pour ne pas confondre leurs fichiers."));
             return;
         }
         if (candidates.Length == 0) return;
@@ -231,11 +236,11 @@ internal sealed class NativeExportAttempt : IDisposable
         if (candidates[0].Verified && candidates[0].Failure is { } failure) Fail(failure);
     }
 
-    private void Fail(string message)
+    private void Fail(InvalidOperationException failure)
     {
         if (_failed || _disposed) return;
         _failed = true;
-        _failure = new InvalidOperationException(message);
+        _failure = failure;
         _reportFailure(_failure);
     }
 

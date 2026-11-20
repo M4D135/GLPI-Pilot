@@ -432,10 +432,10 @@ public sealed partial class BrowserService
                 // late scripts a short grace period without flooding the log.
                 if (timer.Elapsed - unsupportedSince >= TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, settings.ListTimeoutSeconds - 1))))
                 {
-                    if (settings.Automation.AutomaticPaginationFallback && native.Unavailable)
+                    if (settings.Automation.AutomaticPaginationFallback && !native.Supported)
                     {
                         LogNativeInspection(native);
-                        Log?.Invoke("EXPORT · aucun export natif identifiable après stabilisation ; la lecture paginée depuis le début est autorisée.");
+                        Log?.Invoke("EXPORT · la collecte utilisera le tableau si aucune commande CSV unique n’est disponible.");
                         return table;
                     }
                     break;

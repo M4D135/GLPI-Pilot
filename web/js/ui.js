@@ -101,7 +101,9 @@ export function extractionStatus(session={}) {
  const restoration=restorationPending?'Vue GLPI : restauration en attente':['restored','restored-preserving-changes'].includes(columns?.restorationState)?'Vue GLPI restaurée':'';
  const attention=quality?.scopeStable===false?'La recherche a changé ou son contexte final n’a pas pu être confirmé.':quality?.sampleIdentityVerified===false?'Des identifiants de l’échantillon manquent dans le relevé.':quality?.finalTotalVerified===false?'Le total GLPI a changé pendant la collecte.':!receptionComplete?'Le nombre de lignes reçues ou la portée de la collecte reste à vérifier.':'';
  const label=attention&&receptionComplete?'Collecte à vérifier':receipt;
+ const methodLabel=session.provenance?.method==='pagination-fallback'?'Collecte poursuivie en mode parse du tableau.':'';
  const details=[
+  methodLabel,
   `Lignes chargées : ${formatNumber(session.rows)}.`,expected===null?'Total attendu indisponible.':`Total attendu : ${formatNumber(expected)}.`,
   ...(!quality?[legacyComplete?'Le relevé est complet ; le détail des contrôles de réception n’est pas disponible.':'Les observations de réception ne sont pas disponibles pour ce relevé.']:[
   quality.sourceRows==null?'Nombre de lignes reçues non documenté.':quality.sourceRows!==session.rows?'Les observations de réception ne correspondent pas au nombre de lignes chargées.':'',
@@ -111,7 +113,7 @@ export function extractionStatus(session={}) {
   quality.finalTotalVerified==null?'Contrôle du total final indisponible.':quality.finalTotalVerified===false?'Total final à vérifier.':''
   ])
  ].filter(Boolean).join(' ');
- return{label,tone:attention?'warning':legacyComplete?'info':'success',receipt,receptionComplete,concordance,identity,scope,coverage,restoration,restorationPending,details,attention};
+ return{label,tone:attention?'warning':legacyComplete?'info':'success',receipt,receptionComplete,concordance,identity,scope,coverage,restoration,restorationPending,methodLabel,details,attention};
 }
 export function extractionNotice(session,onDetails,{detailed=false}={}) {
  if(!session?.loaded||session.demo)return null;

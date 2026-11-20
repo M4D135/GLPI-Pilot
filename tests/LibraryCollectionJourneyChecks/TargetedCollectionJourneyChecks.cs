@@ -227,8 +227,28 @@ internal static class TargetedCollectionJourneyChecks
                 await using (var app = await Open(withInventory: false))
                 {
                     var result = await Call(app, "library.capture", new { mode = "resume", runId = run });
-                    Require(result.GetProperty("runId").GetString() == run && result.GetProperty("collectionState").GetString() == "completed"
-                        && result.GetProperty("read").GetInt32() == 27 && result.GetProperty("retryCount").GetInt32() == 0,
+                    var resumed = result.GetProperty("runId").GetString() == run && result.GetProperty("collectionState").GetString() == "completed"
+                        && result.GetProperty("read").GetInt32() == 27 && result.GetProperty("retryCount").GetInt32() == 0;
+                    if (!resumed)
+                    {
+                        var activity = await Call(app, "library.collection.status", new { });
+                        var events = await Call(app, "library.collection.events", new { runId = run, limit = 25 });
+                        Console.WriteLine("TARGETED WINDOW RESUME: " + JsonSerializer.Serialize(new
+                        {
+                            sameRun = result.GetProperty("runId").GetString() == run,
+                            state = result.GetProperty("collectionState").GetString(), status = result.GetProperty("status").GetString(),
+                            read = result.GetProperty("read").GetInt32(), reused = result.GetProperty("reused").GetInt32(),
+                            retryCount = result.GetProperty("retryCount").GetInt32(), failed = result.GetProperty("failed").GetInt32(),
+                            partial = result.GetProperty("partial").GetInt32(), conflicts = result.GetProperty("conflicts").GetInt32(),
+                            unconfirmed = result.GetProperty("unconfirmed").GetInt32(), finalScopeVerified = result.GetProperty("finalScopeVerified").GetBoolean(),
+                            phase = activity.GetProperty("phaseCode").GetString(), error = activity.GetProperty("errorCode").GetString(),
+                            newReadCount = reads.Values.Sum() - readCheckpoint.Values.Sum(),
+                            querySizes = queries.Skip(resumeQueries).Select(ids => ids.Length).ToArray(),
+                            events = events.GetProperty("items").EnumerateArray().Select(item => new
+                            { code = item.GetProperty("code").GetString(), level = item.GetProperty("level").GetString() }).ToArray()
+                        }, PilotApplication.Json));
+                    }
+                    Require(resumed,
                         "Window resume lost its durable identity, counters or confirmation.");
                     var state = await Call(app, "library.collection.get", new { });
                     Require(state.GetProperty("coverage").GetProperty("selected").GetInt32() == 27
