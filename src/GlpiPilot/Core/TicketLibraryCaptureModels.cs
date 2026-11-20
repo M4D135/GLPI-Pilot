@@ -107,7 +107,7 @@ public static class TicketLibraryCaptureMessages
         "cache-reused" => "La copie complète et déjà confirmée a été réutilisée avec le même jeton GLPI.",
         "confirmed" => "Le contenu reçu et son jeton de modification ont été confirmés dans le même périmètre.",
         "awaiting-final-check" => "Le contenu a été reçu ; sa fraîcheur attend le contrôle final de l’index.",
-        "incomplete-content" => "Certaines sections n’ont pas été lues complètement. Les contenus déjà enregistrés restent consultables ; une ancienne copie complète peut avoir été conservée.",
+        "incomplete-content" => "Certaines sections n’ont pas été lues complètement. Les contenus déjà enregistrés restent consultables. Une ancienne copie complète peut avoir été conservée.",
         "read-timeout" => "Le délai de lecture a été dépassé. La fiche pourra être relue.",
         "browser-unavailable" => "La lecture du navigateur n’a pas abouti. Vérifiez la session GLPI avant de reprendre.",
         "invalid-content" => "La fiche reçue n’a pas satisfait les contrôles de structure ou d’identité.",
