@@ -280,6 +280,8 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             }
             if (method is "native-csv" or "pagination-fallback")
             {
+                var nativeCsv = method == "native-csv";
+                var completedStatus = $"{(nativeCsv ? "Import" : "Lecture")} terminé · {data.Rows.Count:N0} lignes chargées";
                 var finalSample = ExtractionVerificationService.VerifyNativeSample(visibleAfter, data, settings.Dashboard, ct,
                     cell => divergences.Add("final", cell));
                 data.Quality!.FinalSample = finalSample.Observation();
@@ -288,16 +290,21 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 if (!finalSample.Available)
                 {
                     data.Complete = false;
-                    if (stableScope && !totalChanged) data.Status = $"Lecture terminée · {data.Rows.Count:N0} lignes chargées";
-                    data.Warnings.Add(finalSample.Explanation + " Le contrôle de l’échantillon final n’est plus disponible ; la couverture reste à vérifier.");
+                    if (stableScope && !totalChanged) data.Status = completedStatus;
+                    data.Warnings.Add(finalSample.Explanation + (nativeCsv
+                        ? " Le contrôle de l’échantillon n’est plus disponible après le transfert ; la couverture reste à vérifier."
+                        : " Le contrôle de l’échantillon final n’est plus disponible ; la couverture reste à vérifier."));
                 }
                 else if (!finalSample.Matches)
                 {
                     data.Complete = false;
                     if (stableScope && !totalChanged) data.Status = finalSample.Missing > 0
-                        ? "Relevé chargé — identifiants de l’échantillon final à vérifier"
-                        : $"Lecture terminée · {data.Rows.Count:N0} lignes chargées";
-                    var warning = finalSample.Explanation + " Le relevé est chargé ; sa concordance avec l’affichage reste à vérifier.";
+                        ? (nativeCsv ? "Export natif chargé — identifiants de l’échantillon final à vérifier"
+                            : "Relevé chargé — identifiants de l’échantillon final à vérifier")
+                        : completedStatus;
+                    var warning = finalSample.Explanation + (nativeCsv
+                        ? " Le CSV est chargé ; sa concordance avec l’affichage reste à vérifier."
+                        : " Le relevé est chargé ; sa concordance avec l’affichage reste à vérifier.");
                     if (!data.Warnings.Contains(warning, StringComparer.Ordinal)) data.Warnings.Add(warning);
                 }
             }

@@ -467,8 +467,9 @@ async Task CheckAutomaticNative()
 async Task CheckNativeWrongSample()
 {
     await using var h = await Open(NativeHtml(), NativeCsv().Replace("101;", "201;", StringComparison.Ordinal));
+    var settings = NativeSettings(); settings.Automation.AutomaticPaginationFallback = false;
     var service = new AutomaticExtractionService(h.Service); string? retained = null; service.NativeFileSaved += path => retained = path;
-    try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Mauvais fichier publié"); }
+    try { await service.RunAsync(settings, null, CancellationToken.None); throw new Exception("Mauvais fichier publié"); }
     catch (InvalidDataException error) { True(error.Message.Contains("échantillon", StringComparison.Ordinal), "Le mauvais échantillon doit être expliqué."); }
     True(File.Exists(retained), "Le mauvais fichier doit rester disponible pour diagnostic.");
     Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
@@ -477,8 +478,9 @@ async Task CheckNativeWrongSample()
 async Task CheckNativeCorrupt()
 {
     await using var h = await Open(NativeHtml(), "ID;Nom\r\n101;\"champ non terminé");
+    var settings = NativeSettings(); settings.Automation.AutomaticPaginationFallback = false;
     var service = new AutomaticExtractionService(h.Service); string? retained = null; service.NativeFileSaved += path => retained = path;
-    try { await service.RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("CSV corrompu publié"); }
+    try { await service.RunAsync(settings, null, CancellationToken.None); throw new Exception("CSV corrompu publié"); }
     catch (InvalidDataException) { }
     True(File.Exists(retained), "Le CSV corrompu doit rester disponible pour diagnostic.");
     Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
@@ -488,7 +490,8 @@ async Task CheckAmbiguousNativeNoFallback()
 {
     var html = NativeHtml().Replace("</main>", "<a href='/front/report.dynamic.php?item_type=Ticket&amp;display_type=-4'>Toutes les pages en CSV</a></main>", StringComparison.Ordinal);
     await using var h = await Open(html, NativeCsv());
-    try { await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None); throw new Exception("Export ambigu accepté"); }
+    var settings = NativeSettings(); settings.Automation.AutomaticPaginationFallback = false;
+    try { await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None); throw new Exception("Export ambigu accepté"); }
     catch (InvalidOperationException error) { True(error.Message.Contains("Plusieurs exports", StringComparison.Ordinal), "L’ambiguïté doit être distinguée de l’absence de commande."); }
     Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
 }
@@ -496,7 +499,8 @@ async Task CheckAmbiguousNativeNoFallback()
 async Task CheckNativeIncomplete()
 {
     await using var h = await Open(NativeHtml(), NativeCsv().Replace("105;P-MA-005\r\n", "", StringComparison.Ordinal));
-    var run = await new AutomaticExtractionService(h.Service).RunAsync(NativeSettings(), null, CancellationToken.None);
+    var settings = NativeSettings(); settings.Automation.AutomaticPaginationFallback = false;
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
     Equal(4, run.Data.Rows.Count); True(!run.Data.Complete && run.Data.Warnings.Any(x => x.Contains("4 lignes pour 5", StringComparison.Ordinal)), "Le fichier tronqué reste identifié comme incomplet.");
     Equal("native-csv", run.Data.Provenance.Method); Equal("Page 1 sur 3", await h.Page.Locator("#page-number").InnerTextAsync());
 }
