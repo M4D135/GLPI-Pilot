@@ -111,13 +111,9 @@ public sealed partial class PilotApplication
             var store = WorkExistingLibrary();
             if (store is null) return;
             var cached = await store.ReadCachedTicketAsync(ticket, ct).ConfigureAwait(false);
-            if (cached?.Detail is not { } detail || _workplaceDetails.TryGetValue(key, out var current) && current.ReadAt >= detail.ReadAt) return;
-            detail.Warnings.Add(TicketLibraryRules.IsContentConfirmed(cached)
-                ? "Copie chargée depuis la bibliothèque locale ; sa version est comparée au relevé courant."
-                : "Copie chargée depuis la bibliothèque locale ; sa version ou sa couverture reste à vérifier.");
-            WorkCache(detail);
+            if (cached?.Detail is not { } detail) return;
             var confirmed = TicketLibraryRules.IsContentConfirmed(cached);
-            _workplaceLibraryReads[key] = new()
+            var library = new TicketReadCacheEntry
             {
                 HasContent = true, ReadAt = detail.ReadAt, FromLibrary = true,
                 Version = new()
@@ -128,6 +124,13 @@ public sealed partial class PilotApplication
                     MainReadAt = detail.ReadAt
                 }
             };
+            if (!TicketReadCache.PreferLibrary(WorkCacheSource(ticket), WorkMemoryCache(personal, ticket), library)) return;
+            detail.Warnings.Add(confirmed
+                ? "Copie chargée depuis la bibliothèque locale ; sa version est comparée au relevé courant."
+                : "Copie chargée depuis la bibliothèque locale ; sa version ou sa couverture reste à vérifier.");
+            // Consultation changes only the in-memory view. The independent personal
+            // body/tabs and their receipt remain on disk, without mixing version proofs.
+            WorkCache(detail); _workplaceLibraryReads[key] = library;
         }
         catch (Exception error) when (WorkCacheUnavailable(error))
         { _workplaceCacheErrors[key] = "Une copie locale n’a pas pu être vérifiée. Le dernier contenu disponible est conservé."; }
@@ -173,8 +176,8 @@ public sealed partial class PilotApplication
             try { cached = WorkMemoryCache(personal.GetValueOrDefault(key), ticket, true); }
             catch (Exception error) when (WorkCacheUnavailable(error))
             { lookupKnown = false; rowReason = "La copie hors connexion n’a pas pu être vérifiée."; }
-            if (library.GetValueOrDefault(key) is { HasContent: true } stored && (cached?.ReadAt is null || stored.ReadAt > cached.ReadAt)) cached = stored;
             var source = WorkCacheSource(ticket);
+            if (library.GetValueOrDefault(key) is { } stored && TicketReadCache.PreferLibrary(source, cached, stored)) cached = stored;
             if (source is null && !IsSimulationInstance)
             { lookupKnown = false; rowReason = "Le ticket est absent ou son identité est ambiguë dans le relevé courant."; }
             result[row] = TicketReadCache.Describe(source, cached, WorkAutomaticReadAllowed, lookupKnown, rowReason);

@@ -354,6 +354,168 @@ internal static class TicketCacheRuntimeChecks
                 && (await File.ReadAllBytesAsync(offlinePath)).SequenceEqual(offlineBefore),
                 "Offline reopening rewrote the library body or the personal section observations.");
         });
+        foreach (var newerVersion in new[] { false, true })
+            Add("a recent personal tab cannot hide a later library body with " + (newerVersion ? "a newer" : "the same") + " GLPI version", async f =>
+            {
+                var libraryRead = OldRead.AddHours(1); var tabRead = OldRead.AddHours(2);
+                var libraryModified = newerVersion ? Modified.AddHours(1) : Modified;
+                f.App.AcceptTicketCacheFixture(Detail(OldRead)); var personal = await Open(f);
+                var key = Key(personal);
+                await f.Call("workplace.personal.save", new { ticketKey = key, offline = true });
+                var store = new TicketLibraryStore(new LibraryPreferences().DatabasePath);
+                var libraryBody = Detail(libraryRead); libraryBody.Sections[0].Data.Rows[0][0] = "Corps bibliothèque plus récent";
+                await store.SaveDetailAsync(new()
+                {
+                    Ticket = Reference(), Title = "Incident cache", LastModifiedAt = libraryModified,
+                    LastModifiedRaw = Stamp(libraryModified), LastModifiedReliable = true, LastModifiedPrecision = "seconds"
+                }, libraryBody, new() { Complete = true }, "cache-fixture-reader");
+                var combined = Detail(tabRead); combined.Sections[0].Data.ExtractedAt = OldRead;
+                combined.Sections.Add(new() { Name = "Historique", Kind = "table", TabKey = "history",
+                    Data = new() { Headers = ["Événement"], Rows = [["Observation personnelle indépendante"]], Complete = true, ExtractedAt = tabRead } });
+                f.App.AcceptTicketCacheFixture(combined, observeSource: false);
+                f.App.LoadSessionFixture(Source(Stamp(libraryModified), DateTimeOffset.UtcNow));
+                var databaseBefore = await File.ReadAllBytesAsync(store.DatabasePath);
+                var offlinePath = Path.Combine(f.Root, "TicketCache", key + ".json");
+                var offlineBefore = await File.ReadAllBytesAsync(offlinePath);
+                var personalBefore = JsonSerializer.Serialize(WorkplaceStore.Load(Path.Combine(f.Root, "workplace.json")).Tickets.Single(t => t.Key == key).LastReadSource);
+
+                async Task Verify(PilotApplication app)
+                {
+                    var list = await Call(app, "records.list", new { revision = app.Revision });
+                    var badge = Cache(list.GetProperty("rows")[0]); State(badge, "current", true, false);
+                    Require(badge.GetProperty("readAt").GetDateTimeOffset() == libraryRead,
+                        "The latest personal tab hid the newer main-body observation in the list.");
+                    var opened = await Call(app, "workplace.ticket.open", new { revision = app.Revision, rowIndex = 0 });
+                    var cache = Cache(opened); State(cache, "current", true, false);
+                    Require(cache.GetProperty("readAt").GetDateTimeOffset() == libraryRead
+                        && opened.GetProperty("sections").GetArrayLength() == 1,
+                        "Opening disagreed with the list or merged another version's personal tab into a confirmed library body.");
+                    var section = await Call(app, "workplace.ticket.section", new { ticketKey = key, sectionIndex = 0 });
+                    Require(section.GetProperty("rows")[0].GetProperty("values")[0].GetString() == "Corps bibliothèque plus récent",
+                        "The older personal body remained selected despite the newer library body.");
+                    var automatic = await Call(app, "workplace.ticket.read", new { ticketKey = key, automatic = true });
+                    State(Cache(automatic), "current", true, false);
+                    Require(!app.Browser.IsOpen && Cache(automatic).GetProperty("readAt").GetDateTimeOffset() == libraryRead,
+                        "A reusable library body triggered a browser read or acquired a new read date.");
+                }
+
+                await Verify(f.App);
+                await Consistent(f, Cache(await Open(f)));
+                await using var reopened = new PilotApplication(f.Host, (_, _) => { }, f.App.Settings.Copy());
+                reopened.LoadSessionFixture(Source(Stamp(libraryModified), DateTimeOffset.UtcNow));
+                await Verify(reopened);
+                Require((await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore)
+                    && (await File.ReadAllBytesAsync(offlinePath)).SequenceEqual(offlineBefore)
+                    && JsonSerializer.Serialize(WorkplaceStore.Load(Path.Combine(f.Root, "workplace.json")).Tickets.Single(t => t.Key == key).LastReadSource) == personalBefore,
+                    "Choosing the library rewrote SQLite, the independent personal observations or their version receipt.");
+                var preserved = WorkplaceStore.LoadOffline(Path.Combine(f.Root, "TicketCache"), Reference())!;
+                Require(preserved.Sections[1].Data.Rows[0][0] == "Observation personnelle indépendante"
+                    && preserved.Sections[0].Data.ExtractedAt == OldRead && preserved.Sections[1].Data.ExtractedAt == tabRead,
+                    "The personal main-body or tab observations were lost while consulting the library.");
+                if (newerVersion)
+                {
+                    var personalPath = Path.Combine(f.Root, "workplace.json");
+                    var legacy = JsonNode.Parse(await File.ReadAllTextAsync(personalPath))!;
+                    foreach (var ticket in legacy["Tickets"]!.AsArray()) ticket?["LastReadSource"]?.AsObject().Remove("MainReadAt");
+                    await File.WriteAllTextAsync(personalPath, legacy.ToJsonString());
+                    await using var olderJson = new PilotApplication(f.Host, (_, _) => { }, f.App.Settings.Copy());
+                    olderJson.LoadSessionFixture(Source(Stamp(libraryModified), DateTimeOffset.UtcNow));
+                    await Verify(olderJson);
+                    Require(WorkplaceStore.Load(personalPath).Tickets.Single(t => t.Key == key).LastReadSource?.MainReadAt is null
+                        && (await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore)
+                        && (await File.ReadAllBytesAsync(offlinePath)).SequenceEqual(offlineBefore),
+                        "Selecting a proven newer library version invented a legacy read date or rewrote observations.");
+                }
+            });
+        Add("a genuinely newer personal body is retained even when an older library body matches an older source", async f =>
+        {
+            var libraryRead = OldRead.AddHours(1); var personalRead = OldRead.AddHours(2); var personalModified = Modified.AddHours(1);
+            var store = new TicketLibraryStore(new LibraryPreferences().DatabasePath);
+            await store.SaveDetailAsync(new()
+            {
+                Ticket = Reference(), Title = "Incident cache", LastModifiedAt = Modified,
+                LastModifiedRaw = Stamp(Modified), LastModifiedReliable = true, LastModifiedPrecision = "seconds"
+            }, Detail(libraryRead), new() { Complete = true }, "cache-fixture-reader");
+            f.App.LoadSessionFixture(Source(Stamp(personalModified), personalRead.AddMinutes(-1)));
+            var newer = Detail(personalRead); newer.Sections[0].Data.Rows[0][0] = "Corps personnel réellement plus récent";
+            f.App.AcceptTicketCacheFixture(newer); var opened = await Open(f); var key = Key(opened);
+            await f.Call("workplace.personal.save", new { ticketKey = key, offline = true });
+            var databaseBefore = await File.ReadAllBytesAsync(store.DatabasePath);
+            var offlinePath = Path.Combine(f.Root, "TicketCache", key + ".json");
+            var offlineBefore = await File.ReadAllBytesAsync(offlinePath);
+            f.App.LoadSessionFixture(Source(Stamp(Modified), DateTimeOffset.UtcNow));
+            var list = await f.Call("records.list", new { revision = f.App.Revision });
+            var badge = Cache(list.GetProperty("rows")[0]); State(badge, "stale", true, true);
+            Require(badge.GetProperty("readAt").GetDateTimeOffset() == personalRead
+                && badge.GetProperty("cachedModifiedRaw").GetString() == Stamp(personalModified),
+                "Matching an older source displaced a genuinely newer personal body.");
+            opened = await Open(f); await Consistent(f, Cache(opened));
+            var section = await f.Call("workplace.ticket.section", new { ticketKey = key, sectionIndex = 0 });
+            Require(section.GetProperty("rows")[0].GetProperty("values")[0].GetString() == "Corps personnel réellement plus récent",
+                "The newer personal body was replaced by an older library copy.");
+            f.App.LoadSessionFixture(Source(Stamp(personalModified), DateTimeOffset.UtcNow));
+            var automatic = await f.Call("workplace.ticket.read", new { ticketKey = key, automatic = true });
+            State(Cache(automatic), "current", true, false);
+            Require(!f.App.Browser.IsOpen && Cache(automatic).GetProperty("readAt").GetDateTimeOffset() == personalRead
+                && (await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore)
+                && (await File.ReadAllBytesAsync(offlinePath)).SequenceEqual(offlineBefore),
+                "Retaining a newer personal body read the browser or rewrote saved observations.");
+        });
+        Add("separate date settings cannot reverse known body chronology or order an undated legacy receipt", async f =>
+        {
+            var day = Modified.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var olderRaw = day + " 11:00:00"; var newerRaw = day + " 11:02:00";
+            f.App.Settings.Dashboard.SourceTimeZone = "UTC";
+            f.App.LoadSessionFixture(Source(olderRaw, OldRead.AddMinutes(-1)));
+            f.App.AcceptTicketCacheFixture(Detail(OldRead)); var initial = await Open(f); var key = Key(initial);
+            await f.Call("workplace.personal.save", new { ticketKey = key, offline = true });
+            var personalPath = Path.Combine(f.Root, "workplace.json");
+            var oldReceipt = WorkplaceStore.Load(personalPath).Tickets.Single(t => t.Key == key).LastReadSource!;
+            var preferences = new LibraryPreferences { SourceTimeZone = "Europe/Paris", SourceDateOrder = "ymd" };
+            new LibraryPreferencesStore().Save(preferences);
+            var libraryRead = OldRead.AddHours(1);
+            var interpreted = LibraryPreferencesStore.ParseModification(newerRaw, preferences.SourceTimeZone, preferences.SourceDateOrder);
+            Require(oldReceipt.Reliable && interpreted.HasValue && interpreted < oldReceipt.ModifiedAt,
+                "The fixture did not exercise reversed instants from different real date settings.");
+            var store = new TicketLibraryStore(preferences.DatabasePath);
+            var body = Detail(libraryRead); body.Sections[0].Data.Rows[0][0] = "Corps lu après changement de fuseau";
+            await store.SaveDetailAsync(new()
+            {
+                Ticket = Reference(), Title = "Incident cache", LastModifiedAt = interpreted,
+                LastModifiedRaw = newerRaw, LastModifiedReliable = true, LastModifiedPrecision = "seconds"
+            }, body, new() { Complete = true }, "cache-fixture-reader");
+            f.App.Settings.Dashboard.SourceTimeZone = "Europe/Paris";
+            f.App.LoadSessionFixture(Source(newerRaw, DateTimeOffset.UtcNow));
+            var databaseBefore = await File.ReadAllBytesAsync(store.DatabasePath);
+            var offlinePath = Path.Combine(f.Root, "TicketCache", key + ".json");
+            var offlineBefore = await File.ReadAllBytesAsync(offlinePath);
+            var list = await f.Call("records.list", new { revision = f.App.Revision });
+            var badge = Cache(list.GetProperty("rows")[0]); State(badge, "current", true, false);
+            Require(badge.GetProperty("readAt").GetDateTimeOffset() == libraryRead,
+                "Differing timezone interpretations displaced the later observed library body.");
+            var opened = await Open(f); await Consistent(f, Cache(opened));
+            var section = await f.Call("workplace.ticket.section", new { ticketKey = key, sectionIndex = 0 });
+            Require(section.GetProperty("rows")[0].GetProperty("values")[0].GetString() == "Corps lu après changement de fuseau",
+                "The reader selected the old body using incomparable modification instants.");
+            var automatic = await f.Call("workplace.ticket.read", new { ticketKey = key, automatic = true });
+            State(Cache(automatic), "current", true, false); Require(!f.App.Browser.IsOpen, "A reusable body caused a browser read.");
+
+            var legacy = JsonNode.Parse(await File.ReadAllTextAsync(personalPath))!;
+            foreach (var ticket in legacy["Tickets"]!.AsArray()) ticket?["LastReadSource"]?.AsObject().Remove("MainReadAt");
+            await File.WriteAllTextAsync(personalPath, legacy.ToJsonString());
+            await using var reopened = new PilotApplication(f.Host, (_, _) => { }, f.App.Settings.Copy());
+            reopened.LoadSessionFixture(Source(newerRaw, DateTimeOffset.UtcNow));
+            var legacyList = await Call(reopened, "records.list", new { revision = reopened.Revision });
+            State(Cache(legacyList.GetProperty("rows")[0]), "unknown", true, true);
+            var kept = await Call(reopened, "workplace.ticket.open", new { revision = reopened.Revision, rowIndex = 0 });
+            State(Cache(kept), "unknown", true, true);
+            Require(Cache(kept).GetProperty("readAt").ValueKind == JsonValueKind.Null
+                && kept.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead,
+                "An undated legacy body was ordered across date contexts or acquired a fabricated main-read date.");
+            Require((await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore)
+                && (await File.ReadAllBytesAsync(offlinePath)).SequenceEqual(offlineBefore),
+                "Choosing between differently interpreted versions rewrote saved observations.");
+        });
         return tests;
     }
 

@@ -57,6 +57,37 @@ public static class TicketReadCache
 
     public static bool MainReadComplete(TicketDetailResult detail) => detail.Sections.Count > 0 && detail.Sections.All(section => section.Data.Complete);
 
+    public static DateTimeOffset? MainReadAt(TicketReadCacheEntry? cached) =>
+        cached?.Version?.MainReadAt ?? (cached?.FromLibrary == true ? cached.ReadAt : null);
+
+    /// <summary>Choose a body without treating a later personal tab as a new main-ticket read.</summary>
+    public static bool PreferLibrary(TicketReadSourceVersion? source, TicketReadCacheEntry? cached, TicketReadCacheEntry? library)
+    {
+        if (library?.HasContent != true) return false;
+        if (cached?.HasContent != true) return true;
+        var currentRead = MainReadAt(cached); var libraryRead = MainReadAt(library);
+        // Body observation dates are independent of source-date parsing. Personal
+        // and library tokens may use different timezone/date settings even when
+        // both receipts say Reliable. Keep known body chronology authoritative.
+        if (currentRead is { } kept && libraryRead is { } offered) return offered > kept;
+        var current = cached.Version; var incoming = library.Version;
+        // An undated legacy receipt may be ordered only within its recorded source
+        // context and against a library version confirmed by that same source. An
+        // older source cannot displace a newer personal version, and no last-tab
+        // timestamp supplies the missing body date.
+        if (currentRead is null && libraryRead is not null && source is not null
+            && current is { Reliable: true, ModifiedAt: { } currentModified, Precision: "seconds" or "minutes" }
+            && incoming is { Reliable: true, ModifiedAt: { } incomingModified, Precision: "seconds" or "minutes" }
+            && current.TicketKey == source.TicketKey && current.TicketKey == incoming.TicketKey
+            && current.Context == source.Context && current.ModifiedRaw != incoming.ModifiedRaw
+            && Describe(source, library, false).State == "current")
+        {
+            var difference = incomingModified - currentModified;
+            return difference >= (current.Precision == "seconds" ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1));
+        }
+        return false;
+    }
+
     public static TicketReadSourceVersion? Observe(TicketReadSourceVersion? source, TicketDetailResult detail)
     {
         if (source is null || source.TicketKey != WorkplaceStore.TicketKey(detail.Ticket)) return null;
@@ -74,7 +105,7 @@ public static class TicketReadCache
         // A tab can update the combined view's ReadAt without reading the main body.
         // Library receipts describe the body itself. Legacy personal copies without
         // a separate main-read date do not borrow their last tab's timestamp.
-        var mainReadAt = cached?.Version?.MainReadAt ?? (cached?.FromLibrary == true ? cached.ReadAt : null);
+        var mainReadAt = MainReadAt(cached);
         var status = new TicketReadCacheStatus
         {
             HasContent = cached?.HasContent == true, ReadAt = mainReadAt,
