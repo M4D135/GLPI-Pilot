@@ -119,6 +119,11 @@ public sealed class AutomaticExtractionService(BrowserService browser)
                 settings.RememberTable(table); fallbackUsed = true;
             }
             else Stage("Lecture depuis la première page de la recherche…", AutomaticRunPhase.Retrieval);
+            var paginationPreparation = await browser.PrepareNativeTicketPageLimitAsync(table, settings, progress, ct);
+            table = paginationPreparation.Table;
+            var preparedScope = await browser.CaptureScopeEvidenceAsync(table, settings.PortalUrl, ct);
+            if (scopeEvidence.Fingerprint.Length > 0 && scopeEvidence.Fingerprint != preparedScope.Fingerprint)
+                throw new InvalidOperationException("Le périmètre a changé pendant la préparation de la pagination. Le repli s’arrête avant de lire une autre recherche.");
             method = fallback ? "pagination-fallback" : "pagination";
             var result = await browser.ExtractAsync(table, true, settings, progress, ct);
             result.Scope = "Recherche rechargée avec start=0, puis pages suivantes";
@@ -141,7 +146,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             {
                 if (!settings.Automation.AutomaticPaginationFallback)
                     throw new InvalidOperationException("L’export natif est indisponible. Active le repli par pages ou réduis la recherche ; le nombre de lignes affichées dans GLPI reste inchangé.");
-                Log?.Invoke("AFFICHAGE · limite de lignes GLPI conservée ; lecture paginée de la recherche au lieu d’un affichage intégral.");
+                Log?.Invoke("AFFICHAGE · préparation de la pagination native avant la lecture de secours ; la limite réellement appliquée sera vérifiée.");
                 data = await ReadPaginationAsync(true);
             }
             else
@@ -297,6 +302,8 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             ct.ThrowIfCancellationRequested();
         }
         PhaseChanged?.Invoke(AutomaticRunPhase.Validation);
+        foreach (var diagnostic in CityDetectionService.DescribeSourceAvailability(data, settings.Cities, settings.Dashboard, ct))
+            Log?.Invoke("VILLES SOURCES · " + diagnostic);
         var cities = await Task.Run(() => CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, overrides), ct);
         data = cities.Data;
         if (cities.Applied)
@@ -309,7 +316,11 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             Log?.Invoke($"VILLES · reconnues={cities.MatchedCount}, sans correspondance={cities.UnmatchedCount}, ambiguës={cities.AmbiguousCount}, titre indisponible={cities.TitleUnavailableCount} ; fichier natif conservé intact.");
         }
         foreach (var warning in data.Warnings) Log?.Invoke("CONTRÔLE · " + warning);
-        Log?.Invoke($"CONTRÔLE · {data.Rows.Count} lignes chargées, {data.Headers.Count} colonnes ; total attendu={data.ExpectedTotal?.ToString() ?? "inconnu"}, conforme={data.Complete}.");
+        static string Observed(bool? value) => value switch { true => "oui", false => "non", _ => "non confirmé" };
+        var columnReceipt = data.Provenance.ColumnPreparation;
+        var viewRestored = columnReceipt is null || !columnReceipt.TemporaryView
+            ? (bool?)null : !columnReceipt.RecoveryPending && columnReceipt.RestorationState is "restored" or "restored-preserving-changes";
+        Log?.Invoke($"CONTRÔLE · {data.Rows.Count} lignes chargées, {data.Headers.Count} colonnes ; total attendu={data.ExpectedTotal?.ToString() ?? "inconnu"} ; réception complète={Observed(data.Quality?.ReceptionComplete)} ; périmètre stable={Observed(data.Quality?.ScopeStable)} ; couverture vérifiée={Observed(data.Complete)} ; vue restaurée={Observed(viewRestored)}.");
         ct.ThrowIfCancellationRequested();
         if (settings.AutoSaveXlsx && data.Headers.Count > 0)
         {

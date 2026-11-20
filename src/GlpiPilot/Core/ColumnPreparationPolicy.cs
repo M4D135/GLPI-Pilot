@@ -117,10 +117,19 @@ public static class ColumnPreparationPolicy
         data.Provenance.ColumnPreparation = receipt;
         foreach (var warning in receipt.Warnings)
             if (!data.Warnings.Contains(warning, StringComparer.Ordinal)) data.Warnings.Add(warning);
-        if (receipt.SourceChanged)
+        receipt.SourceRevalidated = receipt.SourceChanged && data.Complete
+            && data.Provenance.Method == "native-csv" && data.Provenance.ScopeVerified
+            && data.Quality is { ReceptionComplete: true, FinalTotalVerified: true, ScopeStable: true,
+                SampleIdentityVerified: true, RepresentationVerified: true };
+        if (receipt.SourceChanged && !receipt.SourceRevalidated)
         {
             data.Complete = false;
             data.Status = "Extraction à vérifier — liste modifiée pendant la préparation des colonnes";
+        }
+        else if (receipt.SourceRevalidated)
+        {
+            const string confirmed = "La liste a évolué avant l’export. Le CSV a ensuite été vérifié sur le nouvel échantillon, le total et le périmètre ; les données de cette collecte restent exploitables.";
+            if (!data.Warnings.Contains(confirmed, StringComparer.Ordinal)) data.Warnings.Add(confirmed);
         }
     }
 

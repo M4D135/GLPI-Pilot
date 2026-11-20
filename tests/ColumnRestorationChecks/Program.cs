@@ -5,6 +5,8 @@ using GlpiPilot.Core;
 var checks = new (string Name, Action Run)[]
 {
     ("Budget de récupération indépendant du délai de lecture", CheckCleanupBudget),
+    ("Restauration progressive : dix étapes vérifiées dépassent le budget initial sans expiration", ColumnCleanupWindowChecks.Run),
+    ("Reçu natif complet conservé malgré une restauration de préférences en attente", CheckPendingRestorationReceipt),
     ("Capture indépendante et vue personnelle initialement inactive", CheckCapture),
     ("Ordre, identité native et libellés conservés exactement", CheckExactOrder),
     ("Ajout moderne : seul l’identifiant réellement demandé est attribuable", CheckModernAddition),
@@ -93,6 +95,32 @@ static void CheckCleanupBudget()
     Require(BrowserService.ColumnCleanupBudgetSeconds(45) == 180, "Le délai normal de liste ne doit pas interrompre dix retraits natifs.");
     Require(BrowserService.ColumnCleanupBudgetSeconds(300) == 300, "Un délai de liste supérieur au plancher doit rester disponible.");
     Require(BrowserService.ColumnCleanupBudgetSeconds(999) == 600, "La récupération doit rester bornée.");
+}
+
+static void CheckPendingRestorationReceipt()
+{
+    var data = new ExtractionResult
+    {
+        Complete = true, Headers = ["ID", "Titre"], Rows = [new[] { "7", "Exemple" }], ExpectedTotal = 1,
+        Quality = new()
+        {
+            AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true, ScopeStable = true,
+            InitialSample = new() { IdentityVerified = true, RepresentationVerified = true },
+            FinalSample = new() { IdentityVerified = true, RepresentationVerified = true }
+        },
+        Provenance = new() { Method = "native-csv", ScopeVerified = true,
+            ColumnPreparation = new() { AddedCount = 10, ColumnCount = 14 } }
+    };
+    var quality = JsonSerializer.Serialize(data.Quality);
+    var pending = new ColumnRestorationResult("recovery-pending", "Six retraits vérifiés, récupération restante en attente.", true, 6);
+    ColumnRestorationReceipt.Apply(data, pending);
+    ColumnRestorationReceipt.Apply(data, pending);
+    Require(data.Complete && data.Rows.Count == 1 && data.Rows[0][1] == "Exemple"
+        && JsonSerializer.Serialize(data.Quality) == quality && data.Provenance.ScopeVerified,
+        "A pending preference restoration cannot invalidate or alter an independently verified native receipt.");
+    Require(data.Provenance.ColumnPreparation is { RecoveryPending: true, TemporaryView: true, RestoredCount: 6 }
+        && data.Warnings.Count == 1 && data.Provenance.ColumnPreparation.Warnings.Count == 1,
+        "The incomplete preference cleanup must remain explicit and retain its verified progress without duplicate warnings.");
 }
 
 static void CheckCapture()

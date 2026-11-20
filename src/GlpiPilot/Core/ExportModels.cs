@@ -93,6 +93,10 @@ public sealed class ColumnPreparationReceipt
     public int AddedCount { get; set; }
     public int ColumnCount { get; set; }
     public bool SourceChanged { get; set; }
+    // The list evolved before acquisition, then a fresh native receipt and both
+    // samples independently confirmed the collected snapshot. Older receipts
+    // default to false; a preference restoration cannot establish this proof.
+    public bool SourceRevalidated { get; set; }
     public bool TemporaryView { get; set; }
     public string RestorationState { get; set; } = "not-needed";
     public string RestorationMessage { get; set; } = "";

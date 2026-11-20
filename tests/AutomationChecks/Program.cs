@@ -96,6 +96,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("CSV illisible : même avec un contrôle d’affichage, aucun faux Excel", CheckUnreadableNativeRejected),
     ("Export indisponible stable : arrêt rapide et diagnostic sans valeurs privées", CheckUnsupportedNative),
     ("Option Afficher tout présente : repli paginé sans changer la limite GLPI", CheckDisplayAll),
+    ("Repli sans CSV : réglage natif vérifié à 1000 avant la lecture des tickets", CheckFallbackNativePageLimit),
     ("Limite de collecte ou repli désactivé : aucun affichage massif ni fichier complet", CheckDisplayAllRejected),
     ("Gestion de fenêtre bloquée : délai borné, sémaphore libéré et annulation rapide", CheckWindowManagementTimeout)
 };
@@ -1668,6 +1669,50 @@ async Task CheckDisplayAll()
     var finalPage = await h.Service.ReadVerificationSampleAsync(run.Table, CancellationToken.None);
     Equal(5, finalPage.Rows.Count); Equal(45, finalPage.ExpectedTotal);
     True(finalPage.Next is null or { Disabled: true, Ambiguous: false }, "La troisième page native doit réellement terminer la recherche après ses cinq dernières lignes.");
+}
+
+async Task CheckFallbackNativePageLimit()
+{
+    const string source = legacyTarget + "?sort=1&order=DESC&start=0&criteria%5B0%5D%5Bvalue%5D=notold";
+    int limit = 20, limitPosts = 0, nativeRequests = 0;
+    await using var h = await Create(route =>
+    {
+        var uri = new Uri(route.Request.Url);
+        if (uri.AbsolutePath.EndsWith("/report.dynamic.php", StringComparison.Ordinal)) nativeRequests++;
+        if (route.Request.Method == "POST")
+        {
+            limitPosts++;
+            True((route.Request.PostData ?? "").Split('&').Contains("glpilist_limit=1000", StringComparer.Ordinal), "Le réglage doit envoyer une option native observée à 1000.");
+            limit = 1000;
+        }
+        string html = WithScript(WithoutNativeCsv(fixtureLegacyRealistic), """
+            const limit = __LIMIT__, total = 45;
+            renderLegacyRows(Math.min(limit, total), total);
+            for (const suffix of ['top', 'bottom']) {
+              const select = document.getElementById('legacy-limit-' + suffix);
+              select.append(new Option('1000', '1000')); select.value = String(limit);
+              const pager = document.getElementById('legacy-pager-' + suffix);
+              [...pager.querySelectorAll('th.right')].forEach(cell => {
+                cell.innerHTML = limit < total ? '<a href="ticket.php?start=20"><i title="Suivant">›</i></a>' : '<span title="Fin">›</span>';
+              });
+            }
+            document.querySelectorAll('#legacy-rows tr').forEach((row, index) => {
+              const id = 6000001 + index;
+              row.cells[0].innerHTML = '<a href="ticket.form.php?id=' + id + '">' + id + '</a>';
+            });
+            """.Replace("__LIMIT__", limit.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
+        return Html(route, html);
+    }, source);
+    var settings = Settings(source); settings.MaxRows = 1000;
+    var run = await new AutomaticExtractionService(h.Service).RunAsync(settings, null, CancellationToken.None);
+    Equal(1, limitPosts); Equal(0, nativeRequests);
+    Equal(45, run.Data.Rows.Count); Equal(1, run.Data.Pages);
+    True(run.Data.Complete && run.Data.Provenance.ScopeVerified, string.Join(" | ", run.Data.Warnings));
+    Equal("pagination-fallback", run.Data.Provenance.Method);
+    Equal("1000", await h.Page.Locator("#legacy-limit-top").InputValueAsync());
+    Equal(0, await h.Page.EvaluateAsync<int>("() => window.businessSubmits"));
+    True(run.NativePath is null && h.Logs.Any(line => line.Contains("Pagination native vérifiée", StringComparison.Ordinal)), "Le repli doit conserver la preuve de la limite appliquée sans inventer un CSV natif.");
+    AssertWorkbook(run.ExcelPath!, 45, "Fixture 1 / 2", "Fixture 45 / 16");
 }
 
 async Task CheckDisplayAllRejected()

@@ -101,7 +101,7 @@ export async function renderLibraryCollection(ctx) {
     progress.hidden = !running; progress.max = Math.max(1, activity.total || 1);
     if (activity.total > 0) progress.value = activity.processed || 0; else progress.removeAttribute('value');
     next.textContent = running ? `Dernière activité : ${formatDate(activity.updatedAt)}`
-      : model?.automaticBlocked ? 'Programmation suspendue : lancer une première collecte ciblée pour enregistrer le périmètre.'
+      : model?.automaticBlocked ? model.automaticBlockReason || 'Programmation suspendue : lancer une première collecte ciblée pour enregistrer le périmètre.'
         : model?.state?.nextAt ? `Prochain passage au plus tôt : ${formatDate(model.state.nextAt)} · application ouverte et plage autorisée.` : 'Aucune relance automatique programmée.';
     const held = heldStates.has(state), resumable = held && !!resumeId;
     recovery.hidden = !held;

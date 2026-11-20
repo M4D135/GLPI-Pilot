@@ -713,7 +713,7 @@ public sealed partial class BrowserService
             receipt.MissingRoles = ColumnPreparationPolicy.MissingRoles(after.Headers, settings.Dashboard, settings.Queries);
             receipt.SourceChanged = ColumnPreparationPolicy.SourceChanged(before, after, settings.Dashboard);
             if (receipt.SourceChanged)
-                receipt.Warnings.Add("La liste des tickets a évolué pendant la préparation des colonnes, avec les mêmes critères observables. L’export utilise un nouvel échantillon ; la couverture de cette exécution reste à vérifier.");
+                receipt.Warnings.Add("La liste des tickets a évolué pendant la préparation des colonnes, avec les mêmes critères observables. L’export utilise un nouvel échantillon ; ses contrôles de réception et de périmètre sont présentés séparément.");
             if (receipt.State == "ready") receipt.Message = $"{added.Count:N0} colonnes temporaires ajoutées · {after.Headers.Count:N0} colonnes relues dans GLPI."
                 + (mode == "all" ? " Toutes les options disponibles ont été traitées." : " Préparation de supervision terminée.");
             else if (added.Count > 0)

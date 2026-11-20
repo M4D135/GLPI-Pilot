@@ -12,7 +12,13 @@ public sealed partial class PilotApplication
     private TableChoice? _selectedTable;
     private TableChoice? _selectedTableToRemember;
     private long _collectionRevision;
+    private bool _collectionRequestReserved;
     private string _inspectedPageUrl = "";
+    // Reserve a collection before it waits for the execution gate. Repeated
+    // clicks must not become additional runs after the first run's cleanup.
+    private static bool IsCollectionRequest(string operation) => operation is
+        "collect.run" or "collect.manual" or "collect.campaign" or "collect.captureDownload" or "collect.connect"
+        or "collect.startup" or "automation.recipe" or "library.capture";
     partial void SettingsContextChanged()
     {
         _collectionRevision++; _pages.Clear(); _tables.Clear(); _selectedTable = null; _selectedTableToRemember = null; _inspectedPageUrl = "";
@@ -93,6 +99,8 @@ public sealed partial class PilotApplication
                 ColumnRestorationReceipt.Apply(data, await RestoreOnce().ConfigureAwait(false));
                 settings.RememberTable(tableToRemember);
                 ct.ThrowIfCancellationRequested();
+                foreach (var diagnostic in CityDetectionService.DescribeSourceAvailability(data, settings.Cities, settings.Dashboard, ct))
+                    Log("VILLES SOURCES · " + diagnostic);
                 var locations = CityDetectionService.Enrich(data, settings.Cities, settings.Dashboard, ct, CityOverrideStore.Load(DataPath("city-overrides.json")).Overrides);
                 await RememberSourceAsync(locations.Data, settings, locations, ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();

@@ -43,9 +43,11 @@ public sealed partial class PilotApplication
             var state = await TicketLibrary.CollectionStateAsync(context.Fingerprint, ct).ConfigureAwait(false);
             var report = state.RunId.Length == 0 ? null : await TicketLibrary.GetCaptureAsync(state.RunId, ct).ConfigureAwait(false);
             var selection = await CollectionScopeModelAsync(state, context, args, ct).ConfigureAwait(false);
+            var restorationPending = AutomaticRestorationPending();
             return new { state, report, installation = context.Installation, activity = ReadCollectionActivity(), applicationMustRemainOpen = true,
                 selection.Scope, selection.Catalog, selection.Coverage, selection.Inventory, selection.Available, selection.Message, selection.Warnings, selection.Teams,
-                automaticBlocked = state.Options.Automatic && !state.Scope.Enabled };
+                automaticBlocked = state.Options.Automatic && (!state.Scope.Enabled || restorationPending),
+                automaticBlockReason = restorationPending ? AutomaticRestorationMessage : "" };
         });
         Register("library.collection.settings", async (a, ct) =>
         {
@@ -391,10 +393,16 @@ public sealed partial class PilotApplication
         var context = LibraryCaptureContext(Settings, LibrarySettings);
         var state = await TicketLibrary.CollectionStateAsync(context.Fingerprint, ct).ConfigureAwait(false);
         if (!state.Options.Automatic || !state.Scope.Enabled || state.Held || state.State == "running" || state.NextAt is null || state.NextAt > DateTimeOffset.UtcNow || !state.Options.Allows(DateTimeOffset.UtcNow)) return false;
+        lock (_executionAdmission)
+        {
+            if (_collectionRequestReserved) return false;
+            CurrentOperation = "library.capture";
+        }
         EnsureCachedSourceOperationAllowed("library.capture"); EnsureSourceOperationAllowed("library.capture");
         state.NextAt = DateTimeOffset.UtcNow.AddMinutes(state.Options.IntervalMinutes);
         state = await TicketLibrary.SaveCollectionStateAsync(context.Fingerprint, state, state.Revision, ct).ConfigureAwait(false);
         var args = JsonSerializer.SerializeToElement(new { mode = state.State == "budget" && state.RunId.Length > 0 ? "resume" : "incremental", runId = state.RunId, automatic = true }, Json);
+        Publish("operation.state", new { busy = true, operation = "library.capture" });
         await CaptureLibraryAsync(args, ct).ConfigureAwait(false); return true;
     }
 }

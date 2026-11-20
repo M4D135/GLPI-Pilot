@@ -277,6 +277,46 @@ public static class CityDetectionService
     private static CityEnrichmentResult PassThrough(ExtractionResult source, string message)
         => new() { Source = source, Data = source, Message = message };
 
+    /// <summary>Counts and fixed role names only: no headers, ticket values or dictionary entries enter the ordinary log.</summary>
+    public static IReadOnlyList<string> DescribeSourceAvailability(ExtractionResult source, CitySettings settings,
+        DashboardSettings dashboard, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(source); ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(dashboard); settings.Validate(); ct.ThrowIfCancellationRequested();
+        var title = ResolveTitle(source.Headers, settings, dashboard);
+        var id = DashboardService.ResolveColumns(source.Headers, dashboard).First(column => column.Role == "id");
+        var location = settings.LocationColumn.Length == 0 ? Array.Empty<int>()
+            : Enumerable.Range(0, source.Headers.Count).Where(index => source.Headers[index] == settings.LocationColumn).ToArray();
+        var messages = new List<string>
+        {
+            $"repérage={(settings.Enabled ? "activé" : "désactivé")} ; références={settings.Cities.Count} ; variantes={settings.Cities.Sum(city => city.Aliases.Count)} ; sites={settings.Sites.Count} ; lignes={source.Rows.Count}."
+        };
+        void Role(string role, bool requested, int? column, string state, string? usage = null)
+        {
+            var present = 0;
+            if (column is int index)
+                for (var row = 0; row < source.Rows.Count; row++)
+                {
+                    if ((row & 255) == 0) ct.ThrowIfCancellationRequested();
+                    if (source.Rows[row] is { } cells && index < cells.Length && !string.IsNullOrWhiteSpace(cells[index])) present++;
+                }
+            var observed = column.HasValue ? "colonne reconnue" : state == "ambiguous" ? "colonne ambiguë"
+                : state == "unconfigured" ? "colonne non configurée" : "colonne absente";
+            messages.Add($"rôle={role} ; source={usage ?? (settings.Enabled && requested ? "utilisée" : "non demandée")} ; {observed} ; valeurs présentes={present}/{source.Rows.Count}.");
+        }
+        // Explicit local corrections remain applicable even when automatic
+        // matching is disabled; their existence is deliberately not inferred.
+        Role("identifiant", true, id.Index, id.State, "corrections locales si présentes");
+        Role("titre", settings.SourcePriority.Any(kind => kind is "combined" or "title" or "site" or "building"), title.Index, title.State);
+        Role("lieu", settings.SourcePriority.Contains("location", StringComparer.Ordinal), location.Length == 1 ? location[0] : null,
+            settings.LocationColumn.Length == 0 ? "unconfigured" : location.Length > 1 ? "ambiguous" : "missing");
+        var contextColumns = settings.Cities.SelectMany(city => city.Rules).Select(rule => rule.ContextColumn)
+            .Where(column => column.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+        var unavailableContexts = contextColumns.Count(column => source.Headers.Count(header => header == column) != 1);
+        messages.Add($"règles contextuelles={settings.Cities.Sum(city => city.Rules.Count)} ; colonnes de contexte indisponibles={unavailableContexts}/{contextColumns.Length}. Aucune ville n’est attribuée sans correspondance explicite.");
+        return messages;
+    }
+
     private static DashboardColumn ResolveTitle(IReadOnlyList<string> headers, CitySettings settings,
         DashboardSettings dashboard)
     {

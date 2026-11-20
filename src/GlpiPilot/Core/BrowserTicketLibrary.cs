@@ -244,6 +244,8 @@ public sealed partial class BrowserService
         await _ticketReadGate.WaitAsync(ct);
         IPage? page = null;
         LibraryIndexActivity? activity = null;
+        var searchMayHaveChanged = false;
+        int? retainedPageLimit = null;
         string restoreUrl = "";
         string? scope = null;
         var restoreAllowed = true;
@@ -352,6 +354,35 @@ public sealed partial class BrowserService
             ValidateLibraryListUrl(form.AllUrl, source, allowReset: true);
             var targetSearchType = targeted ? form.NativeSearchType : "";
             await NavigateLibraryListAsync(page, form.AllUrl, targeted ? "targeted" : "all-status", activity, ct);
+            // Confirm the native search before touching its pager. Changing the
+            // page size is optional; the normal reader still validates every page.
+            var firstPage = await WaitLibraryIndexDomAsync(page, source, "read", activity, ct, targetIds, statusOptions, targetSearchType);
+            if (firstPage.Scope != scope)
+            {
+                restoreAllowed = false;
+                throw new GlpiLibraryIndexException("scope", "index-scope", "Le profil ou le périmètre d’entités a changé avant le réglage de la pagination. Aucune préférence n’a été modifiée.");
+            }
+            // The optional pager command has its own exact request observer.
+            // Do not turn its recoverable AJAX refusal into a permanent failure
+            // in the observer for the mandatory search/index operation.
+            searchMayHaveChanged |= activity.SearchMayHaveChanged;
+            activity.Dispose(); activity = null;
+            var pageLimitResult = await PrepareNativeTicketPageLimitOnPageAsync(page, page.MainFrame, source, "", settings, Report, ct);
+            activity = new(page, source, settings.ListTimeoutSeconds, Report);
+            if (targeted) activity.ObserveNativeField(form.NativeField);
+            activity.BeginPhase("page");
+            if (pageLimitResult.Changed && restoreUrl.Length > 0)
+            {
+                // The requested native pager preference remains in this session.
+                // Restore all captured search criteria without replaying an old
+                // explicit page-size parameter that would undo the user's request.
+                retainedPageLimit = pageLimitResult.AppliedLimit;
+                var previous = new UriBuilder(restoreUrl);
+                previous.Query = string.Join('&', TicketReferenceResolver.ParseQuery(previous.Uri)
+                    .Select(pair => QueryPair(pair.Key, pair.Key is "list_limit" or "glpilist_limit"
+                        ? retainedPageLimit!.Value.ToString(CultureInfo.InvariantCulture) : pair.Value)));
+                restoreUrl = previous.Uri.AbsoluteUri;
+            }
             var ids = new HashSet<string>(StringComparer.Ordinal);
             var expectedStart = 0;
             var maxPages = Math.Min(Math.Clamp(settings.MaxPages, 1, 10000), pageLimit ?? 10000);
@@ -423,7 +454,10 @@ public sealed partial class BrowserService
             Report(new(activity.Phase, "index-complete", $"Index lu : {result.Tickets.Count} tickets, {result.PagesRead} pages ; couverture {(result.Complete ? "confirmée" : "à vérifier")} dans le périmètre d’entités actif."));
         }
         catch (GlpiLibraryIndexException error)
-        { Report(new(error.Phase, error.Category, error.Message)); throw; }
+        {
+            if (error.Category == "index-scope") restoreAllowed = false;
+            Report(new(error.Phase, error.Category, error.Message)); throw;
+        }
         catch (GlpiLibraryPageException error)
         { throw Failure("index-page", error.Message); }
         catch (PlaywrightException)
@@ -452,9 +486,9 @@ public sealed partial class BrowserService
                     restoreAllowed = false;
                     restoreSkipped = "La fermeture de la fenêtre d’index n’est pas confirmée ; aucune restauration ni nouvelle recherche ne sera envoyée avant sa fermeture.";
                 }
-                if (activity?.SearchMayHaveChanged == true)
+                if (searchMayHaveChanged || activity?.SearchMayHaveChanged == true)
                 {
-                    result.SearchRestored = restoreAllowed && await RestoreLibrarySearchAsync(restoreUrl, source, settings, Report, ct);
+                    result.SearchRestored = restoreAllowed && await RestoreLibrarySearchAsync(restoreUrl, source, settings, Report, ct, retainedPageLimit);
                     if (!result.SearchRestored)
                     {
                         result.Limitations.Add("Le filtre précédent n’a pas pu être restauré dans la session GLPI ; la page de recherche affichée est conservée.");
@@ -500,7 +534,7 @@ public sealed partial class BrowserService
     }
 
     private async Task<bool> RestoreLibrarySearchAsync(string value, Uri source, AppSettings settings,
-        Action<LibraryIndexProgress> report, CancellationToken ct)
+        Action<LibraryIndexProgress> report, CancellationToken ct, int? retainedPageLimit = null)
     {
         bool Unconfirmed(string message) { report(new("restore", "restore-unconfirmed", message)); return false; }
         if (_context == null || value.Length == 0)
@@ -535,9 +569,20 @@ public sealed partial class BrowserService
             var restored = await WaitLibraryIndexDomAsync(restorePage, source, "restore", activity, restoreToken);
             if (restored.RestoreUrl.Length == 0)
                 return Unconfirmed("La réponse GLPI ne permet pas de confirmer le filtre précédent ; la recherche affichée est conservée.");
-            static string Canonical(string url) => string.Join('&', TicketReferenceResolver.ParseQuery(new Uri(url)).Select(pair => QueryPair(pair.Key, pair.Value)).Order(StringComparer.Ordinal));
+            string Canonical(string url) => string.Join('&', TicketReferenceResolver.ParseQuery(new Uri(url))
+                .Where(pair => !retainedPageLimit.HasValue || pair.Key is not ("list_limit" or "glpilist_limit"))
+                .Select(pair => QueryPair(pair.Key, pair.Value)).Order(StringComparer.Ordinal));
             if (Canonical(restored.RestoreUrl) != Canonical(target.AbsoluteUri))
                 return Unconfirmed("Le filtre renvoyé par GLPI diffère du filtre précédent ; la restauration n’est pas confirmée.");
+            if (retainedPageLimit.HasValue)
+            {
+                var pager = await ReadJsonAsync<NativeTicketPageLimitDom>(restorePage.MainFrame, NativeTicketPageLimitScript,
+                    new { origin = source.GetLeftPart(UriPartial.Authority), path = source.AbsolutePath,
+                        detailPath = source.AbsolutePath.Replace("/front/ticket.php", "/front/ticket.form.php", StringComparison.Ordinal), selector = "" }, restoreToken);
+                report(new("restore", "page-limit", pager.Ready
+                    ? $"Filtre précédent restauré ; pagination de session observée à {pager.Limit:N0} tickets par page."
+                    : "Filtre précédent restauré ; la préférence de pagination n’a pas pu être relue dans cette réponse GLPI."));
+            }
             return true;
         }
         catch (GlpiLibraryIndexException error)

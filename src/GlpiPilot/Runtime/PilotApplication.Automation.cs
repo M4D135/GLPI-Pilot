@@ -9,9 +9,21 @@ public sealed partial class PilotApplication
     private DateTimeOffset? _nextAutomatic;
     private string _automaticPolicyStamp = "";
     private Func<bool> _networkAvailable = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable;
+    private Func<DateTimeOffset> _automaticNow = () => DateTimeOffset.Now;
+    private bool _automaticRestorationSuspended;
+    private const string AutomaticRestorationMessage = "Les collectes automatiques sont suspendues : la restauration de la vue GLPI est en attente. Les données reçues restent consultables. Une collecte lancée manuellement reprend d’abord cette restauration.";
+    private bool AutomaticRestorationPending() => !IsTestMode && !IsSimulationInstance
+        && Uri.TryCreate(Settings.PortalUrl, UriKind.Absolute, out var portal) && portal.Scheme is "http" or "https"
+        && Browser.HasPendingTemporaryColumns(Settings);
     private void RegisterAutomationOperations()
     {
-        Register("automation.get", (_, _) => Task.FromResult<object?>(new { settings = Settings.Automation, next = _nextAutomatic, health = _health.Entries, alerts = _health.Alerts(Settings.Sources, Settings.Automation, DateTimeOffset.Now) }));
+        Register("automation.get", (_, _) =>
+        {
+            var suspended = AutomaticRestorationPending();
+            return Task.FromResult<object?>(new { settings = Settings.Automation, next = suspended ? null : _nextAutomatic,
+                suspended, suspensionReason = suspended ? AutomaticRestorationMessage : "",
+                health = _health.Entries, alerts = _health.Alerts(Settings.Sources, Settings.Automation, DateTimeOffset.Now) });
+        });
         Register("automation.save", (a, _) => { var next = Read<AutomationSettings>(a); AutomationPolicy.Times(next.FixedTimes); AutomationPolicy.Days(next.WeekDays); AutomationPolicy.ValidateRecipe(next.Steps); next.Normalize(); Settings.Automation = next; SaveSettings(); _nextAutomatic = AutomationPolicy.Next(next, DateTimeOffset.Now); _automaticPolicyStamp = JsonSerializer.Serialize(next, Json); return Task.FromResult<object?>(new { settings = next, next = _nextAutomatic }); });
         Register("automation.recipe", async (_, ct) => await RunRecipeForRuntimeAsync(ct).ConfigureAwait(false));
         Register("automation.tick", RunAutomaticTickAsync);
@@ -48,18 +60,43 @@ public sealed partial class PilotApplication
         catch (Exception error) when (error is not OperationCanceledException) { Log("Rappels calendrier : " + AppPaths.SafeError(error)); }
         if (_handlers.TryGetValue("library.tick", out var libraryTick))
             await libraryTick(args, ct).ConfigureAwait(false);
+        if (AutomaticRestorationPending())
+        {
+            _nextAutomatic = null;
+            if (!_automaticRestorationSuspended) Log("PROGRAMMATION · " + AutomaticRestorationMessage);
+            _automaticRestorationSuspended = true;
+            return new { skipped = true, reason = "restoration-pending", message = AutomaticRestorationMessage };
+        }
+        _automaticRestorationSuspended = false;
+        lock (_executionAdmission)
+            if (_collectionRequestReserved) return new { skipped = true, reason = "collection-requested" };
         if (await AutomaticCollectionTickAsync(ct).ConfigureAwait(false)) return new { collection = true };
         var policy = Settings.Automation.Copy(); var stamp = JsonSerializer.Serialize(policy, Json);
         if (_automaticPolicyStamp != stamp) { _nextAutomatic = null; _automaticPolicyStamp = stamp; }
-        if (IsFileSource || !policy.ScheduledExtraction || AutomationPolicy.IsQuiet(policy, DateTimeOffset.Now) || SessionLocked || EditorOpen) return new { skipped = true };
-        _nextAutomatic ??= AutomationPolicy.Next(policy, DateTimeOffset.Now);
-        if (_nextAutomatic > DateTimeOffset.Now) return new { skipped = true };
+        if (IsFileSource || !policy.ScheduledExtraction || AutomationPolicy.IsQuiet(policy, _automaticNow()) || SessionLocked || EditorOpen) return new { skipped = true };
+        _nextAutomatic ??= AutomationPolicy.Next(policy, _automaticNow());
+        if (_nextAutomatic > _automaticNow()) return new { skipped = true };
         if (!_networkAvailable()) return new { skipped = true };
-        _nextAutomatic = AutomationPolicy.Next(policy, DateTimeOffset.Now);
         ct.ThrowIfCancellationRequested(); var operation = policy.UseRecipe ? "automation.recipe" : policy.RunCampaign ? "collect.campaign" : "collect.run";
-        CurrentOperation = operation; Publish("operation.state", new { busy = true, operation });
-        var result = await _handlers[operation](args, ct).ConfigureAwait(false);
-        return new { ran = true, result };
+        lock (_executionAdmission)
+        {
+            // A foreground request may have arrived while this tick was reading
+            // local schedules. It takes priority and must not follow an extra run.
+            if (_collectionRequestReserved) return new { skipped = true, reason = "collection-requested" };
+            CurrentOperation = operation;
+        }
+        Publish("operation.state", new { busy = true, operation });
+        try
+        {
+            var result = await _handlers[operation](args, ct).ConfigureAwait(false);
+            return new { ran = true, result };
+        }
+        finally
+        {
+            // A slow run or its restoration may exceed the interval. Its next
+            // deadline starts after completion, including failed/cancelled runs.
+            _nextAutomatic = AutomationPolicy.Next(policy, _automaticNow());
+        }
     }
     public void ResumeAutomaticSchedule()
     {

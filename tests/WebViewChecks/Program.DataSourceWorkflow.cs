@@ -341,6 +341,27 @@ internal static partial class Program
         Require(await OnPage("data") && app.IsTestMode && app.Result!.Rows.Count == 60 && operations.Contains("collect.run"),
             "The primary collection refreshes Data in place with the actual C# result instead of opening Pilotage.");
 
+        var cleanCollectionCount = operations.Count(operation => operation == "collect.run");
+        await Call(app, "collect.run"); await delivery; await Idle();
+        var backgroundRevision = app.Revision;
+        await Button("Collecter la simulation").ClickAsync(); await Idle();
+        Require(app.Revision > backgroundRevision && operations.Count(operation => operation == "collect.run") == cleanCollectionCount + 1
+            && await page.Locator(".workspace-live-source > .notice.danger[role=alert]").CountAsync() == 0,
+            "A clean Data connection form follows a completed background observation revision and permits exactly one explicit collection without stale-form failure.");
+
+        var sourceAddress = page.GetByLabel("Adresse de la source simulée", new() { Exact = true });
+        var unchangedAddress = app.Settings.PortalUrl;
+        const string pendingAddress = "https://simulation.glpi.local/front/ticket.php?draft=unapplied";
+        await sourceAddress.FillAsync(pendingAddress);
+        await Call(app, "collect.run"); await delivery; await Idle();
+        var dirtyCollectionCount = operations.Count(operation => operation == "collect.run");
+        await Button("Collecter la simulation").ClickAsync(); await Idle();
+        Require(app.Settings.PortalUrl == unchangedAddress && await sourceAddress.InputValueAsync() == pendingAddress
+            && operations.Count(operation => operation == "collect.run") == dirtyCollectionCount
+            && (await page.Locator(".workspace-live-source > .notice.danger[role=alert]").InnerTextAsync()).Contains("Le relevé a changé", StringComparison.Ordinal),
+            "A dirty Data connection form retains its original revision and values after background collection, refusing its obsolete save without replay or another collection.");
+        await DataPage(); await Idle();
+
         // Explicit presentation fixtures use the production C# receipt and
         // camel-case bootstrap serialization; they never touch a GLPI view.
         var originalColumnReceipt = app.Result!.Provenance.ColumnPreparation;
@@ -366,6 +387,28 @@ internal static partial class Program
             "A confirmed C# restoration receipt displays its success badge, actual removal count and engine message.");
         columnReceipt.RestorationState = "recovery-pending"; columnReceipt.RecoveryPending = true; columnReceipt.RestoredCount = 1;
         columnReceipt.RestorationMessage = "Connexion interrompue avant la confirmation finale.";
+        var confirmedQuality = new ExtractionQuality
+        {
+            SourceRows = 17, ExpectedRows = 17, AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true, ScopeStable = true,
+            InitialSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 17, ComparedCells = 442 },
+            FinalSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 17, ComparedCells = 442 }
+        };
+        async Task<JsonElement> ReadReceiptStatus(bool complete) => await page.EvaluateAsync<JsonElement>(
+            "async session => (await import('/js/ui.js')).extractionStatus(session)", JsonSerializer.SerializeToElement(
+                new { rows = 17, expectedTotal = 17, complete, quality = confirmedQuality, provenance = new { columnPreparation = columnReceipt } }, PilotApplication.Json));
+        var confirmedReceipt = await ReadReceiptStatus(true);
+        Require(confirmedReceipt.GetProperty("label").GetString() == "Réception complète"
+            && confirmedReceipt.GetProperty("scope").GetString() == "Périmètre stable"
+            && confirmedReceipt.GetProperty("coverage").GetString() == "Couverture du relevé vérifiée"
+            && confirmedReceipt.GetProperty("restorationPending").GetBoolean()
+            && confirmedReceipt.GetProperty("restoration").GetString() == "Vue GLPI : restauration en attente",
+            "A verified 17-row native receipt reports complete reception, stable scope and verified coverage independently from pending GLPI view restoration.");
+        confirmedQuality.ScopeStable = false;
+        var changedReceipt = await ReadReceiptStatus(false);
+        Require(changedReceipt.GetProperty("label").GetString() == "Collecte à vérifier"
+            && changedReceipt.GetProperty("scope").GetString() == "Périmètre à vérifier"
+            && changedReceipt.GetProperty("tone").GetString() == "warning",
+            "A complete row count never hides a changed perimeter even when a separate view-restoration warning is present.");
         await ShowColumnReceipt(columnReceipt);
         Require(await receiptCard.Locator("[data-column-restoration=pending].notice.warning[role=alert]").IsVisibleAsync()
             && (await receiptCard.InnerTextAsync()).Contains("elle doit être terminée avant la prochaine collecte", StringComparison.Ordinal)

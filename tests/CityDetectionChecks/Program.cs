@@ -547,6 +547,7 @@ Test("Advanced city copies keep independent rules and site aliases", () =>
 CityTerrainChecks.Register(Test);
 StandaloneSiteChecks.Register(Test);
 CityReferenceComplementChecks.Register(Test);
+CitySourceAvailabilityChecks.Register(Test);
 var passed = 0;
 foreach (var (name, run) in checks)
     try { run(); passed++; Console.WriteLine("PASS  " + name); }

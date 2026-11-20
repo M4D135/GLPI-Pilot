@@ -21,6 +21,8 @@ internal static class ColumnPreparationChecks
         yield return ("Colonnes GLPI : ajouts conservent les colonnes initiales dans leur ordre", HeaderOrder);
         yield return ("Colonnes GLPI : échantillon stable ou source mouvante distingués des critères", Samples);
         yield return ("Colonnes GLPI : repli explicite et source mouvante sans fausse certification", Receipt);
+        yield return ("Colonnes GLPI : nouvel échantillon natif entièrement vérifié après préparation", RevalidatedReceipt);
+        yield return ("Colonnes GLPI : preuve partielle ou divergente ne revalide jamais la source", IncompleteRevalidation);
     }
 
     private static void Check(bool value, string message = "Assertion failed")
@@ -402,5 +404,54 @@ internal static class ColumnPreparationChecks
         Check(data.Complete && data.Warnings.SequenceEqual(new[] { "Commande absente" }));
         receipt.SourceChanged = true; ColumnPreparationPolicy.ApplyReceipt(data, receipt);
         Check(!data.Complete && data.Status.Contains("liste modifiée", StringComparison.Ordinal) && data.Warnings.Count == 1);
+    }
+
+    private static ExtractionResult VerifiedNative() => new()
+    {
+        Complete = true, Status = "Collecte terminée", ExpectedTotal = 1,
+        Headers = new() { "ID", "Titre" }, Rows = new() { new[] { "7", "Exemple" } },
+        Provenance = new() { Method = "native-csv", ScopeVerified = true },
+        Quality = new()
+        {
+            AllPagesRequested = true, RowCountVerified = true, FinalTotalVerified = true, ScopeStable = true,
+            InitialSample = new() { IdentityVerified = true, RepresentationVerified = true },
+            FinalSample = new() { IdentityVerified = true, RepresentationVerified = true }
+        }
+    };
+
+    private static void RevalidatedReceipt()
+    {
+        var data = VerifiedNative();
+        var receipt = new ColumnPreparationReceipt { SourceChanged = true, RecoveryPending = true, RestorationState = "pending" };
+        ColumnPreparationPolicy.ApplyReceipt(data, receipt);
+        Check(data.Complete && receipt.SourceChanged && receipt.SourceRevalidated && receipt.RecoveryPending);
+        Check(data.Status == "Collecte terminée" && data.Rows[0][1] == "Exemple" && data.Warnings.Count == 1);
+        ColumnPreparationPolicy.ApplyReceipt(data, receipt);
+        Check(data.Complete && receipt.SourceRevalidated && data.Warnings.Count == 1);
+    }
+
+    private static void IncompleteRevalidation()
+    {
+        foreach (var weaken in new Action<ExtractionResult>[]
+        {
+            data => data.Complete = false,
+            data => data.Provenance.Method = "pagination",
+            data => data.Provenance.ScopeVerified = false,
+            data => data.Quality = null,
+            data => data.Quality!.AllPagesRequested = false,
+            data => data.Quality!.RowCountVerified = false,
+            data => data.Quality!.FinalTotalVerified = null,
+            data => data.Quality!.ScopeStable = false,
+            data => data.Quality!.InitialSample!.IdentityVerified = null,
+            data => data.Quality!.FinalSample!.IdentityVerified = false,
+            data => data.Quality!.InitialSample!.RepresentationVerified = false,
+            data => data.Quality!.FinalSample = null
+        })
+        {
+            var data = VerifiedNative(); weaken(data);
+            var receipt = new ColumnPreparationReceipt { SourceChanged = true, SourceRevalidated = true };
+            ColumnPreparationPolicy.ApplyReceipt(data, receipt);
+            Check(!data.Complete && !receipt.SourceRevalidated && data.Status.Contains("liste modifiée", StringComparison.Ordinal));
+        }
     }
 }

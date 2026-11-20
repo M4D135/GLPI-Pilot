@@ -127,16 +127,20 @@ public sealed partial class PilotApplication : IAsyncDisposable
             if (operation == "operations.cancel") return handler(arguments, ct);
             if (TryCollectionControl(operation, arguments, ct, out var collectionControl)) return collectionControl;
             if (TryStartupCollectionAdmission(operation, arguments, out var startupReply)) return Task.FromResult(startupReply);
+            var ownsCollection = IsCollectionRequest(operation);
+            if (ownsCollection && (_collectionRequestReserved || IsBusy && IsCollectionRequest(CurrentOperation)))
+                throw new InvalidOperationException("Une collecte ou sa restauration est déjà en cours. Cette nouvelle demande n’est pas mise en attente.");
             var ownedArguments = arguments.Clone();
             var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
             var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _pendingExecutions.Add(finished.Task, linked);
+            if (ownsCollection) _collectionRequestReserved = true;
             if (operation == "collect.startup") _startupCollectionCancellation = linked;
-            return ExecuteRegisteredAsync(operation, handler, ownedArguments, linked, finished);
+            return ExecuteRegisteredAsync(operation, handler, ownedArguments, linked, finished, ownsCollection);
         }
     }
     private async Task<object?> ExecuteRegisteredAsync(string operation, Func<JsonElement, CancellationToken, Task<object?>> handler, JsonElement arguments,
-        CancellationTokenSource cancellation, TaskCompletionSource finished)
+        CancellationTokenSource cancellation, TaskCompletionSource finished, bool ownsCollection)
     {
         var entered = false;
         try
@@ -175,6 +179,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
                 lock (_executionAdmission)
                 {
                     if (ReferenceEquals(_startupCollectionCancellation, cancellation)) _startupCollectionCancellation = null;
+                    if (ownsCollection) _collectionRequestReserved = false;
                     _pendingExecutions.Remove(finished.Task); cancellation.Dispose(); finished.TrySetResult();
                 }
             }

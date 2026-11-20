@@ -151,6 +151,8 @@ public sealed partial class PilotApplication
 
     private StartupCollectionDecision EvaluateStartupCollection(string ownOperation)
     {
+        if (Settings.Automation?.CollectOnStartup == true && AutomaticRestorationPending())
+            return new(false, "restoration-pending", AutomaticRestorationMessage);
         var ownsExecution = IsBusy && CurrentOperation == ownOperation;
         var source = Result?.Provenance.SourceKind ?? "";
         bool browserAvailable, networkAvailable;

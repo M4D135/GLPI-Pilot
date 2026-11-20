@@ -2,10 +2,9 @@ namespace GlpiPilot.Core;
 
 public sealed partial class BrowserService
 {
-    // A restoration can require a confirmed native GET after each removal.
-    // The ordinary list timeout (45 s by default) is too short for ten
-    // sequential removals; stopping halfway leaves a durable pending journal.
-    // Keep an independent, bounded cleanup window without replaying commands.
+    // This is an independent allowance between verified restoration steps,
+    // not a deadline for the whole sequence of native removals. An abandoned
+    // cleanup still stops; a long sequence of confirmed steps can finish.
     public static int ColumnCleanupBudgetSeconds(int listTimeoutSeconds) =>
         Math.Clamp(Math.Max(180, listTimeoutSeconds), 180, 600);
 
@@ -16,9 +15,9 @@ public sealed partial class BrowserService
     {
         try
         {
-            using var cleanup = new CancellationTokenSource(
+            using var cleanup = new TemporaryColumnCleanupWindow(
                 TimeSpan.FromSeconds(ColumnCleanupBudgetSeconds(settings.ListTimeoutSeconds) + 30));
-            return await RestoreTemporaryColumnsAsync(settings, progress, cleanup.Token);
+            return await RestoreTemporaryColumnsCoreAsync(settings, progress, cleanup.Token, cleanup.ConfirmProgress);
         }
         catch (Exception error)
         {
@@ -31,6 +30,33 @@ public sealed partial class BrowserService
             return new("pending", message, Pending: true);
         }
     }
+}
+
+// Renew only after a native document has been validated or a command's exact
+// effect has been persisted and journaled. UI notices, polls and unconfirmed
+// commands cannot extend this independent cancellation-cleanup allowance.
+internal sealed class TemporaryColumnCleanupWindow : IDisposable
+{
+    private readonly CancellationTokenSource _cancellation;
+    private readonly TimeSpan _allowance;
+
+    public TemporaryColumnCleanupWindow(TimeSpan allowance, TimeProvider? timeProvider = null)
+    {
+        if (allowance <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(allowance));
+        _allowance = allowance;
+        _cancellation = new(allowance, timeProvider ?? TimeProvider.System);
+    }
+
+    public CancellationToken Token => _cancellation.Token;
+
+    public void ConfirmProgress()
+    {
+        // CancelAfter never resurrects an expired source. Retain the explicit
+        // guard so a late response cannot be mistaken for a new cleanup run.
+        if (!_cancellation.IsCancellationRequested) _cancellation.CancelAfter(_allowance);
+    }
+
+    public void Dispose() => _cancellation.Dispose();
 }
 
 public static class ColumnRestorationReceipt

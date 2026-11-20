@@ -25,7 +25,7 @@ public sealed partial class BrowserService
     public bool HasPendingTemporaryColumns(AppSettings settings)
     {
         try { return _temporaryColumnJournal.Load(settings) is { State: not "restored" }; }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
         { return _temporaryColumnJournal.Exists(settings); }
     }
 
@@ -155,12 +155,17 @@ public sealed partial class BrowserService
         _temporaryColumnJournal.Save(_temporaryColumnSettings!, record);
     }
 
-    public async Task<ColumnRestorationResult> RestoreTemporaryColumnsAsync(AppSettings settings,
-        IProgress<ExtractionProgress>? progress, CancellationToken ct)
+    public Task<ColumnRestorationResult> RestoreTemporaryColumnsAsync(AppSettings settings,
+        IProgress<ExtractionProgress>? progress, CancellationToken ct) =>
+        RestoreTemporaryColumnsCoreAsync(settings, progress, ct, null);
+
+    private async Task<ColumnRestorationResult> RestoreTemporaryColumnsCoreAsync(AppSettings settings,
+        IProgress<ExtractionProgress>? progress, CancellationToken ct, Action? confirmProgress)
     {
         // The caller supplies an independent cleanup token, including after a
         // cancelled collection. The durable journal survives this method too.
         IPage? recoveryPage = null;
+        var confirmedRemovals = 0;
         try
         {
             var effective = _temporaryColumnSettings ?? settings;
@@ -173,10 +178,11 @@ public sealed partial class BrowserService
             }
             if (_context is null) return ColumnRecoveryPending("browser-unavailable", "La session GLPI est fermée. La restauration des colonnes sera vérifiée à la prochaine connexion.", progress);
             recoveryPage = await NewCollectionPageAsync(_context);
-            return await RestoreTemporaryColumnsOnPageAsync(recoveryPage, record, effective, progress, ct, allowAuthentication: false);
+            return await RestoreTemporaryColumnsOnPageAsync(recoveryPage, record, effective, progress, ct,
+                allowAuthentication: false, restored => { confirmedRemovals = restored; confirmProgress?.Invoke(); });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or PlaywrightException or TimeoutException or OperationCanceledException)
-        { return ColumnRecoveryFailure(error, progress); }
+        { return ColumnRecoveryFailure(error, progress, confirmedRemovals); }
         finally
         {
             var uncertainMutation = _temporaryRestorationDispatched && _temporaryColumns?.PendingCommand is not null;
@@ -194,6 +200,7 @@ public sealed partial class BrowserService
         IProgress<ExtractionProgress>? progress, CancellationToken ct)
     {
         if (!NeedsTemporaryColumnRecovery(settings)) return new("not-needed", "Aucune récupération de colonnes en attente.");
+        var confirmedRemovals = 0;
         try
         {
             var record = _temporaryColumnJournal.Load(settings);
@@ -203,13 +210,14 @@ public sealed partial class BrowserService
                 _temporaryColumnJournal.Complete(settings, record);
                 return new("not-needed", "La sauvegarde ne contient aucune commande envoyée ; aucune préférence GLPI n’est modifiée.");
             }
-            return await RestoreTemporaryColumnsOnPageAsync(authenticatedPage, record, settings, progress, ct, allowAuthentication: true);
+            return await RestoreTemporaryColumnsOnPageAsync(authenticatedPage, record, settings, progress, ct,
+                allowAuthentication: true, restored => confirmedRemovals = restored);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or PlaywrightException or TimeoutException or OperationCanceledException)
         {
             if (_temporaryRestorationDispatched && _temporaryColumns?.PendingCommand is not null)
                 await IsolateColumnPreparationAsync(authenticatedPage);
-            return ColumnRecoveryFailure(error, progress);
+            return ColumnRecoveryFailure(error, progress, confirmedRemovals);
         }
         finally { _temporaryColumns = null; _temporaryColumnSettings = null; _temporaryRestorationDispatched = false; }
     }
@@ -221,7 +229,7 @@ public sealed partial class BrowserService
         return new(state, message, true, restored);
     }
 
-    private ColumnRestorationResult ColumnRecoveryFailure(Exception error, IProgress<ExtractionProgress>? progress)
+    private ColumnRestorationResult ColumnRecoveryFailure(Exception error, IProgress<ExtractionProgress>? progress, int restored = 0)
     {
         var state = error is ColumnRecoveryRefusal refusal ? refusal.State
             : error is OperationCanceledException or TimeoutException ? "recovery-pending"
@@ -229,7 +237,8 @@ public sealed partial class BrowserService
         var message = error is ColumnRecoveryRefusal ? error.Message
             : error is OperationCanceledException or TimeoutException ? "La restauration des colonnes n’est pas confirmée. Son journal est conservé pour la prochaine connexion ; aucune commande n’est rejouée."
             : "La restauration des colonnes reste en attente. " + AppPaths.SafeError(error);
-        return ColumnRecoveryPending(state, message, progress);
+        if (restored > 0) message = $"{restored:N0} colonnes temporaires déjà retirées et vérifiées. " + message;
+        return ColumnRecoveryPending(state, message, progress, restored);
     }
 
     private async Task<NativeColumnPreferences> OpenRecoveryPreferencesAsync(IPage page, TemporaryColumnJournalRecord record,
@@ -415,7 +424,8 @@ public sealed partial class BrowserService
     }
 
     private async Task<ColumnRestorationResult> RestoreTemporaryColumnsOnPageAsync(IPage page, TemporaryColumnJournalRecord record,
-        AppSettings settings, IProgress<ExtractionProgress>? progress, CancellationToken ct, bool allowAuthentication)
+        AppSettings settings, IProgress<ExtractionProgress>? progress, CancellationToken ct, bool allowAuthentication,
+        Action<int> confirmProgress)
     {
         void Report(string message)
         {
@@ -426,10 +436,12 @@ public sealed partial class BrowserService
         _temporaryColumns = record; _temporaryColumnSettings = settings.Copy();
         var preferences = await OpenRecoveryPreferencesAsync(page, record, settings, Report, allowAuthentication, ct);
         await ValidateRecoveryPreferencesAsync(page.MainFrame, record, preferences, ct);
-        using var activity = new ColumnPreparationActivity(page, page.MainFrame, record.Origin, ColumnCleanupBudgetSeconds(settings.ListTimeoutSeconds), Report, directPreferences: true);
+        confirmProgress(0);
+        using var activity = new ColumnPreparationActivity(page, page.MainFrame, record.Origin, settings.ListTimeoutSeconds, Report, directPreferences: true);
         // A second native GET also excludes a reused optimistic document and
         // gives all recovery decisions a server-rendered starting point.
         preferences = await ReadRecoveryPreferencesAsync(page.MainFrame, record, activity, ct, reload: true);
+        confirmProgress(0);
         if (!ReconcileTemporaryColumnCommand(record, preferences))
             return ColumnRecoveryPending("outcome-unknown", "Une commande précédente n’a pas d’effet attribuable avec certitude. Aucun ajout ni retrait n’est rejoué ; la sauvegarde reste disponible.", progress);
         var restored = 0;
@@ -465,6 +477,8 @@ public sealed partial class BrowserService
                 return ColumnRecoveryPending("concurrent-change", "L’ordre ou les colonnes ont changé depuis la collecte. La commande native qui réécrit cette liste est suspendue pour conserver ces changements.", progress, restored);
             preferences = await SubmitTemporaryColumnRestoreAsync(page.MainFrame, record, preferences, "remove", added.Identity, activity, ct);
             restored++;
+            confirmProgress(restored);
+            Report($"Restauration confirmée · {restored:N0} colonnes temporaires retirées et relues.");
         }
         current = TemporaryColumnPolicy.Capture(preferences);
         if (!record.Original.PersonalActive)
@@ -479,6 +493,8 @@ public sealed partial class BrowserService
                 Report("Réaffichage du retour natif : retrait d’une copie personnelle créée par l’activation temporaire confirmée.");
                 preferences = await SubmitTemporaryColumnRestoreAsync(page.MainFrame, record, preferences, "remove", activationCopy.Identity, activity, ct);
                 restored++;
+                confirmProgress(restored);
+                Report($"Restauration confirmée · {restored:N0} colonnes temporaires retirées et relues.");
                 current = TemporaryColumnPolicy.Capture(preferences);
             }
             if (current.PersonalActive)
@@ -486,6 +502,7 @@ public sealed partial class BrowserService
                 if (!TemporaryColumnPolicy.CanDisable(record, current))
                     return ColumnRecoveryPending("concurrent-change", "Le retour à la vue globale initiale ne peut pas être prouvé sans effacer une modification concurrente. Le journal reste disponible.", progress, restored);
                 preferences = await SubmitTemporaryColumnRestoreAsync(page.MainFrame, record, preferences, "disable", "", activity, ct);
+                confirmProgress(restored);
             }
             current = TemporaryColumnPolicy.Capture(preferences);
         }

@@ -23,6 +23,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
         yield return ("Colonnes temporaires : origine redirigée, aucune commande étrangère ni globale", () => CheckDrift(browser, "origin"));
         yield return ("Colonnes temporaires : modifications concurrentes préservées en legacy et en moderne", () => CheckConcurrentChanges(browser));
         yield return ("Colonnes temporaires : restauration terminée, nouvelle session sans répétition de retrait", () => CheckNoReplay(browser));
+        yield return ("Colonnes temporaires : dix retraits, réponse native tardive conservée sans renvoi", () => CheckExpandedDelayedCleanup(browser));
+        yield return ("Colonnes temporaires : six retraits confirmés puis reprise des quatre restants", () => CheckSixThenReconnect(browser));
+        yield return ("Colonnes temporaires : CSV reçu conservé pendant une récupération indisponible", () => CheckPendingCleanupCsv(browser));
     }
 
     private static void Require(bool condition, string message)
@@ -230,11 +233,78 @@ internal static class TemporaryColumnRestorationBrowserChecks
         fixture.AssertClean();
     }
 
-    private sealed class RestorationFixture(IBrowser browser, string root, bool modern, bool active, bool complete, bool nativeModal) : IAsyncDisposable
+    private static async Task CheckExpandedDelayedCleanup(IBrowser browser)
+    {
+        using var storage = new ColumnTestStorageScope();
+        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: false, expanded: true);
+        fixture.Settings.ColumnPreparationMode = "all";
+        fixture.DelayRemovalNumber = 7;
+        var result = await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, CancellationToken.None);
+        Require(fixture.Adds == 10 && fixture.Removals == 10 && fixture.Exports == 1
+            && fixture.Events.Where(value => value.StartsWith("remove:", StringComparison.Ordinal)).Distinct().Count() == 10
+            && fixture.Columns.SequenceEqual(fixture.Original),
+            "All ten owned columns must be removed exactly once, even when a native response outlives the ordinary inactivity and locator waits.");
+        Require(result.Data.Provenance.ColumnPreparation is { RestoredCount: 10, RecoveryPending: false }
+            && result.Data.Headers.SequenceEqual(fixture.ExportHeaders)
+            && await File.ReadAllTextAsync(result.PrimaryPath) == fixture.ExportedCsv.TrimStart('\uFEFF'),
+            "The complete enriched native CSV must remain available after all delayed removals have been confirmed.");
+        fixture.AssertClean();
+    }
+
+    private static async Task CheckSixThenReconnect(IBrowser browser)
+    {
+        using var storage = new ColumnTestStorageScope();
+        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: false, expanded: true);
+        fixture.Settings.ColumnPreparationMode = "all";
+        await fixture.PrepareAsync(null, CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        var progress = new ImmediateProgress(value =>
+        {
+            if (fixture.Removals == 6 && value.Message.StartsWith("Restauration confirmée", StringComparison.Ordinal))
+                cancellation.Cancel();
+        });
+        var interrupted = await fixture.Service.RestoreTemporaryColumnsAsync(fixture.Settings, progress, cancellation.Token);
+        Require(fixture.Adds == 10 && fixture.Removals == 6 && interrupted is { Pending: true, RestoredCount: 6 }
+            && new TemporaryColumnJournalStore().Load(fixture.Settings) is { PendingCommand: null },
+            "An interruption between verified removals must preserve the exact six-step receipt and leave no invented unresolved command.");
+        await fixture.RestartAsync(); fixture.Settings.ColumnPreparationMode = "current";
+        fixture.Events.Clear(); fixture.RequireRestorationBeforeList = true;
+        await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, CancellationToken.None);
+        var recoveryRemovals = fixture.Events.Count(value => value.StartsWith("remove:", StringComparison.Ordinal));
+        var list = fixture.Events.FindIndex(value => value == "list");
+        Require(recoveryRemovals == 4 && fixture.Removals == 10 && fixture.AddAttempts == 10
+            && list > fixture.Events.FindLastIndex(value => value.StartsWith("remove:", StringComparison.Ordinal))
+            && fixture.Columns.SequenceEqual(fixture.Original),
+            "Cold recovery must remove only the four remaining owned columns before loading the next ticket list.");
+        fixture.AssertClean();
+    }
+
+    private static async Task CheckPendingCleanupCsv(IBrowser browser)
+    {
+        using var storage = new ColumnTestStorageScope();
+        await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: false);
+        fixture.BlockCleanupAfterExport = true;
+        var result = await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, CancellationToken.None);
+        Require(fixture.Exports == 1 && fixture.Adds == 2 && fixture.Removals == 0
+            && result.Data.Quality is { ReceptionComplete: true, ScopeStable: true, SampleIdentityVerified: true }
+            && result.Data.Provenance.ColumnPreparation is { RecoveryPending: true }
+            && result.Data.Headers.SequenceEqual(fixture.ExportHeaders)
+            && await File.ReadAllTextAsync(result.PrimaryPath) == fixture.ExportedCsv.TrimStart('\uFEFF'),
+            "A preference recovery warning must preserve the independently received native CSV and its receipt, without starting another collection.");
+        fixture.BlockRecoveryUntilReconnect = false;
+        var restored = await fixture.Service.RestoreTemporaryColumnsAsync(fixture.Settings, null, CancellationToken.None);
+        Require(!restored.Pending && fixture.Removals == 2 && fixture.Exports == 1,
+            "Later preference recovery must finish the pending cleanup without downloading the same CSV again.");
+        fixture.AssertClean();
+    }
+
+    private sealed class RestorationFixture(IBrowser browser, string root, bool modern, bool active, bool complete, bool nativeModal, bool expanded) : IAsyncDisposable
     {
         private const string Origin = "http://glpi-column-restoration.test";
         private const string Target = Origin + "/glpi/front/ticket.php?criteria%5B0%5D%5Bfield%5D=12&criteria%5B0%5D%5Bvalue%5D=1";
-        private static readonly string[] All = ["12", "900", "2", "3", "8", "901"];
+        private readonly string[] All = expanded
+            ? ["12", "900", "2", "3", "8", "4", "5", "6", "7", "9", "10", "11", "13", "901"]
+            : ["12", "900", "2", "3", "8", "901"];
         private readonly Dictionary<string, string> _preferenceIds = new(StringComparer.Ordinal)
         { ["12"] = "711", ["900"] = "712", ["2"] = "713", ["3"] = "714", ["8"] = "715", ["901"] = "990" };
         private BrowserService? _service;
@@ -261,6 +331,8 @@ internal static class TemporaryColumnRestorationBrowserChecks
         public bool ResponseLost { get; private set; }
         public bool RedirectPreferencesOutsideOrigin { get; set; }
         public bool BlockRecoveryUntilReconnect { get; set; }
+        public bool BlockCleanupAfterExport { get; set; }
+        public int DelayRemovalNumber { get; set; }
         public bool RequireRestorationBeforeList { get; set; }
         public bool DisableHiddenDuringFullView { get; private set; }
         public int AddAttempts { get; private set; }
@@ -284,9 +356,9 @@ internal static class TemporaryColumnRestorationBrowserChecks
             ExpectedTotal = 1, MaxRows = 20, MaxPages = 5
         };
 
-        public static async Task<RestorationFixture> CreateAsync(IBrowser browser, string root, bool modern, bool active = true, bool complete = false, bool nativeModal = false)
+        public static async Task<RestorationFixture> CreateAsync(IBrowser browser, string root, bool modern, bool active = true, bool complete = false, bool nativeModal = false, bool expanded = false)
         {
-            var fixture = new RestorationFixture(browser, root, modern, active, complete, nativeModal);
+            var fixture = new RestorationFixture(browser, root, modern, active, complete, nativeModal, expanded);
             await fixture.RestartAsync(); await fixture.Page.GotoAsync(Target); return fixture;
         }
 
@@ -327,7 +399,8 @@ internal static class TemporaryColumnRestorationBrowserChecks
         }
 
         public string Label(string value) => value switch
-        { "2" => "ID", "12" => "Statut", "3" => "Priorité", "8" => "Groupe de techniciens", "900" => "Champ personnel", "901" => "Ajout utilisateur concurrent", _ => throw new InvalidOperationException("Unknown fixture column.") };
+        { "2" => "ID", "12" => "Statut", "3" => "Priorité", "8" => "Groupe de techniciens", "900" => "Champ personnel", "901" => "Ajout utilisateur concurrent",
+            _ when expanded && All.Contains(value) => "Champ natif " + value, _ => throw new InvalidOperationException("Unknown fixture column.") };
 
         private string Value(string column) => column switch
         { "2" => "7", "12" => "Nouveau", "3" => "Haute", "8" => "Support", _ => "Valeur synthétique" };
@@ -464,6 +537,7 @@ internal static class TemporaryColumnRestorationBrowserChecks
                         "The modern modal must complete a real GET confirming both saved columns before any native export.");
                 Exports++; Events.Add("export"); ExportHeaders = Columns.Select(Label).Prepend("Titre").ToArray();
                 ExportedCsv = "\uFEFF" + string.Join(';', ExportHeaders) + "\r\nPrivate ticket title;" + string.Join(';', Columns.Select(Value)) + "\r\n";
+                if (BlockCleanupAfterExport) BlockRecoveryUntilReconnect = true;
                 await route.FulfillAsync(new() { ContentType = "text/csv; charset=utf-8", Headers = new Dictionary<string, string>
                     { ["Content-Disposition"] = "attachment; filename=\"glpi.csv\"" }, Body = ExportedCsv }); return;
             }
@@ -527,7 +601,8 @@ internal static class TemporaryColumnRestorationBrowserChecks
                 if (added is not null)
                 {
                     VerifyDurableIntent("add", added); AddAttempts++;
-                    Require(added is "3" or "8" && !Columns.Contains(added), "Only missing useful columns may be added by this fixture.");
+                    Require(All.Contains(added) && !Original.Contains(added) && added != "901" && !Columns.Contains(added),
+                        "Only offered missing columns may be added by this fixture.");
                     if (RejectSecondAddition && AddAttempts == 2)
                     { Events.Add("add-rejected"); await route.FulfillAsync(new() { Status = 403, ContentType = "text/html", Body = "Accès refusé" }); return; }
                     Columns.Add(added); _preferenceIds[added] = (_nextPreferenceId++).ToString(); Adds++; Events.Add("add:" + added);
@@ -538,10 +613,12 @@ internal static class TemporaryColumnRestorationBrowserChecks
                 {
                     if (!_initiallyActive && _initiallyComplete && Adds == 0 && Activations == 1 && Removals == 0 && Original.Contains(removed!))
                         _activationCopyRemoved = removed;
-                    else Require(removed is "3" or "8", "Restoration must never delete an initial or concurrent personal column.");
+                    else Require(removed is not null && All.Contains(removed) && !Original.Contains(removed) && removed != "901",
+                        "Restoration must never delete an initial or concurrent personal column.");
                     var identity = modern ? "option:" + removed : "preference:" + _preferenceIds[removed!];
                     VerifyDurableIntent("remove", identity: identity);
                     Columns.Remove(removed!); Removals++; Events.Add("remove:" + removed);
+                    if (DelayRemovalNumber == Removals) await Task.Delay(7500);
                 }
                 if (submitted is not null) Require(submitted.SequenceEqual(Columns), "The persisted modern order must equal the exact native submission.");
             }

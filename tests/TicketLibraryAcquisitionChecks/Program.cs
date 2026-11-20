@@ -59,6 +59,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Détails : annulation d’un onglet conserve la recherche et ferme la fiche", CancelDetails),
     ("Diagnostic : aucune valeur de ticket, adresse détaillée ou référence documentaire", PrivateLogs)
 };
+checks.AddRange(NativePageLimitChecks.Create(browser));
 var filter = Environment.GetEnvironmentVariable("GLPI_TEST_FILTER");
 if (!string.IsNullOrWhiteSpace(filter)) checks = checks.Where(item => item.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
 var failed = 0;

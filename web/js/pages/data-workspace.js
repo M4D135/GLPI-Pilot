@@ -54,7 +54,13 @@ export async function renderDataWorkspace(ctx) {
       .map(item => el('option', { value: item.value, text: item.label })));
     source.value = updated.settings.activeSourceId;
   });
-  signal.addEventListener('abort', stopSettings, { once: true });
+  const stopSession = api.on('session.changed', updated => {
+    // A completed background collection advances only the observation. A clean
+    // connection form can follow that revision without replaying a save; edits
+    // keep their original revision so an obsolete draft still cannot overwrite.
+    if (!signal.aborted && !connection.element.pilotHasUnsavedChanges()) revision = updated.revision;
+  });
+  signal.addEventListener('abort', () => { stopSettings(); stopSession(); }, { once: true });
   const live = card(simulation ? 'Collecter dans la simulation' : 'GLPI en direct', field('Recherche mémorisée', source), connection.element,
     toolbar(button(simulation ? 'Collecter la simulation' : 'Lancer la collecte', async () => {
       // Retrying replaces this card's previous failure, without clearing the journal or other alerts.
@@ -80,6 +86,7 @@ export async function renderDataWorkspace(ctx) {
     const restored = !pending && ['restored', 'restored-preserving-changes'].includes(columnReceipt.restorationState);
     const restoration = pending ? el('div', { class: 'notice warning', role: 'alert', 'data-column-restoration': 'pending' },
       el('p', { text: 'Restauration de la vue GLPI en attente : elle doit être terminée avant la prochaine collecte.' }),
+      el('p', { class: 'help', text: 'Les données reçues restent disponibles. Les collectes automatiques sont suspendues ; un lancement manuel reprend d’abord la restauration.' }),
       columnReceipt.restorationMessage ? el('p', { text: columnReceipt.restorationMessage }) : null)
       : restored ? el('div', { 'data-column-restoration': columnReceipt.restorationState },
         badge(columnReceipt.restorationState === 'restored' ? 'Vue GLPI restaurée' : 'Colonnes temporaires retirées', 'success'),

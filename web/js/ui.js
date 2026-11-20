@@ -94,6 +94,11 @@ export function extractionStatus(session={}) {
  const receipt=expected!==null&&session.rows<expected?'Réception partielle':legacyComplete?'Relevé complet':!quality?'Réception non documentée':receptionComplete?'Réception complète':'Réception non confirmée';
  const concordance=quality?.representationVerified===true?'Concordance vérifiée sur l’échantillon':quality?.representationVerified===false?'Concordance à vérifier':'Contrôle de concordance indisponible';
  const identity=quality?.sampleIdentityVerified===true?'Identifiants rapprochés sur l’échantillon':quality?.sampleIdentityVerified===false?'Identifiants à vérifier':'Contrôle des identifiants indisponible';
+ const scope=quality?.scopeStable===true?'Périmètre stable':quality?.scopeStable===false?'Périmètre à vérifier':'Stabilité du périmètre non confirmée';
+ const coverage=session.complete===true?'Couverture du relevé vérifiée':'Couverture du relevé à vérifier';
+ const columns=session.provenance?.columnPreparation;
+ const restorationPending=columns?.recoveryPending===true||['pending','recovery-pending'].includes(columns?.restorationState);
+ const restoration=restorationPending?'Vue GLPI : restauration en attente':['restored','restored-preserving-changes'].includes(columns?.restorationState)?'Vue GLPI restaurée':'';
  const attention=quality?.scopeStable===false?'La recherche a changé ou son contexte final n’a pas pu être confirmé.':quality?.sampleIdentityVerified===false?'Des identifiants de l’échantillon manquent dans le relevé.':quality?.finalTotalVerified===false?'Le total GLPI a changé pendant la collecte.':!receptionComplete?'Le nombre de lignes reçues ou la portée de la collecte reste à vérifier.':'';
  const label=attention&&receptionComplete?'Collecte à vérifier':receipt;
  const details=[
@@ -106,7 +111,7 @@ export function extractionStatus(session={}) {
   quality.finalTotalVerified==null?'Contrôle du total final indisponible.':quality.finalTotalVerified===false?'Total final à vérifier.':''
   ])
  ].filter(Boolean).join(' ');
- return{label,tone:attention?'warning':legacyComplete?'info':'success',receipt,receptionComplete,concordance,identity,details,attention};
+ return{label,tone:attention?'warning':legacyComplete?'info':'success',receipt,receptionComplete,concordance,identity,scope,coverage,restoration,restorationPending,details,attention};
 }
 export function extractionNotice(session,onDetails,{detailed=false}={}) {
  if(!session?.loaded||session.demo)return null;
@@ -119,7 +124,9 @@ export function extractionNotice(session,onDetails,{detailed=false}={}) {
    status.attention?el('span',{text:status.attention}):null,onDetails?button('Qualité du relevé',onDetails):null));
  return el('section',{class:`notice ${status.tone==='warning'?'warning':''}`,'aria-label':'Réception et concordance du relevé'},icon('shield'),el('div',{},
   toolbar(badge(status.receipt,status.receptionComplete?'success':'warning'),badge(status.concordance,session.quality?.representationVerified===true?'':'warning'),onDetails?button('Détail des contrôles',onDetails):null),
+  status.scope?toolbar(badge(status.scope,session.quality?.scopeStable===true?'success':'warning'),badge(status.coverage,session.complete?'success':'warning'),status.restoration?badge(status.restoration,status.restorationPending?'warning':'success'):null):null,
   el('p',{class:'help',text:status.details}),el('p',{class:'help',text:status.identity}),
+  status.restorationPending?el('p',{class:'help',text:'La restauration concerne l’affichage dans GLPI. Les données reçues restent disponibles ; les collectes automatiques attendent sa confirmation.'}):null,
   status.attention?el('p',{class:'help',text:status.attention}):null,
   !session.complete?el('p',{class:'help',text:'Les données sont disponibles. Les comparaisons historiques restent limitées aux relevés dont les contrôles concordent.'}):null));
 }

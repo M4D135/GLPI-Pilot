@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.14 · Windows x64
+# GLPI Pilot 4.0.15 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.14 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.15 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.15 : pagination native et fin de collecte fiable
+
+Avant la collecte ticket par ticket et le repli paginé, Pilot sélectionne l’option native de 1 000 tickets par page, ou la plus petite option supérieure proposée par GLPI. Une limite déjà supérieure est conservée ; si GLPI propose moins, la lecture utilise la meilleure limite vérifiable et le signale. Le réglage appliqué reste dans la session GLPI ; les filtres et le contexte sont contrôlés, et les fiches continuent d’être lues une par une.
+
+La restauration des colonnes peut terminer une longue succession de retraits confirmés. Les collectes automatiques attendent la fin du cycle précédent et se suspendent tant qu’une restauration reste en attente. Un CSV vérifié garde sa validité lorsque l’avertissement concerne la vue GLPI ; réception, périmètre, couverture et restauration sont présentés séparément. Les formulaires propres suivent les nouveaux relevés, tandis que les modifications locales non enregistrées restent protégées. Voir les [notes 4.0.15](docs/RELEASE-4.0.15.md).
 
 ## 4.0.14 : égalité native de l’identifiant dans la bibliothèque
 

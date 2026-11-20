@@ -13,6 +13,7 @@ public sealed record LibraryIndexProgress(string Phase, string Category, string 
         "targeted" => "Recherche des tickets sélectionnés",
         "scope" => "Vérification du périmètre GLPI",
         "all-status" => "Recherche de tous les statuts",
+        "page-limit" => "Réglage du nombre de tickets par page",
         "page" => "Lecture de la pagination des tickets",
         "restore" => "Restauration du filtre précédent",
         _ => "Index de la bibliothèque"

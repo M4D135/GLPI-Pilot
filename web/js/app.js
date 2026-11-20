@@ -139,7 +139,8 @@ async function collectLive(operation='collect.run',args={}){
   notify(collection+' terminée. Les données affichées ont été actualisées.');
   // Collection updates data, not the user's destination. A late result must
   // also leave alone any page opened while the collection was running.
-  await refreshCurrentPage(pageSignal);
+  try{await refreshCurrentPage(pageSignal);}
+  catch(error){if(error.name!=='AbortError')notify('La collecte est terminée et ses données sont conservées. Cet écran reste à actualiser : '+error.message,'warning');}
   return result;
  }catch(error){
   if(error.name!=='AbortError')notify(collection+' impossible : '+error.message+' · Le relevé précédent reste consultable.','danger');
