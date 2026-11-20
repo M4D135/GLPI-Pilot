@@ -99,8 +99,25 @@ public sealed partial class PilotApplication
     private void WorkAcceptDetail(TicketDetailResult detail, bool open = false, bool observeSource = true)
     {
         var doc = WorkDocument().Copy(); var p = WorkplaceStore.Remember(doc, detail.Ticket, detail.Title, open);
+        var previousCache = observeSource ? null : WorkMemoryCache(p, detail.Ticket);
         var changes = WorkplaceStore.ObserveRead(p, detail);
         if (observeSource) p.LastReadSource = TicketReadCache.Observe(WorkCacheSource(detail.Ticket), detail);
+        else
+        {
+            // Loading a separate tab does not read the main body again. Retain its
+            // original version, including a confirmed copy loaded from the library,
+            // when replacing the in-memory view or saving the personal offline copy.
+            // Context/row describe the current comparison; modification and read
+            // evidence still belong to the original main body.
+            var retained = previousCache?.Version?.Copy();
+            if (retained is not null)
+            {
+                if (previousCache!.FromLibrary && WorkCacheSource(detail.Ticket) is { } source)
+                { retained.Context = source.Context; retained.RowFingerprint = source.RowFingerprint; }
+                retained.MainReadComplete &= TicketReadCache.MainReadComplete(detail);
+            }
+            p.LastReadSource = retained;
+        }
         if (p.Offline) WorkplaceStore.SaveOffline(DataPath("TicketCache"), detail);
         WorkSave(doc); WorkCache(detail); _workplaceChanges[p.Key] = changes; _workplaceCacheErrors.Remove(p.Key);
     }

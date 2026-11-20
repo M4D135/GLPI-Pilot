@@ -144,31 +144,88 @@ internal static class CollectionJourneyChecks
             await reopened.TickAsync();
             Require(requests == before && (await local.CollectionStateAsync(fingerprint)).State == "stopped", "An automatic tick resumed a manual stop.");
         });
-        await check("Incremental collection revalidates aged content even when every portal token is unchanged", async () =>
+        await check("Global collection checks live metadata but makes zero detail requests for unchanged thirty-day-old copies", async () =>
         {
             var original = new TicketLibraryStore(preferences.DatabasePath);
             preferences.LocalFolder = Path.Combine(root, "aged-journey-library");
             new LibraryPreferencesStore().Save(preferences);
             var aged = new TicketLibraryStore(preferences.DatabasePath);
-            var before = new Dictionary<string, int>(reads);
+            var before = new Dictionary<string, int>(reads); var retained = new Dictionary<string, TicketLibraryDocument>();
             foreach (var id in new[] { "41", "42", "43" })
             {
                 var ticket = new TicketReference(id, portal.Replace("ticket.php", "ticket.form.php", StringComparison.Ordinal) + "?id=" + id);
                 var saved = (await original.GetAsync(ticket))!;
-                saved.Detail!.ReadAt = DateTimeOffset.UtcNow.AddDays(-8);
+                saved.Detail!.ReadAt = DateTimeOffset.UtcNow.AddDays(-30);
                 var seeded = (await aged.SaveDetailAsync(saved.Seed, saved.Detail, saved.Coverage, saved.ReaderSignature)).Document;
                 Require(TicketLibraryRules.IsContentConfirmed(seeded)
-                    && TicketLibraryStore.CanSkip(saved.Seed, seeded, saved.ReaderSignature, new() { MaximumAge = TimeSpan.MaxValue })
-                    && !TicketLibraryStore.CanSkip(saved.Seed, seeded, saved.ReaderSignature), "Aged fixture must differ only in freshness eligibility.");
+                    && DateTimeOffset.UtcNow - seeded.ReadAt >= TimeSpan.FromDays(30)
+                    && TicketLibraryStore.CanSkip(saved.Seed, seeded, saved.ReaderSignature), "A complete unchanged thirty-day-old body must remain reusable.");
+                retained.Add(id, seeded);
             }
             await using var app = await Open();
             var page = await Call(app, "library.collection.get", new { });
             await Call(app, "library.collection.settings", new { revision = page.GetProperty("state").GetProperty("revision").GetInt64(),
                 options = new LibraryCollectionOptions { DelayMilliseconds = 1000, BatchPauseSeconds = 0, MaximumMinutes = 5 } });
             var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
+            Require(result.GetProperty("read").GetInt32() == 0 && result.GetProperty("reused").GetInt32() == 3
+                && result.GetProperty("retryCount").GetInt32() == 0 && result.GetProperty("finalScopeVerified").GetBoolean()
+                && before.All(pair => reads[pair.Key] == pair.Value),
+                "The production collector downloaded unchanged bodies because of their age or omitted final metadata verification.");
+            foreach (var (id, saved) in retained)
+            {
+                var after = (await aged.GetAsync(saved.Seed.Ticket))!;
+                Require(after.ReadAt == saved.ReadAt && after.ContentHash == saved.ContentHash
+                    && after.ConfirmationId == saved.ConfirmationId && after.ConfirmedContentHash == saved.ConfirmedContentHash
+                    && JsonSerializer.Serialize(after.Detail) == JsonSerializer.Serialize(saved.Detail),
+                    "A reused old body was replaced, redated or assigned a new content proof: " + id);
+            }
+        });
+        await check("An unchanged thirty-day-old global collection stays free of detail reads after a pause and restart", async () =>
+        {
+            var before = new Dictionary<string, int>(reads); string agedRun;
+            await using (var app = await Open("pause"))
+            {
+                var paused = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
+                agedRun = paused.GetProperty("runId").GetString()!;
+                Require(paused.GetProperty("collectionState").GetString() == "paused" && paused.GetProperty("read").GetInt32() == 0,
+                    "The aged-cache run did not pause after reusing its first body.");
+            }
+            await using var reopened = await Open();
+            var result = await Call(reopened, "library.capture", new { mode = "resume", runId = agedRun });
+            Require(result.GetProperty("runId").GetString() == agedRun && result.GetProperty("collectionState").GetString() == "completed"
+                && result.GetProperty("read").GetInt32() == 0 && result.GetProperty("reused").GetInt32() == 3
+                && result.GetProperty("retryCount").GetInt32() == 0 && before.All(pair => reads[pair.Key] == pair.Value),
+                "Restart turned an unchanged old copy into a new detail download.");
+        });
+        await check("Global collection still reads changed, partial and absent bodies when the other stored copies are old", async () =>
+        {
+            var original = new TicketLibraryStore(preferences.DatabasePath);
+            preferences.LocalFolder = Path.Combine(root, "aged-mixed-journey-library"); new LibraryPreferencesStore().Save(preferences);
+            var mixed = new TicketLibraryStore(preferences.DatabasePath); var before = new Dictionary<string, int>(reads);
+            foreach (var id in new[] { "41", "42" })
+            {
+                var ticket = new TicketReference(id, portal.Replace("ticket.php", "ticket.form.php", StringComparison.Ordinal) + "?id=" + id);
+                var saved = (await original.GetAsync(ticket))!;
+                if (id == "41")
+                {
+                    saved.Coverage.Complete = false;
+                    saved.Coverage.Limitations.Add("Un onglet fictif reste à lire.");
+                }
+                else
+                {
+                    saved.Seed.LastModifiedAt = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero);
+                    saved.Seed.LastModifiedRaw = "2025-01-01 12:00";
+                }
+                await mixed.SaveDetailAsync(saved.Seed, saved.Detail!, saved.Coverage, saved.ReaderSignature);
+            }
+            await using var app = await Open();
+            var state = await Call(app, "library.collection.get", new { });
+            await Call(app, "library.collection.settings", new { revision = state.GetProperty("state").GetProperty("revision").GetInt64(),
+                options = new LibraryCollectionOptions { DelayMilliseconds = 1000, BatchPauseSeconds = 0, MaximumMinutes = 5 } });
+            var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
             Require(result.GetProperty("read").GetInt32() == 3 && result.GetProperty("reused").GetInt32() == 0
                 && result.GetProperty("retryCount").GetInt32() == 0 && before.All(pair => reads[pair.Key] == pair.Value + 1),
-                "The production collector reused expired content despite the periodic freshness limit.");
+                "Age-independent reuse skipped a changed, partial or missing body.");
         });
         await check("An initial index HTTP failure appears in both durable collection events and the general operation journal with zero tickets", async () =>
         {

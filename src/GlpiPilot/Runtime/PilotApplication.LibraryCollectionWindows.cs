@@ -24,7 +24,7 @@ public sealed partial class PilotApplication
         var reused = existing.Reused; var failures = 0;
         var windowSize = Math.Min(TicketLibraryStore.CollectionWindowSize, Math.Clamp(settings.MaxRows, 1, TicketLibraryStore.CaptureTicketLimit));
         var requiredReads = mode == "resume" ? await local.RequiredCollectionReadKeysAsync(runId, ct).ConfigureAwait(false) : null;
-        var policy = new TicketLibraryCachePolicy { MaximumAge = TimeSpan.FromDays(preferences.MaxAgeDays) };
+        var policy = new TicketLibraryCachePolicy();
         limits.AddRange(plan.Warnings);
         CollectionProgress(s => s with { RunId = runId, Total = plan.Selected, Processed = offset, Reused = reused,
             Coverage = coverage, CoverageVerifiedAt = durable.VerifiedAt, Phase = "Préparation des lots ciblés", PhaseCode = "targeted" });

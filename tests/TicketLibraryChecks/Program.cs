@@ -38,13 +38,36 @@ try
         seed = Seed(); seed.LastModifiedReliable = false; Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-1"));
         seed.LastModifiedRaw = ""; Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-1"));
     });
-    await Check("Force refresh, reader changes, seven-day expiry and future reads prevent reuse", async () =>
+    await Check("Force refresh, reader changes and future reads prevent reuse while age alone does not", async () =>
     {
         var seed = Seed(); var store = Store("skip-policy"); var doc = (await store.SaveDetailAsync(seed, Detail(seed), Coverage(), "reader-1")).Document;
         Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-2", new() { Now = At(14, 0) }));
         Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-1", new() { Now = At(14, 0), ForceRefresh = true }));
-        Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-1", new() { Now = At(14, 0).AddDays(8) }));
+        Require(TicketLibraryStore.CanSkip(seed, doc, "reader-1", new() { Now = At(14, 0).AddDays(30) }));
+        Require(TicketLibraryStore.CanSkip(seed, doc, "reader-1", new() { Now = At(14, 0).AddDays(30), MaximumAge = TimeSpan.Zero }));
+        Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-1", new() { Now = At(14, 0).AddDays(30), ForceRefresh = true }));
         Require(!TicketLibraryStore.CanSkip(seed, doc, "reader-1", new() { Now = At(12, 39) }));
+    });
+    await Check("A thirty-day-old complete copy skips only an identical reliable version with its confirmation intact", async () =>
+    {
+        var seed = Seed(); var store = Store("skip-aged-version"); var doc = (await store.SaveDetailAsync(seed, Detail(seed), Coverage(), "reader-1")).Document;
+        var policy = new TicketLibraryCachePolicy { Now = At(14, 0).AddDays(30), MaximumAge = TimeSpan.FromDays(1) };
+        Require(TicketLibraryStore.CanSkip(seed, doc, "reader-1", policy));
+        var changed = Seed(); changed.LastModifiedRaw = "2026-10-20 12:50"; changed.LastModifiedAt = At(12, 50);
+        Require(!TicketLibraryStore.CanSkip(changed, doc, "reader-1", policy));
+        var partial = TicketLibraryRules.Copy(doc); partial.DetailComplete = false;
+        Require(!TicketLibraryStore.CanSkip(seed, partial, "reader-1", policy));
+        Require(!TicketLibraryStore.CanSkip(seed, null, "reader-1", policy));
+        var unconfirmed = TicketLibraryRules.Copy(doc); unconfirmed.ConfirmationPending = true;
+        Require(!TicketLibraryStore.CanSkip(seed, unconfirmed, "reader-1", policy));
+        var wrongHash = TicketLibraryRules.Copy(doc); wrongHash.ConfirmedContentHash = new string('f', 64);
+        Require(!TicketLibraryStore.CanSkip(seed, wrongHash, "reader-1", policy));
+        var otherPortal = Seed(); otherPortal.Ticket = new("42", "https://other.example/glpi/front/ticket.form.php?id=42");
+        Require(!TicketLibraryStore.CanSkip(otherPortal, doc, "reader-1", policy));
+        var precision = Seed(); precision.LastModifiedPrecision = "seconds";
+        Require(!TicketLibraryStore.CanSkip(precision, doc, "reader-1", policy));
+        var ambiguous = Seed(); ambiguous.LastModifiedReliable = false;
+        Require(!TicketLibraryStore.CanSkip(ambiguous, doc, "reader-1", policy));
     });
     await Check("A newer index invalidates old solution without deleting its original content", async () =>
     {

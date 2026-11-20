@@ -236,9 +236,9 @@ public sealed partial class PilotApplication
                 var selected = resumedKeys?.ToHashSet(StringComparer.Ordinal) ?? targets?.Select(t => t.TicketKey).ToHashSet(StringComparer.Ordinal);
                 var tickets = index.Tickets.Where(s => selected is null || selected.Contains(TicketLibraryRules.Key(s.Ticket))).ToList();
                 var requiredReads = mode == "resume" ? await local.RequiredCollectionReadKeysAsync(runId, ct).ConfigureAwait(false) : null;
-                // A stable portal token is not an indefinite freshness guarantee.
-                // Honor the existing library setting (seven days by default).
-                var policy = new TicketLibraryCachePolicy { MaximumAge = TimeSpan.FromDays(preferences.MaxAgeDays) };
+                // The live index, not elapsed time since reading, decides whether a
+                // confirmed complete body must be fetched. A forced pass is explicit.
+                var policy = new TicketLibraryCachePolicy();
                 var processed = 0; var reused = 0; var failures = 0; TicketReference? lastRead = null;
                 CollectionProgress(s => s with { Total = tickets.Count, Phase = "Lecture des contenus nouveaux, incomplets ou modifiés" });
                 CollectionDiagnostic(journal, "details", "Lecture des fiches", "details-start", $"{tickets.Count:N0} tickets à examiner ; réutilisation des contenus encore valides et lecture des autres.");

@@ -269,7 +269,6 @@ export async function renderLibrary(ctx) {
       localFolder: input(settings.localFolder || '', { maxLength: 1500 }),
       sourceTimeZone: input(settings.sourceTimeZone || '', { maxLength: 150, placeholder: 'Ex. Europe/Paris' }),
       sourceDateOrder: select([{ value: '', label: 'Détection prudente' }, { value: 'dmy', label: 'Jour / mois / année' }, { value: 'mdy', label: 'Mois / jour / année' }, { value: 'ymd', label: 'Année / mois / jour' }], settings.sourceDateOrder || ''),
-      maxAgeDays: input(settings.maxAgeDays ?? 7, { type: 'number', min: 1, max: 365, step: 1 }),
       host: input(settings.host || '', { maxLength: 250, autocomplete: 'off' }),
       port: input(settings.port ?? 5432, { type: 'number', min: 1, max: 65535, step: 1 }),
       database: input(settings.database || '', { maxLength: 150, autocomplete: 'off' }),
@@ -326,7 +325,7 @@ export async function renderLibrary(ctx) {
           button('Choisir le dossier', async () => { const result = await call('library.folder.pick'); const folder = result.folder ?? result.path; if (folder) controls.localFolder.value = folder; }, { icon: 'folder' }),
           field('Fuseau des dates GLPI', controls.sourceTimeZone, 'Choisissez le fuseau d’affichage de GLPI. Sans ce choix, la collecte reste possible ; une date sans décalage horaire ne permet pas de réutiliser un contenu sans le relire.'),
           field('Format des dates GLPI', controls.sourceDateOrder, 'Choisissez l’ordre affiché dans GLPI. En détection prudente, une date telle que 05/06 reste ambiguë et le contenu sera relu.'),
-          field('Recontrôler les contenus après (jours)', controls.maxAgeDays, 'Pour la collecte sans filtre. Dans un périmètre ciblé, les contenus complets sont réutilisés lorsque leur version est confirmée inchangée.'),
+          el('p', { class: 'library-setting-note', text: 'Les copies complètes et confirmées sont réutilisées tant que leur version GLPI reste inchangée, sans limite d’âge. Seuls les contenus absents, modifiés ou à vérifier sont relus lors d’une mise à jour.' }),
           field('Nom affiché dans l’espace d’équipe', controls.displayName),
           el('p', { class: 'library-setting-note', text: 'Les pièces jointes sont conservées sous forme de références. La bibliothèque recueille les onglets de consultation accessibles ; elle conserve les limites et les lectures partielles.' }),
           action(simulation?'Relire tous les contenus':'Ouvrir la collecte', () => simulation?perform('Relecture de tous les contenus accessibles…', 'library.capture', { mode: 'all' }):navigate('data',{panel:'collection'}), { icon: 'refresh',disabled:isFileSource(ctx.state.session),title:isFileSource(ctx.state.session)?fileSourceDetailHelp:'' }),
@@ -342,7 +341,8 @@ export async function renderLibrary(ctx) {
         test,forget,connectionStatus));
     function read() {
       if (!editor.reportValidity()) throw new Error('Vérifiez les champs de connexion signalés.');
-      return { ...Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, ['port', 'maxAgeDays', 'intervalMinutes'].includes(key) ? Number(control.value) : control.value])), syncMode:mode.value,sharingEnabled:mode.value!=='local',postgresEnabled:mode.value==='postgres',autoSync: automatic.control.checked };
+      // Keep the legacy value when saving an existing profile; it no longer expires unchanged content.
+      return { ...Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, ['port', 'intervalMinutes'].includes(key) ? Number(control.value) : control.value])), maxAgeDays:settings.maxAgeDays??7, syncMode:mode.value,sharingEnabled:mode.value!=='local',postgresEnabled:mode.value==='postgres',autoSync: automatic.control.checked };
     }
     const update=()=>{const shared=mode.value!=='local',isFolder=mode.value==='folder',isPostgres=mode.value==='postgres';local.hidden=shared;folder.hidden=!isFolder;pg.hidden=!isPostgres;sharedOptions.hidden=!shared;test.disabled=!shared;forget.hidden=!isPostgres;
       for(const control of [controls.host,controls.port,controls.database,controls.username,controls.tlsMode,password,remember.control])control.disabled=!isPostgres;

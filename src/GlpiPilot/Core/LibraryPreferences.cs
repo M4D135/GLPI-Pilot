@@ -32,6 +32,7 @@ public sealed class LibraryPreferences
     public int IntervalMinutes { get; set; } = 5;
     public string SourceTimeZone { get; set; } = "";
     public string SourceDateOrder { get; set; } = "";
+    // Retained for existing profile compatibility. Confirmed unchanged content no longer expires by age.
     public int MaxAgeDays { get; set; } = 7;
     public string DisplayName { get; set; } = "Technicien";
     public string ProtectedPassword { get; set; } = "";

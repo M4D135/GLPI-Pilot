@@ -41,11 +41,15 @@ public static class TicketLibraryRules
             || !seed.LastModifiedReliable || !stored.Seed.LastModifiedReliable || seed.LastModifiedAt is not { } modified
             || stored.ReadAt is not { } read || seed.LastModifiedRaw.Length == 0 || stored.DetailModifiedRaw != seed.LastModifiedRaw
             || stored.DetailModifiedAt != modified || stored.Seed.LastModifiedPrecision != seed.LastModifiedPrecision
-            || Key(seed.Ticket) != stored.Key || policy.MaximumAge <= TimeSpan.Zero || policy.SafetyMargin < TimeSpan.Zero)
+            || Key(seed.Ticket) != stored.Key || policy.SafetyMargin < TimeSpan.Zero)
             return false;
         var interval = Interval(seed);
+        // A newly observed, identical GLPI token keeps an already confirmed complete
+        // body usable. Its age alone is not a reason to download it again. Preserve
+        // the chronology and explicit force guards; final collection verification
+        // still detects a token changing while this pass is in progress.
         return interval > TimeSpan.Zero && read >= modified + interval + policy.SafetyMargin
-            && policy.Now >= read && policy.Now - read <= policy.MaximumAge;
+            && policy.Now >= read;
     }
 
     public static bool IsContentConfirmed(TicketLibraryDocument? document) => document is { Detail: not null, DetailsCurrent: true, ConfirmationPending: false }

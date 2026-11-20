@@ -251,6 +251,44 @@ internal static class TicketCacheRuntimeChecks
             Require(JsonSerializer.Serialize(before, PilotApplication.Json) == JsonSerializer.Serialize(after, PilotApplication.Json),
                 "Consulting cached library content changed its version, read time or confirmation proof.");
         });
+        Add("a tab-only read preserves a confirmed library main body across reopening without confirming an incomplete section", async f =>
+        {
+            var seed = new TicketLibrarySeed
+            {
+                Ticket = Reference(), Title = "Incident cache", Status = "Nouveau", StatusCode = 1,
+                LastModifiedAt = Modified, LastModifiedRaw = Stamp(Modified), LastModifiedReliable = true, LastModifiedPrecision = "seconds"
+            };
+            var store = new TicketLibraryStore(new LibraryPreferences().DatabasePath);
+            await store.SaveDetailAsync(seed, Detail(OldRead), new() { Complete = true }, "cache-fixture-reader");
+            var databaseBefore = await File.ReadAllBytesAsync(store.DatabasePath);
+            var opened = await Open(f); State(Cache(opened), "current", true, false);
+            await f.Call("workplace.personal.save", new { ticketKey = Key(opened), offline = true });
+            var tabReadAt = DateTimeOffset.UtcNow;
+            var merged = Detail(tabReadAt); merged.Sections[0].Data.ExtractedAt = OldRead;
+            merged.Sections.Add(new() { Name = "Historique", Kind = "table", Data = new() { Headers = ["Événement"], Rows = [["Onglet lu explicitement"]], Complete = true, ExtractedAt = tabReadAt } });
+            f.App.AcceptTicketCacheFixture(merged, observeSource: false);
+            var afterTab = await Open(f); State(Cache(afterTab), "current", true, false);
+            var skipped = await f.Call("workplace.ticket.read", new { ticketKey = Key(afterTab), automatic = true });
+            Require(skipped.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
+                && skipped.GetProperty("sections")[1].GetProperty("readAt").GetDateTimeOffset() == tabReadAt,
+                "A tab-only read changed the main body's actual observation date.");
+            await Consistent(f, Cache(skipped));
+            await using var reopened = new PilotApplication(f.Host, (_, _) => { }, f.App.Settings.Copy());
+            reopened.LoadSessionFixture(Source(Stamp(Modified), DateTimeOffset.UtcNow));
+            var restored = await Call(reopened, "workplace.ticket.open", new { revision = reopened.Revision, rowIndex = 0 });
+            State(Cache(restored), "current", true, false);
+            await Call(reopened, "workplace.ticket.read", new { ticketKey = Key(restored), automatic = true });
+            Require(restored.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
+                && restored.GetProperty("sections")[1].GetProperty("readAt").GetDateTimeOffset() == tabReadAt,
+                "Restoring a merged offline copy changed the independent body and tab observations.");
+            reopened.LoadSessionFixture(Source(Stamp(Modified.AddHours(1)), DateTimeOffset.UtcNow));
+            State(Cache(await Call(reopened, "workplace.ticket.open", new { revision = reopened.Revision, rowIndex = 0 })), "stale", true, true);
+            merged.Sections[1].Data.Complete = false;
+            f.App.AcceptTicketCacheFixture(merged, observeSource: false);
+            State(Cache(await Open(f)), "unknown", true, true);
+            Require((await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore),
+                "Reading a local body or its separate tab rewrote the collected library database.");
+        });
         return tests;
     }
 

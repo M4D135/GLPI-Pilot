@@ -104,7 +104,7 @@ internal static class LibraryCollectionScopeChecks
         {
             var store = Store("reuse"); var seed = Seed("1"); await Save(store, seed, readAt: Modified.AddDays(1));
             var stored = (await store.GetAsync(seed.Ticket))!;
-            Require(!TicketLibraryStore.CanSkip(seed, stored, Reader) && LibraryCollectionScopePlanner.CanReuse(seed, stored, Reader));
+            Require(TicketLibraryStore.CanSkip(seed, stored, Reader) && LibraryCollectionScopePlanner.CanReuse(seed, stored, Reader));
             var earlier = Seed("2"); await Save(store, earlier, reader: "glpi-browser-library-v3-confirmed");
             Require(LibraryCollectionScopePlanner.CanReuse(earlier, await store.GetAsync(earlier.Ticket), Reader));
             seed.LastModifiedAt = Modified.AddHours(1); seed.LastModifiedRaw = "2025-01-01 13:00";

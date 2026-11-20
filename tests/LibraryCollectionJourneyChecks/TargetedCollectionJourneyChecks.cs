@@ -128,25 +128,43 @@ internal static class TargetedCollectionJourneyChecks
                 Require(reads.GetValueOrDefault("42") == 1 && reads.GetValueOrDefault("43") == 1, "A selected body was read twice.");
                 OnlySelection();
             });
-            await check("Targeted controller revalidates metadata and reuses both unchanged bodies even after eight days", async () =>
+            await check("Targeted controller keeps unchanged thirty-day-old bodies across a pause and restart without detail requests", async () =>
             {
                 var original = new TicketLibraryStore(preferences.DatabasePath);
                 preferences.LocalFolder = Path.Combine(root, "targeted-aged-library"); preferencesStore.Save(preferences);
                 var aged = new TicketLibraryStore(preferences.DatabasePath);
+                var retained = new Dictionary<string, TicketLibraryDocument>();
                 foreach (var id in new[] { "42", "43" })
                 {
                     var saved = (await original.GetAsync(Ticket(portal, id)))!;
-                    saved.Detail!.ReadAt = DateTimeOffset.UtcNow.AddDays(-8);
+                    saved.Detail!.ReadAt = DateTimeOffset.UtcNow.AddDays(-30);
                     var seeded = (await aged.SaveDetailAsync(saved.Seed, saved.Detail, saved.Coverage, saved.ReaderSignature)).Document;
-                    Require(TicketLibraryRules.IsContentConfirmed(seeded) && !TicketLibraryStore.CanSkip(saved.Seed, seeded, saved.ReaderSignature),
-                        "Aged fixture does not exceed the former seven-day re-read policy.");
+                    Require(TicketLibraryRules.IsContentConfirmed(seeded) && DateTimeOffset.UtcNow - seeded.ReadAt >= TimeSpan.FromDays(30)
+                        && TicketLibraryStore.CanSkip(saved.Seed, seeded, saved.ReaderSignature), "An unchanged thirty-day-old copy was rejected because of age.");
+                    retained.Add(id, seeded);
                 }
-                var before = reads.Values.Sum(); var beforeQueries = queries.Count;
-                await using var app = await Open();
-                var result = await Start(app);
+                var before = reads.Values.Sum(); var beforeQueries = queries.Count; string agedRun;
+                await using (var app = await Open(pause: true))
+                {
+                    var paused = await Start(app); agedRun = paused.GetProperty("runId").GetString()!;
+                    Require(paused.GetProperty("collectionState").GetString() == "paused" && paused.GetProperty("read").GetInt32() == 0
+                        && reads.Values.Sum() == before, "Pausing the old-copy pass caused a detail download.");
+                }
+                await using var reopened = await Open(withInventory: false);
+                var result = await Call(reopened, "library.capture", new { mode = "resume", runId = agedRun });
                 Require(result.GetProperty("read").GetInt32() == 0 && result.GetProperty("reused").GetInt32() == 2
-                    && result.GetProperty("retryCount").GetInt32() == 0 && reads.Values.Sum() == before && queries.Count > beforeQueries,
+                    && result.GetProperty("retryCount").GetInt32() == 0 && result.GetProperty("collectionState").GetString() == "completed"
+                    && result.GetProperty("runId").GetString() == agedRun && result.GetProperty("finalScopeVerified").GetBoolean()
+                    && reads.Values.Sum() == before && queries.Count > beforeQueries,
                     "Unchanged aged bodies were downloaded again or reused without a live targeted metadata check.");
+                foreach (var (id, saved) in retained)
+                {
+                    var after = (await aged.GetAsync(saved.Seed.Ticket))!;
+                    Require(after.ReadAt == saved.ReadAt && after.ContentHash == saved.ContentHash
+                        && after.ConfirmationId == saved.ConfirmationId && after.ConfirmedContentHash == saved.ConfirmedContentHash
+                        && JsonSerializer.Serialize(after.Detail) == JsonSerializer.Serialize(saved.Detail),
+                        "A reused targeted body was replaced, redated or assigned a new proof: " + id);
+                }
                 OnlySelection();
             });
             await check("Targeted controller reads only the ticket whose live GLPI modification token changed", async () =>

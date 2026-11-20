@@ -8,7 +8,9 @@ Dans **Données**, ouvrir **Collecte et reprise**. Le look et les animations exi
 
 Configurer le fuseau et le format des dates source dans les réglages de bibliothèque. Un horodatage inexploitable ne permet pas de certifier qu'un ticket n'a pas changé. La confirmation finale contrôle à nouveau les dates et le périmètre ; un résultat partiel n'efface pas une ancienne copie complète et une absence ne devient jamais une suppression automatique.
 
-Une copie dépassant l’âge maximal configuré dans la bibliothèque (sept jours par défaut) est relue même si le jeton source reste identique. Cette réconciliation périodique limite la réutilisation de vieux contenus ; elle ne prouve pas que toutes les modifications de sous-rubriques sont reflétées immédiatement par l’horodatage exposé par chaque portail.
+Une copie complète et confirmée dont le jeton GLPI reste identique est réutilisée sans limite d’âge, en lecture live automatique comme pendant une collecte globale ou ciblée. L’ancien seuil de sept jours ne déclenche plus de relecture. La collecte lit toujours l’index pour repérer les changements, puis conserve les détails inchangés et leurs dates de lecture ; les fiches absentes, modifiées, incomplètes ou sans version comparable restent à lire. Une relecture forcée demeure une action explicite distincte.
+
+Cette règle s’appuie sur le repère de modification effectivement fourni par GLPI. Une modification que le portail ne répercute pas dans ce repère ne peut pas être déduite de la seule comparaison de dates ; **Relire tous les contenus** reste disponible pour une vérification volontaire.
 
 ## Pause, arrêt et reprise
 

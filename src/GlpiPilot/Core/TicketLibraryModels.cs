@@ -59,6 +59,7 @@ public sealed class TicketLibraryCachePolicy
 {
     public bool ForceRefresh { get; set; }
     public TimeSpan SafetyMargin { get; set; } = TimeSpan.FromMinutes(2);
+    /// <summary>Legacy serialized setting retained for compatibility; age alone no longer invalidates an unchanged confirmed body.</summary>
     public TimeSpan MaximumAge { get; set; } = TimeSpan.FromDays(7);
     public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
 }

@@ -26,6 +26,16 @@ Dans le cache hors connexion, les commandes de collecte en ligne sont désactiv�
 
 **Reprendre les erreurs** reste un choix distinct pour demander explicitement la reprise plus large des fiches partielles ou des versions non confirmées. Cette action peut relire des contenus ; elle n’est pas nécessaire pour leur consultation locale.
 
+## Réutiliser les tickets inchangés, en live et pendant la collecte
+
+La lecture live automatique réutilise les contenus disponibles lorsque leur version correspond au relevé courant. La collecte globale applique désormais cette même règle sans expiration fondée sur l’âge : une copie complète et confirmée, toujours à la même version GLPI, n’est pas relue simplement parce qu’elle date de plus de sept jours. La collecte ciblée et les reprises conservent également les copies admissibles.
+
+La lecture explicite d’un onglet supplémentaire conserve aussi le repère de version du corps déjà chargé depuis la bibliothèque. Ce repère reste disponible après redémarrage avec la copie hors connexion : l’ouverture d’un onglet ne déclenche plus, à elle seule, une nouvelle lecture automatique du corps. Les dates de lecture du corps et de l’onglet restent distinctes ; un onglet incomplet ne devient pas confirmé par cette conservation.
+
+L’index GLPI reste contrôlé pour détecter les changements. Les fiches absentes, modifiées, incomplètes ou sans version comparable peuvent nécessiter une lecture ; les contrôles d’identité, de précision des dates et de couverture restent appliqués. La date de lecture d’un détail réutilisé n’est pas artificiellement actualisée. Une relecture forcée reste une demande volontaire distincte.
+
+Le réglage d’expiration automatique des contenus n’est plus proposé dans l’interface. Sa valeur ancienne reste conservée dans les profils pour leur compatibilité, sans provoquer de relecture. Cette règle dépend du repère de modification exposé par GLPI et n’invente pas de preuve pour une modification que le portail ne signale pas.
+
 ## Mise à jour et conservation des données
 
 Fermer GLPI Pilot puis extraire le pack publié dans un nouveau dossier local en conservant ensemble `GLPI-Pilot.exe`, `GLPI-Pilot-Admin.exe` et `wad/`. Les réglages du profil et le chemin existant de la bibliothèque sont réutilisés. Aucune réinitialisation, suppression, migration du contenu ou recollecte automatique n’est ajoutée par ce correctif.
