@@ -2,7 +2,14 @@ namespace GlpiPilot.Core;
 
 public sealed partial class BrowserService
 {
-    // A restoration can require a confirmed native GET after each removal.\n    // The ordinary list timeout (45 s by default) is too short for ten\n    // sequential removals; stopping halfway leaves a durable pending journal.\n    // Keep an independent, bounded cleanup window without replaying commands.\n    public static int ColumnCleanupBudgetSeconds(int listTimeoutSeconds) =>\n        Math.Clamp(Math.Max(180, listTimeoutSeconds), 180, 600);\n\n    // A cancelled collection must still get one bounded opportunity to restore
+    // A restoration can require a confirmed native GET after each removal.
+    // The ordinary list timeout (45 s by default) is too short for ten
+    // sequential removals; stopping halfway leaves a durable pending journal.
+    // Keep an independent, bounded cleanup window without replaying commands.
+    public static int ColumnCleanupBudgetSeconds(int listTimeoutSeconds) =>
+        Math.Clamp(Math.Max(180, listTimeoutSeconds), 180, 600);
+
+    // A cancelled collection must still get one bounded opportunity to restore
     // its own temporary preferences. The durable journal survives any failure.
     public async Task<ColumnRestorationResult> CompleteTemporaryColumnCollectionAsync(
         AppSettings settings, IProgress<ExtractionProgress>? progress)
