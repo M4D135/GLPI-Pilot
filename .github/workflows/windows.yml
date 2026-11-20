@@ -204,7 +204,8 @@ jobs:
 
       - name: Vérifier le navigateur et les exports sur des pages synthétiques
         # Les trois groupes restent obligatoires : core et exports natifs gardent 360 s, les 75 cas
-        # colonnes incluent la restauration et disposent de 900 s. Chaque cas garde 35 s.
+        # colonnes incluent la restauration et disposent de 900 s. Les cas ordinaires gardent 35 s ;
+        # seuls les deux scénarios de dix colonnes disposent de 90 s, avec annulation interne à 80 s.
         # Cette enveloppe couvre leur somme ; builds, fiches et DOM gardent leurs limites séparées.
         timeout-minutes: 40
         run: ./build-tools/Invoke-WindowsCi.ps1 -Stage BrowserChecks

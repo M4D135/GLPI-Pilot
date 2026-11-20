@@ -470,7 +470,8 @@ try {
                     # Every automation case remains mandatory. Real delayed exports and
                     # column preparation have their own browser process so they
                     # cannot consume the core suite's existing 360 s budget.
-                    # The 35 s deadline inside each individual case is unchanged.
+                    # Ordinary cases retain 35 s; the two ten-column lifecycle cases
+                    # have 90 s with internal cancellation at 80 s. Product waits are unchanged.
                     $previousGroup = $env:GLPI_TEST_GROUP
                     $previousFilter = $env:GLPI_TEST_FILTER
                     $automationFailures = [Collections.Generic.List[string]]::new()
@@ -480,7 +481,7 @@ try {
                             @{ Name = 'core'; Count = 54; TimeoutSeconds = 360 },
                             # The original 55 cases now also restore their personal view;
                             # 20 recovery scenarios verify the durable lifecycle, delayed confirmations and partial recovery.
-                            # Keep each case's 35 s deadline and allow the full group to finish.
+                            # Keep the bounded per-case budgets and allow the full group to finish.
                             @{ Name = 'columns'; Count = 75; TimeoutSeconds = 900 },
                             @{ Name = 'native-timing'; Count = 11; TimeoutSeconds = 360 }
                         )) {

@@ -367,7 +367,13 @@ public sealed partial class BrowserService
             // in the observer for the mandatory search/index operation.
             searchMayHaveChanged |= activity.SearchMayHaveChanged;
             activity.Dispose(); activity = null;
-            var pageLimitResult = await PrepareNativeTicketPageLimitOnPageAsync(page, page.MainFrame, source, "", settings, Report, ct);
+            NativeTicketPageLimitOutcome pageLimitResult;
+            try { pageLimitResult = await PrepareNativeTicketPageLimitOnPageAsync(page, page.MainFrame, source, "", settings, Report, ct); }
+            catch (GlpiLibraryIndexException error) when (error.Category == "index-scope")
+            {
+                restoreAllowed = false;
+                throw;
+            }
             activity = new(page, source, settings.ListTimeoutSeconds, Report);
             if (targeted) activity.ObserveNativeField(form.NativeField);
             activity.BeginPhase("page");
@@ -454,10 +460,7 @@ public sealed partial class BrowserService
             Report(new(activity.Phase, "index-complete", $"Index lu : {result.Tickets.Count} tickets, {result.PagesRead} pages ; couverture {(result.Complete ? "confirmée" : "à vérifier")} dans le périmètre d’entités actif."));
         }
         catch (GlpiLibraryIndexException error)
-        {
-            if (error.Category == "index-scope") restoreAllowed = false;
-            Report(new(error.Phase, error.Category, error.Message)); throw;
-        }
+        { Report(new(error.Phase, error.Category, error.Message)); throw; }
         catch (GlpiLibraryPageException error)
         { throw Failure("index-page", error.Message); }
         catch (PlaywrightException)

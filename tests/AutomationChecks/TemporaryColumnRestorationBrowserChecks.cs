@@ -5,6 +5,15 @@ using Microsoft.Playwright;
 
 internal static class TemporaryColumnRestorationBrowserChecks
 {
+    private const string ExpandedCleanupCase = "Colonnes temporaires : dix retraits, réponse native tardive conservée sans renvoi";
+    private const string SixThenReconnectCase = "Colonnes temporaires : six retraits confirmés puis reprise des quatre restants";
+
+    // These two scenarios exercise ten additions and ten removals, each with
+    // native persistence reads, instead of the ordinary two-column fixtures.
+    // Keep every other check at its original budget and leave product waits alone.
+    public static TimeSpan TimeoutFor(string name) =>
+        TimeSpan.FromSeconds(name is ExpandedCleanupCase or SixThenReconnectCase ? 90 : 35);
+
     public static IEnumerable<(string Name, Func<Task> Run)> Cases(IBrowser browser)
     {
         yield return ("Colonnes temporaires : legacy, export enrichi puis ordre personnel initial restauré", () => CheckCompleted(browser, modern: false));
@@ -23,8 +32,8 @@ internal static class TemporaryColumnRestorationBrowserChecks
         yield return ("Colonnes temporaires : origine redirigée, aucune commande étrangère ni globale", () => CheckDrift(browser, "origin"));
         yield return ("Colonnes temporaires : modifications concurrentes préservées en legacy et en moderne", () => CheckConcurrentChanges(browser));
         yield return ("Colonnes temporaires : restauration terminée, nouvelle session sans répétition de retrait", () => CheckNoReplay(browser));
-        yield return ("Colonnes temporaires : dix retraits, réponse native tardive conservée sans renvoi", () => CheckExpandedDelayedCleanup(browser));
-        yield return ("Colonnes temporaires : six retraits confirmés puis reprise des quatre restants", () => CheckSixThenReconnect(browser));
+        yield return (ExpandedCleanupCase, () => CheckExpandedDelayedCleanup(browser));
+        yield return (SixThenReconnectCase, () => CheckSixThenReconnect(browser));
         yield return ("Colonnes temporaires : CSV reçu conservé pendant une récupération indisponible", () => CheckPendingCleanupCsv(browser));
     }
 
@@ -239,7 +248,13 @@ internal static class TemporaryColumnRestorationBrowserChecks
         await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: false, expanded: true);
         fixture.Settings.ColumnPreparationMode = "all";
         fixture.DelayRemovalNumber = 7;
-        var result = await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, CancellationToken.None);
+        using var scenario = new CancellationTokenSource(TimeSpan.FromSeconds(80));
+        var progress = new ImmediateProgress(value =>
+        {
+            if (value.Message.StartsWith("Restauration confirmée", StringComparison.Ordinal))
+                Console.WriteLine("TRACE Dix colonnes · " + value.Message);
+        });
+        var result = await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, progress, scenario.Token);
         Require(fixture.Adds == 10 && fixture.Removals == 10 && fixture.Exports == 1
             && fixture.Events.Where(value => value.StartsWith("remove:", StringComparison.Ordinal)).Distinct().Count() == 10
             && fixture.Columns.SequenceEqual(fixture.Original),
@@ -256,20 +271,23 @@ internal static class TemporaryColumnRestorationBrowserChecks
         using var storage = new ColumnTestStorageScope();
         await using var fixture = await RestorationFixture.CreateAsync(browser, storage.Root, modern: false, expanded: true);
         fixture.Settings.ColumnPreparationMode = "all";
-        await fixture.PrepareAsync(null, CancellationToken.None);
-        using var cancellation = new CancellationTokenSource();
+        using var scenario = new CancellationTokenSource(TimeSpan.FromSeconds(80));
+        await fixture.PrepareAsync(null, scenario.Token);
+        Console.WriteLine($"TRACE Reprise six plus quatre · {fixture.Adds} ajouts préparés.");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(scenario.Token);
         var progress = new ImmediateProgress(value =>
         {
             if (fixture.Removals == 6 && value.Message.StartsWith("Restauration confirmée", StringComparison.Ordinal))
                 cancellation.Cancel();
         });
         var interrupted = await fixture.Service.RestoreTemporaryColumnsAsync(fixture.Settings, progress, cancellation.Token);
+        Console.WriteLine($"TRACE Reprise six plus quatre · retraits confirmés={interrupted.RestoredCount}, récupération en attente={interrupted.Pending}.");
         Require(fixture.Adds == 10 && fixture.Removals == 6 && interrupted is { Pending: true, RestoredCount: 6 }
             && new TemporaryColumnJournalStore().Load(fixture.Settings) is { PendingCommand: null },
             "An interruption between verified removals must preserve the exact six-step receipt and leave no invented unresolved command.");
         await fixture.RestartAsync(); fixture.Settings.ColumnPreparationMode = "current";
         fixture.Events.Clear(); fixture.RequireRestorationBeforeList = true;
-        await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, CancellationToken.None);
+        await new AutomaticExtractionService(fixture.Service).RunAsync(fixture.Settings, null, scenario.Token);
         var recoveryRemovals = fixture.Events.Count(value => value.StartsWith("remove:", StringComparison.Ordinal));
         var list = fixture.Events.FindIndex(value => value == "list");
         Require(recoveryRemovals == 4 && fixture.Removals == 10 && fixture.AddAttempts == 10

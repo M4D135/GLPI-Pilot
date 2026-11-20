@@ -45,7 +45,7 @@ internal static class NativePageLimitChecks
 
     private static async Task ScopeDrift(IBrowser browser)
     {
-        foreach (var drift in new[] { "entity", "criteria", "identities" })
+        foreach (var drift in new[] { "entity", "criteria", "identities", "nonzero-native-flag" })
         {
             await using var fixture = await Fixture.Start(browser, new() { Mode = "legacy", Drift = drift });
             try
@@ -238,7 +238,7 @@ internal static class NativePageLimitChecks
             return "<!doctype html><html><meta charset='utf-8'><body><div class='page'><header class='navbar'>Entité " + _entity + "</header></div><a href='/glpi/front/logout.php'>Déconnexion</a>"
                 + "<form name='searchformticket' method='get' action='/glpi/front/ticket.php'><select name='criteria[0][field]'><option value='12'>Statut</option></select>"
                 + "<select name='criteria[0][searchtype]'><option value='equals'>est</option></select><select name='criteria[0][value]'><option value='1'>Nouveau</option><option value='notold'" + (value == "notold" ? " selected" : "") + ">Non résolu</option><option value='all'" + (value == "all" ? " selected" : "") + ">Tous</option></select>"
-                + "<input type='hidden' name='is_deleted' value='0'><input type='hidden' name='as_map' value='0'><input type='hidden' name='browse' value='0'>" + (_options.HiddenSearchLimit ? "<input type='hidden' name='list_limit' value='" + Limit + "'>" : "") + "<a class='search-reset' href='/glpi/front/ticket.php?reset=reset'>Vider</a></form>"
+                + "<input type='hidden' name='is_deleted' value='0'><input type='hidden' name='as_map' value='0'><input type='hidden' name='browse' value='" + (_changed && _options.Drift == "nonzero-native-flag" ? "1" : "0") + "'>" + (_options.HiddenSearchLimit ? "<input type='hidden' name='list_limit' value='" + Limit + "'>" : "") + "<a class='search-reset' href='/glpi/front/ticket.php?reset=reset'>Vider</a></form>"
                 + Results(uri) + "<script>" + ajax + "</script></body></html>";
         }
         public ValueTask DisposeAsync() => Service.DisposeAsync();

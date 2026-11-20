@@ -42,7 +42,12 @@ public sealed partial class BrowserService
           if(!controls.some(e=>/^(?:meta)?criteria\[/.test(e.name))||controls.length>500)return unavailable('scope');
           const pairs=controls.flatMap(e=>e instanceof HTMLSelectElement?[...e.selectedOptions].map(o=>[e.name,o.value]):[[e.name,e.value]]);
           const pagination=k=>/^(start|list_limit|glpilist_limit|sort(?:\[\d+\])?|order(?:\[\d+\])?)$/.test(k);
-          const query=[...new URL(location.href).searchParams].filter(([k,v])=>!pagination(k)&&!(k==='reset'&&v==='reset')&&!(k==='itemtype'&&v==='Ticket')&&!(k==='search'&&['','Search','Rechercher'].includes(v))&&!pairs.some(p=>p[0]===k&&p[1]===v));
+          // GLPI 9.5 has no browse control and omits browse=0 from its
+          // native pager although the all-status URL explicitly includes it.
+          // Only neutral native flags may disappear; nonzero values and
+          // contradictory DOM controls remain part of the scope evidence.
+          const neutralFlag=(k,v)=>['is_deleted','as_map','browse'].includes(k)&&v==='0'&&!pairs.some(p=>p[0]===k&&p[1]!=='0');
+          const query=[...new URL(location.href).searchParams].filter(([k,v])=>!pagination(k)&&!neutralFlag(k,v)&&!(k==='reset'&&v==='reset')&&!(k==='itemtype'&&v==='Ticket')&&!(k==='search'&&['','Search','Rechercher'].includes(v))&&!pairs.some(p=>p[0]===k&&p[1]===v));
           const context=[...document.querySelectorAll('input[name],select[name]')].filter(e=>/^(active_entity|entities_id|newprofile|profiles_id)$/.test(e.name)).map(e=>[e.name,e.value]);
           const scope=JSON.stringify({pairs:pairs.sort(),query:query.sort(),context:context.sort(),header:[...document.querySelectorAll('body > .page > header.navbar,body > .page > aside.navbar,#header_top,#c_ssmenu2')].filter(visible).map(e=>e.innerText.trim())});
           if(scope.length>128000||context.length>100)return unavailable('scope');
@@ -196,7 +201,10 @@ public sealed partial class BrowserService
                 }
                 else settled.Restart();
             }
-            catch (PlaywrightException) when (!page.IsClosed && activity.HasPendingRequest) { settled.Restart(); }
+            catch (PlaywrightException error) when (!page.IsClosed && (activity.HasPendingRequest || activity.NavigationObserved
+                && (error.Message.Contains("Execution context was destroyed", StringComparison.OrdinalIgnoreCase)
+                    || error.Message.Contains("Cannot find context with specified id", StringComparison.OrdinalIgnoreCase))))
+            { settled.Restart(); } // Re-read only: the issued native command is never replayed.
             if (!activity.CanWait)
             {
                 if (last is { Ready: true, DocumentReady: true } && last.Limit == before.Limit && last.Scope == before.Scope
@@ -218,17 +226,26 @@ public sealed partial class BrowserService
         private readonly LibraryIndexActivityState _state;
         private readonly HashSet<IRequest> _requests = new(ReferenceEqualityComparer.Instance);
         private readonly object _gate = new();
+        private readonly CancellationTokenSource _lifetime = new();
+        private readonly CancellationToken _lifetimeToken;
         private GlpiLibraryIndexException? _failure;
         private bool _response;
         private bool _requestRejected;
+        private bool _navigationObserved;
+        private IRequest? _documentRequest;
+        private int _navigationGeneration;
+        private bool _disposed;
         public NativeTicketPageLimitActivity(IPage page, IFrame frame, Uri source, NativeTicketPageLimitDom plan, int timeout, Action<LibraryIndexProgress> report)
         {
             _page = page; _frame = frame; _source = source; _plan = plan; _report = report; _state = new(timeout);
+            _lifetimeToken = _lifetime.Token;
             page.Request += OnRequest; page.Response += OnResponse; page.RequestFinished += OnFinished; page.RequestFailed += OnFailed;
+            page.FrameNavigated += OnFrameNavigated;
         }
-        public bool HasPendingRequest { get { lock (_gate) return _state.HasPendingRequest; } }
+        public bool HasPendingRequest { get { lock (_gate) return _state.HasPendingRequest || _state.DocumentLoading; } }
         public bool ResponseObserved { get { lock (_gate) return _response; } }
         public bool RequestRejected { get { lock (_gate) return _requestRejected; } }
+        public bool NavigationObserved { get { lock (_gate) return _navigationObserved; } }
         public bool CanWait
         {
             get
@@ -288,9 +305,49 @@ public sealed partial class BrowserService
         {
             lock (_gate)
             {
+                if (_disposed) return;
                 if (request.RedirectedFrom is { } previous && _requests.Contains(previous) && !Native(request))
                 { _state.RequestEnded(previous); _failure ??= new("page-limit", "index-session", "GLPI a redirigé le réglage de pagination hors de la liste native."); return; }
-                if (Native(request)) { _requests.Add(request); _state.RequestStarted(request); }
+                if (Native(request))
+                {
+                    _requests.Add(request); _state.RequestStarted(request);
+                    if (request.IsNavigationRequest)
+                    {
+                        _documentRequest = request; _navigationObserved = true; _navigationGeneration++;
+                        _state.BeginDocument();
+                    }
+                }
+            }
+        }
+        private void OnFrameNavigated(object? sender, IFrame frame)
+        {
+            int generation;
+            lock (_gate)
+            {
+                if (_disposed || frame != _frame || !_state.DocumentLoading) return;
+                generation = _navigationGeneration;
+            }
+            _ = CompleteDocumentAsync(generation);
+        }
+        private async Task CompleteDocumentAsync(int generation)
+        {
+            try
+            {
+                // A finished HTTP body is not the DOMContentLoaded barrier.
+                // Wait for the committed frame, including its deferred scripts.
+                await _frame.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 0 }).WaitAsync(_lifetimeToken);
+                lock (_gate) { if (!_disposed && generation == _navigationGeneration) _state.DocumentLoaded(); }
+            }
+            catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested) { }
+            catch (PlaywrightException)
+            {
+                lock (_gate)
+                {
+                    if (_disposed || generation != _navigationGeneration) return;
+                    _state.DocumentLoaded();
+                    if (_page.IsClosed || _frame.IsDetached)
+                        _failure ??= new("page-limit", "index-browser", "La page native a été fermée pendant le rechargement de la pagination.");
+                }
             }
         }
         private void OnResponse(object? sender, IResponse response)
@@ -310,6 +367,7 @@ public sealed partial class BrowserService
             {
                 if (!_requests.Contains(request)) return;
                 _state.RequestEnded(request); _requestRejected = true; _response = true;
+                if (ReferenceEquals(request, _documentRequest)) _state.DocumentLoaded();
             }
         }
         public async Task<T> AwaitAsync<T>(Task<T> task, CancellationToken ct)
@@ -324,6 +382,11 @@ public sealed partial class BrowserService
             ct.ThrowIfCancellationRequested(); ThrowIfFailed(); return await task;
         }
         public void Dispose()
-        { _page.Request -= OnRequest; _page.Response -= OnResponse; _page.RequestFinished -= OnFinished; _page.RequestFailed -= OnFailed; }
+        {
+            lock (_gate) _disposed = true;
+            _page.Request -= OnRequest; _page.Response -= OnResponse; _page.RequestFinished -= OnFinished; _page.RequestFailed -= OnFailed;
+            _page.FrameNavigated -= OnFrameNavigated;
+            _lifetime.Cancel(); _lifetime.Dispose();
+        }
     }
 }

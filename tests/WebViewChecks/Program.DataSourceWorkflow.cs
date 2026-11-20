@@ -394,7 +394,7 @@ internal static partial class Program
             FinalSample = new() { IdentityVerified = true, RepresentationVerified = true, SampleSize = 17, ComparedCells = 442 }
         };
         async Task<JsonElement> ReadReceiptStatus(bool complete) => await page.EvaluateAsync<JsonElement>(
-            "async session => (await import('/js/ui.js')).extractionStatus(session)", JsonSerializer.SerializeToElement(
+            "async json => (await import('/js/ui.js')).extractionStatus(JSON.parse(json))", JsonSerializer.Serialize(
                 new { rows = 17, expectedTotal = 17, complete, quality = confirmedQuality, provenance = new { columnPreparation = columnReceipt } }, PilotApplication.Json));
         var confirmedReceipt = await ReadReceiptStatus(true);
         Require(confirmedReceipt.GetProperty("label").GetString() == "Réception complète"

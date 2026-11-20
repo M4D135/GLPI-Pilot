@@ -124,7 +124,7 @@ try
 {
     foreach (var check in checks)
     {
-        try { await check.Run().WaitAsync(TimeSpan.FromSeconds(35)); Console.WriteLine("PASS " + check.Name); }
+        try { await check.Run().WaitAsync(TemporaryColumnRestorationBrowserChecks.TimeoutFor(check.Name)); Console.WriteLine("PASS " + check.Name); }
         catch (Exception e) { failures++; Console.Error.WriteLine("FAIL " + check.Name + "\n" + e); }
     }
     Console.WriteLine($"{checks.Count - failures}/{checks.Count} vérifications d’automatisation réussies.");
