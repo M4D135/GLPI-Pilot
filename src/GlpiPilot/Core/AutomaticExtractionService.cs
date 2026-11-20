@@ -171,7 +171,7 @@ public sealed class AutomaticExtractionService(BrowserService browser)
             if (settings.NativeSubmitSelector.Length == 0 && native.Unavailable && native.DisplayPlan != null)
             {
                 if (!settings.Automation.AutomaticPaginationFallback)
-                    throw new InvalidOperationException("L’export natif est indisponible. Active la lecture de secours du tableau ou réduis la recherche.");
+                    throw new InvalidOperationException("L’export natif est indisponible. Active le repli par pages pour poursuivre en mode parse du tableau, ou réduis la recherche.");
                 Log?.Invoke("AFFICHAGE · préparation de la pagination native avant la lecture de secours ; la limite réellement appliquée sera vérifiée.");
                 data = await ReadPaginationAsync(true);
             }
