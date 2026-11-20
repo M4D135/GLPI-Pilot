@@ -60,7 +60,7 @@ public static class TicketReadCache
     public static TicketReadSourceVersion? Observe(TicketReadSourceVersion? source, TicketDetailResult detail)
     {
         if (source is null || source.TicketKey != WorkplaceStore.TicketKey(detail.Ticket)) return null;
-        var result = source.Copy(); result.MainReadComplete = MainReadComplete(detail);
+        var result = source.Copy(); result.MainReadComplete = MainReadComplete(detail); result.MainReadAt = detail.ReadAt;
         var precision = source.Precision == "seconds" ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1);
         result.Reliable = source.Reliable && source.ObservedAt <= detail.ReadAt
             && source.ModifiedAt + precision + TimeSpan.FromMinutes(2) <= detail.ReadAt;
@@ -71,9 +71,13 @@ public static class TicketReadCache
         bool allowAutomatic, bool lookupKnown = true, string unavailableReason = "", DateTimeOffset? now = null)
     {
         var clock = now ?? DateTimeOffset.UtcNow;
+        // A tab can update the combined view's ReadAt without reading the main body.
+        // Library receipts describe the body itself. Legacy personal copies without
+        // a separate main-read date do not borrow their last tab's timestamp.
+        var mainReadAt = cached?.Version?.MainReadAt ?? (cached?.FromLibrary == true ? cached.ReadAt : null);
         var status = new TicketReadCacheStatus
         {
-            HasContent = cached?.HasContent == true, ReadAt = cached?.ReadAt,
+            HasContent = cached?.HasContent == true, ReadAt = mainReadAt,
             SourceModifiedAt = source?.ModifiedAt, SourceModifiedRaw = source?.ModifiedRaw ?? "",
             CachedModifiedAt = cached?.Version?.ModifiedAt, CachedModifiedRaw = cached?.Version?.ModifiedRaw ?? "",
             SourceObservedAt = source?.ObservedAt,
@@ -110,7 +114,7 @@ public static class TicketReadCache
             status.State = "stale"; status.Reason = "Le repère de modification ou les valeurs du relevé ont changé depuis cette lecture.";
             return status;
         }
-        if (version?.MainReadComplete == true && (sameContext || source is null) && cached.ReadAt is { } readAt
+        if (version?.MainReadComplete == true && (sameContext || source is null) && mainReadAt is { } readAt
             && clock >= readAt && clock - readAt <= UnknownVersionRetryDelay)
         {
             status.State = "recent"; status.AutoRead = false;

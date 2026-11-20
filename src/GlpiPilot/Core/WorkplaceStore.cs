@@ -41,6 +41,8 @@ public sealed class TicketReadSourceVersion
     public DateTimeOffset ObservedAt { get; set; }
     public string RowFingerprint { get; set; } = "";
     public bool MainReadComplete { get; set; }
+    // Absent in older personal copies; their last tab date is not proof of a main-body read.
+    public DateTimeOffset? MainReadAt { get; set; }
     public TicketReadSourceVersion Copy() => (TicketReadSourceVersion)MemberwiseClone();
     public bool IsValid(string key) => TicketKey == key && Context is { Length: <= 64 } && ModifiedRaw is { Length: <= 1000 }
         && Precision is "unknown" or "minutes" or "seconds" && RowFingerprint is { Length: <= 64 }

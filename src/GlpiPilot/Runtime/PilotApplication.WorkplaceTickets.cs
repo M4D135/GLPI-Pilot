@@ -112,6 +112,7 @@ public sealed partial class PilotApplication
             var retained = previousCache?.Version?.Copy();
             if (retained is not null)
             {
+                if (previousCache!.FromLibrary) retained.MainReadAt ??= previousCache.ReadAt;
                 if (previousCache!.FromLibrary && WorkCacheSource(detail.Ticket) is { } source)
                 { retained.Context = source.Context; retained.RowFingerprint = source.RowFingerprint; }
                 retained.MainReadComplete &= TicketReadCache.MainReadComplete(detail);

@@ -124,7 +124,8 @@ public sealed partial class PilotApplication
                 {
                     TicketKey = key, ModifiedRaw = cached.DetailModifiedRaw, ModifiedAt = cached.DetailModifiedAt,
                     Precision = cached.Seed.LastModifiedPrecision, Reliable = confirmed && cached.Seed.LastModifiedReliable,
-                    ObservedAt = cached.Seed.ObservedAt, MainReadComplete = confirmed && TicketReadCache.MainReadComplete(detail)
+                    ObservedAt = cached.Seed.ObservedAt, MainReadComplete = confirmed && TicketReadCache.MainReadComplete(detail),
+                    MainReadAt = detail.ReadAt
                 }
             };
         }

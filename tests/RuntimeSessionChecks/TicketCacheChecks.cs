@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GlpiPilot.Core;
 using GlpiPilot.Runtime;
 using Microsoft.Data.Sqlite;
@@ -128,7 +129,7 @@ internal static class TicketCacheRuntimeChecks
             {
                 var source = TicketReadCache.Source(Reference(), Source(raw, observed), 0, f.App.Settings);
                 var version = TicketReadCache.Observe(source, Detail(readAt))!;
-                Require(source.Reliable && source.ModifiedAt == modified && !version.Reliable && version.MainReadComplete,
+                Require(source.Reliable && source.ModifiedAt == modified && !version.Reliable && version.MainReadComplete && version.MainReadAt == readAt,
                     "The synthetic 12:00 / 12:01:09 / 12:01:25 read did not exercise the comparison margin.");
                 var entry = new TicketReadCacheEntry { HasContent = true, ReadAt = readAt, Version = version };
                 var recent = TicketReadCache.Describe(source, entry, true, now: readAt);
@@ -269,7 +270,8 @@ internal static class TicketCacheRuntimeChecks
             f.App.AcceptTicketCacheFixture(merged, observeSource: false);
             var afterTab = await Open(f); State(Cache(afterTab), "current", true, false);
             var skipped = await f.Call("workplace.ticket.read", new { ticketKey = Key(afterTab), automatic = true });
-            Require(skipped.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
+            Require(Cache(skipped).GetProperty("readAt").GetDateTimeOffset() == OldRead
+                && skipped.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
                 && skipped.GetProperty("sections")[1].GetProperty("readAt").GetDateTimeOffset() == tabReadAt,
                 "A tab-only read changed the main body's actual observation date.");
             await Consistent(f, Cache(skipped));
@@ -278,7 +280,8 @@ internal static class TicketCacheRuntimeChecks
             var restored = await Call(reopened, "workplace.ticket.open", new { revision = reopened.Revision, rowIndex = 0 });
             State(Cache(restored), "current", true, false);
             await Call(reopened, "workplace.ticket.read", new { ticketKey = Key(restored), automatic = true });
-            Require(restored.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
+            Require(Cache(restored).GetProperty("readAt").GetDateTimeOffset() == OldRead
+                && restored.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
                 && restored.GetProperty("sections")[1].GetProperty("readAt").GetDateTimeOffset() == tabReadAt,
                 "Restoring a merged offline copy changed the independent body and tab observations.");
             reopened.LoadSessionFixture(Source(Stamp(Modified.AddHours(1)), DateTimeOffset.UtcNow));
@@ -288,6 +291,68 @@ internal static class TicketCacheRuntimeChecks
             State(Cache(await Open(f)), "unknown", true, true);
             Require((await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore),
                 "Reading a local body or its separate tab rewrote the collected library database.");
+        });
+        Add("a recent tab never rejuvenates an old body with an uncertain source, including legacy offline copies", async f =>
+        {
+            f.App.Settings.TicketDetails.IdColumn = "ID";
+            var source = Source("", DateTimeOffset.UtcNow);
+            f.App.LoadSessionFixture(source);
+            new LastSourceCacheStore().Save(source, f.App.Settings);
+            var seed = new TicketLibrarySeed
+            {
+                Ticket = Reference(), Title = "Incident cache", Status = "Nouveau", StatusCode = 1,
+                LastModifiedAt = Modified, LastModifiedRaw = Stamp(Modified), LastModifiedReliable = true, LastModifiedPrecision = "seconds"
+            };
+            var store = new TicketLibraryStore(new LibraryPreferences().DatabasePath);
+            await store.SaveDetailAsync(seed, Detail(OldRead), new() { Complete = true }, "cache-fixture-reader");
+            var databaseBefore = await File.ReadAllBytesAsync(store.DatabasePath);
+            var opened = await Open(f); State(Cache(opened), "unknown", true, true);
+            await f.Call("workplace.personal.save", new { ticketKey = Key(opened), offline = true });
+            var tabReadAt = DateTimeOffset.UtcNow;
+            var merged = Detail(tabReadAt); merged.Sections[0].Data.ExtractedAt = OldRead;
+            merged.Sections.Add(new() { Name = "Historique", Kind = "table", Data = new() { Headers = ["Événement"], Rows = [["Onglet récent distinct du corps"]], Complete = true, ExtractedAt = tabReadAt } });
+            f.App.AcceptTicketCacheFixture(merged, observeSource: false);
+            var afterTab = await Open(f); State(Cache(afterTab), "unknown", true, true);
+            Require(Cache(afterTab).GetProperty("readAt").GetDateTimeOffset() == OldRead
+                && Cache(afterTab).GetProperty("cachedModifiedRaw").GetString() == Stamp(Modified)
+                && afterTab.GetProperty("readAt").GetDateTimeOffset() == tabReadAt,
+                "An independently read tab rejuvenated or replaced the old body's observation.");
+            await Consistent(f, Cache(afterTab));
+            var personalPath = Path.Combine(f.Root, "workplace.json");
+            var personal = WorkplaceStore.Load(personalPath).Tickets.Single(ticket => ticket.Key == Key(afterTab));
+            Require(personal.LastReadSource?.MainReadAt == OldRead && personal.LastReadAt == tabReadAt,
+                "The separate main-body date was not persisted beside the last tab date.");
+            var offlinePath = Path.Combine(f.Root, "TicketCache", Key(afterTab) + ".json");
+            var offlineBefore = await File.ReadAllBytesAsync(offlinePath);
+            foreach (var legacy in new[] { false, true })
+            {
+                if (legacy)
+                {
+                    var document = JsonNode.Parse(await File.ReadAllTextAsync(personalPath))!;
+                    foreach (var ticket in document["Tickets"]!.AsArray())
+                        ticket?["LastReadSource"]?.AsObject().Remove("MainReadAt");
+                    await File.WriteAllTextAsync(personalPath, document.ToJsonString());
+                }
+                await using var reopened = new PilotApplication(f.Host, (_, _) => { }, f.App.Settings.Copy());
+                await Call(reopened, "cache.restore", new { });
+                Require(reopened.IsCachedSource, "The regression did not restore the real offline source cache.");
+                var list = await Call(reopened, "records.list", new { revision = reopened.Revision });
+                State(Cache(list.GetProperty("rows")[0]), "unknown", true, false);
+                var restored = await Call(reopened, "workplace.ticket.open", new { revision = reopened.Revision, rowIndex = 0 });
+                var cache = Cache(restored); State(cache, "unknown", true, false);
+                Require(legacy ? cache.GetProperty("readAt").ValueKind == JsonValueKind.Null : cache.GetProperty("readAt").GetDateTimeOffset() == OldRead,
+                    "An old personal JSON without a main-read date borrowed its recent tab date.");
+                Require(restored.GetProperty("readAt").GetDateTimeOffset() == tabReadAt
+                    && restored.GetProperty("sections")[0].GetProperty("readAt").GetDateTimeOffset() == OldRead
+                    && restored.GetProperty("sections")[1].GetProperty("readAt").GetDateTimeOffset() == tabReadAt,
+                    "Offline reopening changed the independent body and tab observations.");
+                var section = await Call(reopened, "workplace.ticket.section", new { ticketKey = Key(restored), sectionIndex = 0 });
+                Require(section.GetProperty("rows")[0].GetProperty("values")[0].GetString() == "Description synthétique conservée",
+                    "The old main body became unavailable after offline reopening.");
+            }
+            Require((await File.ReadAllBytesAsync(store.DatabasePath)).SequenceEqual(databaseBefore)
+                && (await File.ReadAllBytesAsync(offlinePath)).SequenceEqual(offlineBefore),
+                "Offline reopening rewrote the library body or the personal section observations.");
         });
         return tests;
     }

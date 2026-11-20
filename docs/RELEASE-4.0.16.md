@@ -30,7 +30,7 @@ Dans le cache hors connexion, les commandes de collecte en ligne sont désactiv�
 
 La lecture live automatique réutilise les contenus disponibles lorsque leur version correspond au relevé courant. La collecte globale applique désormais cette même règle sans expiration fondée sur l’âge : une copie complète et confirmée, toujours à la même version GLPI, n’est pas relue simplement parce qu’elle date de plus de sept jours. La collecte ciblée et les reprises conservent également les copies admissibles.
 
-La lecture explicite d’un onglet supplémentaire conserve aussi le repère de version du corps déjà chargé depuis la bibliothèque. Ce repère reste disponible après redémarrage avec la copie hors connexion : l’ouverture d’un onglet ne déclenche plus, à elle seule, une nouvelle lecture automatique du corps. Les dates de lecture du corps et de l’onglet restent distinctes ; un onglet incomplet ne devient pas confirmé par cette conservation.
+La lecture explicite d’un onglet supplémentaire conserve aussi le repère de version du corps déjà chargé depuis la bibliothèque. Ce repère reste disponible après redémarrage avec la copie hors connexion : l’ouverture d’un onglet ne déclenche plus, à elle seule, une nouvelle lecture automatique du corps. Les dates de lecture du corps et de l’onglet restent distinctes ; un onglet incomplet ne devient pas confirmé par cette conservation. Si la version GLPI ne peut pas être comparée, la lecture récente d’un onglet ne rajeunit pas le corps ancien. Les anciennes copies personnelles sans date principale distincte restent consultables sans que cette date soit inventée.
 
 L’index GLPI reste contrôlé pour détecter les changements. Les fiches absentes, modifiées, incomplètes ou sans version comparable peuvent nécessiter une lecture ; les contrôles d’identité, de précision des dates et de couverture restent appliqués. La date de lecture d’un détail réutilisé n’est pas artificiellement actualisée. Une relecture forcée reste une demande volontaire distincte.
 
@@ -38,7 +38,11 @@ Le réglage d’expiration automatique des contenus n’est plus proposé dans l
 
 ## Mise à jour et conservation des données
 
-Fermer GLPI Pilot puis extraire le pack publié dans un nouveau dossier local en conservant ensemble `GLPI-Pilot.exe`, `GLPI-Pilot-Admin.exe` et `wad/`. Les réglages du profil et le chemin existant de la bibliothèque sont réutilisés. Aucune réinitialisation, suppression, migration du contenu ou recollecte automatique n’est ajoutée par ce correctif.
+Pour conserver une copie de retour, fermer les deux lanceurs puis copier le dossier `%LOCALAPPDATA%\GLPI-Pilot` entier. Il contient notamment le relevé dans `LastSource`, les réglages et la bibliothèque par défaut. Si un autre dossier de bibliothèque est configuré, copier aussi ce dossier entier, avec ses fichiers SQLite auxiliaires éventuels, pendant que Pilot est fermé. La sauvegarde automatique des préférences ne remplace pas cette copie des contenus.
+
+Extraire ensuite le pack publié dans un nouveau dossier local en conservant ensemble `GLPI-Pilot.exe`, `GLPI-Pilot-Admin.exe` et `wad/`, puis l’ouvrir avec le même compte Windows. Les réglages du profil et le chemin existant de la bibliothèque sont réutilisés. Aucune réinitialisation, suppression, migration du contenu ou recollecte automatique n’est ajoutée par ce correctif.
+
+Les programmations déjà activées restent celles du profil. Pour commencer uniquement par la consultation du cache, désactiver au préalable **Collecter au démarrage** et toute programmation activée dans les réglages de collecte. Le relevé de liste et les contenus détaillés de la bibliothèque sont deux ensembles distincts ; conserver les deux permet de retrouver les fiches déjà recueillies.
 
 Après ouverture, charger le cache habituel et ouvrir un ticket dans Rechercher, ou utiliser **Consulter les contenus** depuis l’écran de collecte. Les fiches enregistrées par les versions précédentes restent utilisables. Les données réellement absentes ne sont pas reconstituées artificiellement.
 
