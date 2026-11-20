@@ -426,7 +426,7 @@ public sealed partial class BrowserService
         _temporaryColumns = record; _temporaryColumnSettings = settings.Copy();
         var preferences = await OpenRecoveryPreferencesAsync(page, record, settings, Report, allowAuthentication, ct);
         await ValidateRecoveryPreferencesAsync(page.MainFrame, record, preferences, ct);
-        using var activity = new ColumnPreparationActivity(page, page.MainFrame, record.Origin, settings.ListTimeoutSeconds, Report, directPreferences: true);
+        using var activity = new ColumnPreparationActivity(page, page.MainFrame, record.Origin, ColumnCleanupBudgetSeconds(settings.ListTimeoutSeconds), Report, directPreferences: true);
         // A second native GET also excludes a reused optimistic document and
         // gives all recovery decisions a server-rendered starting point.
         preferences = await ReadRecoveryPreferencesAsync(page.MainFrame, record, activity, ct, reload: true);
