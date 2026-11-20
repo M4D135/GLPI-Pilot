@@ -4,6 +4,7 @@ using GlpiPilot.Core;
 
 var checks = new (string Name, Action Run)[]
 {
+    ("Budget de récupération indépendant du délai de lecture", CheckCleanupBudget),
     ("Capture indépendante et vue personnelle initialement inactive", CheckCapture),
     ("Ordre, identité native et libellés conservés exactement", CheckExactOrder),
     ("Ajout moderne : seul l’identifiant réellement demandé est attribuable", CheckModernAddition),
@@ -85,6 +86,13 @@ static TemporaryColumnJournalRecord Record(AppSettings settings)
         UsersId = "17", Layout = "legacy", SourceScopeFingerprint = new string('a', 64), ContextFingerprint = new string('b', 64),
         ContextObserved = true, Original = original, Expected = Clone(original), PendingCommand = AddCommand(Preferences())
     };
+}
+
+static void CheckCleanupBudget()
+{
+    Require(BrowserService.ColumnCleanupBudgetSeconds(45) == 180, "Le délai normal de liste ne doit pas interrompre dix retraits natifs.");
+    Require(BrowserService.ColumnCleanupBudgetSeconds(300) == 300, "Un délai de liste supérieur au plancher doit rester disponible.");
+    Require(BrowserService.ColumnCleanupBudgetSeconds(999) == 600, "La récupération doit rester bornée.");
 }
 
 static void CheckCapture()
