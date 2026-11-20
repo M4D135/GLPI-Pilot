@@ -73,8 +73,10 @@ public sealed partial class BrowserService
             const options=[...select.options].filter(o=>!o.disabled&&!o.hidden&&!o.closest('optgroup[disabled]')&&number(o.value)>0);
             if(!options.length||new Set(options.map(o=>o.value)).size!==options.length)continue;
             const current=number(select.value);if(current===null||!options.some(o=>o.value===select.value)||current!==limit)continue;
-            const sizes=options.map(o=>Number(o.value)).sort((a,b)=>a-b);
-            const desired=current>=1000?current:(sizes.find(v=>v>=1000)??sizes[sizes.length-1]);
+            // GLPI offers 9999999 as a bulk display choice. Never enable it
+            // automatically; a large value already selected by the user stays.
+            const sizes=options.map(o=>Number(o.value)).filter(v=>v!==9999999).sort((a,b)=>a-b);
+            const desired=current>=1000?current:(sizes.find(v=>v>=1000)??sizes[sizes.length-1]??current);
             let method='',action='',proof='';
             const onchange=(select.getAttribute('onchange')||'').trim();
             if(modern&&select.matches('.search-limit-dropdown')&&select.closest('.search-pager')&&owner.contains(select)&&!onchange){
@@ -161,7 +163,7 @@ public sealed partial class BrowserService
         if (before.Value == before.CurrentValue)
             return Finish(before.Limit, false, before.Limit >= 1000
                 ? $"Pagination native déjà réglée à {before.Limit:N0} tickets par page."
-                : $"GLPI propose au maximum {before.Limit:N0} tickets par page ; lecture poursuivie avec cette limite native.");
+                : $"Pagination native conservée à {before.Limit:N0} tickets par page.");
         await LibraryCollectionPacer.BeforeNavigationAsync(ct).ConfigureAwait(false);
         var fresh = await Read();
         if (!fresh.Ready || fresh.Selector != before.Selector || fresh.Value != before.Value || fresh.CurrentValue != before.CurrentValue

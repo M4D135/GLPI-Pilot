@@ -10,8 +10,8 @@ internal static class NativePageLimitChecks
         yield return ("Pagination 1000 : POST GLPI 9.5, Select2 masqué, deux pagers et 1105 identités exactes", () => Applied(browser, new() { Mode = "legacy", Hidden = true }, 1000, 2));
         yield return ("Pagination 1000 : GLPI 10 fluide, réponse AJAX et 1105 identités exactes", () => Applied(browser, new() { Mode = "fluid" }, 1000, 2));
         yield return ("Pagination 1000 : GLPI 10 navigation native, option 2000 sans inventer 1000", () => Applied(browser, new() { Mode = "location", Sizes = [25, 50, 2000] }, 2000, 1));
-        yield return ("Pagination 1000 : maximum natif 50 conservé avec parcours complet", () => Applied(browser, new() { Mode = "legacy", Sizes = [25, 50], Count = 105 }, 50, 3));
-        yield return ("Pagination 1000 : limite existante 2000 conservée sans commande", () => Applied(browser, new() { Mode = "fluid", InitialLimit = 2000 }, 2000, 1, commands: 0));
+        yield return ("Pagination 1000 : option 9999999 écartée, limite 50 et parcours complet", () => Applied(browser, new() { Mode = "legacy", InitialLimit = 20, Sizes = [20, 50, 9999999], Count = 105 }, 50, 3));
+        yield return ("Pagination 1000 : limites existantes 2000 et 9999999 conservées sans commande", () => PreservedHigherLimit(browser));
         yield return ("Pagination 1000 : contrôles contradictoires ne provoquent aucun changement", () => Applied(browser, new() { Mode = "legacy", Ambiguous = true, Count = 105 }, 25, 5, commands: 0));
         yield return ("Pagination 1000 : refus non bloquant vérifie la limite réellement appliquée", () => Applied(browser, new() { Mode = "legacy", IgnoreChange = true, Count = 105 }, 25, 5));
         yield return ("Pagination 1000 : refus AJAX 500 conserve la liste initiale vérifiée", () => Applied(browser, new() { Mode = "fluid", AjaxRejected = true, Count = 105 }, 25, 5));
@@ -21,6 +21,12 @@ internal static class NativePageLimitChecks
         yield return ("Pagination 1000 : réponse native lente attendue sans renvoyer la commande", () => Applied(browser, new() { Mode = "fluid", DelayMilliseconds = 6000 }, 1000, 2));
         yield return ("Pagination 1000 : filtre ou entité modifiés refusés avant toute fiche", () => ScopeDrift(browser));
         yield return ("Pagination 1000 : annulation ferme la requête dédiée sans répétition", () => Cancel(browser));
+    }
+
+    private static async Task PreservedHigherLimit(IBrowser browser)
+    {
+        foreach (var limit in new[] { 2000, 9999999 })
+            await Applied(browser, new() { Mode = "fluid", InitialLimit = limit, Sizes = [25, 50, 1000, 2000, 9999999] }, limit, 1, commands: 0);
     }
 
     private static async Task Applied(IBrowser browser, Options options, int expectedLimit, int pages, int commands = 1)

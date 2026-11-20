@@ -10,6 +10,8 @@ Le reçu natif déjà téléchargé reste intact. Le résultat du mode parse est
 
 Pilot utilise uniquement les options du sélecteur natif associé au tableau Ticket : 1 000, sinon la plus petite option supérieure ; une limite déjà au moins égale à 1 000 est conservée. Si aucune option n’atteint ce seuil, la plus grande limite disponible est utilisée. Un contrôle absent ou ambigu laisse la pagination actuelle en place. Aucune option ni adresse de commande n’est inventée.
 
+La valeur native 9 999 999 est exclue des nouveaux choix automatiques pour conserver une pagination limitée lorsque 1 000 n’est pas proposé. Ainsi, une liste offrant 20, 50 et 9 999 999 passe à 50 ; une grande limite déjà choisie par l’utilisateur reste conservée.
+
 Après une seule commande native, la liste est relue : limite, plage affichée, total, identifiants, colonnes, critères et contexte doivent rester cohérents. Si le changement est refusé et que l’ancienne liste est encore vérifiable, la lecture continue avec la limite réellement observée. Une dérive de session, de filtre ou d’identités arrête la collecte. Une commande incertaine n’est jamais renvoyée automatiquement.
 
 Le réglage de pagination reste dans la session GLPI et sa valeur est indiquée dans le journal. Le filtre précédent est restauré après la collecte de bibliothèque. Les limites configurées de collecte et la lecture séquentielle des fiches restent applicables ; 1 000 lignes par page ne signifie pas 1 000 ouvertures simultanées.
