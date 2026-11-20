@@ -44,22 +44,63 @@ public sealed partial class TicketLibraryStore
         CREATE INDEX IF NOT EXISTS ticket_library_collection_events_run ON ticket_library_collection_events(run_id,sequence DESC);
         """;
 
-    public Task<string> BeginCaptureAsync(TicketLibraryCaptureContext context, string mode, string parentRunId = "", CancellationToken ct = default)
+    public Task<string> BeginCaptureAsync(TicketLibraryCaptureContext context, string mode, string parentRunId = "", CancellationToken ct = default,
+        IReadOnlyList<TicketLibraryCaptureTarget>? retryTargets = null, bool missingOnly = false)
     {
         ValidateCaptureContext(context);
-        if (mode is not ("incremental" or "all" or "retry") || mode == "retry" && !Guid.TryParseExact(parentRunId, "N", out _))
+        if (mode is not ("incremental" or "all" or "retry") || mode == "retry" && !Guid.TryParseExact(parentRunId, "N", out _)
+            || missingOnly && (mode != "retry" || retryTargets is null))
             throw new InvalidDataException("Mode ou essai de reprise invalide.");
+        var frozenTargets = retryTargets?.ToArray();
+        if (frozenTargets is not null && (mode != "retry" || frozenTargets.Length is 0 or > CaptureTicketLimit
+            || frozenTargets.Any(target => target is null || target.TicketKey.Length is 0 or > 128 || target.TicketId.Length is 0 or > 20 || !target.TicketId.All(char.IsAsciiDigit))
+            || frozenTargets.Select(target => target.TicketKey).Distinct(StringComparer.Ordinal).Count() != frozenTargets.Length))
+            throw new InvalidDataException("La liste de reprise doit contenir des références uniques du passage d’origine.");
         return Run(c =>
         {
             using var tx = c.BeginTransaction(); RecoverAbandonedCaptures(c, tx);
             if (ScalarLong(c, tx, "SELECT COUNT(*) FROM ticket_library_capture_runs WHERE status='running'") != 0)
                 throw new InvalidOperationException("Une collecte utilise déjà cette bibliothèque locale.");
+            var parentScope = ""; var parentScopeHash = "";
+            if (frozenTargets is not null)
+            {
+                using (var parent = Command(c, tx, "SELECT installation,context_hash,reader_signature,status,scope,scope_hash FROM ticket_library_capture_runs WHERE run_id=$parent", ("$parent", parentRunId)))
+                using (var reader = parent.ExecuteReader())
+                {
+                    if (!reader.Read() || reader.GetString(0) != context.Installation || reader.GetString(1) != context.Fingerprint
+                        || !TicketLibraryAcquisition.Continues(reader.GetString(2), context.ReaderSignature) || reader.GetString(3) == "running"
+                        || reader.GetString(5).Length == 0)
+                        throw new InvalidOperationException("Le passage d’origine ou son périmètre a changé. Vérifiez la sélection avant de reprendre.");
+                    parentScope = reader.GetString(4); parentScopeHash = reader.GetString(5);
+                }
+                var allowed = new Dictionary<string, string>(StringComparer.Ordinal);
+                using (var parent = Command(c, tx, "SELECT ticket_key,ticket_id FROM ticket_library_capture_entries WHERE run_id=$parent AND retryable=1", ("$parent", parentRunId)))
+                using (var reader = parent.ExecuteReader())
+                    while (reader.Read()) { ct.ThrowIfCancellationRequested(); allowed.Add(reader.GetString(0), reader.GetString(1)); }
+                if (frozenTargets.Any(target => !allowed.TryGetValue(target.TicketKey, out var id) || id != target.TicketId))
+                    throw new InvalidOperationException("La liste de reprise ne correspond plus aux fiches du passage d’origine.");
+            }
             var id = Guid.NewGuid().ToString("N");
             Execute(c, tx, """
-                INSERT INTO ticket_library_capture_runs(run_id,started_at,status,mode,installation,context_hash,reader_signature,parent_run_id,owner_process,owner_start)
-                VALUES($id,$date,'running',$mode,$installation,$context,$reader,$parent,$process,$start)
-                """, ("$id", id), ("$date", DateTimeOffset.UtcNow.ToString("O")), ("$mode", mode), ("$installation", context.Installation),
-                ("$context", context.Fingerprint), ("$reader", context.ReaderSignature), ("$parent", parentRunId), ("$process", CaptureProcessId), ("$start", CaptureProcessStart));
+                INSERT INTO ticket_library_capture_runs(run_id,started_at,status,mode,installation,context_hash,reader_signature,parent_run_id,owner_process,owner_start,scope,scope_hash)
+                VALUES($id,$date,'running',$mode,$installation,$context,$reader,$parent,$process,$start,$scope,$scopeHash)
+                """, ("$id", id), ("$date", DateTimeOffset.UtcNow.ToString("O")), ("$mode", missingOnly ? "retry-missing" : mode), ("$installation", context.Installation),
+                ("$context", context.Fingerprint), ("$reader", context.ReaderSignature), ("$parent", parentRunId), ("$process", CaptureProcessId), ("$start", CaptureProcessStart),
+                ("$scope", parentScope), ("$scopeHash", parentScopeHash));
+            // Freeze the exact retry membership in the same transaction as its run.
+            // A pause/crash before any browser response must not reconstruct a broader
+            // list from every partial or undated ticket in the parent journal.
+            if (frozenTargets is not null)
+            {
+                using var insert = Command(c, tx, "INSERT INTO ticket_library_capture_entries(run_id,ticket_key,ticket_id,ordinal,seed_hash) VALUES($run,$key,$ticket,$ordinal,'')",
+                    ("$run", id), ("$key", ""), ("$ticket", ""), ("$ordinal", 0));
+                for (var ordinal = 0; ordinal < frozenTargets.Length; ordinal++)
+                {
+                    ct.ThrowIfCancellationRequested(); insert.Parameters["$key"].Value = frozenTargets[ordinal].TicketKey;
+                    insert.Parameters["$ticket"].Value = frozenTargets[ordinal].TicketId; insert.Parameters["$ordinal"].Value = ordinal;
+                    insert.ExecuteNonQuery();
+                }
+            }
             // A scheduled scope can outlive many narrowed retries. Keep the original immutable worklist its settings reference.
             Execute(c, tx, CollectionSchema);
             Execute(c, tx, "DELETE FROM ticket_library_capture_runs WHERE run_id IN (SELECT run_id FROM ticket_library_capture_runs ORDER BY CASE WHEN run_id IN ($current,$parent) THEN 0 ELSE 1 END,started_at DESC,run_id DESC LIMIT -1 OFFSET $limit) AND run_id NOT IN (SELECT COALESCE(json_extract(state_json,'$.scopeRunId'),'') FROM ticket_library_collection)",
@@ -91,25 +132,43 @@ public sealed partial class TicketLibraryStore
     public Task<TicketLibraryCaptureEntryPage> CaptureEntriesAsync(string runId, int offset = 0, int limit = 50, bool retryOnly = false, CancellationToken ct = default)
     {
         ValidateRunId(runId); offset = Math.Clamp(offset, 0, CaptureTicketLimit); limit = Math.Clamp(limit, 1, 100);
-        return Run(c =>
-        {
-            _ = ReadCapture(c, null, runId);
-            var page = new TicketLibraryCaptureEntryPage { Offset = offset, Limit = limit };
-            const string where = " WHERE run_id=$run AND ($retry=0 OR retryable=1)";
-            page.Total = ScalarLong(c, null, "SELECT COUNT(*) FROM ticket_library_capture_entries" + where, ("$run", runId), ("$retry", retryOnly ? 1 : 0));
-            using var command = Command(c, null, "SELECT ticket_key,ticket_id,state,category,retryable FROM ticket_library_capture_entries" + where + " ORDER BY ordinal LIMIT $limit OFFSET $offset",
-                ("$run", runId), ("$retry", retryOnly ? 1 : 0), ("$limit", limit), ("$offset", offset));
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                ct.ThrowIfCancellationRequested();
-                page.Items.Add(new() { TicketKey = reader.GetString(0), TicketId = reader.GetString(1), State = reader.GetString(2), Category = reader.GetString(3), Retryable = reader.GetBoolean(4) });
-            }
-            return page;
-        }, ct);
+        return Run(c => ReadCaptureEntries(c, null, runId, offset, limit, retryOnly, ct), ct);
     }
 
-    public Task<IReadOnlyList<TicketLibraryCaptureTarget>> CaptureRetryTargetsAsync(string runId, TicketLibraryCaptureContext context, CancellationToken ct = default)
+    private static TicketLibraryCaptureEntryPage ReadCaptureEntries(SqliteConnection c, SqliteTransaction? tx,
+        string runId, int offset, int limit, bool retryOnly, CancellationToken ct)
+    {
+        _ = ReadCapture(c, tx, runId);
+        var page = new TicketLibraryCaptureEntryPage { Offset = offset, Limit = limit };
+        const string where = " WHERE run_id=$run AND ($retry=0 OR retryable=1)";
+        page.Total = ScalarLong(c, tx, "SELECT COUNT(*) FROM ticket_library_capture_entries" + where, ("$run", runId), ("$retry", retryOnly ? 1 : 0));
+        using var command = Command(c, tx, $"""
+            SELECT e.ticket_key,e.ticket_id,e.state,e.category,e.retryable,{CaptureStoredContentSql},
+                CASE WHEN json_valid(t.document_json) THEN COALESCE(json_extract(t.document_json,'$.detailComplete'),0) ELSE 0 END,
+                CASE WHEN json_valid(t.document_json) THEN CASE WHEN {CaptureConfirmedContentSql} THEN 1 ELSE 0 END ELSE 0 END,
+                CASE WHEN json_valid(t.document_json) THEN json_extract(t.document_json,'$.coverage.limitations') END
+            FROM ticket_library_capture_entries e LEFT JOIN ticket_library_tickets t ON t.ticket_key=e.ticket_key
+            """ + where + " ORDER BY ordinal LIMIT $limit OFFSET $offset",
+            ("$run", runId), ("$retry", retryOnly ? 1 : 0), ("$limit", limit), ("$offset", offset));
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            ct.ThrowIfCancellationRequested();
+            var available = reader.GetString(5) == "stored";
+            List<string> limitations = new();
+            if (!reader.IsDBNull(8))
+            {
+                try { limitations = JsonSerializer.Deserialize<List<string>>(reader.GetString(8), TicketLibraryRules.Json) ?? new(); }
+                catch (JsonException) { limitations.Add("Les limites de cette copie ne peuvent pas être relues ; le contenu conservé n’a pas été modifié."); }
+            }
+            page.Items.Add(new() { TicketKey = reader.GetString(0), TicketId = reader.GetString(1), State = reader.GetString(2), Category = reader.GetString(3), Retryable = reader.GetBoolean(4),
+                HasContent = available, HasArchivedContent = reader.GetString(5) == "archived", DetailComplete = available && reader.GetBoolean(6),
+                DetailsCurrent = available && reader.GetBoolean(7), DetailLimitations = limitations });
+        }
+        return page;
+    }
+
+    public Task<IReadOnlyList<TicketLibraryCaptureTarget>> CaptureRetryTargetsAsync(string runId, TicketLibraryCaptureContext context, CancellationToken ct = default, bool missingOnly = false)
     {
         ValidateRunId(runId); ValidateCaptureContext(context);
         return Run<IReadOnlyList<TicketLibraryCaptureTarget>>(c =>
@@ -124,7 +183,12 @@ public sealed partial class TicketLibraryStore
                 if (reader.GetString(3) == "running") throw new InvalidOperationException("Cet essai est encore en cours.");
             }
             var targets = new List<TicketLibraryCaptureTarget>();
-            using (var command = Command(c, tx, "SELECT ticket_key,ticket_id FROM ticket_library_capture_entries WHERE run_id=$run AND retryable=1 ORDER BY ordinal LIMIT $limit", ("$run", runId), ("$limit", CaptureTicketLimit + 1)))
+            using (var command = Command(c, tx, $"""
+                SELECT e.ticket_key,e.ticket_id FROM ticket_library_capture_entries e
+                LEFT JOIN ticket_library_tickets t ON t.ticket_key=e.ticket_key
+                WHERE e.run_id=$run AND e.retryable=1 AND ($missing=0 OR ({CaptureStoredContentSql})='missing')
+                ORDER BY e.ordinal LIMIT $limit
+                """, ("$run", runId), ("$limit", CaptureTicketLimit + 1), ("$missing", missingOnly ? 1 : 0)))
             using (var reader = command.ExecuteReader())
                 while (reader.Read()) { ct.ThrowIfCancellationRequested(); targets.Add(new(reader.GetString(0), reader.GetString(1))); }
             if (targets.Count > CaptureTicketLimit) throw new InvalidDataException("Le journal de reprise dépasse sa limite de tickets.");
@@ -156,9 +220,28 @@ public sealed partial class TicketLibraryStore
                         throw new InvalidOperationException("Le périmètre GLPI de la reprise a changé. Démarrez une nouvelle collecte pour ce périmètre.");
                 }
             }
+            var frozenTargets = new List<TicketLibraryCaptureTarget>();
+            using (var existing = Command(c, tx, "SELECT ticket_key,ticket_id,seed_hash,state,processed FROM ticket_library_capture_entries WHERE run_id=$run ORDER BY ordinal", ("$run", runId)))
+            using (var reader = existing.ExecuteReader())
+                while (reader.Read())
+                {
+                    if (reader.GetString(2).Length != 0 || reader.GetString(3) != "pending" || reader.GetBoolean(4))
+                        throw new InvalidOperationException("L’index de ce passage est déjà enregistré. Utilisez sa reprise pour conserver les lectures existantes.");
+                    frozenTargets.Add(new(reader.GetString(0), reader.GetString(1)));
+                }
+            if (frozenTargets.Count > 0)
+            {
+                if (retryTargets is not null && (retryTargets.Count != frozenTargets.Count
+                    || !retryTargets.ToHashSet().SetEquals(frozenTargets)))
+                    throw new InvalidOperationException("La sélection figée de ce passage ne peut pas être élargie ni remplacée.");
+                targets = frozenTargets;
+            }
             Execute(c, tx, "UPDATE ticket_library_capture_runs SET observed=$count,scope=$scope,scope_hash=$hash,limitations_json=$limits WHERE run_id=$run",
                 ("$count", index.Tickets.Count), ("$scope", BoundedScope(index.ScopeDescription)), ("$hash", index.ScopeFingerprint), ("$limits", CaptureLimits(index.Limitations)), ("$run", runId));
-            using var insert = Command(c, tx, "INSERT INTO ticket_library_capture_entries(run_id,ticket_key,ticket_id,ordinal,seed_hash,state,category,processed) VALUES($run,$key,$id,$ordinal,$hash,$state,$category,$processed)",
+            using var insert = Command(c, tx, """
+                INSERT INTO ticket_library_capture_entries(run_id,ticket_key,ticket_id,ordinal,seed_hash,state,category,processed) VALUES($run,$key,$id,$ordinal,$hash,$state,$category,$processed)
+                ON CONFLICT(run_id,ticket_key) DO UPDATE SET seed_hash=excluded.seed_hash,state=excluded.state,category=excluded.category,processed=excluded.processed
+                """,
                 ("$run", runId), ("$key", ""), ("$id", ""), ("$ordinal", 0), ("$hash", ""), ("$state", "pending"), ("$category", "pending"), ("$processed", 0));
             for (var i = 0; i < targets.Count; i++)
             {
@@ -233,18 +316,34 @@ public sealed partial class TicketLibraryStore
         return Run(c =>
         {
             using var tx = c.BeginTransaction(); RequireRunningCapture(c, tx, runId);
-            using (var installation = Command(c, tx, "SELECT installation FROM ticket_library_capture_runs WHERE run_id=$run", ("$run", runId)))
-                if (installation.ExecuteScalar() is not string expectedInstallation || expectedInstallation != metadata.Installation)
+            var missingOnly = false;
+            using (var installation = Command(c, tx, "SELECT installation,mode FROM ticket_library_capture_runs WHERE run_id=$run", ("$run", runId)))
+            using (var reader = installation.ExecuteReader())
+            {
+                if (!reader.Read() || reader.GetString(0) != metadata.Installation)
                     throw new InvalidDataException("Le contrôle final ne correspond pas à l’installation de cet essai.");
-            var before = Read(c, tx, metadata.Key);
-            var observed = SaveCore(c, tx, metadata, null, ct);
+                missingOnly = reader.GetString(1) == "retry-missing";
+            }
             string initialHash; bool read; bool reused; bool partial;
-            using (var command = Command(c, tx, "SELECT seed_hash,read_count,reused,partial FROM ticket_library_capture_entries WHERE run_id=$run AND ticket_key=$key", ("$run", runId), ("$key", metadata.Key)))
+            var preserved = false;
+            using (var command = Command(c, tx, "SELECT seed_hash,read_count,reused,partial,category FROM ticket_library_capture_entries WHERE run_id=$run AND ticket_key=$key", ("$run", runId), ("$key", metadata.Key)))
             using (var reader = command.ExecuteReader())
             {
                 if (!reader.Read()) { tx.Commit(); return true; }
                 initialHash = reader.GetString(0); read = reader.GetBoolean(1); reused = reader.GetBoolean(2); partial = reader.GetBoolean(3);
+                preserved = missingOnly && reader.GetString(4) == "stored-preserved";
             }
+            if (preserved)
+            {
+                // The final index proves this target was seen, not that a preserved
+                // older/partial body is current. Keep every document byte and proof.
+                Execute(c, tx, "UPDATE ticket_library_capture_entries SET final_seen=1,confirmed=0 WHERE run_id=$run AND ticket_key=$key", ("$run", runId), ("$key", metadata.Key));
+                ct.ThrowIfCancellationRequested(); tx.Commit(); return true;
+            }
+            // Check membership before observing metadata: a broad final index cannot
+            // update or invalidate documents outside the explicitly selected retry.
+            var before = Read(c, tx, metadata.Key);
+            var observed = SaveCore(c, tx, metadata, null, ct);
             Execute(c, tx, "UPDATE ticket_library_capture_entries SET final_seen=1,conflicts=MAX(conflicts,$conflict) WHERE run_id=$run AND ticket_key=$key",
                 ("$conflict", observed.ConflictCreated ? 1 : 0), ("$run", runId), ("$key", metadata.Key));
             if (!read && !reused) { tx.Commit(); return true; }

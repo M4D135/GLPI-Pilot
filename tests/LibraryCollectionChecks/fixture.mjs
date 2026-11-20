@@ -13,7 +13,7 @@ export const deferred = () => { let resolve, reject; const promise = new Promise
 // Run the entire production page and its bridge/timer lifecycle in a small DOM
 // double. These checks neither start a browser nor duplicate collection policy.
 export async function fixture(patch = {}) {
-  const queued = [], timers = new Map(), listeners = new Map(), calls = [], handlers = new Map(); let timerId = 0;
+  const queued = [], timers = new Map(), listeners = new Map(), calls = [], handlers = new Map(), notifications = [], navigations = []; let timerId = 0;
   class Element {
     constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.dataset = {}; this.listeners = new Map(); this.className = ''; this._text = ''; this._open = false; this.hidden = false; this.disabled = false;
       this.classList = { add: value => { this.className += ` ${value}`; }, contains: value => this.className.split(/\s+/).includes(value) }; }
@@ -28,6 +28,7 @@ export async function fixture(patch = {}) {
     addEventListener(name, callback) { const callbacks = this.listeners.get(name) || []; callbacks.push(callback); this.listeners.set(name, callbacks); }
     async emit(name) { for (const callback of this.listeners.get(name) || []) await callback({ type: name, target: this, preventDefault() {} }); }
     reportValidity() { return true; }
+    scrollIntoView() { this.scrolledIntoView = true; }
   }
   const el = (tag, attributes = {}, ...children) => {
     const node = new Element(tag);
@@ -61,7 +62,7 @@ export async function fixture(patch = {}) {
       if (operation === 'library.collection.status') return structuredClone(data.activity);
       if (operation === 'library.collection.get') {
         if (data.modelReadFailure) throw new Error(data.modelReadFailure);
-        return structuredClone({ state: data.state, report: data.report, activity: data.activity, ...(data.scopeModel || {}) });
+        return structuredClone({ state: data.state, report: data.report, activity: data.activity, availability: data.availability, ...(data.scopeModel || {}) });
       }
       if (operation === 'library.collection.events') return { runId: args.runId, total: data.events.length, offset: args.offset, limit: args.limit,
         persisted: data.persisted, items: structuredClone(data.events.slice(args.offset, args.offset + args.limit)) };
@@ -77,11 +78,12 @@ export async function fixture(patch = {}) {
     input: (value, attributes) => el('input', { value, ...attributes }), select: (options, value) => el('select', { value }, options.map(option => el('option', { value: option.value, text: option.label }))), field: (label, node) => el('label', {}, label, node),
     confirm: async () => true, formatNumber: value => String(value ?? 0), formatDate: value => value || '—',
     showError: (host, error) => host.append(el('p', { text: error.message })), isSimulation: session => !!session.simulation, isFileSource: session => !!session.fileSource,
+    openLibraryTicket: ({ api }, key) => api.call('library.ticket', { key }),
     document: { visibilityState: 'visible' }, structuredClone, URL,
     setInterval: callback => { const id = ++timerId; timers.set(id, callback); return id; }, clearInterval: id => timers.delete(id)
   });
   vm.runInContext(production + '\nglobalThis.render = renderLibraryCollection; globalThis.coveragePolicy = collectionCoverage;', context);
-  const dispose = await context.render({ root, api, signal: controller.signal, state: { session: {} }, notify() {}, navigate() {} });
+  const dispose = await context.render({ root, api, signal: controller.signal, state: { session: data.session || {} }, notify: (...args) => notifications.push(args), navigate: (...args) => navigations.push(args) });
   function all(node = root) { return [node, ...node.children.filter(child => child instanceof Element).flatMap(child => all(child))]; }
   const find = predicate => all().find(predicate);
   async function flush() {
@@ -91,7 +93,7 @@ export async function fixture(patch = {}) {
     }
   }
   await flush();
-  return { data, calls, handlers, root, dispose, timers, listeners, all, find, flush, coveragePolicy: context.coveragePolicy,
+  return { data, calls, handlers, notifications, navigations, root, dispose, timers, listeners, all, find, flush, coveragePolicy: context.coveragePolicy,
     byClass: value => find(node => node.classList.contains(value)),
     fieldControl: label => find(node => node.tagName === 'label' && node.children[0] === label)?.children.find(child => child instanceof Element),
     panel: value => find(node => node.dataset.collectionPanel === value),

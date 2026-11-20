@@ -16,6 +16,7 @@ const check = (label, checked = false) => {
 export async function renderLibrary(ctx) {
   const { root, api, signal, navigate, notify } = ctx;
   const simulation=isSimulation(ctx.state.session);
+  const offline=ctx.state.session?.cachedSource===true;
   const call = (op, args = {}, options = {}) => api.call(op, args, { signal, ...options });
   let model = await call('library.get'), latestCapture = null;
   let view = ctx.params?.resolvedOnly ? 'resolution' : ['library', 'resolution', 'team', 'connection'].includes(ctx.params?.view) ? ctx.params.view : 'library';
@@ -73,7 +74,7 @@ export async function renderLibrary(ctx) {
   function drawCapture() {
     captureSummary.hidden = !latestCapture;
     if (!latestCapture) { captureSummary.replaceChildren(); return; }
-    const run = latestCapture, canRetry = run.retryCount > 0 && run.status !== 'running';
+    const run = latestCapture, canRetry = !offline && run.retryCount > 0 && run.status !== 'running';
     captureSummary.replaceChildren(el('div', { class: 'library-outcome-heading' },
       el('div', {}, el('h3', { text: 'Dernière collecte' }),
         el('p', { class: 'help', text: `Démarrée le ${formatDate(run.startedAt)}${run.completedAt ? ' · Terminée le ' + formatDate(run.completedAt) : ''}` })),
@@ -82,6 +83,7 @@ export async function renderLibrary(ctx) {
       toolbar(action('Détail de la collecte', () => showCapture(run), { icon: 'log' }),
         canRetry ? action(`Reprendre les ${count(run.retryCount)} ticket(s) à relire`, () => retryCapture(run), { icon: 'refresh' }) : null));
     if (run.finalScopeVerified !== true) captureSummary.append(el('p', { class: 'help', text: 'La vérification finale n’est pas confirmée. Les nouveaux contenus restent consultables ; leur fraîcheur devra être contrôlée.' }));
+    if (offline) captureSummary.append(el('p', { class: 'help', text: 'Consultation hors connexion : les contenus déjà recueillis restent lisibles. Vérifier leur présence ne relance pas la collecte GLPI.' }));
     if (canRetry) captureSummary.append(el('p', { class: 'help', text: 'La reprise réactualise la liste GLPI et relit les tickets encore accessibles dans le même contexte.' }));
   }
   function retryCapture(run) {
@@ -101,7 +103,7 @@ export async function renderLibrary(ctx) {
       el('p', { class: 'help', text: run.scope || '' }),
       ...(run.limitations || []).map(value => el('p', { class: 'help', text: value })),
       retryOnly.element, summary, rows, pager);
-    const modal = dialog('Détail et reprise de la collecte', body, run.retryCount > 0 && run.status !== 'running' ? [
+    const modal = dialog('Détail et reprise de la collecte', body, !offline && run.retryCount > 0 && run.status !== 'running' ? [
       { label: 'Reprendre les tickets à relire', primary: true, disabled: busy, action: async close => { close(); await retryCapture(run); } }
     ] : []);
     const close = () => modal.close();
@@ -118,7 +120,7 @@ export async function renderLibrary(ctx) {
           { label: 'Ticket', render: item => el('span', { class: 'library-ticket-id', text: '#' + item.ticketId }) },
           { label: 'État de la lecture', render: item => badge(item.stateLabel || 'Observation conservée', item.retryable ? 'info' : '') },
           { label: 'Observation', render: item => el('p', { class: 'library-capture-message', text: item.message || 'Observation enregistrée.' }) },
-          { label: 'Contenu local', render: item => item.ticketKey ? button('Lire le cache', () => openTicket(item.ticketKey), { icon: 'ticket' }) : el('span', { text: '—' }) }
+          { label: 'Contenu local', render: item => item.ticketKey && item.hasContent !== false ? button('Lire le cache', () => openTicket(item.ticketKey), { icon: 'ticket' }) : el('span', { text: 'Aucun contenu conservé' }) }
         ]) : empty('Aucun ticket dans cette sélection', retryOnly.control.checked ? 'Tous les tickets de ce bilan peuvent être affichés en désactivant le filtre.' : 'Aucune lecture individuelle n’avait encore été enregistrée.'));
         pager.replaceChildren(button('Tickets précédents', async () => { offset = Math.max(0, offset - response.limit); await load(); }, { disabled: offset === 0 }),
           el('span', { text: `${items.length ? offset + 1 : 0}–${Math.min(response.total, offset + items.length)} sur ${count(response.total)}` }),
@@ -166,7 +168,7 @@ export async function renderLibrary(ctx) {
     }
     // Refresh facts without replacing focused/pressed controls. A refresh between
     // pointerdown and pointerup must not discard the user's pending click.
-    cacheControl.querySelector('span').textContent=simulation?(hasTickets?'Mettre à jour le cache':'Aspirer tous les tickets'):'Choisir les tickets à collecter';
+    cacheControl.querySelector('span').textContent=simulation?(hasTickets?'Mettre à jour le cache':'Aspirer tous les tickets'):offline?'Vérifier les contenus conservés':'Choisir les tickets à collecter';
     const nextIcon=hasTickets?'refresh':'download';
     if(cacheIcon!==nextIcon){cacheControl.querySelector('svg')?.replaceWith(icon(nextIcon));cacheIcon=nextIcon;}
     actionButtons.find(entry=>entry.control===syncControl).disabled=!shared;
@@ -174,7 +176,7 @@ export async function renderLibrary(ctx) {
     overviewDetails.replaceChildren(
       el('div', { class: 'library-overline' }, icon('layers'), badge(simulation?'Stockage de simulation':'Stockage local', 'info')),
       el('h2', { text: hasTickets ? 'Bibliothèque GLPI' : 'Collecter les tickets accessibles' }),
-      el('p', { text: simulation?'Retrouvez les fiches et contenus disponibles dans le relevé de simulation. Une mise à jour du cache reprend leurs modifications ; les rapprochements restent limités à ces données.':hasTickets ? 'Fiches et solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de la session.' : 'Tous les statuts, dans les entités actives de la session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' }));
+      el('p', { text: simulation?'Retrouvez les fiches et contenus disponibles dans le relevé de simulation. Une mise à jour du cache reprend leurs modifications ; les rapprochements restent limités à ces données.':offline?'Lisez les fiches et leurs rubriques conservées sur ce poste, y compris les contenus partiels ou dont la version reste à confirmer. Aucune nouvelle collecte GLPI n’est nécessaire pour les consulter.':hasTickets ? 'Fiches et solutions conservées. Une mise à jour relit les contenus nouveaux, modifiés ou à confirmer dans les entités actives de la session.' : 'Tous les statuts, dans les entités actives de la session GLPI. Les contenus confirmés alimentent la recherche de solutions sourcées.' }));
     statistics.replaceChildren(...[
       [s.ticketCount, 'Tickets conservés', 'Index de la bibliothèque'],
       [s.contentCount, 'Fiches avec contenu', 'Lectures effectivement recueillies'],
@@ -250,7 +252,7 @@ export async function renderLibrary(ctx) {
         el('p', { class: 'library-evidence', text: `Modification GLPI : ${row.lastModifiedRaw || formatDate(row.lastModifiedAt)} · Lecture : ${formatDate(row.readAt)}` }),
         row.conflicts ? el('p', { class: 'library-conflict', text: `${count(row.conflicts)} version(s) concurrente(s) conservée(s). La synchronisation ne les fusionne pas silencieusement.` }) : null),
       el('div', { class: 'library-result-actions' }, button('Lire le contenu conservé', () => openTicket(row.key), { icon: 'ticket' }),
-        button(simulation?'Afficher la fiche simulée':'Ouvrir dans GLPI', async () => {await call('library.open', { key: row.key });if(simulation)await openTicket(row.key);}, { icon: 'arrow' }),
+        offline ? null : button(simulation?'Afficher la fiche simulée':'Ouvrir dans GLPI', async () => {await call('library.open', { key: row.key });if(simulation)await openTicket(row.key);}, { icon: 'arrow' }),
         button('Ajouter une note d’équipe', () => editWorkspace({ kind: 'note', ticketKey: row.key, title: 'Ticket ' + row.ticket.id, body: '', status: 'draft' }, 'Ticket ' + row.ticket.id)),
         row.conflicts ? button('Examiner les versions', () => showConflicts('library.conflicts', { key: row.key }, true)) : null));
     if (citations.length) node.append(el('div', { class: 'library-solution' },

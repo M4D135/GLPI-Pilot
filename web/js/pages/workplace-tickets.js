@@ -17,7 +17,7 @@ export async function renderTickets(ctx) {
 // The full-page ticket combines source facts, collected observations and
 // a dedicated personal follow-up area. Specialist tools open in context.
 export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheChanged, onSourceChanged, onTicketClosed } = {}) {
-  if(fileSourceUnavailable(ctx))return;
+  if(fileSourceUnavailable(ctx,{allowCachedDetails:true}))return;
   const simulation = isSimulation(ctx.state.session);
   let state = await call(ctx, 'workplace.get'), current = null, source = null, opened = null;
   let personal = null, tool = null, disposed = false, version = 0, mapController = null;
@@ -181,7 +181,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheCha
     const heading = el('div', { class: 'tickets-panel-section-title' }, el('h3', { text: 'Journal recueilli' }),
       button('Consulter les observations', () => openTool('reader'), { icon: 'search', disabled: !ticket.loaded, attributes: { 'aria-haspopup': 'dialog' } }));
     body.append(heading);
-    if (!section) { body.append(note(ticket.loaded ? 'Aucun suivi ou tâche recueilli dans les rubriques lues.' : 'La fiche n’a pas encore été lue. Actualisez-la explicitement pour recueillir ses rubriques.')); return body; }
+    if (!section) { body.append(note(ticket.loaded ? 'Aucun suivi ou tâche recueilli dans les rubriques lues.' : ctx.state.session?.cachedSource ? 'Aucune rubrique détaillée conservée pour ce ticket. Les données du relevé restent disponibles ci-dessus.' : 'La fiche n’a pas encore été lue. Actualisez-la explicitement pour recueillir ses rubriques.')); return body; }
     const result = await call(ctx, 'workplace.ticket.section', { ticketKey: ticket.personal.key, sectionIndex: section.index, page: 0 });
     for (const row of result.rows.slice(0, 4)) body.append(el('article', { class: 'tickets-journal-event' },
       toolbar(badge(row.values[0] || 'Événement'), el('small', { text: row.values[1] || 'Date non renseignée' })),
@@ -216,7 +216,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheCha
     personal = ticketPersonalEditor(ctx, ticket.personal, state.checklistTemplates, value => { if (current?.personal.key === ticket.personal.key) current.personal = value; }, () => { current = null; onTicketClosed?.(); });
     replaceChildren(reader,
       el('header', { class: 'work-ticket-heading tickets-panel-heading' },
-        toolbar(badge(`#${ticket.personal.id}`, 'info'), badge(simulation ? 'Simulation locale' : ticket.loaded ? 'Observation datée' : 'Lecture à demander')),
+        toolbar(badge(`#${ticket.personal.id}`, 'info'), badge(simulation ? 'Simulation locale' : ctx.state.session?.cachedSource ? 'Contenu local · hors connexion' : ticket.loaded ? 'Observation datée' : 'Lecture à demander')),
         el('div', { class: 'tickets-cache-heading' },
           el('h2', { text: `#${ticket.personal.id} · ${ticket.title || ticket.personal.title}` }), ticketCacheIndicator(cacheFor(ticket))),
         ticketCacheDates(cacheFor(ticket)),
@@ -225,7 +225,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheCha
           button(simulation ? 'Afficher la fiche simulée' : 'Afficher dans GLPI', run(ctx, async () => { await call(ctx, 'workplace.ticket.browser', { ticketKey: ticket.personal.key }); if (simulation) await refresh(); }), { disabled: !ticket.canRead }))),
       !ticket.canRead ? note(ticket.readReason) : null, ...(ticket.warnings || []).map(note), facts,
       el('div', { class: 'tickets-actionbar' }, button('Planifier', () => ctx.navigate('interventions', {plan:true,ticketKey:ticket.personal.key}), {icon:'calendar'}), button('Notes et rappels', focusPersonal, { icon: 'log' }),
-        button('Brouillon de suivi', () => openTool('draft'), { icon: 'log', attributes: { 'aria-haspopup': 'dialog' } }), button('Actions assistées', () => openTool('actions'), { icon: 'check', primary: true, attributes: { 'aria-haspopup': 'dialog' } }),
+        button('Brouillon de suivi', () => openTool('draft'), { icon: 'log', attributes: { 'aria-haspopup': 'dialog' } }), button('Actions assistées', () => openTool('actions'), { icon: 'check', primary: true, disabled: !!ctx.state.session?.cachedSource, title: ctx.state.session?.cachedSource ? 'Les actions GLPI nécessitent une connexion ; les brouillons et notes restent disponibles.' : '', attributes: { 'aria-haspopup': 'dialog' } }),
         button('Autres outils', moreTools, { icon: 'settings' }),
         button('Voir sur la carte', run(ctx, async () => {
           const params=searchToolParams(ctx.state,{tab:'map',ticketMap:true});
@@ -273,6 +273,7 @@ export async function renderTicketReader(ctx, { onTicketOpened, onTicketCacheCha
   }
   async function openTool(kind) {
     if (!current) return;
+    if (kind === 'actions' && ctx.state.session?.cachedSource) { ctx.notify('Les actions GLPI nécessitent une connexion. Les contenus conservés, brouillons et notes restent disponibles.', 'info'); return; }
     if (kind === 'personal') { focusPersonal(); return; }
     personal?.remember(); await closeTool();
     const ticket = current, titles = { reader: 'Observations du ticket', summary: 'Synthèse du ticket', search: 'Rechercher dans le ticket', handover: 'Passation du ticket', intelligence: 'Rapprochements', insights: 'Planification et relations', draft: 'Brouillon de suivi', actions: 'Actions assistées' };
@@ -397,7 +398,7 @@ async function renderSections(ctx, root, ticket, state, savePosition, replaceTic
   const list = el('div', { class: 'work-section-content', tabIndex: 0 }); let page = Math.floor(Math.max(0, position.rowIndex || 0) / 50); let selectedRow = position.rowIndex ?? -1; let restoreFocus = selectedRow >= 0; let disposed = false;
   const persist = () => savePosition({ sectionKey: selected?.key || '', search: search.value, type: type.value, author: author.value, from: from.value ? from.value + 'T00:00:00' : null, to: to.value ? to.value + 'T00:00:00' : null, viewMode: Number(mode.value), rowIndex: selectedRow, scrollOffset: list.scrollTop });
   async function load() {
-    if (!selected) { list.replaceChildren(empty('Aucune rubrique collectée', 'Les onglets non lus peuvent être chargés séparément ci-dessus.')); return; }
+    if (!selected) { list.replaceChildren(empty('Aucune rubrique collectée', ctx.state.session?.cachedSource ? 'Seuls les contenus déjà enregistrés sont consultables hors connexion.' : 'Les onglets non lus peuvent être chargés séparément ci-dessus.')); return; }
     const result = await call(ctx, 'workplace.ticket.section', { ticketKey: key, sectionIndex: selected.index, page, focusRowIndex: restoreFocus ? selectedRow : undefined, search: search.value, type: type.value, author: author.value, from: from.value, to: to.value }); if (disposed) return;
     restoreFocus = false; page = result.page;
     const fullText = (row, column) => button('Lire le texte complet', run(ctx, async () => {
@@ -437,7 +438,7 @@ async function renderSections(ctx, root, ticket, state, savePosition, replaceTic
   mode.addEventListener('change', apply);
   grouped.addEventListener('change', run(ctx, async () => { state.groupTimelineByDay = grouped.checked; await call(ctx, 'workplace.preferences.save', { groupTimelineByDay: grouped.checked }); await load(); }));
   async function move(direction) { if (!selected) return; const index = ordered.indexOf(selected); const target = Math.max(0, Math.min(ordered.length - 1, index + direction)); [ordered[index], ordered[target]] = [ordered[target], ordered[index]]; state.sectionOrder = ordered.map(s => s.key); await call(ctx, 'workplace.preferences.save', { sectionOrder: state.sectionOrder }); sectionList.replaceChildren(...ordered.map(s => el('option', { value: s.key, text: s.name }))); sectionList.value = selected.key; }
-  replaceChildren(root, ticket.tabs?.some(t => !t.loaded) ? card('Onglets GLPI à lire', note('Chaque bouton charge seulement l’onglet de consultation découvert. Une lecture impossible conserve ses observations précédentes.'), toolbar(...ticket.tabs.filter(t => !t.loaded).map(tab => button(tab.name, run(ctx, async () => { const result = await call(ctx, 'workplace.ticket.tab', { ticketKey: key, tabKey: tab.key }); if (!result.loaded) ctx.notify(result.warnings.join('\n') || 'Cet onglet n’a pas pu être lu.', 'warning'); await replaceTicket(result.ticket); }))))) : null,
+  replaceChildren(root, ticket.tabs?.some(t => !t.loaded) ? card('Onglets GLPI à lire', note(ctx.state.session?.cachedSource ? 'Ces onglets n’ont pas été enregistrés. Les rubriques conservées restent consultables ci-dessous ; aucune lecture réseau ne sera lancée.' : 'Chaque bouton charge seulement l’onglet de consultation découvert. Une lecture impossible conserve ses observations précédentes.'), toolbar(...ticket.tabs.filter(t => !t.loaded).map(tab => button(tab.name, run(ctx, async () => { const result = await call(ctx, 'workplace.ticket.tab', { ticketKey: key, tabKey: tab.key }); if (!result.loaded) ctx.notify(result.warnings.join('\n') || 'Cet onglet n’a pas pu être lu.', 'warning'); await replaceTicket(result.ticket); }), {disabled:!ticket.canRead,title:ticket.canRead?'':ticket.readReason || 'Lecture en ligne indisponible.'})))) : null,
     toolbar(sectionList, button('★ Favori', run(ctx, async () => { if (!selected) return; state.favoriteSections = state.favoriteSections.includes(selected.key) ? state.favoriteSections.filter(k => k !== selected.key) : [...state.favoriteSections, selected.key]; await call(ctx, 'workplace.preferences.save', { favoriteSections: state.favoriteSections }); ctx.notify(state.favoriteSections.includes(selected.key) ? 'Rubrique ajoutée aux favoris.' : 'Rubrique retirée des favoris.'); })), button('Ouvrir ici par défaut', run(ctx, async () => { if (selected) { state.defaultSection = selected.key; await call(ctx, 'workplace.preferences.save', { defaultSection: selected.key }); ctx.notify('Rubrique d’ouverture mémorisée.'); } })), button('↑', run(ctx, () => move(-1)), { title: 'Monter la rubrique' }), button('↓', run(ctx, () => move(1)), { title: 'Descendre la rubrique' })),
     toolbar(search, mode, el('label', { class: 'work-check' }, grouped, el('span', { text: 'Regrouper par jour' }))),
     el('details', {}, el('summary', { text: 'Filtres de chronologie' }), el('div', { class: 'work-form-grid' }, field('Type d’événement', type), field('Auteur', author), field('Du', from), field('Au', to))),

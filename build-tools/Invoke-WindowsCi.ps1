@@ -574,7 +574,7 @@ try {
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--reference-saved-observation-only', '--screenshots', (Join-Path $logs 'reference-saved-observation-preview')) `
                 -LogName 'reference-saved-observation-webview-checks.log' -TimeoutSeconds 240 -ExpectedPattern '(?m)^([1-9]\d*)/\1 saved observation reference WebView checks passed\.\r?$'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--source-cache-only', '--screenshots', (Join-Path $logs 'source-cache-preview')) `
-                -LogName 'source-cache-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '11/11 source cache WebView checks passed.'
+                -LogName 'source-cache-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '17/17 source cache WebView checks passed.'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--shared-updates-only') `
                 -LogName 'shared-updates-webview-checks.log' -TimeoutSeconds 240 -ExpectedSummary '17/17 shared updates WebView checks passed.'
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @('run', '--project', 'tests/WebViewChecks/WebViewChecks.csproj', '-c', 'Release', '-p:PlaywrightPlatform=win', '--', '--motion-only', '--screenshots', (Join-Path $logs 'motion-preview')) `

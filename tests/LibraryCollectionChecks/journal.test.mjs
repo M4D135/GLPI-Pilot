@@ -2,6 +2,124 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fixture, runA, runB, sessionA, sessionB, options, event, deferred } from './fixture.mjs';
 
+const storedPass = () => ({
+  state: { revision: 1, state: 'completed', runId: runA, options },
+  report: { runId: runA, observed: 8, read: 7, reused: 0, retryCount: 8, message: 'Passage terminé, versions à confirmer.' },
+  availability: { runId: runA, observed: 8, stored: 7, complete: 1, partial: 6, missing: 1, unconfirmed: 7, confirmed: 0, invalid: 0, checkedAt: '2026-11-20T10:00:00Z' }
+});
+
+test('local verification exposes saved partial contents separately from freshness and never starts a capture', async () => {
+  const f = await fixture(storedPass());
+  assert.match(f.byClass('collection-local').textContent, /7Contenus conservés.*1Complets conservés.*6Partiels conservés.*1Sans contenu.*7Version à confirmer/);
+  const before = structuredClone(f.data);
+  await f.button('Vérifier les contenus conservés').emit('click'); await f.flush();
+  assert.deepEqual(f.data, before);
+  assert.equal(f.calls.filter(call => call.operation === 'library.collection.get').length, 2);
+  assert.equal(f.calls.some(call => /capture$|\.preview$|\.settings$|\.save$/.test(call.operation)), false);
+  assert.match(f.notifications.at(-1)[0], /Aucune lecture GLPI.*aucune modification/);
+  assert.match(f.byClass('collection-local-status').textContent, /7 contenus présents.*aucune nouvelle collecte/);
+  assert.equal(f.button('Vérifier les contenus conservés').disabled, false);
+  f.dispose();
+});
+
+test('restored cache offers local verification while explaining and blocking every online capture control', async () => {
+  const f = await fixture({ ...storedPass(), session: { cachedSource: true } });
+  assert.match(f.byClass('collection-launch-hint').textContent, /Cache local.*sans recollecte.*désactivées/);
+  for (const name of ['Mettre à jour', 'Reprendre', 'Reprendre les erreurs', 'Compléter seulement les contenus absents']) {
+    assert.equal(f.button(name).disabled, true, name);
+    await f.button(name).emit('click');
+  }
+  await f.button('Vérifier les contenus conservés').emit('click');
+  await f.button('Consulter les contenus').emit('click'); await f.flush();
+  assert.deepEqual(f.navigations, [['library']]);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  assert.equal(f.button('Vérifier les contenus conservés').disabled, false);
+  f.dispose();
+});
+
+test('missing-content retry keeps the original run and sends an explicit filter without a new scope', async () => {
+  const f = await fixture(storedPass());
+  f.handlers.set('library.capture', () => ({ collectionState: 'completed' }));
+  assert.equal(f.button('Compléter seulement les contenus absents').disabled, false);
+  await f.button('Compléter seulement les contenus absents').emit('click'); await f.flush();
+  const call = f.calls.find(call => call.operation === 'library.capture');
+  assert.equal(call.args.mode, 'retry');
+  assert.equal(call.args.runId, runA);
+  assert.equal(call.args.missingOnly, true);
+  assert.equal(call.args.scope, undefined);
+  assert.equal(call.args.previewToken, undefined);
+  // An explicit full retry remains available for truly incomplete sections.
+  await f.button('Reprendre les erreurs').emit('click'); await f.flush();
+  assert.equal(f.calls.filter(call => call.operation === 'library.capture').at(-1).args.missingOnly, undefined);
+  f.dispose();
+});
+
+test('retry entries open saved partial content by its exact key even in offline cache', async () => {
+  const f = await fixture({ ...storedPass(), session: { cachedSource: true } });
+  const key = 'e'.repeat(64);
+  f.handlers.set('library.capture.entries', () => ({ total: 2, items: [
+    { ticketKey: key, ticketId: '42', stateLabel: 'Lecture partielle', message: 'Date non confirmée.', hasContent: true,
+      detailLimitations: ['La rubrique Tâches reste incomplète.'] },
+    { ticketKey: 'f'.repeat(64), ticketId: '43', stateLabel: 'Non encore lu', message: 'Aucun contenu.', hasContent: false }
+  ] }));
+  f.handlers.set('library.ticket', args => ({ key: args.key }));
+  f.panel('retry').open = true; await f.flush();
+  assert.match(f.panel('retry').textContent, /rubrique Tâches reste incomplète/);
+  assert.equal(f.all().filter(node => node.tagName === 'button' && node.textContent === 'Lire le contenu conservé').length, 1);
+  await f.button('Lire le contenu conservé').emit('click');
+  assert.deepEqual(f.calls.find(call => call.operation === 'library.ticket').args, { key });
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+});
+
+test('a failed retry scrolls its error into view and a disabled start explains its missing preview', async () => {
+  const f = await fixture(storedPass());
+  assert.equal(f.button('Mettre à jour').disabled, true);
+  assert.match(f.byClass('collection-launch-hint').textContent, /Prévisualisez le périmètre/);
+  f.handlers.set('library.capture', () => { throw new Error('La source a changé. Les contenus sont conservés.'); });
+  await f.button('Reprendre les erreurs').emit('click'); await f.flush();
+  assert.equal(f.byClass('collection-errors').scrolledIntoView, true);
+  assert.match(f.byClass('collection-errors').textContent, /source a changé.*conservés/);
+  assert.equal(f.button('Reprendre les erreurs').disabled, false);
+  f.dispose();
+});
+
+test('an unsuccessful local check keeps the previous data and does not announce a successful verification', async () => {
+  const f = await fixture(storedPass());
+  f.data.modelReadFailure = 'Private storage failure';
+  await f.button('Vérifier les contenus conservés').emit('click'); await f.flush();
+  assert.equal(f.notifications.length, 0);
+  assert.equal(f.byClass('collection-model-error').hidden, false);
+  assert.equal(f.byClass('collection-errors').scrolledIntoView, true);
+  assert.match(f.byClass('collection-errors').textContent, /vérification locale n’a pas abouti.*conservés/);
+  assert.doesNotMatch(f.root.textContent, /Private storage failure/);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+});
+
+test('a collection starting during a local check cannot produce an unperformed audit success', async () => {
+  const f = await fixture(storedPass());
+  const modelReads = f.calls.filter(call => call.operation === 'library.collection.get').length;
+  f.handlers.set('library.collection.status', () => ({ state: 'running', sessionId: sessionA, runId: runA }));
+  await f.button('Vérifier les contenus conservés').emit('click'); await f.flush();
+  assert.equal(f.calls.filter(call => call.operation === 'library.collection.get').length, modelReads);
+  assert.equal(f.notifications.some(args => args[0].includes('Vérification locale terminée')), false);
+  assert.match(f.notifications.at(-1)[0], /Une collecte est en cours/);
+  assert.equal(f.button('Vérifier les contenus conservés').disabled, true);
+  f.dispose();
+});
+
+test('a restored source with no saved run cannot report that its nonexistent availability was checked', async () => {
+  const f = await fixture({ state: { revision: 0, state: 'idle', runId: '', options }, report: null, availability: null,
+    session: { cachedSource: true } });
+  await f.button('Vérifier les contenus conservés').emit('click'); await f.flush();
+  assert.equal(f.notifications.some(args => args[0].includes('Vérification locale terminée')), false);
+  assert.match(f.notifications.at(-1)[0], /Aucun bilan.*Consulter les contenus/);
+  assert.match(f.byClass('collection-local-status').textContent, /Aucun bilan local/);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+});
+
 test('an initial index failure with zero tickets opens dated operational events separately from retry entries', async () => {
   const f = await fixture();
   assert.equal(f.panel('journal').open, true);

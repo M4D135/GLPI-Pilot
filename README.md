@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.15 · Windows x64
+# GLPI Pilot 4.0.16 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.15 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.16 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.16 : consulter les contenus recueillis sans refaire la collecte
+
+Le relevé restauré en cache ouvre désormais les descriptions, suivis et rubriques déjà conservés dans la bibliothèque locale, y compris les contenus partiels ou dont la date reste à confirmer. Les références gardent l’installation et l’interprétation du relevé d’origine lorsque le profil de prochaine collecte a changé. La consultation ne modifie ni les contenus, ni leurs dates, ni leurs preuves.
+
+L’écran de collecte propose une vérification locale de la présence des contenus et leur lecture directe. Les totaux conservés, la complétude des rubriques et la fraîcheur GLPI sont séparés. Les commandes en ligne désactivées en cache sont expliquées ; une erreur de reprise est rendue visible près du parcours. Depuis une source GLPI active, un complément explicite peut se limiter aux fiches réellement sans contenu, en conservant ce choix après interruption. Aucune recollecte ni réinitialisation n’est nécessaire pour retrouver les fiches déjà enregistrées. Voir les [notes 4.0.16](docs/RELEASE-4.0.16.md).
 
 ## 4.0.15 : pagination native et fin de collecte fiable
 

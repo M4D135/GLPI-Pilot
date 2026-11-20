@@ -29,6 +29,7 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js');
       window.calls = []; window.callbacks = new Map(); window.state = { revision: 1, state: 'idle', runId: '', nextAt: null, options: { version: 1, automatic: false, intervalMinutes: 120, delayMilliseconds: 3000, batchSize: 25, batchPauseSeconds: 30, maximumMinutes: 60, consecutiveErrorLimit: 3, startMinute: 0, endMinute: 1440, timeZone: 'UTC' } }; window.activity = { state: 'idle' }; window.collectionEvents = []; window.reportOverride = null;
       window.collectionScope = { version: 1, enabled: true, dateRole: 'created', fromDate: '', toDate: '', ticketIds: [], text: '', similarSubject: '', fields: [] };
+      window.localAvailability = null; window.retryEntries = [];
       window.collectionCatalog = { sourceFingerprint: 'fixture-source-a', sourceUrl: 'https://fixture.invalid/glpi/front/ticket.php', observedAt: '2026-11-18T10:00:00Z', inventoryComplete: true, inventoryCount: 180000, titleAvailable: true,
         dateRoles: [{ role: 'created', label: 'Date de création', column: 'Date de création', available: true }, { role: 'updated', label: 'Dernière modification', column: 'Dernière modification', available: true }],
         fields: [{ column: 'Groupe attribué', role: 'group', label: 'Groupe attribué', valuesLoaded: true, truncated: false, values: [{ value: 'Support', count: 10000 }, { value: 'Réseau', count: 5000 }] },
@@ -41,14 +42,16 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       const api = { on: (name, callback) => { callbacks.set(name, callback); return () => callbacks.delete(name); }, call: async (op, args = {}) => {
         calls.push({ op, args: structuredClone(args) });
         if (op === 'library.collection.status') return structuredClone(activity);
-        if (op === 'library.collection.get') return { ...scopeModel(), state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi', coverage: state.runId ? structuredClone(scopeCoverage) : null };
+        if (op === 'library.collection.get') return { ...scopeModel(), state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi', coverage: state.runId ? structuredClone(scopeCoverage) : null, availability: structuredClone(localAvailability) };
         if (op === 'library.collection.scope') return scopeModel();
         if (op === 'library.collection.preview') return { ...scopeModel(), scope: structuredClone(args.scope), previewToken: 'f'.repeat(32), coverage: structuredClone(scopeCoverage), warnings: [] };
         if (op === 'library.collection.events') return { runId: args.runId, total: collectionEvents.length, offset: args.offset, limit: args.limit, persisted: true, items: structuredClone(collectionEvents.slice(args.offset, args.offset + args.limit)) };
         if (op === 'library.capture') { if (args.mode === 'incremental') { if (!args.previewToken || !args.scope?.enabled) throw new Error('A targeted preview is required'); state.scope = collectionScope = structuredClone(args.scope); } state.runId ||= 'a'.repeat(32); collectionEvents.unshift({ sequence: collectionEvents.length + 1, at: new Date().toISOString(), level: 'info', stage: 'Lecture de l’index', code: 'index.started', message: 'Lecture de la liste accessible démarrée.' }); activity = { state: 'running', sessionId: 'b'.repeat(32), runId: state.runId, total: 50, processed: 10, reused: 7, requests: 12, phase: 'Lecture', updatedAt: new Date().toISOString(), coverage: structuredClone(scopeCoverage), coverageVerifiedAt: '2026-11-18T11:00:00Z' }; callbacks.get('library.collection.progress')(activity); return new Promise(resolve => { window.finishCollection = resolve; }); }
         if (op === 'library.collection.control') { assertSession(args.sessionId); state.state = args.action === 'pause' ? 'paused' : 'stopped'; activity = { ...activity, state: state.state }; callbacks.get('library.collection.progress')(activity); finishCollection({ collectionState: state.state }); return { requested: true }; }
         if (op === 'library.collection.settings') { state.options = args.options; state.revision++; return state; }
-        if (op === 'library.capture.entries') return { total: 0, items: [] };
+        if (op === 'library.capture.entries') return { total: retryEntries.length, items: structuredClone(retryEntries) };
+        if (op === 'library.ticket') return { key: args.key, installation: 'https://fixture.invalid/glpi', seed: { ticket: { id: '42', url: 'https://fixture.invalid/glpi/front/ticket.form.php?id=42' }, title: 'Fiche conservée' },
+          detailComplete: false, detailsCurrent: false, detail: { readAt: '2026-11-20T10:00:00Z', sections: [{ name: 'Description', data: { headers: ['Texte'], rows: [['Description déjà enregistrée <script>texte littéral</script>']], complete: true } }] } };
         if (op === 'cache.state') return { available: false };
         if (op === 'library.get') return { stats: { ticketCount: 10 } };
         if (op === 'library.bootstrap.preview') return { cancelled: false, token: 'c'.repeat(32), preview: { manifest: { records: 10, exportedAt: new Date().toISOString(), installation: 'https://fixture.invalid/glpi' }, complete: 9 }, warning: 'Paquet interne de test.' };
@@ -137,7 +140,27 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       await page.locator('[data-collection-panel=journal]').scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-journal-initial-failure.png') });
     }
-    await page.evaluate(async () => { cleanup(); ({ state, activity, collectionEvents } = savedCollectionScenario); reportOverride = null; collectionContext.root.replaceChildren(); const { renderDataWorkspace } = await importProduction('/web/js/pages/data-workspace.js'); window.workspaceCleanup = await renderDataWorkspace(collectionContext); });
+    await page.evaluate(async () => {
+      cleanup(); state.state = 'completed'; activity = { state: 'idle' }; collectionContext.state.session = { cachedSource: true };
+      reportOverride = { runId: state.runId, observed: 8, read: 7, reused: 0, retryCount: 8, message: 'Passage terminé, versions à confirmer.' };
+      localAvailability = { runId: state.runId, observed: 8, stored: 7, complete: 1, partial: 6, missing: 1, unconfirmed: 7, checkedAt: '2026-11-20T10:00:00Z' };
+      retryEntries = [{ ticketKey: 'e'.repeat(64), ticketId: '42', stateLabel: 'Lecture partielle', message: 'Version à confirmer.', hasContent: true, detailLimitations: ['La rubrique Tâches reste incomplète.'] }];
+      const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js'); cleanup = await renderLibraryCollection(collectionContext);
+    });
+    await page.getByRole('button', { name: 'Vérifier les contenus conservés', exact: true }).click();
+    ok(await page.locator('.collection-local-status').textContent().then(text => text.includes('7 contenus présents') && text.includes('aucune nouvelle collecte'))
+      && await page.getByRole('button', { name: 'Mettre à jour', exact: true }).isDisabled(), 'Offline local verification reports saved contents independently of unconfirmed freshness and disables online collection');
+    await page.locator('[data-collection-panel=retry] > summary').click();
+    await page.getByRole('button', { name: 'Lire le contenu conservé', exact: true }).click();
+    await page.locator('.library-offline-notice').waitFor({ state: 'visible' });
+    ok(await page.locator('.library-ticket-content').textContent().then(text => text.includes('Lecture partielle conservée') && text.includes('Description déjà enregistrée <script>texte littéral</script>'))
+      && await page.getByRole('button', { name: 'Ouvrir dans GLPI', exact: true }).count() === 0, 'The retry list opens its saved partial body as literal text and exposes no online action from the offline dialog');
+    ok(await page.evaluate(() => calls.filter(c => c.op === 'library.capture').length === 2 && !calls.some(c => c.op === 'library.open')
+      && calls.some(c => c.op === 'library.ticket' && c.args.key === 'e'.repeat(64))), 'Local inspection and ticket reading neither repeat capture nor open GLPI');
+    if (process.env.GLPI_TEST_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-offline-saved-ticket.png') });
+    await page.locator('.library-ticket-modal').getByRole('button', { name: 'Fermer', exact: true }).click();
+    if (process.env.GLPI_TEST_SCREENSHOTS) await page.locator('.collection-local').screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-local-availability.png') });
+    await page.evaluate(async () => { cleanup(); ({ state, activity, collectionEvents } = savedCollectionScenario); reportOverride = null; localAvailability = null; retryEntries = []; collectionContext.state.session = {}; collectionContext.root.replaceChildren(); const { renderDataWorkspace } = await importProduction('/web/js/pages/data-workspace.js'); window.workspaceCleanup = await renderDataWorkspace(collectionContext); });
     await page.getByRole('button', { name: 'Choisir les tickets à collecter', exact: true }).click();
     ok(await page.locator('[data-workspace-panel=collection] .collection-workspace').count() === 1 && await page.getByRole('button', { name: 'Reprendre', exact: true }).isVisible()
       && await page.evaluate(() => calls.filter(c => c.op === 'library.capture').length === 2), 'The production data workspace collection entry opens the saved scope without starting a global collection');

@@ -55,8 +55,8 @@ export function simulationNotice(session,detail='Les modifications restent dans 
 export const isFileSource=session=>session?.fileSource===true;
 export const ticketDetailsAvailable=session=>session?.capabilities?.ticketDetails!==false;
 export const fileSourceDetailHelp='Le fichier contient la liste des tickets. Les suivis, tâches, solutions et documents nécessitent une collecte GLPI par navigateur.';
-export function fileSourceUnavailable(ctx) {
- if(!isFileSource(ctx.state.session)&&!ctx.state.session.cachedSource)return false;
+export function fileSourceUnavailable(ctx,{allowCachedDetails=false}={}) {
+ if(!isFileSource(ctx.state.session)&&(!ctx.state.session.cachedSource||allowCachedDetails))return false;
  const detail=ctx.state.session.cachedSource?'Ce relevé daté est consulté hors connexion. Une nouvelle collecte GLPI permet de relire les fiches en ligne.':fileSourceDetailHelp;
  ctx.root.replaceChildren(card('Détail indisponible avec cette source',el('p',{text:detail}),
   button('Choisir une source GLPI',()=>ctx.navigate('data'),{icon:'folder'})));

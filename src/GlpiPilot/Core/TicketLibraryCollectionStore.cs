@@ -105,16 +105,18 @@ public sealed partial class TicketLibraryStore
             var old = new Dictionary<string, string>(StringComparer.Ordinal);
             using (var query = Command(c, tx, "SELECT ticket_key,seed_hash FROM ticket_library_capture_entries WHERE run_id=$run", ("$run", runId)))
             using (var reader = query.ExecuteReader()) while (reader.Read()) old.Add(reader.GetString(0), reader.GetString(1));
-            // A paused targeted retry must not widen to unrelated tickets. If interrupted
-            // before its first index, recover the original failed targets from its parent.
+            // New retries freeze their membership atomically when their journal opens.
+            // Only legacy unrestricted retries may reconstruct membership from a parent.
             var allowed = new HashSet<string>(old.Keys, StringComparer.Ordinal);
+            if (mode == "retry-missing" && allowed.Count == 0)
+                throw new InvalidOperationException("La sélection des contenus absents n’est plus conservée. Aucun autre ticket ne sera ajouté à cette reprise.");
             if (mode == "retry" && allowed.Count == 0)
             {
                 using var query = Command(c, tx, "SELECT ticket_key FROM ticket_library_capture_entries WHERE run_id=$parent AND retryable=1", ("$parent", parent));
                 using var reader = query.ExecuteReader(); while (reader.Read()) { ct.ThrowIfCancellationRequested(); allowed.Add(reader.GetString(0)); }
                 if (allowed.Count == 0) throw new InvalidOperationException("Les cibles de cet essai ne sont plus présentes. Démarrez explicitement une mise à jour différentielle.");
             }
-            var selected = seeds.Where(pair => mode != "retry" || allowed.Contains(pair.Key)).ToArray();
+            var selected = seeds.Where(pair => mode is not ("retry" or "retry-missing") || allowed.Contains(pair.Key)).ToArray();
             if (old.Count + selected.Count(pair => !old.ContainsKey(pair.Key)) > CaptureTicketLimit)
                 throw new InvalidDataException("Le journal de reprise atteint sa limite. Les contenus sont conservés ; utilisez un nouveau cycle différentiel.");
             var ordinal = 0;

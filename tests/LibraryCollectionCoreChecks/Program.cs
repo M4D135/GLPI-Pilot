@@ -33,6 +33,7 @@ try
     }
     var scopeChecks = await LibraryCollectionScopeChecks.RunAsync(root); passed += scopeChecks.Passed; total += scopeChecks.Total;
     var windowChecks = await LibraryCollectionWindowChecks.RunAsync(root); passed += windowChecks.Passed; total += windowChecks.Total;
+    var availabilityChecks = await LibraryCaptureAvailabilityChecks.RunAsync(root); passed += availabilityChecks.Passed; total += availabilityChecks.Total;
 #if !COLLECTION_CORE_ONLY
     await CollectionScopeRuntimeChecks.RunAsync(root, Check);
 #endif

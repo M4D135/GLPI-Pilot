@@ -68,29 +68,32 @@ public sealed partial class PilotApplication
                 var beforeTicket = await local.CollectionCoverageAsync([seed], TicketLibraryAcquisition.ReaderSignature, ct).ConfigureAwait(false);
                 try
                 {
-                    // A body saved before interruption can be confirmed by this
-                    // fresh same-window observation before considering a reread.
-                    if (mode == "resume") await local.ConfirmCaptureTicketAsync(runId, seed, true, ct).ConfigureAwait(false);
-                    var observed = await local.ObserveCaptureSeedAsync(runId, seed, ct).ConfigureAwait(false);
-                    policy.Now = DateTimeOffset.UtcNow; policy.ForceRefresh = mode == "all" || requiredReads?.Contains(key) == true;
-                    var compatibleEarlierRead = TicketLibraryAcquisition.IsEarlierReader(observed.Document.ReaderSignature)
-                        && TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy);
-                    var canSkip = policy.ForceRefresh
-                        ? TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy)
-                        : LibraryCollectionScopePlanner.CanReuse(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature) || compatibleEarlierRead;
-                    if (canSkip)
+                    if (!existing.MissingOnly || !await local.PreserveCaptureContentAsync(runId, key, ct).ConfigureAwait(false))
                     {
-                        var awaiting = !TicketLibraryRules.IsContentConfirmed(observed.Document);
-                        if (mode == "resume") await local.RecordCollectionResumeReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
-                        else await local.RecordCollectionReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
-                        reused++;
-                    }
-                    else
-                    {
-                        await local.RecordCaptureReadingAsync(runId, key, ct).ConfigureAwait(false);
-                        var detail = await Browser.ReadTicketLibraryDetailsAsync(seed.Ticket, settings, Progress(), ct).ConfigureAwait(false);
-                        await local.SaveCaptureDetailAsync(runId, seed, detail, observed.Document.LocalRevision, ct).ConfigureAwait(false);
-                        lastRead = seed.Ticket;
+                        // A body saved before interruption can be confirmed by this
+                        // fresh same-window observation before considering a reread.
+                        if (mode == "resume") await local.ConfirmCaptureTicketAsync(runId, seed, true, ct).ConfigureAwait(false);
+                        var observed = await local.ObserveCaptureSeedAsync(runId, seed, ct).ConfigureAwait(false);
+                        policy.Now = DateTimeOffset.UtcNow; policy.ForceRefresh = mode == "all" || requiredReads?.Contains(key) == true;
+                        var compatibleEarlierRead = TicketLibraryAcquisition.IsEarlierReader(observed.Document.ReaderSignature)
+                            && TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy);
+                        var canSkip = policy.ForceRefresh
+                            ? TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy)
+                            : LibraryCollectionScopePlanner.CanReuse(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature) || compatibleEarlierRead;
+                        if (canSkip)
+                        {
+                            var awaiting = !TicketLibraryRules.IsContentConfirmed(observed.Document);
+                            if (mode == "resume") await local.RecordCollectionResumeReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
+                            else await local.RecordCollectionReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
+                            reused++;
+                        }
+                        else
+                        {
+                            await local.RecordCaptureReadingAsync(runId, key, ct).ConfigureAwait(false);
+                            var detail = await Browser.ReadTicketLibraryDetailsAsync(seed.Ticket, settings, Progress(), ct).ConfigureAwait(false);
+                            await local.SaveCaptureDetailAsync(runId, seed, detail, observed.Document.LocalRevision, ct).ConfigureAwait(false);
+                            lastRead = seed.Ticket;
+                        }
                     }
                     failures = 0;
                 }

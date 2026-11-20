@@ -22,6 +22,17 @@ public sealed partial class PilotApplication
     {
         var runId = Text(args, "runId", 32); var offset = Number(args, "offset", 0, 0, TicketLibraryStore.CaptureTicketLimit);
         var limit = Number(args, "limit", 50, 1, 100);
+        if (IsCachedSource)
+        {
+            var source = Result; var installation = CachedCollectionInstallation();
+            var store = installation.Length == 0 ? null : WorkExistingLibrary();
+            var savedPage = store is null ? new TicketLibraryCollectionEventPage { Offset = offset, Limit = limit }
+                : await store.ReadSavedCollectionEventsAsync(installation, runId, offset, limit, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if (!IsCachedSource || !ReferenceEquals(source, Result))
+                throw new InvalidOperationException("Le relevé consulté a changé pendant la lecture du journal. Actualisez cet écran.");
+            return savedPage;
+        }
         var context = CurrentCollectionContext();
         if (context is null)
         {

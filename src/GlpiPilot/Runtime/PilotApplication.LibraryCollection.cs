@@ -39,12 +39,14 @@ public sealed partial class PilotApplication
         Register("library.collection.control", (a, _) => Task.FromResult<object?>(ControlLibraryCollection(a)));
         Register("library.collection.get", async (args, ct) =>
         {
+            if (IsCachedSource) return await ReadOfflineCollectionAsync(ct).ConfigureAwait(false);
             var context = LibraryCaptureContext(Settings, LibrarySettings);
             var state = await TicketLibrary.CollectionStateAsync(context.Fingerprint, ct).ConfigureAwait(false);
             var report = state.RunId.Length == 0 ? null : await TicketLibrary.GetCaptureAsync(state.RunId, ct).ConfigureAwait(false);
+            var availability = state.RunId.Length == 0 ? null : await TicketLibrary.CaptureAvailabilityAsync(state.RunId, ct).ConfigureAwait(false);
             var selection = await CollectionScopeModelAsync(state, context, args, ct).ConfigureAwait(false);
             var restorationPending = AutomaticRestorationPending();
-            return new { state, report, installation = context.Installation, activity = ReadCollectionActivity(), applicationMustRemainOpen = true,
+            return new { state, report, availability, installation = context.Installation, activity = ReadCollectionActivity(), applicationMustRemainOpen = true,
                 selection.Scope, selection.Catalog, selection.Coverage, selection.Inventory, selection.Available, selection.Message, selection.Warnings, selection.Teams,
                 automaticBlocked = state.Options.Automatic && (!state.Scope.Enabled || restorationPending),
                 automaticBlockReason = restorationPending ? AutomaticRestorationMessage : "" };
@@ -81,6 +83,7 @@ public sealed partial class PilotApplication
     }
     private CollectionActivity ReadCollectionActivity()
     {
+        if (IsCachedSource) return new();
         var context = CurrentCollectionContext();
         lock (_collectionGate) return context?.Fingerprint == _collectionContextFingerprint
             || context is null && _collectionSourceIdentity == CollectionSourceIdentity() && _collectionJournal is { RunId.Length: 0 }
@@ -137,8 +140,12 @@ public sealed partial class PilotApplication
         var resumeId = mode == "resume" ? Text(args, "runId", 32, state.RunId) : "";
         if (mode == "resume" && resumeId.Length == 0) throw new InvalidOperationException("Aucune collecte enregistrée à reprendre.");
         var parent = mode == "retry" ? Text(args, "runId", 32) : "";
-        var targets = mode == "retry" ? await local.CaptureRetryTargetsAsync(parent, context, requestCancellation).ConfigureAwait(false) : null;
-        if (targets is { Count: 0 }) throw new InvalidOperationException("Aucune fiche à reprendre dans cet essai.");
+        var missingOnly = Flag(args, "missingOnly");
+        if (missingOnly && mode != "retry") throw new InvalidDataException("Le complément des contenus manquants nécessite le journal de la collecte précédente.");
+        var targets = mode == "retry" ? await local.CaptureRetryTargetsAsync(parent, context, requestCancellation, missingOnly: missingOnly).ConfigureAwait(false) : null;
+        if (targets is { Count: 0 }) throw new InvalidOperationException(missingOnly
+            ? "Aucun contenu manquant à lire dans ce passage. Les fiches déjà conservées restent disponibles, même si leur version est à confirmer."
+            : "Aucune fiche à reprendre dans cet essai.");
         var plan = await ResolveCollectionPlanAsync(args, mode, resumeId, parent, state, context, targets, requestCancellation).ConfigureAwait(false);
         if (plan is { Selected: 0 }) throw new InvalidOperationException("Aucun ticket ne correspond à ce périmètre. Modifier les filtres puis prévisualiser la sélection.");
         state.Options.Validate();
@@ -169,8 +176,12 @@ public sealed partial class PilotApplication
                     { budget.Cancel(); token.ThrowIfCancellationRequested(); }
                     await lease.VerifyAsync(token).ConfigureAwait(false);
                 });
-            if (mode == "resume") { runId = resumeId; await local.ResumeCaptureAsync(runId, context, ct).ConfigureAwait(false); }
-            else runId = await local.BeginCaptureAsync(context, mode, parent, ct).ConfigureAwait(false);
+            if (mode == "resume")
+            {
+                runId = resumeId; await local.ResumeCaptureAsync(runId, context, ct).ConfigureAwait(false);
+                missingOnly = (await local.GetCaptureAsync(runId, ct).ConfigureAwait(false)).MissingOnly;
+            }
+            else runId = await local.BeginCaptureAsync(context, mode, parent, ct, retryTargets: targets, missingOnly: missingOnly).ConfigureAwait(false);
             journal.Bind(runId);
             ownsJournal = true;
             if (plan is not null && mode != "resume") await local.SaveCollectionPlanAsync(runId, context, plan, ct).ConfigureAwait(false);
@@ -236,24 +247,27 @@ public sealed partial class PilotApplication
                     ct.ThrowIfCancellationRequested(); var key = TicketLibraryRules.Key(seed.Ticket);
                     try
                     {
-                        // A saved but unconfirmed body is checked against the refreshed index before any re-download.
-                        // The store checks the exact revision/hash/proof and never confirms a competing version.
-                        if (mode == "resume" && index.Complete) await local.ConfirmCaptureTicketAsync(runId, seed, true, ct).ConfigureAwait(false);
-                        var observed = await local.ObserveCaptureSeedAsync(runId, seed, ct).ConfigureAwait(false); policy.Now = DateTimeOffset.UtcNow;
-                        policy.ForceRefresh = mode == "all" || requiredReads?.Contains(key) == true;
-                        if (TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy))
+                        if (!missingOnly || !await local.PreserveCaptureContentAsync(runId, key, ct).ConfigureAwait(false))
                         {
-                            var awaiting = !TicketLibraryRules.IsContentConfirmed(observed.Document);
-                            if (mode == "resume") await local.RecordCollectionResumeReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
-                            else await local.RecordCollectionReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
-                            reused++;
-                        }
-                        else
-                        {
-                            await local.RecordCaptureReadingAsync(runId, key, ct).ConfigureAwait(false);
-                            var detail = await Browser.ReadTicketLibraryDetailsAsync(seed.Ticket, settings, Progress(), ct).ConfigureAwait(false);
-                            await local.SaveCaptureDetailAsync(runId, seed, detail, observed.Document.LocalRevision, ct).ConfigureAwait(false);
-                            lastRead = seed.Ticket;
+                            // A saved but unconfirmed body is checked against the refreshed index before any re-download.
+                            // The store checks the exact revision/hash/proof and never confirms a competing version.
+                            if (mode == "resume" && index.Complete) await local.ConfirmCaptureTicketAsync(runId, seed, true, ct).ConfigureAwait(false);
+                            var observed = await local.ObserveCaptureSeedAsync(runId, seed, ct).ConfigureAwait(false); policy.Now = DateTimeOffset.UtcNow;
+                            policy.ForceRefresh = mode == "all" || requiredReads?.Contains(key) == true;
+                            if (TicketLibraryStore.CanSkip(seed, observed.Document, TicketLibraryAcquisition.ReaderSignature, policy))
+                            {
+                                var awaiting = !TicketLibraryRules.IsContentConfirmed(observed.Document);
+                                if (mode == "resume") await local.RecordCollectionResumeReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
+                                else await local.RecordCollectionReuseAsync(runId, key, ct, awaiting).ConfigureAwait(false);
+                                reused++;
+                            }
+                            else
+                            {
+                                await local.RecordCaptureReadingAsync(runId, key, ct).ConfigureAwait(false);
+                                var detail = await Browser.ReadTicketLibraryDetailsAsync(seed.Ticket, settings, Progress(), ct).ConfigureAwait(false);
+                                await local.SaveCaptureDetailAsync(runId, seed, detail, observed.Document.LocalRevision, ct).ConfigureAwait(false);
+                                lastRead = seed.Ticket;
+                            }
                         }
                         failures = 0;
                     }
@@ -287,7 +301,8 @@ public sealed partial class PilotApplication
                     finalVerified = final.AllStatuses && final.Complete && index.Complete && final.ScopeFingerprint == index.ScopeFingerprint;
                     if (!final.AllStatuses || ObjectIdentity.Installation(final.SourceUrl) != context.Installation)
                         throw new GlpiLibraryIndexException("all-status", "index-scope", "Le périmètre de la confirmation finale diffère. Les contenus reçus restent conservés sans confirmation de fraîcheur.");
-                    foreach (var seed in final.Tickets) { NormalizeLibraryDate(seed, preferences); await local.ConfirmCaptureTicketAsync(runId, seed, finalVerified, ct).ConfigureAwait(false); }
+                    foreach (var seed in final.Tickets.Where(seed => selected is null || selected.Contains(TicketLibraryRules.Key(seed.Ticket))))
+                    { NormalizeLibraryDate(seed, preferences); await local.ConfirmCaptureTicketAsync(runId, seed, finalVerified, ct).ConfigureAwait(false); }
                     finalRead = true; limits.AddRange(final.Limitations);
                     if (!finalVerified) limits.Add("Le périmètre reste partiel ou a changé. Aucune absence n’est traitée comme une suppression.");
                 }

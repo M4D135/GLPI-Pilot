@@ -25,6 +25,7 @@ export async function openLibraryPrecedents({api, signal, state, navigate}, refe
  * At most the source view, result cards and one candidate body are retained. */
 export async function openLibraryTicket({api, signal, state}, key, options = {}) {
   const simulation=isSimulation(state?.session);
+  const offline=state?.session?.cachedSource===true;
   const request = new AbortController();
   const call = (operation, args = {}) => api.call(operation, args, {signal: request.signal});
   const body = el('div', {class: 'library-detail', 'aria-busy': 'true'},
@@ -35,6 +36,7 @@ export async function openLibraryTicket({api, signal, state}, key, options = {})
     {label: 'Retrouver des précédents résolus', action: () => showResolution()},
     {label: 'Copier la référence', action: () => sourceUrl ? call('app.copy', {text: sourceUrl}) : undefined},
     {label: simulation?'Actualiser la fiche simulée':'Ouvrir dans GLPI', action: async () => {
+      if(offline)return;
       if(!sourceUrl&&!simulation)return;
       await call('library.open', {key: activeKey});
       if(simulation){
@@ -60,12 +62,13 @@ export async function openLibraryTicket({api, signal, state}, key, options = {})
   function present(view, back = null, label = '') {
     if (currentView) currentView.scroll = scroller.scrollTop;
     currentView = view; sourceUrl = view.sourceUrl || ''; activeKey = view.key || key;
-    body.replaceChildren(...[simulationNotice(state?.session,'Cette fiche, ses précédents et leur actualisation utilisent la bibliothèque de simulation.'),view.element].filter(Boolean)); body.dataset.readerView = view.kind;
+    body.replaceChildren(...[simulationNotice(state?.session,'Cette fiche, ses précédents et leur actualisation utilisent la bibliothèque de simulation.'),
+      offline?el('p',{class:'notice info library-offline-notice',text:'Contenu conservé sur ce poste, consulté hors connexion. Aucune nouvelle lecture GLPI.'}):null,view.element].filter(Boolean)); body.dataset.readerView = view.kind;
     modal.element.setAttribute('aria-label', view.title); heading.replaceChildren(...view.heading());
     backAction = back; backButton.hidden = !back;
     if (label) backButton.querySelector('span').textContent = label;
     actions[0].hidden = view.kind !== 'original'; actions[0].disabled = !original;
-    actions[1].disabled = !sourceUrl; actions[2].disabled = !simulation&&!sourceUrl;
+    actions[1].disabled = !sourceUrl; actions[2].hidden = offline; actions[2].disabled = offline || !simulation&&!sourceUrl;
     scroller.scrollTop = view.scroll || 0;
   }
   function showOriginal() {
@@ -120,7 +123,8 @@ function ticketView(document, kind) {
     ['Installation', document.installation], ['État', seed.status || 'Non recueilli'],
     ['Dernière modification GLPI', seed.lastModifiedRaw || formatDate(seed.lastModifiedAt)],
     ['Lecture du contenu', formatDate(detail?.readAt)], ['Source', sourceUrl],
-    ['Fraîcheur', document.detailsCurrent && document.detailComplete ? 'Contenu confirmé dans le cache' : 'Contenu partiel ou à recontrôler']
+    ['Contenu conservé', detail ? document.detailComplete ? 'Lecture complète conservée' : 'Lecture partielle conservée' : 'Aucun contenu enregistré'],
+    ['Fraîcheur', document.detailsCurrent && document.detailComplete ? 'Version confirmée lors de la collecte' : 'Version à confirmer ; le contenu conservé reste consultable']
   ].map(([name, value]) => el('div', {}, el('dt', {text: name}), el('dd', {text: value || '—'})))));
   if (document.conflicts) body.append(el('p', {class: 'library-conflict', text: 'Plusieurs versions de cette fiche sont conservées. Leur coexistence reste signalée tant que le conflit n’est pas résolu.' }));
   for (const warning of [...(detail?.warnings || []), ...(document.coverage?.limitations || [])]) body.append(el('p', {class: 'help', text: warning}));

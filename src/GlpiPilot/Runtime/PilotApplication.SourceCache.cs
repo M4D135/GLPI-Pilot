@@ -93,10 +93,17 @@ public sealed partial class PilotApplication
     private void EnsureCachedSourceOperationAllowed(string operation)
     {
         if (!IsCachedSource) return;
-        if (operation.StartsWith("workplace.ticket.", StringComparison.Ordinal) && operation is not ("workplace.ticket.list" or "workplace.ticket.close")
+        // Reading already stored observations does not use the browser. Keep an explicit
+        // local allow-list so opening an offline dossier cannot admit a future online command.
+        if (operation.StartsWith("workplace.ticket.", StringComparison.Ordinal) && operation is not (
+                "workplace.ticket.list" or "workplace.ticket.open" or "workplace.ticket.close"
+                or "workplace.ticket.section" or "workplace.ticket.cell" or "workplace.ticket.position"
+                or "workplace.ticket.search" or "workplace.ticket.insights" or "workplace.ticket.links"
+                or "workplace.ticket.intelligence" or "workplace.ticket.recurrence" or "workplace.ticket.handover")
             || operation.StartsWith("workplace.actions.", StringComparison.Ordinal) && operation != "workplace.actions.invalidate"
             || operation.StartsWith("workplace.enrichment.", StringComparison.Ordinal)
-            || operation is "library.capture" or "library.open" or "workplace.document.download" or "workplace.queue.add"
+            || operation is "library.capture" or "library.open" or "workplace.document.download" or "workplace.relation.open" or "workplace.queue.add"
+                or "library.collection.preview" or "library.collection.settings"
                 or "terrain.tours.route" or "terrain.tours.weather")
             throw new InvalidOperationException("Ce relevé conservé est consulté hors connexion. Lancez explicitement une nouvelle collecte GLPI pour retrouver les lectures et actions en ligne.");
     }

@@ -44,7 +44,7 @@ public sealed partial class PilotApplication
         {
             CheckRevision(a); var data = RequireResult(); var index = Number(a, "rowIndex", -1, 0, Math.Max(0, data.Rows.Count - 1));
             if (data.Rows.Count == 0) throw new InvalidOperationException("Le relevé ne contient aucune ligne.");
-            var settings = EffectiveSettings; var reference = IsSimulationInstance ? SimulationReference(index) : TicketReferenceResolver.Resolve(data, data.Rows[index], settings);
+            var settings = WorkTicketReferenceSettings(); var reference = IsSimulationInstance ? SimulationReference(index) : TicketReferenceResolver.Resolve(data, data.Rows[index], settings);
             var titleCol = DashboardService.ResolveColumns(data.Headers, settings.Dashboard).FirstOrDefault(c => c.Role == "title")?.Index;
             p = WorkplaceStore.Remember(doc, reference, titleCol is int col ? data.Rows[index][col] : "Ticket " + reference.Id);
         }
@@ -70,7 +70,14 @@ public sealed partial class PilotApplication
     private object WorkTicketView(string key)
     {
         var p = WorkDocument().Tickets.Single(t => t.Key == key); var detail = WorkOptionalDetail(p); var canRead = true; var reason = "";
-        try { WorkValidateReference(new(p.Id, p.Url)); } catch (InvalidOperationException error) { canRead = false; reason = AppPaths.SafeError(error); }
+        if (IsCachedSource)
+        {
+            canRead = false;
+            reason = detail is null
+                ? "Aucun contenu détaillé conservé pour ce ticket dans cette installation. Les valeurs du relevé restent consultables."
+                : "Consultation hors connexion : les contenus déjà enregistrés restent accessibles. Leur état actuel dans GLPI n’est pas vérifié.";
+        }
+        else try { WorkValidateReference(new(p.Id, p.Url)); } catch (InvalidOperationException error) { canRead = false; reason = AppPaths.SafeError(error); }
         var changes = _workplaceChanges.GetValueOrDefault(key);
         return new
         {

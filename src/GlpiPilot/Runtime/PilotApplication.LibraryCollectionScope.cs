@@ -34,6 +34,7 @@ public sealed partial class PilotApplication
     {
         Register("library.collection.scope", async (args, ct) =>
         {
+            if (IsCachedSource) return await ReadOfflineCollectionAsync(ct).ConfigureAwait(false);
             if (Text(args, "column", 10000).Length > 0)
             {
                 if (!HasCollectionInventory(out var message)) throw new InvalidOperationException(message);

@@ -13,12 +13,25 @@ public sealed partial class PilotApplication
     private long _ticketCacheIndexRevision = -1;
     private readonly Dictionary<string, int> _ticketCacheIdRows = new(StringComparer.Ordinal);
 
+    private AppSettings WorkTicketReferenceSettings()
+    {
+        var settings = EffectiveSettings;
+        if (!IsCachedSource || IsFileSource || Result is not { } data) return settings;
+        // A restored list keeps its own source and ID interpretation even when another
+        // portal is configured for the next collection. This is only used for local reads;
+        // WorkValidateReference still checks online actions against the current settings.
+        settings.PortalUrl = data.SourceUrl;
+        settings.TicketDetails.IdColumn = settings.Dashboard.ColumnMappings.GetValueOrDefault("id", "");
+        settings.TicketDetails.UrlTemplate = "";
+        return settings;
+    }
+
     private void WorkPrepareCacheSourceIndex()
     {
         if (ReferenceEquals(_ticketCacheIndexData, Result) && _ticketCacheIndexRevision == Revision) return;
         _ticketCacheIndexData = Result; _ticketCacheIndexRevision = Revision; _ticketCacheIdRows.Clear();
         if (Result is not { } data || IsSimulationInstance || IsFileSource || string.IsNullOrWhiteSpace(data.SourceUrl)) return;
-        var configured = EffectiveSettings.TicketDetails.IdColumn;
+        var configured = WorkTicketReferenceSettings().TicketDetails.IdColumn;
         var columns = data.Headers.Select((header, index) => (header, index)).Where(value => configured.Length > 0
             ? value.header == configured : DashboardService.Normalize(value.header) is "id" or "identifiant" or "ticket id").ToArray();
         if (columns.Length != 1) return;
@@ -39,7 +52,7 @@ public sealed partial class PilotApplication
     {
         if (Result is not { } data || rowIndex < 0 || rowIndex >= data.Rows.Count || IsFileSource) return null;
         if (IsSimulationInstance) return _simulationReferences.GetValueOrDefault(rowIndex);
-        try { return TicketReferenceResolver.Resolve(data, data.Rows[rowIndex], EffectiveSettings); }
+        try { return TicketReferenceResolver.Resolve(data, data.Rows[rowIndex], WorkTicketReferenceSettings()); }
         catch (Exception error) when (error is InvalidOperationException or ArgumentException) { return null; }
     }
 
@@ -49,7 +62,7 @@ public sealed partial class PilotApplication
         if (Result is not { } data || !_ticketCacheIdRows.TryGetValue(ticket.Id, out var index) || index < 0) return null;
         var current = WorkCacheRowReference(index);
         if (current is null || WorkplaceStore.TicketKey(current) != WorkplaceStore.TicketKey(ticket)) return null;
-        return TicketReadCache.Source(current, data, index, EffectiveSettings);
+        return TicketReadCache.Source(current, data, index, WorkTicketReferenceSettings());
     }
 
     private bool WorkAutomaticReadAllowed => !IsSimulationInstance && !IsHistorical && !IsFileSource && !IsCachedSource;

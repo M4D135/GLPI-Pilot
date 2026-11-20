@@ -106,6 +106,59 @@ internal static partial class Program
             Directory.CreateDirectory(args[capture + 1]);
             await page.ScreenshotAsync(new() { Path = Path.Combine(args[capture + 1], "source-cache.png"), FullPage = true });
         }
+        // Reproduce the reported path: restore a GLPI list whose detailed bodies were
+        // already collected, then open it through Rechercher without a browser session.
+        var sourceUrl = "https://offline-library.test/glpi/front/ticket.php";
+        var observedAt = new DateTimeOffset(2026, 11, 18, 12, 0, 0, TimeSpan.Zero);
+        var source = new ExtractionResult
+        {
+            SourceUrl = sourceUrl, ExtractedAt = observedAt, Complete = true,
+            Headers = ["ID", "Titre", "Statut"], Rows = [["1701", "Fiche conservée", "Nouveau"], ["1702", "Contenu non recueilli", "Nouveau"]],
+            Provenance = new() { SourceKind = "browser", RequestedUrl = sourceUrl, SearchVerified = true, ScopeVerified = true }
+        };
+        var interpretation = settings.Copy(); interpretation.PortalUrl = sourceUrl;
+        interpretation.Dashboard.ColumnMappings = new() { ["id"] = "ID", ["title"] = "Titre", ["status"] = "Statut" };
+        new LastSourceCacheStore().Save(source, interpretation);
+        var reference = new TicketReference("1701", "https://offline-library.test/glpi/front/ticket.form.php?id=1701");
+        var store = new TicketLibraryStore(new LibraryPreferencesStore().Load().DatabasePath);
+        await store.SaveDetailAsync(new() { Ticket = reference, Title = "Fiche conservée", LastModifiedRaw = "Version à confirmer" }, new()
+        {
+            Ticket = reference, Title = "Fiche conservée", ReadAt = observedAt,
+            Sections = [new() { Name = "Description", Kind = "text", Data = new() { Headers = ["Contenu"], Rows = [["Description conservée <b>littérale</b>"]], Complete = true, ExtractedAt = observedAt } },
+                new() { Name = "Suivis", Kind = "timeline", Data = new() { Headers = ["Type", "Date", "Auteur", "Texte"], Rows = [["Suivi", "18/11/2026 12:00", "Technicien fictif", "Diagnostic déjà collecté hors connexion"]], Complete = false, ExtractedAt = observedAt } }],
+            Tabs = [new() { Key = "documents", Name = "Documents non recueillis", Loaded = false }]
+        }, new() { Complete = false, TabsDiscovered = 1, TabsLoaded = 0, Limitations = ["Version à confirmer"] }, "existing-reader");
+        var originalDocument = JsonSerializer.Serialize(await store.GetAsync(reference), PilotApplication.Json);
+        await Call(app, "cache.restore"); await page.ReloadAsync(); await ReadyAsync(page);
+        await ClickNavigationAsync(page, "records"); await WaitForNavigationTargetAsync(page, "records");
+        await page.Locator(".tickets-record-grid tbody tr").First.GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
+        await page.Locator(".work-ticket-reader .tickets-journal-event").WaitForAsync();
+        Require(await page.GetByText("Contenu local · hors connexion", new() { Exact = true }).IsVisibleAsync()
+            && (await page.Locator(".tickets-journal").InnerTextAsync()).Contains("Diagnostic déjà collecté hors connexion", StringComparison.Ordinal),
+            "A dated GLPI source opens its previously collected partial content directly from Rechercher.");
+        Require(await Button("Actualiser la fiche").IsDisabledAsync() && await Button("Afficher dans GLPI").IsDisabledAsync()
+            && await Button("Actions assistées").IsDisabledAsync(), "Offline detail exposes local observations while disabling online commands.");
+        await Button("Consulter les observations").ClickAsync();
+        var observations = page.GetByRole(AriaRole.Dialog, new() { Name = "Observations du ticket", Exact = true });
+        await observations.WaitForAsync();
+        Require(await observations.GetByRole(AriaRole.Button, new() { Name = "Documents non recueillis", Exact = true }).IsDisabledAsync(),
+            "An uncollected tab cannot trigger a browser read while offline.");
+        await observations.Locator("select").First.SelectOptionAsync(new SelectOptionValue { Label = "Description (1)" });
+        await WaitForPageAsync(page, "document.querySelector('.work-section-content')?.textContent.includes('Description conservée <b>littérale</b>')");
+        Require(await observations.Locator(".work-section-content b").CountAsync() == 0,
+            "Saved detail text remains literal through the real production reader and C# bridge.");
+        await observations.GetByRole(AriaRole.Button, new() { Name = "Fermer", Exact = true }).ClickAsync();
+        if (capture >= 0 && capture + 1 < args.Length)
+            await page.ScreenshotAsync(new() { Path = Path.Combine(args[capture + 1], "source-cache-ticket-details.png"), FullPage = true });
+        await Button("Retour à la liste").ClickAsync();
+        await page.Locator(".tickets-record-grid tbody tr").Nth(1).GetByRole(AriaRole.Button, new() { Name = "Ouvrir", Exact = true }).ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.work-ticket-reader')?.textContent.includes('Aucun contenu détaillé conservé')");
+        Require(await Button("Consulter les observations").IsDisabledAsync()
+            && !(await page.Locator(".work-ticket-reader").InnerTextAsync()).Contains("Diagnostic déjà collecté hors connexion", StringComparison.Ordinal),
+            "A row with no saved body shows its own source facts and never reuses the preceding ticket body.");
+        Require(originalDocument == JsonSerializer.Serialize(await store.GetAsync(reference), PilotApplication.Json)
+            && errors.IsEmpty && externalRequests == 0 && !operations.Any(op => op is "workplace.ticket.read" or "workplace.ticket.tab" or "workplace.ticket.browser" || op.StartsWith("collect.", StringComparison.Ordinal)),
+            "Offline local detail preserves all stored observations, never rereads the collection, and issues no network request.");
         await actualBridge.DisposeAsync(); await delivery;
     }
 }

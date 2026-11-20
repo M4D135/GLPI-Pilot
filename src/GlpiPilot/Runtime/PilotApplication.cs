@@ -329,7 +329,7 @@ public sealed partial class PilotApplication : IAsyncDisposable
         fileReadComplete = IsFileSource && FileSourceReadComplete, fileSourceRows = IsFileSource ? Result?.Quality?.SourceRows : null,
         fileMissingFormulaValues = IsFileSource ? Result?.Quality?.UncachedFormulaCount ?? 0 : 0,
         fileCanRestore = IsFileSource && _fileSource?.Previous is not null,
-        capabilities = new { ticketDetails = !IsFileSource && !IsCachedSource, ticketDetailsReason = IsFileSource ? FileSourceDetailReason : IsCachedSource ? "Le relevé conservé est consulté hors connexion ; une nouvelle collecte réactive les lectures en ligne." : "", automaticCollection = !IsFileSource && !IsCachedSource },
+        capabilities = new { ticketDetails = !IsFileSource, ticketDetailsReason = IsFileSource ? FileSourceDetailReason : IsCachedSource ? "Les contenus déjà conservés sont consultables hors connexion ; leur état actuel dans GLPI n’est pas vérifié." : "", automaticCollection = !IsFileSource && !IsCachedSource },
         testSourceRows = _localFileTest?.SourceRows, testFileReadComplete = _localFileTest?.FileReadComplete ?? false,
         testMissingFormulaValues = _localFileTest?.MissingFormulaValues ?? 0,
         status = Result?.Status ?? "Configurez une source ou explorez la démonstration.", warnings = Result?.Warnings,

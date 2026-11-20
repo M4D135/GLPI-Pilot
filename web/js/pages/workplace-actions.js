@@ -25,7 +25,7 @@ export async function renderDraft(ctx, root, ticket) {
     el('details', {}, el('summary', { text: 'Contexte effectivement lu à inclure' }), ...choices.map(c => c.element)),
     toolbar(button('Composer le brouillon', run(ctx, async () => { remember(); const result = await call(ctx, 'workplace.draft.compose', { ticketKey: key, ...compositions.get(key), contextRows: choices.filter(c => c.control.checked).map(c => c.index) }); draft.value = result.text; dirty = false; state.textContent = 'Brouillon composé et enregistré.'; }), { primary: true })),
     field('Texte modifiable', draft), state,
-    toolbar(button('Enregistrer maintenant', run(ctx, save)), button('Copier le brouillon', run(ctx, async () => { await save(); await call(ctx, 'workplace.draft.copy', { ticketKey: key }); ctx.notify('Brouillon copié.'); })), button(simulation?'Préparer un ajout simulé…':'Préparer un ajout dans GLPI…', run(ctx, async () => { await save(); ctx.navigate('tickets', { ticketKey: key, section: 'actions' }); }))));
+    toolbar(button('Enregistrer maintenant', run(ctx, save)), button('Copier le brouillon', run(ctx, async () => { await save(); await call(ctx, 'workplace.draft.copy', { ticketKey: key }); ctx.notify('Brouillon copié.'); })), button(simulation?'Préparer un ajout simulé…':'Préparer un ajout dans GLPI…', run(ctx, async () => { await save(); ctx.navigate('tickets', { ticketKey: key, section: 'actions' }); }), {disabled:!!ctx.state.session?.cachedSource,title:ctx.state.session?.cachedSource?'L’ajout dans GLPI nécessite une connexion.':''})));
   return async () => { clearTimeout(timer); remember(); try { if (dirty) await save(); disposed = true; } catch (error) { ctx.notify('Brouillon non enregistré : ' + error.message, 'error'); throw error; } };
 }
 
@@ -172,7 +172,7 @@ export async function renderInsights(ctx, root, ticket) {
     { key: 'open', label: 'Action', render: row => button(row.kind === 'relation' ? 'Consulter' : 'Télécharger…', run(ctx, async () => {
       const result = await call(ctx, row.kind === 'relation' ? 'workplace.relation.open' : 'workplace.document.download', { ticketKey, index: row.index, readAt: data.readAt });
       if (result.ticketKey) ctx.navigate('tickets', { ticketKey: result.ticketKey }); else if (result.saved) ctx.notify('Document enregistré : ' + result.name);
-    }), { disabled: !row.allowed, title: row.reason }) }];
+    }), { disabled: !row.allowed || !!ctx.state.session?.cachedSource, title: ctx.state.session?.cachedSource ? 'La consultation en ligne et le téléchargement nécessitent une connexion GLPI.' : row.reason }) }];
   const paged = (title, rows, columns) => {
     const body = el('div'); let page = 0;
     const draw = () => body.replaceChildren(dataTable(rows.slice(page * 50, page * 50 + 50), columns), toolbar(button('Précédent', () => { page--; draw(); }, { disabled: page === 0 }), note(`${rows.length} élément(s) · page ${page + 1}`), button('Suivant', () => { page++; draw(); }, { disabled: (page + 1) * 50 >= rows.length })));

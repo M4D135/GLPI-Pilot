@@ -1,5 +1,6 @@
 import { el, icon, button, toolbar, field, input, confirm, formatNumber, formatDate, showError, isSimulation, isFileSource } from '../ui.js';
 import { createCollectionScope } from '../collection-scope.js';
+import { openLibraryTicket } from '../library-ticket.js';
 
 const activeStates = new Set(['running', 'pausing', 'stopping']);
 const heldStates = new Set(['paused', 'stopped', 'interrupted', 'attention', 'budget']);
@@ -15,6 +16,7 @@ const eventTime = value => {
 
 export async function renderLibraryCollection(ctx) {
   const { root, api, signal, notify, navigate } = ctx;
+  const offline = ctx.state.session?.cachedSource === true;
   if (isSimulation(ctx.state.session) || isFileSource(ctx.state.session)) {
     root.replaceChildren(el('section', { class: 'card' }, el('h2', { text: 'Collecte GLPI réelle' }), el('p', { text: 'Choisissez une source GLPI active. Les imports CSV/Excel et la simulation ne déclenchent aucune collecte réelle.' }), button('Retour à la bibliothèque', () => navigate('library'))));
     return () => {};
@@ -23,13 +25,20 @@ export async function renderLibraryCollection(ctx) {
   let journalOffset = 0, journalIdentity = '', journalGeneration = 0, journalRequest = null, journalPage = null, journalOpenedFor = '';
   let retryOffset = 0, retryGeneration = 0;
   const call = (op, args = {}) => api.call(op, args, { signal });
-  const safe = fn => async (...args) => { try { await fn(...args); } catch (error) { if (!disposed && error?.name !== 'AbortError') showError(errors, error); } };
+  const reportError = error => {
+    if (disposed || error?.name === 'AbortError') return;
+    showError(errors, error);
+    // A retry can be clicked far below the status card. Make its failure visible
+    // instead of leaving an apparently inert control below an off-screen error.
+    errors.scrollIntoView?.({ block: 'nearest' });
+  };
+  const safe = fn => async (...args) => { try { await fn(...args); } catch (error) { reportError(error); } };
   const errors = el('div', { class: 'collection-errors', 'aria-live': 'polite' });
   const scope = createCollectionScope({
     preview: selected => call('library.collection.preview', { scope: selected }),
     search: args => call('library.collection.scope', args),
     onChange: () => { if (!disposed) paint(); },
-    onError: error => { if (!disposed && error?.name !== 'AbortError') showError(errors, error); }
+    onError: reportError
   });
   const modelError = el('p', { class: 'notice warning collection-model-error', role: 'status', 'aria-live': 'polite', hidden: true,
     text: 'Le bilan et les réglages locaux de collecte n’ont pas pu être chargés. Le journal de cette tentative reste consultable. Vérifiez le dossier local de la bibliothèque avant de réessayer.' });
@@ -57,23 +66,49 @@ export async function renderLibraryCollection(ctx) {
   const pause = controlButton('Pause', safe(() => control('pause')), { primary: true });
   const stop = controlButton('Arrêter', safe(() => control('stop')));
   const retry = controlButton('Reprendre les erreurs', safe(() => collect('retry')));
+  const missing = controlButton('Compléter seulement les contenus absents', safe(() => collect('retry', { missingOnly: true })), { icon: 'download' });
+  const localStatus = el('p', { class: 'collection-local-status', role: 'status', 'aria-live': 'polite' });
+  const localContext = el('p', { class: 'help collection-local-context' });
+  const localMetrics = el('div', { class: 'collection-scope-metrics' });
+  const inspectLocal = controlButton('Vérifier les contenus conservés', safe(async () => {
+    if (pending || activeStates.has(activity.state)) return;
+    pending = true; errors.replaceChildren(); localStatus.textContent = 'Vérification de la bibliothèque sur ce poste…'; paint();
+    try {
+      const refreshed = await reload();
+      if (!disposed && !modelError.hidden) throw new Error('La vérification locale n’a pas abouti. Les contenus existants sont conservés.');
+      if (!disposed && refreshed && model?.availability?.runId && model.availability.runId === collectionView().runId)
+        notify('Vérification locale terminée. Aucune lecture GLPI et aucune modification des contenus.');
+      else if (!disposed && refreshed) notify('Aucun bilan de passage conservé pour cette source. Utilisez « Consulter les contenus » pour explorer la bibliothèque locale.');
+      else if (!disposed && activeStates.has(activity.state)) notify('Une collecte est en cours. La vérification locale pourra être relancée à la fin du passage.');
+    } finally { pending = false; if (!disposed) paint(); }
+  }), { primary: true, icon: 'shield' });
+  const localCard = el('section', { class: 'card collection-local', 'aria-label': 'Contenus conservés sur ce poste' },
+    el('h2', { text: 'Contenus conservés sur ce poste' }),
+    el('p', { text: 'Les fiches déjà enregistrées restent lisibles, même si leur date ou leur exhaustivité est à confirmer. Cette vérification recense les contenus présents dans la base locale, sans les comparer à GLPI.' }),
+    toolbar(inspectLocal, button('Consulter les contenus', () => navigate('library'), { icon: 'ticket' })), localContext, localStatus, localMetrics);
+  const launchHint = el('p', { class: 'help collection-launch-hint', role: 'status' });
   const prepare = controlButton('Préparer un autre périmètre', safe(async () => { newScope = true; scope.beginDraft(); paint(); }));
   const returnToRun = controlButton('Revenir à la reprise', safe(async () => { newScope = false; scope.restoreSaved(); paint(); }));
   const actions = toolbar(start, resume, pause, stop, prepare, returnToRun); actions.classList.add('collection-actions');
   const statusCard = el('section', { class: 'card collection-status', 'aria-label': 'État de la collecte' },
     el('div', { class: 'collection-status-heading' }, el('span', { class: 'collection-state-mark', 'aria-hidden': 'true' }, icon('layers')),
       el('div', {}, el('p', { class: 'collection-eyebrow', text: 'BIBLIOTHÈQUE DE TICKETS' }), heading)),
-    detail, actions, progress, counters, recovery, next, el('p', { class: 'collection-reassurance', text: 'Pause ou arrêt : les contenus déjà enregistrés restent disponibles.' }));
+    detail, actions, launchHint, progress, counters, recovery, next, el('p', { class: 'collection-reassurance', text: 'Pause ou arrêt : les contenus déjà enregistrés restent disponibles.' }));
   const settings = el('details', { class: 'card collection-disclosure' }, el('summary', { text: 'Rythme et programmation' }), settingsHost);
+  scope.element.hidden = offline;
+  settings.hidden = offline;
   const journal = el('details', { class: 'card collection-disclosure', dataset: { collectionPanel: 'journal' } }, el('summary', { text: 'Journal de la collecte' }), journalHost);
   const retries = el('details', { class: 'card collection-disclosure', dataset: { collectionPanel: 'retry' } }, el('summary', { text: 'Fiches à reprendre' }),
     el('div', {}, el('p', { class: 'collection-retry-intro', text: 'Cette liste concerne les tickets déjà identifiés dont le contenu doit être relu ou confirmé. Les erreurs de préparation et de lecture de l’index figurent dans le journal de la collecte.' }),
-      el('div', { class: 'collection-retry-action' }, retry), retryHost));
+      el('div', { class: 'collection-retry-action' }, toolbar(missing, retry)),
+      el('p', { class: 'help collection-retry-help', text: offline
+        ? 'Le cache est consulté hors connexion. Vous pouvez lire les contenus conservés ci-dessous ; une reprise en ligne nécessite une source GLPI active.'
+        : 'Compléter les contenus absents conserve toutes les fiches déjà lues. « Reprendre les erreurs » peut aussi relire les fiches partielles ou dont la version reste à confirmer.' }), retryHost));
   const transfer = el('details', { class: 'card collection-disclosure' }, el('summary', { text: 'Transférer une bibliothèque préparée' }), transferHost);
   const shell = el('section', { class: 'collection-workspace', 'aria-label': 'Collecte des tickets' },
     el('header', { class: 'collection-header' }, button('Bibliothèque', () => navigate('library'), { icon: 'layers' }), el('h1', { text: 'Collecte des tickets' })),
     el('p', { class: 'collection-intro', text: 'Choisir les tickets à partir du relevé chargé, vérifier le volume, puis collecter seulement les contenus manquants ou à actualiser.' }),
-    errors, modelError, scope.element, statusCard, journal, retries, settings, transfer);
+    errors, modelError, localCard, scope.element, statusCard, journal, retries, settings, transfer);
   root.replaceChildren(shell);
   function controlButton(label, handler, options) {
     // The generic button restores its pre-click disabled value; collection state
@@ -109,27 +144,55 @@ export async function renderLibraryCollection(ctx) {
       ? `${['attention', 'interrupted'].includes(state) ? 'Vérifier la cause de l’arrêt dans le journal avant de reprendre. ' : ''}${model?.scope?.enabled || model?.state?.scope?.enabled ? 'La reprise conserve les tickets du périmètre et les contenus déjà enregistrés.' : 'La reprise vérifie l’index et conserve les contenus valides.'}`
       : 'Vérifier le journal avant de relancer une collecte. Les contenus déjà enregistrés restent disponibles.';
     start.hidden = running || resumable && !newScope; resume.hidden = running || !resumable || newScope; pause.hidden = !running; stop.hidden = !running;
-    prepare.hidden = running || !resumable || newScope;
-    returnToRun.hidden = running || !resumable || !newScope;
+    prepare.hidden = offline || running || !resumable || newScope;
+    returnToRun.hidden = offline || running || !resumable || !newScope;
     const liveCoverage = activity.runId && activity.runId === runId ? activity.coverage : null;
     const storedCoverage = runId && model?.state?.runId === runId ? model?.coverage : null;
-    scope.setState({ locked: running || pending || resumable && !newScope, held: resumable && !newScope,
+    scope.setState({ locked: offline || running || pending || resumable && !newScope, held: resumable && !newScope,
       coverage: running || resumable && !newScope ? liveCoverage || storedCoverage || null : null,
       coverageVerifiedAt: liveCoverage ? activity.coverageVerifiedAt : storedCoverage ? model?.inventory?.verifiedAt : null });
-    start.disabled = pending || running || !model || !scope.ready();
+    start.disabled = offline || pending || running || !model || !scope.ready();
     prepare.disabled = pending || running;
     returnToRun.disabled = pending || running;
-    resume.disabled = pending || running || !resumeId || !held;
-    retry.disabled = pending || running || !report?.retryCount;
+    resume.disabled = offline || pending || running || !resumeId || !held;
+    retry.disabled = offline || pending || running || !resumeId || !report?.retryCount;
+    missing.disabled = offline || pending || running || !resumeId || !report?.retryCount || !model?.availability?.missing;
+    inspectLocal.disabled = pending || running;
+    launchHint.textContent = offline
+      ? 'Cache local : la vérification et la lecture des contenus conservés sont disponibles sans recollecte. Les commandes de collecte en ligne sont désactivées dans cette vue.'
+      : !running && !resumable && !scope.ready()
+        ? 'Prévisualisez le périmètre avant de lancer une nouvelle collecte. Pour conserver les fiches déjà lues, utilisez la vérification locale ou le complément des seuls contenus absents.' : '';
+    launchHint.hidden = !launchHint.textContent;
+    for (const control of [start, resume, retry, missing]) control.title = offline ? 'Une source GLPI active est nécessaire pour lire en ligne. Les contenus locaux restent consultables.' : '';
+    if (start.disabled && !offline && !pending && !running) start.title = 'Prévisualiser le périmètre avant de démarrer.';
     pause.disabled = !running || !activity.sessionId || state !== 'running';
     stop.disabled = !running || !activity.sessionId || state === 'stopping';
-    settingsHost.inert = running || pending; transferHost.inert = running || pending;
+    settingsHost.inert = offline || running || pending; transferHost.inert = running || pending;
+    drawLocalAvailability();
     syncJournalIdentity(); paintJournalControls();
     const openFor = `${journalIdentity}:${running ? 'active' : state}`;
     if ((running || ['attention', 'interrupted'].includes(state)) && journalOpenedFor !== openFor) {
       journalOpenedFor = openFor; journal.open = true;
     }
     if (running && retries.open) retryHost.replaceChildren(el('p', { text: 'La liste des fiches sera actualisée à la fin du passage. Le journal reste consultable pendant la collecte.' }));
+  }
+  function drawLocalAvailability() {
+    const availability = model?.availability;
+    localContext.textContent = model?.offlineSavedRun ? model.message || '' : model?.installation ? `Bilan du passage pour ${model.installation}.` : '';
+    localContext.hidden = !localContext.textContent;
+    if (!availability || availability.runId !== collectionView().runId) {
+      localMetrics.replaceChildren();
+      if (!pending) localStatus.textContent = modelError.hidden
+        ? 'Aucun bilan local lié à ce passage. La bibliothèque reste consultable depuis « Consulter les contenus ».'
+        : 'La vérification locale n’a pas abouti. Les contenus existants sont conservés.';
+      return;
+    }
+    const metric = (label, value) => el('div', { class: 'collection-scope-metric' }, el('strong', { text: formatNumber(value || 0) }), el('span', { text: label }));
+    localMetrics.replaceChildren(metric('Fiches du passage', availability.observed), metric('Contenus conservés', availability.stored),
+      metric('Complets conservés', availability.complete), metric('Partiels conservés', availability.partial), metric('Sans contenu', availability.missing),
+      metric('Version à confirmer', availability.unconfirmed), ...(availability.archived ? [metric('Copie archivée', availability.archived)] : []),
+      ...(availability.invalid ? [metric('Copie à examiner', availability.invalid)] : []));
+    localStatus.textContent = `Vérification locale du ${formatDate(availability.checkedAt)} · ${formatNumber(availability.stored)} contenus présents dans la base locale. Leur consultation ne nécessite aucune nouvelle collecte. La fraîcheur GLPI reste indiquée séparément.`;
   }
   function collectionView() {
     const running = activeStates.has(activity.state), live = !!activity.sessionId && activity.state !== 'idle';
@@ -142,31 +205,32 @@ export async function renderLibraryCollection(ctx) {
   async function reload() {
     const stamp = ++generation, revision = activityRevision;
     const current = await call('library.collection.status');
-    if (disposed || stamp !== generation) return;
+    if (disposed || stamp !== generation) return false;
     if (revision === activityRevision) { activity = current; activityRevision++; } paint();
-    if (activeStates.has(activity.state)) { if (journal.open) await loadJournal(); return; }
+    if (activeStates.has(activity.state)) { if (journal.open) await loadJournal(); return false; }
     const modelActivityRevision = activityRevision;
     let data;
     try { data = await call('library.collection.get'); }
     catch (error) {
-      if (disposed || stamp !== generation || error?.name === 'AbortError') return;
+      if (disposed || stamp !== generation || error?.name === 'AbortError') return false;
       // Preparation failures can leave only the in-memory activity and events.
       // A broken local store must not prevent those diagnostics from loading or
       // expose the raw storage exception in the collection panel.
       modelError.hidden = false;
       if (journal.open) await loadJournal();
-      return;
+      return false;
     }
-    if (disposed || stamp !== generation) return;
+    if (disposed || stamp !== generation) return false;
     modelError.hidden = true;
     model = data; if (modelActivityRevision === activityRevision) { activity = data.activity || current; activityRevision++; }
     scope.setModel(data, { preserveSaved: heldStates.has(collectionView().state) && !newScope });
     if (!settingsDirty) drawSettings(); drawTransfer(); paint(); drawJournalReport();
     if (journal.open) await loadJournal();
     if (retries.open) await loadRetries();
+    return !disposed && stamp === generation && !activeStates.has(activity.state);
   }
-  async function collect(mode) {
-    if (pending || activeStates.has(activity.state)) return;
+  async function collect(mode, options = {}) {
+    if (offline || pending || activeStates.has(activity.state)) return;
     const scopeArgs = mode === 'incremental' ? scope.args() : {};
     if (!scopeArgs) return;
     const missingJournal = mode === 'incremental' && model?.state?.state === 'interrupted' && !model.state.runId;
@@ -174,7 +238,7 @@ export async function renderLibraryCollection(ctx) {
     pending = true; errors.replaceChildren(); journalOffset = 0; journal.open = true; paint();
     try {
       const result = await call('library.capture', { mode, runId: mode === 'incremental' ? '' : collectionView().resumeId || '',
-        confirmedNewCycle: missingJournal || newScope, ...scopeArgs });
+        confirmedNewCycle: missingJournal || newScope, ...scopeArgs, ...options });
       newScope = false;
       if (!disposed) notify(labels[result?.collectionState] || result?.message || 'Point de reprise conservé.', result?.collectionState === 'attention' ? 'warning' : 'info');
     } catch (error) {
@@ -351,7 +415,10 @@ export async function renderLibraryCollection(ctx) {
     retryHost.replaceChildren(el('p', { text: page.total
       ? `${formatNumber(page.total)} fiches à reprendre ou confirmer. Aucun ticket absent de la liste n’est supprimé automatiquement.`
       : `Aucune fiche individuelle à reprendre dans ce passage.${['attention', 'interrupted'].includes(state) ? ' Une erreur de lecture de l’index peut néanmoins nécessiter « Reprendre » : consultez le journal.' : ''}` }),
-      ...page.items.map(item => el('p', { text: `#${item.ticketId} · ${item.stateLabel} · ${item.message}` })),
+      ...page.items.map(item => el('div', { class: 'collection-retry-entry' },
+        el('p', { text: `#${item.ticketId} · ${item.stateLabel} · ${item.message}` }),
+        ...(item.detailLimitations || []).map(message => el('p', { class: 'help', text: message })),
+        item.hasContent && item.ticketKey ? button('Lire le contenu conservé', safe(() => openLibraryTicket({ api, signal, state: ctx.state, navigate }, item.ticketKey)), { icon: 'ticket' }) : null)),
       ...(page.total > journalPageSize ? [toolbar(button('Précédent', safe(async () => { retryOffset = Math.max(0, retryOffset - journalPageSize); await loadRetries(); }), { disabled: retryOffset === 0 }),
         button('Suivant', safe(async () => { retryOffset += journalPageSize; await loadRetries(); }), { disabled: retryOffset + page.items.length >= page.total }))] : []));
   }
