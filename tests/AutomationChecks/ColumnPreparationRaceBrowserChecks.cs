@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using GlpiPilot.Core;
@@ -57,9 +58,12 @@ internal static class ColumnPreparationRaceBrowserChecks
         var postFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var priority = false;
         var render = 0; var preferenceGets = 0; var preferenceGetsAtExport = 0; var tabGets = 0; var posts = 0; var removals = 0; var exports = 0; var foreignRequests = 0; var unrelatedRequests = 0;
-        var phases = new List<AutomaticRunPhase>();
-        var diagnostics = new List<string>();
-        service.Log += diagnostics.Add;
+        // Browser callbacks can keep emitting while the deadline diagnostic is read.
+        // Snapshot-safe queues preserve the original timeout instead of hiding it
+        // behind an exception from enumerating a concurrently modified List.
+        var phases = new ConcurrentQueue<AutomaticRunPhase>();
+        var diagnostics = new ConcurrentQueue<string>();
+        service.Log += diagnostics.Enqueue;
 
         string PersonalBody() => "<table><tr><th>" + Form("<input name='disable' type='submit' value='Désactiver'>")
             + "</th></tr><tr><td colspan='4'>" + Form("<select name='num'>" + (priority ? "" : "<option value='3'>Priorité</option>")
@@ -273,8 +277,8 @@ internal static class ColumnPreparationRaceBrowserChecks
             });
             await page.GotoAsync(Target);
             var automatic = new AutomaticExtractionService(service);
-            automatic.PhaseChanged += phases.Add;
-            if (scenario == "unrelated-polling") automatic.Log += diagnostics.Add;
+            automatic.PhaseChanged += phases.Enqueue;
+            if (scenario == "unrelated-polling") automatic.Log += diagnostics.Enqueue;
             var settings = new AppSettings
             {
                 PortalUrl = Target, SelectorOrigin = Origin, AutoMode = "native", ColumnPreparationMode = "supervision",

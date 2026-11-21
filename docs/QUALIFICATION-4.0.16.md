@@ -30,11 +30,13 @@ Le numéro du ticket reste associé à l’installation GLPI et au mapping du re
 
 **Reprendre un complément borné.** « Compléter seulement les contenus absents » enregistre sa liste avant navigation. Une pause ou un redémarrage conserve ce sous-ensemble, et les contenus déjà sauvegardés pendant ce complément ne sont pas relus pour leur seule fraîcheur incertaine. « Reprendre les erreurs » demeure une action distincte pouvant relire des contenus partiels ou non confirmés. Les commandes en ligne indisponibles en cache sont expliquées et les erreurs de reprise restent visibles.
 
-**Réutiliser les tickets inchangés.** Une copie complète et confirmée correspondant toujours à la même version GLPI reste réutilisable en live et en collecte globale ou ciblée, même après sept jours. Les contrôles d’identité, de version, de précision des dates et de couverture restent appliqués. Les contenus absents, modifiés, incomplets ou sans version comparable peuvent encore nécessiter une lecture. La relecture forcée reste volontaire.
+**Réutiliser les tickets inchangés.** Une copie complète et confirmée dont la version correspond au relevé GLPI courant reste réutilisable en live et en collecte globale ou ciblée, même après sept jours. Les contrôles d’identité, de version, de précision des dates et de couverture restent appliqués. Les contenus absents, modifiés, incomplets ou sans version comparable peuvent encore nécessiter une lecture. La relecture forcée reste volontaire.
 
-La lecture d’un onglet conserve le repère de version et la date du corps principal, y compris après redémarrage. Un onglet récent ne rajeunit plus un corps ancien. Les anciens JSON dépourvus de date principale séparée restent consultables sans recevoir une date inventée.
+La lecture d’un onglet conserve le repère de version et la date du corps principal. La réouverture après redémarrage est couverte avec une copie hors connexion **explicitement enregistrée**, sans promettre la persistance implicite de toute lecture live. Un onglet récent ne rajeunit plus un corps ancien. Les anciens JSON dépourvus de date principale séparée restent consultables sans recevoir une date inventée.
 
 La liste et le lecteur appliquent le même choix entre copie personnelle et bibliothèque. Les dates de lecture du corps déterminent la préférence lorsqu’elles sont connues ; un onglet personnel récent ne masque plus un corps bibliothèque plus récent, et un corps personnel réellement plus récent est conservé. Le recours aux versions pour les anciennes copies exige un même contexte d’interprétation. Des parseurs UTC et Europe/Paris différents ne servent pas à inventer un ordre entre versions. La sélection ne réécrit ni SQLite ni les observations personnelles ; les onglets d’une autre version restent dans leur copie d’origine.
+
+Les scénarios de collecte conservent des copies complètes et confirmées âgées de **trente jours**, inchangées dans le relevé GLPI : en global comme en ciblé, y compris après pause et redémarrage, les métadonnées restent contrôlées avec **zéro requête de détail**. Le corps, sa date, son empreinte et sa preuve restent conservés. Les observations d’index et le journal peuvent toujours être enregistrés.
 
 Les [notes de version](RELEASE-4.0.16.md) détaillent ces comportements.
 
@@ -60,11 +62,15 @@ Les journaux officiels du **run 44838578203, tentative 1**, établissent les ré
 | PostgreSQL : bibliothèque / partage / corpus SQL / administration | **56/56**, **44/44**, **12/12** et **19/19** |
 | Structure de distribution / hôtes Windows réels | **14/14** et **72/72** |
 | Mise à jour Windows et retour arrière | **4/4** |
+| Verrou PostgreSQL du collecteur | **6/6** |
+| Configuration / restauration pure / intégration / automatisation | **96/96**, **27/27**, **65/65**, **63/63** |
 | Vérificateur canonique du ZIP | **378 fichiers manifestés vérifiés** |
 
 Les suites bibliothèque et partage exécutent respectivement **11** et **19** scénarios avec une vraie base PostgreSQL. Les deux éditions Standard et Admin sont couvertes par les parcours Windows. Les tests ciblés du cache vérifient notamment les dates principales, l’onglet personnel récent face au corps bibliothèque plus récent, le cas inverse, les anciens JSON, les fuseaux différents et l’absence de modification des copies pendant la consultation.
 
-Un autre run du même commit, `44838204942`, a été arrêté après un dépassement de délai dans la prévalidation des colonnes ; il n’est pas utilisé pour cette livraison. Un complément du harnais de test, `f86a0b1`, protège les collecteurs de traces contre les événements simultanés afin de conserver le diagnostic du délai. Ce complément ne modifie pas l’application et ne fait pas partie du ZIP 4.0.16. La preuve de qualification reste exclusivement le run complet réussi indiqué ci-dessus.
+Le premier échec des anciens parcours de reprise venait de la ponctuation et de la casse d’une phrase de production ; le texte a été corrigé sans modifier l’assertion. Un nouveau cas de bibliothèque a ensuite nécessité de passer le compteur attendu de 55 à 56, avec les onze cas PostgreSQL toujours exigés.
+
+Un autre run du commit a067, `44838204942`, a été arrêté après un dépassement de délai dans la prévalidation des colonnes ; il n’est pas utilisé pour cette livraison. Le complément du harnais **`f86a0b126c31dbfebf0354d6bc0610e351ae1674`** protège les collecteurs de phases et de diagnostics contre les événements simultanés afin de conserver le diagnostic du délai. Il a réussi **16/16 jobs** dans le [run distinct 44841566063](https://github.com/M4D135/GLPI-Pilot/actions/runs/44841566063), tentative **1**, terminé le **21 novembre à 01:45 (Europe/Paris)**. Le scénario concerné passe dans ses deux suites de colonnes, préflight et C#/WebView, avec les assertions et le délai de dix secondes inchangés. **La cause du dépassement initial reste non établie.** Ce complément ne modifie pas l’application et ne fait pas partie du ZIP 4.0.16. La preuve de qualification du binaire reste exclusivement le run **44838578203** indiqué ci-dessus.
 
 ## Inspection du ZIP et publication
 
@@ -81,6 +87,8 @@ L’inspection indépendante confirme les six modules web modifiés et les 107 d
 
 Le workflow de publication a promu **cet original**, sans recompilation ni recompression. Il a retéléchargé le ZIP et `SHA256SUMS.txt` depuis leurs adresses publiques, comparé les octets aux originaux et réexécuté le vérificateur canonique. Les rapports `candidate-archives.json` et `published-archives.json` sont identiques au rapport de l’inspection locale. Le reçu `verification.log` confirme le commit, les deux runs, l’empreinte et `PROD-LIGHT: OK`. La release publique n’est ni un brouillon ni une préversion.
 
+Une vérification indépendante a aussi retéléchargé les deux fichiers publics par le navigateur et comparé leurs octets aux originaux inspectés, puis revérifié les **378 fichiers** du manifeste. Les deux comparaisons ont réussi. Le fichier public `SHA256SUMS.txt` mesure **111 octets** et son SHA-256 est `15262bc512efb667721727b6492182f8a86d945a6e1df3deb08bee3b7c6076b0`. L’artefact de preuves de publication **14682116938** a été téléchargé ; son SHA-256 `cf36be2091dc9c9b23a0331638d1238e3bd8689f261e4b47ba5fbacdd8467d0a` concorde avec les métadonnées GitHub.
+
 ## Conservation des données et mise à jour
 
 Fermer les deux éditions puis copier le dossier **`%LOCALAPPDATA%\GLPI-Pilot` entier** pour conserver une copie de retour. Si la bibliothèque est configurée ailleurs, copier aussi ce dossier entier, avec ses éventuels fichiers SQLite auxiliaires, pendant que Pilot est fermé. Une sauvegarde des seules préférences ne remplace pas celle des contenus.
@@ -91,6 +99,6 @@ Pour une première ouverture limitée à la consultation, désactiver au préala
 
 Charger le cache habituel, puis ouvrir un ticket dans **Rechercher**, ou utiliser **Données → Collecte et reprise → Vérifier les contenus conservés / Consulter les contenus**. Aucune réinitialisation ou recollecte n’est nécessaire pour lire les fiches déjà présentes. Les données réellement absentes ne sont pas reconstituées artificiellement.
 
-Les scénarios utilisent des données synthétiques et de vraies bases SQLite/PostgreSQL. Aucun accès au portail privé de l’organisation ou à ses tickets n’est revendiqué. Les réglages, le SSO et les accès réseau propres au poste restent à vérifier dans son contexte autorisé.
+Les scénarios utilisent des données synthétiques et de vraies bases SQLite/PostgreSQL. Aucun accès au portail privé de l’organisation ou à ses tickets n’est revendiqué. Les réglages, le SSO et les accès réseau propres au poste restent à vérifier dans son contexte autorisé. Le cas terrain des villes **0/17** reste distinct et suivi dans [l’issue #2](https://github.com/M4D135/GLPI-Pilot/issues/2), toujours ouverte lors du contrôle du **21 novembre 2026** ; sa résolution n’est pas revendiquée.
 
 Ce reçu consigne la publication après construction : le ZIP conserve les documents de son commit source, et le tag `v4.0.16` reste fixé à ce commit.
