@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.16 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+La [version 4.0.16](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.16) est publiée : [télécharger le ZIP PROD-LIGHT Windows x64](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.16/GLPI-Pilot_4.0.16_PROD-LIGHT_Windows-x64.zip) et son [SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.16/SHA256SUMS.txt). Les **16/16 jobs** Windows et PostgreSQL ont réussi sur le commit exact du binaire. L’archive originale a été inspectée, publiée sans reconstruction, puis retéléchargée avec son fichier d’empreintes et comparée octet pour octet aux originaux. Le [reçu de qualification et de publication](docs/QUALIFICATION-4.0.16.md) détaille les preuves. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ Le relevé restauré en cache ouvre désormais les descriptions, suivis et rubri
 
 L’écran de collecte propose une vérification locale de la présence des contenus et leur lecture directe. Les totaux conservés, la complétude des rubriques et la fraîcheur GLPI sont séparés. Les commandes en ligne désactivées en cache sont expliquées ; une erreur de reprise est rendue visible près du parcours. Depuis une source GLPI active, un complément explicite peut se limiter aux fiches réellement sans contenu, en conservant ce choix après interruption. Aucune recollecte ni réinitialisation n’est nécessaire pour retrouver les fiches déjà enregistrées. Voir les [notes 4.0.16](docs/RELEASE-4.0.16.md).
 
-Les mises à jour live automatiques et les grosses collectes réutilisent les copies complètes et confirmées dont le repère GLPI n’a pas changé. La collecte globale ne relit plus un ticket au seul motif que sa copie dépasse sept jours. L’index reste comparé pour découvrir les modifications ; les détails inchangés et leur date de lecture sont conservés. Les relectures forcées restent explicites.
+Les mises à jour live automatiques et les grosses collectes réutilisent les copies complètes et confirmées dont le repère correspond au relevé GLPI courant. La collecte globale ne relit plus un ticket au seul motif que sa copie dépasse sept jours. L’index reste comparé pour découvrir les modifications ; les détails inchangés et leur date de lecture sont conservés. Les relectures forcées restent explicites.
 
 ## 4.0.15 : pagination native et fin de collecte fiable
 
