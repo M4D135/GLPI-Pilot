@@ -121,7 +121,7 @@ class PackChecks(unittest.TestCase):
 
     def test_private_data(self):
         for name in ['wad/sites.csv', 'wad/GLPI-Pilot.deployment.json', 'wad/data.sqlite', 'wad/pack-sites.zip',
-                     'wad/tickets.glpilibrary.zip', 'wad/BootstrapStaging/private.jsonl']:
+                     'wad/tickets.glpilibrary.zip', 'wad/export.RELAIS', 'wad/BootstrapStaging/private.jsonl']:
             with self.subTest(name=name):
                 files = self.files(); files[name] = b'synthetic'
                 with self.assertRaises(ValueError): self.check(files)

@@ -45,6 +45,7 @@ public sealed partial class PilotApplication
         RegisterLibraryCaptureJournalOperations();
         Register("library.sync", (_, ct) => SynchronizeLibraryAsync(ct));
         Register("library.tick", AutomaticLibrarySyncAsync);
+        RegisterLibraryRelaisOperations();
         Register("library.export", async (_, ct) =>
         {
             var path = await Host.SaveFileAsync("Exporter la bibliothèque de tickets", "Corpus JSONL|*.jsonl", "GLPI-Pilot-corpus-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".jsonl").ConfigureAwait(false);
@@ -77,7 +78,7 @@ public sealed partial class PilotApplication
         {
             settings = PublicLibrarySettings(LibrarySettings), stats, team, administration = AdministrationCapabilities.Enabled,
             sources = sources.Select(source => new { installation = source, label = source }),
-            sync = PublicLibrarySync(stats.PendingCount, team.Pending)
+            sync = PublicLibrarySync(stats.PendingCount, team.Pending), relaisExport = RelaisLibraryContext()
         };
     }
     private object PublicLibrarySettings(LibraryPreferences settings) => new

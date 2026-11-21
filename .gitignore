@@ -92,3 +92,6 @@ Desktop.ini
 # Internal ticket-library transfers must never enter public source or release packs.
 *.glpilibrary.zip
 **/BootstrapStaging/
+
+# Internal knowledge exchange files must never enter the public repository.
+*.relais

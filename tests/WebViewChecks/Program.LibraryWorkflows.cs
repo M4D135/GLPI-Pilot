@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using GlpiPilot.Core;
 using GlpiPilot.Runtime;
+using Microsoft.Data.Sqlite;
 using Microsoft.Playwright;
 
 internal static partial class Program
@@ -199,6 +200,45 @@ internal static partial class Program
         Require((await new TicketLibraryStore(preferences.DatabasePath).LatestCaptureAsync())?.RunId == seedRun
             && (await CaptureSummary().InnerTextAsync()).Contains("26 fiches à reprendre"),
             "Reloading the application page and reopening the local store retains the exact last collection and its resumable observations.");
+
+        var requestsBeforeRelais = portal.AllIndexRequests; var readsBeforeRelais = portal.DetailRequests.Count;
+        await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("aucun-ticket-ne-correspond-export-relais");
+        await Button("Rechercher").ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.library-results-count')?.textContent.startsWith('0 résultat')===true && !document.querySelector('.library-results[aria-busy]')");
+        host.NextSave = Path.Combine(_root, "library-workflow-export.relais");
+        await Button("Exporter pour Relais").ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('section[aria-label=\"Bilan de la bibliothèque\"] h3')?.textContent==='Fichier prêt pour Relais' && document.querySelector('.library-progress')?.hidden===true");
+        await delivery;
+        var relaisReply = observed.Last(call => call.Operation == "library.relais.export").Result;
+        var relaisOutcome = page.GetByRole(AriaRole.Region, new() { Name = "Bilan de la bibliothèque", Exact = true });
+        using (var relaisFile = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = host.NextSave, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        {
+            relaisFile.Open(); using var read = relaisFile.CreateCommand();
+            read.CommandText = "SELECT installation,ticket_count,text_count FROM relais_manifest";
+            using var manifest = read.ExecuteReader(); var hasManifest = manifest.Read();
+            Require(hasManifest && manifest.GetString(0) == ObjectIdentity.Installation(WorkflowSource)
+                && manifest.GetInt64(1) >= 4 && manifest.GetInt64(1) == relaisReply.GetProperty("result").GetProperty("ticketCount").GetInt64()
+                && manifest.GetInt64(2) == relaisReply.GetProperty("result").GetProperty("textCount").GetInt64()
+                && relaisReply.GetProperty("exported").GetBoolean()
+                && (await relaisOutcome.InnerTextAsync()).Contains("Fragments exportés", StringComparison.Ordinal)
+                && (await relaisOutcome.InnerTextAsync()).Contains("Importer les connaissances", StringComparison.Ordinal)
+                && !(await relaisOutcome.InnerTextAsync()).Contains("Bilan de la synchronisation", StringComparison.Ordinal)
+                && portal.AllIndexRequests == requestsBeforeRelais && portal.DetailRequests.Count == readsBeforeRelais
+                && !File.Exists(host.NextSave + "-wal") && !File.Exists(host.NextSave + "-shm"),
+                "The real Relais button writes a standalone native SQLite file for the complete admissible installation despite an empty visible search, reports its actual counts, and never starts GLPI collection.");
+        }
+        await Capture("library-workflows-relais-export-dark");
+        host.NextSave = null;
+        var exportsBeforeCancel = observed.Count(call => call.Operation == "library.relais.export");
+        await Button("Exporter pour Relais").ClickAsync();
+        await Until(() => observed.Count(call => call.Operation == "library.relais.export") > exportsBeforeCancel);
+        await WaitForPageAsync(page, "document.querySelector('.library-progress')?.hidden===true");
+        Require(observed.Last(call => call.Operation == "library.relais.export").Result.GetProperty("cancelled").GetBoolean()
+            && await relaisOutcome.IsHiddenAsync() && File.Exists(Path.Combine(_root, "library-workflow-export.relais")),
+            "Cancelling the native Relais save hides the previous success outcome without replacing the existing export.");
+        await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("");
+        await Button("Rechercher").ClickAsync();
+        await WaitForPageAsync(page, "document.querySelector('.library-results-count')?.textContent.startsWith('30 résultat')===true && !document.querySelector('.library-results[aria-busy]')");
 
         await OpenCapture();
         var capture = CaptureDialog();

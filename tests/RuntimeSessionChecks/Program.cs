@@ -296,6 +296,7 @@ tests.AddRange(AdministrationStandardChecks.Create());
 tests.AddRange(SimulationChecks.Create());
 tests.AddRange(EmbeddedMapsChecks.Create());
 tests.AddRange(LibraryRuntimeChecks.Create());
+tests.AddRange(RelaisExportRuntimeChecks.Create());
 tests.AddRange(LibraryCaptureRuntimeChecks.Create());
 tests.AddRange(SharedOperationsRuntimeChecks.Create());
 tests.AddRange(SharedConflictRuntimeChecks.Create());
@@ -319,6 +320,7 @@ if (args.Contains("--source-cache-only", StringComparer.Ordinal)) tests = tests.
 if (args.Contains("--deployment-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Deployment:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--startup-collection-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Startup collection:", StringComparison.Ordinal)).ToList();
 if (args.Contains("--collection-scheduling-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Collection scheduling:", StringComparison.Ordinal)).ToList();
+if (args.Contains("--relais-export-only", StringComparer.Ordinal)) tests = tests.Where(test => test.Name.StartsWith("Relais export:", StringComparison.Ordinal)).ToList();
 int failures = 0;
 foreach (var test in tests)
 {

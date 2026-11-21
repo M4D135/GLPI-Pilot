@@ -61,7 +61,7 @@ def verify_pack(path: pathlib.Path, version: str, commit: str, edition: str) -> 
         if {name.split('/')[0] for name in names} != {'GLPI-Pilot.exe', 'GLPI-Pilot-Admin.exe', 'wad'}:
             raise ValueError('Incorrect pack root or nested artifact wrapper')
         private = {'sites.csv', 'glpi-pilot.deployment.json', 'workplace.json', 'scheduled-tours.json', 'dispatch-scenario.json', 'technician-preferences.json'}
-        if any(pathlib.PurePosixPath(name).name.casefold() in private or name.lower().endswith(('.sqlite', '.sqlite3', '.db', '.glpilibrary.zip'))
+        if any(pathlib.PurePosixPath(name).name.casefold() in private or name.lower().endswith(('.sqlite', '.sqlite3', '.db', '.glpilibrary.zip', '.relais'))
                or re.search(r'(^|/)(?:pack[-_ ]?sites|sites[-_ ]?pack)(?:[./_-]|$)', name, re.I)
                or 'bootstrapstaging' in [part.casefold() for part in pathlib.PurePosixPath(name).parts] for name in names):
             raise ValueError('Operational/private data name found in a public pack')

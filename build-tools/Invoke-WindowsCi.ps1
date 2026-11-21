@@ -327,7 +327,7 @@ function Assert-PackContents {
         # -cmatch : les noms d'etat de l'application sont écrits exactement ainsi (Browser, Profiles, Exports).
         # Un -match insensible a la casse ferait rejeter le pack complet, dont wad/.local-browsers/embarque le
         # repertoire legitime firefox/browser du build Playwright de Firefox.
-        if ($entries | Where-Object { $_ -cmatch '(^|/)(settings\.json|library\.local\.json|library-sync\.local\.json|shared-business\.local\.json|glpi-pilot-library\.db(?:-(?:wal|shm|journal))?|GLPI-Pilot-Shared|SharedIndexes|SharedFolderIndexes|Browser|Profiles|Exports)(/|$)|(^|/)\.node\.exe\.' }) {
+        if ($entries | Where-Object { $_ -imatch '\.relais$' -or $_ -cmatch '(^|/)(settings\.json|library\.local\.json|library-sync\.local\.json|shared-business\.local\.json|glpi-pilot-library\.db(?:-(?:wal|shm|journal))?|GLPI-Pilot-Shared|SharedIndexes|SharedFolderIndexes|Browser|Profiles|Exports)(/|$)|(^|/)\.node\.exe\.' }) {
             throw 'Application state or a partial transfer is present in the pack.'
         }
         $manifestReader = [IO.StreamReader]::new($archive.GetEntry('wad/SHA256SUMS.txt').Open(), [Text.Encoding]::UTF8, $true)
@@ -441,6 +441,7 @@ try {
                 @{ Project = 'ExportChecks'; Log = 'export-checks.log'; Summary = '6/6' },
                 @{ Project = 'TicketLibraryChecks'; Log = 'ticket-library-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket library checks passed\.\r?$' },
                 @{ Project = 'TicketLibraryKnowledgeChecks'; Log = 'ticket-library-knowledge-checks.log'; Summary = '9/9 ticket library knowledge checks passed.' },
+                @{ Project = 'RelaisExportChecks'; Log = 'relais-export-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 Relais export checks passed\.\r?$' },
                 @{ Project = 'LibraryCollectionJournalChecks'; Log = 'library-collection-journal-checks.log'; Summary = '10/10 vérifications du journal de collecte réussies.' },
                 @{ Project = 'LibraryIndexProgressChecks'; Log = 'library-index-progress-checks.log'; Summary = "9/9 contrôles purs de progression de l’index réussis." },
                 @{ Project = 'TicketResolutionChecks'; Log = 'ticket-resolution-checks.log'; Summary = ''; Pattern = '(?m)^([1-9]\d*)/\1 ticket resolution checks passed\.\r?$' },

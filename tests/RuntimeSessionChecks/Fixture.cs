@@ -48,9 +48,16 @@ public sealed class SessionHost : IPilotHost
 {
     public string? OpenPath { get; set; }
     public string? SavePath { get; set; }
+    public List<(string Title, string Filter, string SuggestedName)> SaveRequests { get; } = new();
+    public Func<Task>? BeforeSave { get; set; }
     public string Clipboard { get; private set; } = "";
     public Task<string?> OpenFileAsync(string title, string filter) => Task.FromResult(OpenPath);
-    public Task<string?> SaveFileAsync(string title, string filter, string suggestedName) => Task.FromResult(SavePath);
+    public async Task<string?> SaveFileAsync(string title, string filter, string suggestedName)
+    {
+        SaveRequests.Add((title, filter, suggestedName));
+        if (BeforeSave is { } callback) await callback();
+        return SavePath;
+    }
     public Task<string?> PickFolderAsync(string title) => Task.FromResult<string?>(null);
     public Task SetClipboardAsync(string text) { Clipboard = text; return Task.CompletedTask; }
     public Task OpenExternalAsync(string url) => throw new InvalidOperationException("No external navigation in the session fixture.");

@@ -61,12 +61,12 @@ export async function renderLibrary(ctx) {
           const quality = collectionQuality(result, completed, result?.readiness);
           const details = collectionQualityCounts(result).filter(item => item.value > 0).map(item => `${count(item.value)} ${item.label.toLocaleLowerCase('fr-FR')}`).join(' · ');
           notify(`${collectionResultLabel(result, completed, result?.readiness)}${details ? ` · ${details}` : ''}.`, quality.needsAttention ? 'warning' : 'info');
-        } else notify(result?.message || result?.summary || 'Opération terminée.');
+        } else notify(result?.message || result?.summary || 'Opération terminée.', result?.kind === 'relais-export' && (!result.exported || result.result?.excludedTicketCount > 0) ? 'warning' : 'info');
       }
       if (!disposed && result && !result.cancelled && op !== 'library.capture') drawOutcome(result);
       return result;
     } catch (error) {
-      if (error?.name === 'AbortError' || error?.code === 'CANCELLED') { if (!disposed) notify('Opération annulée. Les observations déjà enregistrées sont conservées.', 'info'); return; }
+      if (error?.name === 'AbortError' || error?.code === 'CANCELLED') { if (!disposed) notify(op === 'library.relais.export' ? 'Export annulé. Aucun fichier partiel publié.' : 'Opération annulée. Les observations déjà enregistrées sont conservées.', 'info'); return; }
       throw error;
     } finally {
       operation = null;
@@ -145,6 +145,7 @@ export async function renderLibrary(ctx) {
     if (signal?.aborted) modal.close(); else await load();
   }
   function drawOutcome(result) {
+    if (result.kind === 'relais-export') { drawRelaisOutcome(result); return; }
     const captured = Number.isFinite(result.observed);
     outcome.replaceChildren(el('div', { class: 'library-outcome-heading' }, el('h3', { text: captured ? 'Bilan de la collecte' : 'Bilan de la synchronisation' }),
       button('Masquer le bilan', () => { outcome.hidden = true; }, { icon: 'close' })),
@@ -164,7 +165,27 @@ export async function renderLibrary(ctx) {
     if (result.sync) outcome.append(el('p', { class: 'help', text: result.sync }));
     outcome.hidden = false;
   }
-  let overviewDetails, cacheControl, storageDetails, syncControl, syncError, cacheIcon;
+  function drawRelaisOutcome(result) {
+    const report = result.result || result.preview || {};
+    outcome.replaceChildren(el('div', { class: 'library-outcome-heading' }, el('h3', { text: result.exported ? 'Fichier prêt pour Relais' : 'Contenus à vérifier avant l’export' }),
+      button('Masquer le bilan', () => { outcome.hidden = true; }, { icon: 'close' })),
+      el('p', { class: result.exported ? '' : 'notice warning', text: result.message }),
+      el('p', { class: 'help', text: `Installation : ${report.installation || model.relaisExport?.installation || '—'}` }));
+    if (result.exported) outcome.append(el('dl', { class: 'library-outcome-counts' }, ...[
+      [report.ticketCount, 'Tickets exportés'], [report.textCount, 'Fragments exportés'], [report.excludedTicketCount, 'Fiches non incluses']
+    ].map(([value, label]) => el('div', {}, el('dt', { text: label }), el('dd', { text: count(value) })))),
+      el('p', { class: 'library-storage-path', text: report.path }),
+      el('p', { text: 'Dans Relais, ouvrez « Importer les connaissances » et choisissez ce fichier .relais.' }));
+    const excluded = [
+      [report.missingContentCount, 'sans contenu'], [report.incompleteCount, 'incomplètes'],
+      [report.unconfirmedCount, 'non confirmées'], [report.pendingCount, 'en attente de confirmation'], [report.conflictCount, 'avec conflit']
+    ].filter(([value]) => value > 0).map(([value, label]) => `${count(value)} ${label}`);
+    if (excluded.length) outcome.append(el('p', { class: 'notice warning', text: `Fiches à vérifier : ${excluded.join(' · ')}. Plusieurs motifs peuvent concerner la même fiche.` }),
+      button('Consulter le bilan de collecte', () => navigate('data', { panel: 'collection' }), { icon: 'log' }));
+    outcome.append(el('p', { class: 'help', text: 'L’export couvre toute la bibliothèque admissible de cette installation. Il ne certifie pas que tous les tickets de GLPI ont été collectés. Le fichier peut contenir des informations privées.' }));
+    outcome.hidden = false;
+  }
+  let overviewDetails, cacheControl, storageDetails, syncControl, syncError, cacheIcon, relaisControl, relaisHelp;
   function drawSummary() {
     actionButtons.splice(0, actionButtons.length, ...actionButtons.filter(entry => root.contains(entry.control)));
     const s = model.stats || {}, settings = model.settings || {}, hasTickets = s.ticketCount > 0;
@@ -174,7 +195,9 @@ export async function renderLibrary(ctx) {
       overviewDetails=el('div');storageDetails=el('div');
       cacheControl=action('',()=>simulation?perform(model.stats?.ticketCount>0?'Mise à jour du cache…':'Collecte des tickets et de leurs contenus…','library.capture',{mode:'incremental'}):navigate('data',{panel:'collection'}),{primary:true,icon:'download'});
       syncControl=action(simulation?'Synchroniser le partage simulé':'Synchroniser',()=>perform(simulation?'Échange dans la simulation…':model.settings?.syncMode==='folder'?'Synchronisation avec le dossier partagé…':'Synchronisation avec PostgreSQL…','library.sync'),{icon:'refresh'});
-      header.append(el('section',{class:'card library-overview'},overviewDetails,toolbar(cacheControl)));
+      relaisControl=action('Exporter pour Relais',()=>perform('Préparation du fichier Relais…','library.relais.export'),{icon:'download'});
+      relaisHelp=el('p',{class:'help'});
+      header.append(el('section',{class:'card library-overview'},overviewDetails,toolbar(cacheControl,relaisControl),relaisHelp));
       storage.append(el('section',{class:'card library-storage','aria-label':'Stockage et synchronisation'},storageDetails,
         toolbar(syncControl,action('Exporter le corpus RAG',async()=>{const result=await call('library.export');if(!result.cancelled)notify('Corpus exporté : '+result.path);},{icon:'download'}))));
       syncError=el('p',{class:'library-conflict',hidden:true});storage.append(syncError);
@@ -186,6 +209,11 @@ export async function renderLibrary(ctx) {
     if(cacheIcon!==nextIcon){cacheControl.querySelector('svg')?.replaceWith(icon(nextIcon));cacheIcon=nextIcon;}
     actionButtons.find(entry=>entry.control===syncControl).disabled=!shared;
     syncControl.disabled=busy||!shared;
+    actionButtons.find(entry=>entry.control===relaisControl).disabled=model.relaisExport?.available!==true;
+    relaisControl.disabled=busy||model.relaisExport?.available!==true;
+    relaisHelp.textContent=model.relaisExport?.available
+      ? `Pour Relais : ${model.relaisExport.installation}. Un seul fichier .relais, préparé depuis les contenus déjà collectés. Les filtres affichés ne limitent pas cet export.`
+      : model.relaisExport?.message||'L’export pour Relais sera disponible dans la bibliothèque GLPI.';
     overviewDetails.replaceChildren(
       el('div', { class: 'library-overline' }, icon('layers'), badge(simulation?'Stockage de simulation':'Stockage local', 'info')),
       el('h2', { text: hasTickets ? 'Bibliothèque GLPI' : 'Collecter les tickets accessibles' }),

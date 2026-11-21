@@ -30,6 +30,10 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
+## 4.0.18 : un fichier pour Relais
+
+La nouvelle version en qualification ajoute **Bibliothèque → Exporter pour Relais**. Un seul fichier `.relais` regroupe les contenus admissibles déjà collectés, leurs références et un bilan des exclusions. Choisir ce fichier directement dans Relais 0.6.3 ; aucun script ni copie manuelle de SQLite n’est nécessaire. Les dates, confirmations et contenus existants restent conservés. Voir [les notes et le parcours](docs/RELEASE-4.0.18.md). Le lien de téléchargement ci-dessus reste celui du dernier pack publié tant que la nouvelle qualification n’est pas terminée.
+
 ## 4.0.17 : contrôler la collecte avant l’import de connaissances
 
 Le précontrôle vérifie les dates de modification avant la lecture massive des fiches. Un index dont aucune date n’est interprétable arrête le passage avec une explication et un lien vers les réglages de bibliothèque ; une date ISO portant son décalage reste admise sans inventer de fuseau. Un index mêlant dates fiables et dates incertaines affiche un avertissement chiffré.
