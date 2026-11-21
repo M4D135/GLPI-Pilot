@@ -203,7 +203,7 @@ internal static partial class Program
 
         var requestsBeforeRelais = portal.AllIndexRequests; var readsBeforeRelais = portal.DetailRequests.Count;
         await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("aucun-ticket-ne-correspond-export-relais");
-        await Button("Rechercher").ClickAsync();
+        await page.Locator("form.library-search").GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('.library-results-count')?.textContent.startsWith('0 résultat')===true && !document.querySelector('.library-results[aria-busy]')");
         host.NextSave = Path.Combine(_root, "library-workflow-export.relais");
         await Button("Exporter pour Relais").ClickAsync();
@@ -237,7 +237,7 @@ internal static partial class Program
             && await relaisOutcome.IsHiddenAsync() && File.Exists(Path.Combine(_root, "library-workflow-export.relais")),
             "Cancelling the native Relais save hides the previous success outcome without replacing the existing export.");
         await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("");
-        await Button("Rechercher").ClickAsync();
+        await page.Locator("form.library-search").GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('.library-results-count')?.textContent.startsWith('30 résultat')===true && !document.querySelector('.library-results[aria-busy]')");
 
         await OpenCapture();
