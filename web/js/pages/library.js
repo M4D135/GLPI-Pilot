@@ -26,6 +26,7 @@ export async function renderLibrary(ctx) {
   let operation = null, passwordInput = null, busy = false, disposed = false, businessCleanup = null, businessController = null;
   const actionButtons = [], header = el('div'), statistics = el('div', { class: 'library-stats', 'aria-label': 'État de la bibliothèque' });
   const storage = el('div'), tabs = el('nav', { class: 'library-modes', 'aria-label': 'Vues de la bibliothèque' }), content = el('div', { class: 'library-content' });
+  const relaisPanel = el('section', { class: 'card library-relais-export', hidden: true, 'aria-label': 'Export pour Relais' });
   const progressText = el('strong', { text: '' });
   const progressDetail = el('p');
   const progress = el('section', { class: 'library-progress', hidden: true, role: 'status', 'aria-live': 'polite' },
@@ -33,7 +34,7 @@ export async function renderLibrary(ctx) {
   const outcome = el('section', { class: 'card library-outcome', hidden: true, 'aria-label': 'Bilan de la bibliothèque' });
   const captureSummary = el('section', { class: 'card library-outcome library-capture-summary', hidden: true, 'aria-label': 'Dernière collecte conservée' });
   root.classList.add('ticket-library');
-  root.replaceChildren(header, statistics, storage, progress, captureSummary, outcome, tabs, content);
+  root.replaceChildren(header, statistics, storage, relaisPanel, progress, captureSummary, outcome, tabs, content);
   if(simulation)root.prepend(simulationNotice(ctx.state.session,'La bibliothèque est alimentée par les tickets de simulation. Collectes, recherches, contributions et partage entre postes se déroulent dans cet espace isolé.'));
   const stopProgress = api.on('operation.progress', data => { if (busy && !disposed) progressDetail.textContent = text(data.message); });
   const stopLibrary = api.on('library.changed', () => { if (!busy && !disposed) void Promise.all([refreshModel(), refreshCapture()]).catch(error => { if (!disposed) showError(storage, error); }); });
@@ -197,7 +198,8 @@ export async function renderLibrary(ctx) {
       syncControl=action(simulation?'Synchroniser le partage simulé':'Synchroniser',()=>perform(simulation?'Échange dans la simulation…':model.settings?.syncMode==='folder'?'Synchronisation avec le dossier partagé…':'Synchronisation avec PostgreSQL…','library.sync'),{icon:'refresh'});
       relaisControl=action('Exporter pour Relais',()=>perform('Préparation du fichier Relais…','library.relais.export'),{icon:'download'});
       relaisHelp=el('p',{class:'help'});
-      header.append(el('section',{class:'card library-overview'},overviewDetails,toolbar(cacheControl,relaisControl),relaisHelp));
+      header.append(el('section',{class:'card library-overview'},overviewDetails,toolbar(cacheControl)));
+      relaisPanel.append(toolbar(relaisControl),relaisHelp);
       storage.append(el('section',{class:'card library-storage','aria-label':'Stockage et synchronisation'},storageDetails,
         toolbar(syncControl,action('Exporter le corpus RAG',async()=>{const result=await call('library.export');if(!result.cancelled)notify('Corpus exporté : '+result.path);},{icon:'download'}))));
       syncError=el('p',{class:'library-conflict',hidden:true});storage.append(syncError);
@@ -235,6 +237,7 @@ export async function renderLibrary(ctx) {
   }
   async function setView(next) { if (next === view) return; view = next; offset = 0; await drawView(); }
   async function drawView() {
+    relaisPanel.hidden = !['library', 'resolution'].includes(view) || isFileSource(ctx.state.session);
     if(isFileSource(ctx.state.session)&&!['team','connection'].includes(view)){content.replaceChildren(el('section',{class:'card'},el('h2',{text:'Source CSV / Excel'}),el('p',{text:fileSourceDetailHelp})));return;}
     if (disposed) return;
     businessCleanup?.();businessCleanup=null;businessController?.abort();businessController=null;

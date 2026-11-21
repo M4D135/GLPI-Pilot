@@ -206,6 +206,9 @@ internal static partial class Program
         await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("zqxrelaisabsentc972ba4d");
         await page.Locator("form.library-search").GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('.library-results-count')?.textContent.startsWith('0 résultat')===true && !document.querySelector('.library-results[aria-busy]')");
+        Require(await page.GetByRole(AriaRole.Region, new() { Name = "Export pour Relais", Exact = true }).IsVisibleAsync()
+            && await Button("Exporter pour Relais").CountAsync() == 1 && await Button("Exporter pour Relais").IsEnabledAsync(),
+            "The embedded library exposes one enabled Relais export action even when the visible search has no result.");
         host.NextSave = Path.Combine(_root, "library-workflow-export.relais");
         await Button("Exporter pour Relais").ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('section[aria-label=\"Bilan de la bibliothèque\"] h3')?.textContent==='Fichier prêt pour Relais' && document.querySelector('.library-progress')?.hidden===true");
