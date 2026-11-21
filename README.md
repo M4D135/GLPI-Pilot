@@ -8,7 +8,7 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-Les packs publiés sont disponibles dans les [Releases](https://github.com/M4D135/GLPI-Pilot/releases). La publication du pack 4.0.16 exige une qualification Windows et PostgreSQL complète sur le commit exact ainsi que la vérification de l’archive originale. La page Releases fait foi pour la disponibilité ; une compilation ou un artefact de test ne constitue pas une publication. Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Le [pack PROD-LIGHT 4.0.16 pour Windows x64](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.16/GLPI-Pilot_4.0.16_PROD-LIGHT_Windows-x64.zip) est publié. La qualification Windows et PostgreSQL du commit livré a réussi **16/16 jobs**, et le ZIP original inspecté a été publié sans recompilation ni recompression, puis retéléchargé et comparé octet pour octet. Voir la [release v4.0.16](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.16) et le [reçu de qualification](docs/QUALIFICATION-4.0.16.md). Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
