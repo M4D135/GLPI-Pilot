@@ -96,7 +96,42 @@ internal static class LibraryCaptureRuntimeChecks
         var closing = new System.Collections.Concurrent.ConcurrentQueue<string>(); glpi.Service.Log += message => { if (message.StartsWith("FICHE · fermeture", StringComparison.Ordinal)) closing.Enqueue(message); };
         await using var f = new SessionFixture(glpi.Service); f.App.Settings.ListTimeoutSeconds = 5; f.App.Settings.DetailTimeoutSeconds = 5;
         await ConfigureFixturePacing(f);
-        var capture = f.Call("library.capture", new { mode = "all", confirmedGlobal = true }); await glpi.WaitForIndexAsync(2);
+        using var captureCancellation = new CancellationTokenSource();
+        var capture = f.Call("library.capture", new { mode = "all", confirmedGlobal = true }, captureCancellation.Token);
+        // Bound each real transition, rather than all sequential reads, by the
+        // existing fifteen seconds. Program still bounds this whole scenario to 45 s.
+        async Task WaitForStage(Func<bool> reached, string stage)
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            while (!reached())
+            {
+                if (capture.IsCompleted)
+                {
+                    await capture; // Preserve the real capture failure when there is one.
+                    throw new InvalidOperationException("Capture completed before " + stage + ".");
+                }
+                try { await Task.Delay(20, deadline.Token); }
+                catch (OperationCanceledException)
+                {
+                    throw new TimeoutException("Capture did not reach " + stage + " within 15 seconds. Index requests: "
+                        + glpi.AllIndexRequests + "; detail IDs: " + string.Join(",", glpi.DetailRequests) + ".");
+                }
+            }
+        }
+        try
+        {
+            await WaitForStage(() => glpi.AllIndexRequests >= 1, "the initial index");
+            foreach (var id in glpi.TicketIds.ToArray())
+                await WaitForStage(() => glpi.DetailRequests.Contains(id), "the exact ticket " + id);
+            await WaitForStage(() => glpi.AllIndexRequests >= 2, "the final index after all ticket reads");
+        }
+        catch
+        {
+            // Drain the owned capture before fixture disposal; retain the first failure.
+            captureCancellation.Cancel();
+            try { await capture; } catch { }
+            throw;
+        }
         await f.Call("operations.cancel");
         try { await capture; throw new InvalidOperationException("Expected capture cancellation."); } catch (OperationCanceledException) { }
         var report = await f.Call("library.capture.latest");
@@ -138,7 +173,7 @@ internal static class LibraryCaptureRuntimeChecks
     private static async Task ConfigureFixturePacing(SessionFixture fixture)
     {
         // Keep the real sequential limiter and every existing deadline. The
-        // isolated portal has a fifteen-second final-index latch; configure
+        // isolated portal has fifteen-second stage bounds; configure
         // its allowed pace explicitly instead of changing production defaults.
         var current = await fixture.Call("library.collection.get");
         await fixture.Call("library.collection.settings", new

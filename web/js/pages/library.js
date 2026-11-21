@@ -1,4 +1,4 @@
-import { el, button, toolbar, empty, badge, input, select, field, table, dialog, confirm, formatNumber, formatDate, icon, showError, isSimulation, simulationNotice, fileSourceUnavailable, isFileSource, fileSourceDetailHelp } from '../ui.js';
+import { el, replaceChildren, button, toolbar, empty, badge, input, select, field, table, dialog, confirm, formatNumber, formatDate, icon, showError, isSimulation, simulationNotice, fileSourceUnavailable, isFileSource, fileSourceDetailHelp } from '../ui.js';
 
 import { sharedOperationKinds, reviewSharedOperation } from './shared-operations.js';
 import { openLibraryTicket } from '../library-ticket.js';
@@ -86,7 +86,7 @@ export async function renderLibrary(ctx) {
     const run = latestCapture, canRetry = !offline && run.retryCount > 0 && run.status !== 'running';
     const quality = collectionQuality(run);
     const qualityCounts = collectionQualityCounts(run).filter(item => item.value > 0).map(item => `${count(item.value)} ${item.label.toLocaleLowerCase('fr-FR')}`).join(' · ');
-    captureSummary.replaceChildren(el('div', { class: 'library-outcome-heading' },
+    replaceChildren(captureSummary, el('div', { class: 'library-outcome-heading' },
       el('div', {}, el('h3', { text: 'Dernière collecte' }),
         el('p', { class: 'help', text: `Démarrée le ${formatDate(run.startedAt)}${run.completedAt ? ' · Terminée le ' + formatDate(run.completedAt) : ''}` })),
       badge(collectionResultLabel(run), quality.needsAttention ? 'warning' : 'info')),

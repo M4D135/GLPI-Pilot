@@ -198,8 +198,9 @@ internal static partial class Program
         await Capture("library-workflows-summary-dark");
         await delivery; await page.ReloadAsync(); await ReadyAsync(page); await OpenLibrary();
         Require((await new TicketLibraryStore(preferences.DatabasePath).LatestCaptureAsync())?.RunId == seedRun
-            && (await CaptureSummary().InnerTextAsync()).Contains("26 fiches à reprendre"),
-            "Reloading the application page and reopening the local store retains the exact last collection and its resumable observations.");
+            && (await CaptureSummary().InnerTextAsync()).Contains("26 fiches à reprendre")
+            && await CaptureSummary().EvaluateAsync<bool>("element => [...element.childNodes].every(node => node.nodeType !== Node.TEXT_NODE || !['null','undefined','false'].includes(node.textContent.trim()))"),
+            "Reloading the application page and reopening the local store retains the exact last collection and its resumable observations without rendering absent notices as literal null text.");
 
         var requestsBeforeRelais = portal.AllIndexRequests; var readsBeforeRelais = portal.DetailRequests.Count;
         // Search joins word tokens with OR: use one absent token, without the common word "ticket".
