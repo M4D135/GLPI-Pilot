@@ -458,7 +458,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, re
           root = pathlib.Path('artifacts/postgres-ci/logs')
-          suites = [('ticket-library-postgres-checks.log', 'ticket library', 56, 11), ('shared-workspace-postgres-checks.log', 'shared workspace', 44, 19)]
+          suites = [('ticket-library-postgres-checks.log', 'ticket library', 58, 11), ('shared-workspace-postgres-checks.log', 'shared workspace', 44, 19)]
           for name, label, expected_total, expected_postgres in suites:
               report = (root / name).read_text(encoding='utf-8')
               summaries = re.findall(r'^(\d+)/(\d+) ' + re.escape(label) + r' checks passed\.$', report, re.M)
