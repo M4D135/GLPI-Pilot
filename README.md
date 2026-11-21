@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.17 · Windows x64
+# GLPI Pilot 4.0.18 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,9 +8,9 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-La version 4.0.17 renforce la confirmation des collectes et le diagnostic avant export vers Relais. Les [notes 4.0.17](docs/RELEASE-4.0.17.md) expliquent les corrections, la conservation des contenus et la vérification d’un petit périmètre avant une longue collecte.
+La version 4.0.18 ajoute **Bibliothèque → Exporter pour Relais** : un fichier `.relais` autonome à choisir directement dans Relais 0.6.3. L’export utilise la bibliothèque existante, explique les exclusions et ne relance aucune collecte. Voir [les notes et la procédure 4.0.18](docs/RELEASE-4.0.18.md).
 
-Le [pack PROD-LIGHT 4.0.17 pour Windows x64](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.17/GLPI-Pilot_4.0.17_PROD-LIGHT_Windows-x64.zip) est publié depuis le **21 novembre 2026 à 11:39 (Europe/Paris)**. La qualification Windows et PostgreSQL du commit livré a réussi **16/16 jobs**, et le ZIP original inspecté a été publié sans recompilation ni recompression, puis retéléchargé et comparé octet pour octet. Voir la [release v4.0.17](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.17), le [fichier SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.17/SHA256SUMS.txt) et le [reçu de qualification](docs/QUALIFICATION-4.0.17.md). Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Le [pack PROD-LIGHT 4.0.18 pour Windows x64](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.18/GLPI-Pilot_4.0.18_PROD-LIGHT_Windows-x64.zip) est publié depuis le **21 novembre 2026 à 23:16 (Europe/Paris)**. La qualification Windows et PostgreSQL du commit livré a réussi **16/16 jobs**. Le ZIP original inspecté a été publié sans recompilation ni recompression, puis retéléchargé et comparé octet par octet. Voir la [release v4.0.18](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.18), le [fichier SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.18/SHA256SUMS.txt) et le [reçu de qualification](docs/QUALIFICATION-4.0.18.md). Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 
 ## 4.0.18 : un fichier pour Relais
 
-La nouvelle version en qualification ajoute **Bibliothèque → Exporter pour Relais**. Un seul fichier `.relais` regroupe les contenus admissibles déjà collectés, leurs références et un bilan des exclusions. Choisir ce fichier directement dans Relais 0.6.3 ; aucun script ni copie manuelle de SQLite n’est nécessaire. Les dates, confirmations et contenus existants restent conservés. Voir [les notes et le parcours](docs/RELEASE-4.0.18.md). Le lien de téléchargement ci-dessus reste celui du dernier pack publié tant que la nouvelle qualification n’est pas terminée.
+La version 4.0.18 ajoute **Bibliothèque → Exporter pour Relais**. Un seul fichier `.relais` regroupe les contenus admissibles déjà collectés, leurs références et un bilan des exclusions. Choisir ce fichier directement dans Relais 0.6.3 ; aucun script ni copie manuelle de SQLite n’est nécessaire. Les dates, confirmations et contenus existants restent conservés. Voir [les notes et le parcours](docs/RELEASE-4.0.18.md). La qualification et la publication sont terminées ; le reçu ci-dessus identifie les fichiers distribués.
 
 ## 4.0.17 : contrôler la collecte avant l’import de connaissances
 

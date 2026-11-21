@@ -31,6 +31,6 @@ Il n’est pas nécessaire de réinitialiser la bibliothèque pour utiliser cet 
 
 ## Qualification
 
-Les essais utilisent des bases et des tickets fictifs, les vraies vues SQL de Pilot, l’exporteur C# et le lecteur Relais. Ils couvrent le journal WAL actif, la lecture concurrente cohérente, les limites, l’annulation, les destinations existantes et le respect des citations, identités et visibilités. La qualification Windows complète et la publication sont suivies dans le reçu de la version ; ne pas confondre sources disponibles et pack publié.
+Les essais utilisent des bases et des tickets fictifs, les vraies vues SQL de Pilot, l’exporteur C# et le lecteur Relais. Ils couvrent le journal WAL actif, la lecture concurrente cohérente, les limites, l’annulation, les destinations existantes et le respect des citations, identités et visibilités. La qualification Windows complète a réussi **16/16 jobs**. Le ZIP original a été publié, retéléchargé et comparé octet par octet. Le [reçu de qualification et publication](QUALIFICATION-4.0.18.md) identifie le commit, les contrôles et les fichiers distribués.
 
 La base privée et le portail de l’entreprise n’ont pas été ouverts dans cette qualification.
