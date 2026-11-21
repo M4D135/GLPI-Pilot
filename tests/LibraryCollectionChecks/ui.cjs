@@ -150,7 +150,11 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
         messages: ['Aucune date de modification fiable dans les dates examinées.'] };
       const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js'); cleanup = await renderLibraryCollection(collectionContext);
     });
-    await page.getByRole('heading', { name: 'Passage à compléter', exact: true }).waitFor({ state: 'visible' });
+    const incompleteStatus = page.locator('#collection-state-title');
+    await incompleteStatus.waitFor({ state: 'visible' });
+    assert.equal(await incompleteStatus.textContent(), 'Passage à compléter');
+    assert.equal(await incompleteStatus.getAttribute('role'), 'status');
+    assert.equal(await incompleteStatus.getAttribute('aria-live'), 'polite');
     ok(await page.locator('.collection-quality').textContent().then(text => text.includes('800Versions non confirmées'))
       && await page.locator('.collection-readiness-count').textContent().then(text => text.includes('0 / 800 fiches')), 'A completed 800-ticket pass with no retries exposes zero currently confirmed contents');
     ok(await page.locator('[data-collection-panel=retry]').evaluate(node => node.open)
