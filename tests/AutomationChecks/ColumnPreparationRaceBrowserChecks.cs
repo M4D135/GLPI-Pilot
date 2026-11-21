@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using GlpiPilot.Core;
@@ -286,6 +287,7 @@ internal static class ColumnPreparationRaceBrowserChecks
                 TimeoutSeconds = 10, ListTimeoutSeconds = 5, DownloadTimeoutSeconds = 10,
                 ExpectedTotal = 1, MaxRows = 20, MaxPages = 5
             };
+            var runClock = Stopwatch.StartNew();
             var run = automatic.RunAsync(settings, null, cancellation.Token);
             if (scenario == "cancel-post")
             {
@@ -325,11 +327,51 @@ internal static class ColumnPreparationRaceBrowserChecks
             }
             if (scenario == "unrelated-polling")
             {
-                AutomaticRunResult collected;
-                try { collected = await run.WaitAsync(TimeSpan.FromSeconds(10)); }
-                catch (TimeoutException error)
+                // Keep the original ten seconds from RunAsync for the stalled
+                // optional preparation and verified return to the list. The
+                // real CSV selection occurs only after that return; its native
+                // onchange fence and transfer keep their own existing budget.
+                TimeSpan RemainingPreparationBudget()
                 {
-                    throw new TimeoutException("Unrelated polling exceeded the unchanged 10-second fixture deadline. "
+                    var remaining = TimeSpan.FromSeconds(10) - runClock.Elapsed;
+                    if (remaining <= TimeSpan.Zero) throw new TimeoutException("The preparation deadline has already elapsed.");
+                    return remaining;
+                }
+                async Task PreparationCheckpointAsync()
+                {
+                    var remaining = RemainingPreparationBudget();
+                    var handle = await page.WaitForFunctionAsync(
+                        "() => document.querySelector('#native-format')?.value === '-4' && sessionStorage.getItem('columnCloseClicks') === '1'",
+                        null, new() { Timeout = (float)remaining.TotalMilliseconds });
+                    await handle.DisposeAsync();
+                }
+                var checkpoint = PreparationCheckpointAsync();
+                // Either waiter can fail after the other has already stopped
+                // this test. Observe that late failure without hiding the one
+                // awaited below; the DOM handle is disposed by its own waiter.
+                foreach (var task in new Task[] { run, checkpoint })
+                    _ = task.ContinueWith(completed => { _ = completed.Exception; }, CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                try
+                {
+                    // Bound the host wait as well as the browser waiter so a
+                    // queued Playwright call cannot reset or extend this clock.
+                    if (await Task.WhenAny(run, checkpoint).WaitAsync(RemainingPreparationBudget()) == run) await run;
+                    await checkpoint.WaitAsync(RemainingPreparationBudget());
+                }
+                catch (TimeoutException error) when (!run.IsFaulted && !run.IsCanceled)
+                {
+                    throw new TimeoutException("Unrelated polling exceeded the unchanged 10-second preparation deadline from RunAsync. "
+                        + $"Elapsed={runClock.Elapsed.TotalSeconds:F3}s, Run={run.Status}, preferences={preferenceGets}, tabs={tabGets}, posts={posts}, exports={exports}, "
+                        + $"backgroundRequests={unrelatedRequests}, phases={string.Join(',', phases)}."
+                        + Environment.NewLine + string.Join(Environment.NewLine, diagnostics.TakeLast(35)), error);
+                }
+                Console.WriteLine($"TRACE Unrelated polling: preparation and verified list completed after {runClock.Elapsed.TotalSeconds:F3}s; native export retains its configured {settings.DownloadTimeoutSeconds}-second budget.");
+                AutomaticRunResult collected;
+                try { collected = await run.WaitAsync(TimeSpan.FromSeconds(settings.DownloadTimeoutSeconds)); }
+                catch (TimeoutException error) when (!run.IsCompleted)
+                {
+                    throw new TimeoutException($"Native export exceeded its existing {settings.DownloadTimeoutSeconds}-second budget after the verified preparation checkpoint. "
                         + $"Run={run.Status}, preferences={preferenceGets}, tabs={tabGets}, posts={posts}, exports={exports}, "
                         + $"backgroundRequests={unrelatedRequests}, phases={string.Join(',', phases)}."
                         + Environment.NewLine + string.Join(Environment.NewLine, diagnostics.TakeLast(35)), error);
