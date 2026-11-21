@@ -202,7 +202,8 @@ internal static partial class Program
             "Reloading the application page and reopening the local store retains the exact last collection and its resumable observations.");
 
         var requestsBeforeRelais = portal.AllIndexRequests; var readsBeforeRelais = portal.DetailRequests.Count;
-        await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("aucun-ticket-ne-correspond-export-relais");
+        // Search joins word tokens with OR: use one absent token, without the common word "ticket".
+        await page.GetByRole(AriaRole.Searchbox, new() { Name = "Rechercher dans la bibliothèque", Exact = true }).FillAsync("zqxrelaisabsentc972ba4d");
         await page.Locator("form.library-search").GetByRole(AriaRole.Button, new() { Name = "Rechercher", Exact = true }).ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('.library-results-count')?.textContent.startsWith('0 résultat')===true && !document.querySelector('.library-results[aria-busy]')");
         host.NextSave = Path.Combine(_root, "library-workflow-export.relais");
