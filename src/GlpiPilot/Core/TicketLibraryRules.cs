@@ -30,6 +30,9 @@ public static class TicketLibraryRules
     public static bool CanSkip(TicketLibrarySeed seed, TicketLibraryDocument? stored, string readerSignature, TicketLibraryCachePolicy? policy = null)
     {
         policy ??= new();
+        // A reusable body must not conceal retained competing versions. The
+        // collection planner and the knowledge contract reject these too.
+        if (stored is { Conflicts: > 0 }) return false;
         // A complete read by the previous reader is kept while GLPI shows the same modification token, whatever its confirmation
         // state and even for a forced or aged re-read: read again, it would differ by design, and Merge (replayed alike by every
         // version sharing the library) would keep that difference as a same-version conflict. The final check may confirm it.

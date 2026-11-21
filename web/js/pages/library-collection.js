@@ -1,6 +1,7 @@
 import { el, icon, button, toolbar, field, input, confirm, formatNumber, formatDate, showError, isSimulation, isFileSource } from '../ui.js';
 import { createCollectionScope } from '../collection-scope.js';
 import { openLibraryTicket } from '../library-ticket.js';
+import { collectionQuality, collectionResultLabel, collectionQualityCounts } from '../collection-quality.js';
 
 const activeStates = new Set(['running', 'pausing', 'stopping']);
 const heldStates = new Set(['paused', 'stopped', 'interrupted', 'attention', 'budget']);
@@ -23,7 +24,7 @@ export async function renderLibraryCollection(ctx) {
   }
   let disposed = false, pending = false, settingsDirty = false, settingsRevision = 0, activity = {}, activityRevision = 0, model = null, generation = 0, polling = false, newScope = false;
   let journalOffset = 0, journalIdentity = '', journalGeneration = 0, journalRequest = null, journalPage = null, journalOpenedFor = '';
-  let retryOffset = 0, retryGeneration = 0;
+  let retryOffset = 0, retryGeneration = 0, retriesOpenedFor = '', qualityRenderKey = '';
   const call = (op, args = {}) => api.call(op, args, { signal });
   const reportError = error => {
     if (disposed || error?.name === 'AbortError') return;
@@ -37,6 +38,7 @@ export async function renderLibraryCollection(ctx) {
   const scope = createCollectionScope({
     preview: selected => call('library.collection.preview', { scope: selected }),
     search: args => call('library.collection.scope', args),
+    onDateSettings: () => navigate('library', { view: 'connection', focus: 'source-dates' }),
     onChange: () => { if (!disposed) paint(); },
     onError: reportError
   });
@@ -45,6 +47,7 @@ export async function renderLibraryCollection(ctx) {
   const heading = el('h2', { id: 'collection-state-title', role: 'status', 'aria-live': 'polite' });
   const detail = el('p', { class: 'collection-phase' }), counters = el('p', { class: 'collection-counters' }), next = el('p', { class: 'collection-next' });
   const recovery = el('p', { class: 'collection-recovery', hidden: true });
+  const qualityHost = el('section', { class: 'collection-quality', 'aria-label': 'Qualité du passage', hidden: true });
   const progress = el('progress', { max: 1, value: 0, 'aria-label': 'Tickets examinés pendant ce passage' });
   const settingsHost = el('div'), transferHost = el('div'), retryHost = el('div');
   const journalCount = el('p', { class: 'collection-journal-count' });
@@ -63,6 +66,7 @@ export async function renderLibraryCollection(ctx) {
     journalCount, journalStatus, journalError, toolbar(refreshEvents), journalEmpty, journalRows, journalNavigation, journalReport);
   const start = controlButton('Mettre à jour', safe(() => collect('incremental')), { primary: true, icon: 'refresh' });
   const resume = controlButton('Reprendre', safe(() => collect('resume')), { primary: true, icon: 'play' });
+  const retryCompleted = controlButton('Reprendre les fiches à vérifier', safe(() => collect('retry')), { primary: true, icon: 'refresh' });
   const pause = controlButton('Pause', safe(() => control('pause')), { primary: true });
   const stop = controlButton('Arrêter', safe(() => control('stop')));
   const retry = controlButton('Reprendre les erreurs', safe(() => collect('retry')));
@@ -89,11 +93,11 @@ export async function renderLibraryCollection(ctx) {
   const launchHint = el('p', { class: 'help collection-launch-hint', role: 'status' });
   const prepare = controlButton('Préparer un autre périmètre', safe(async () => { newScope = true; scope.beginDraft(); paint(); }));
   const returnToRun = controlButton('Revenir à la reprise', safe(async () => { newScope = false; scope.restoreSaved(); paint(); }));
-  const actions = toolbar(start, resume, pause, stop, prepare, returnToRun); actions.classList.add('collection-actions');
+  const actions = toolbar(start, resume, retryCompleted, pause, stop, prepare, returnToRun); actions.classList.add('collection-actions');
   const statusCard = el('section', { class: 'card collection-status', 'aria-label': 'État de la collecte' },
     el('div', { class: 'collection-status-heading' }, el('span', { class: 'collection-state-mark', 'aria-hidden': 'true' }, icon('layers')),
       el('div', {}, el('p', { class: 'collection-eyebrow', text: 'BIBLIOTHÈQUE DE TICKETS' }), heading)),
-    detail, actions, launchHint, progress, counters, recovery, next, el('p', { class: 'collection-reassurance', text: 'Pause ou arrêt : les contenus déjà enregistrés restent disponibles.' }));
+    detail, actions, launchHint, progress, counters, qualityHost, recovery, next, el('p', { class: 'collection-reassurance', text: 'Pause ou arrêt : les contenus déjà enregistrés restent disponibles.' }));
   const settings = el('details', { class: 'card collection-disclosure' }, el('summary', { text: 'Rythme et programmation' }), settingsHost);
   scope.element.hidden = offline;
   settings.hidden = offline;
@@ -125,12 +129,21 @@ export async function renderLibraryCollection(ctx) {
     // Activity is contextualized by the engine. A terminal event also wins when
     // preparation failed before a new durable run could replace the old one.
     const { running, state, report, resumeId, runId } = collectionView();
-    heading.textContent = state === 'completed' && report?.retryCount > 0 ? 'Passage à compléter' : labels[state] || state;
+    const readiness = report ? model?.readiness : null;
+    const reportCompleted = state === 'completed' || state === 'attention' && report?.status === 'completed';
+    const qualityReport = report ? { ...report, collectionState: state } : null;
+    const quality = collectionQuality(qualityReport, reportCompleted, readiness);
+    heading.textContent = reportCompleted ? collectionResultLabel(qualityReport, true, readiness) : labels[state] || state;
     statusCard.dataset.state = state;
+    statusCard.dataset.quality = quality.needsAttention ? quality.state : '';
     shell.dataset.collectionState = state;
     // After a failed pass the reason recorded by the engine is shown with the totals, not only the zero counters.
     const reason = !running && state === 'attention' ? activity.message || report?.limitations?.[0] || '' : '';
-    detail.textContent = running ? `${activity.phase || ''}${activity.waitSeconds > 0 ? ` · pause de rythme ${Math.ceil(activity.waitSeconds)} s` : ''}` : [...new Set([report?.message, reason || activity.message].filter(Boolean))].join(' · ') || 'La programmation est désactivée par défaut ; une pause ou un arrêt reste respecté après redémarrage.';
+    detail.textContent = running ? `${activity.phase || ''}${activity.waitSeconds > 0 ? ` · pause de rythme ${Math.ceil(activity.waitSeconds)} s` : ''}`
+      : reportCompleted && quality.needsAttention
+        ? quality.state === 'incomplete' ? 'Le passage est terminé, mais des contenus ou leur version restent à vérifier. Les contenus enregistrés sont conservés.'
+          : 'Le bilan disponible ne suffit pas à confirmer la qualité de ce passage. Les contenus enregistrés sont conservés.'
+        : [...new Set([report?.message, reason || activity.message].filter(Boolean))].join(' · ') || 'La programmation est désactivée par défaut ; une pause ou un arrêt reste respecté après redémarrage.';
     counters.textContent = running ? `${formatNumber(activity.processed || 0)} / ${formatNumber(activity.total || 0)} tickets examinés · ${formatNumber(activity.reused || 0)} contenus réutilisés · ${formatNumber(activity.requests || 0)} navigations déclenchées`
       : report ? `${formatNumber(report.read)} contenus lus · ${formatNumber(report.reused)} réutilisés · ${formatNumber(report.retryCount)} à reprendre ou confirmer` : activity.sessionId ? `${formatNumber(activity.processed || 0)} tickets examinés pendant cette tentative · ${formatNumber(activity.requests || 0)} navigations déclenchées` : 'Les contenus sauvegardés sont conservés même en cas d’interruption.';
     progress.hidden = !running; progress.max = Math.max(1, activity.total || 1);
@@ -139,22 +152,31 @@ export async function renderLibraryCollection(ctx) {
       : model?.automaticBlocked ? model.automaticBlockReason || 'Programmation suspendue : lancer une première collecte ciblée pour enregistrer le périmètre.'
         : model?.state?.nextAt ? `Prochain passage au plus tôt : ${formatDate(model.state.nextAt)} · application ouverte et plage autorisée.` : 'Aucune relance automatique programmée.';
     const held = heldStates.has(state), resumable = held && !!resumeId;
+    const completedHeld = state === 'attention' && report?.status === 'completed';
     recovery.hidden = !held;
-    recovery.textContent = resumable
+    recovery.textContent = completedHeld
+      ? report.retryCount > 0
+        ? 'Le passage a terminé ses tentatives. Examinez les motifs puis reprenez les seules fiches à vérifier ; le point de fin du passage ne relit pas ces erreurs.'
+        : 'Le passage est terminé mais sa qualité reste à vérifier. Aucun ticket n’est signalé comme réessayable dans son journal. Examinez les motifs et les versions conservées avant de préparer un autre périmètre.'
+      : resumable
       ? `${['attention', 'interrupted'].includes(state) ? 'Vérifier la cause de l’arrêt dans le journal avant de reprendre. ' : ''}${model?.scope?.enabled || model?.state?.scope?.enabled ? 'La reprise conserve les tickets du périmètre et les contenus déjà enregistrés.' : 'La reprise vérifie l’index et conserve les contenus valides.'}`
       : 'Vérifier le journal avant de relancer une collecte. Les contenus déjà enregistrés restent disponibles.';
-    start.hidden = running || resumable && !newScope; resume.hidden = running || !resumable || newScope; pause.hidden = !running; stop.hidden = !running;
+    start.hidden = running || resumable && !newScope; resume.hidden = running || !resumable || newScope || completedHeld;
+    retryCompleted.hidden = running || !resumable || newScope || !completedHeld || !(report?.retryCount > 0);
+    pause.hidden = !running; stop.hidden = !running;
     prepare.hidden = offline || running || !resumable || newScope;
     returnToRun.hidden = offline || running || !resumable || !newScope;
     const liveCoverage = activity.runId && activity.runId === runId ? activity.coverage : null;
     const storedCoverage = runId && model?.state?.runId === runId ? model?.coverage : null;
     scope.setState({ locked: offline || running || pending || resumable && !newScope, held: resumable && !newScope,
       coverage: running || resumable && !newScope ? liveCoverage || storedCoverage || null : null,
+      preflight: (running || resumable && !newScope) && activity.sessionId ? activity.preflight : null,
       coverageVerifiedAt: liveCoverage ? activity.coverageVerifiedAt : storedCoverage ? model?.inventory?.verifiedAt : null });
     start.disabled = offline || pending || running || !model || !scope.ready();
     prepare.disabled = pending || running;
     returnToRun.disabled = pending || running;
-    resume.disabled = offline || pending || running || !resumeId || !held;
+    resume.disabled = offline || pending || running || !resumeId || !held || completedHeld;
+    retryCompleted.disabled = offline || pending || running || !resumeId || !completedHeld || !report?.retryCount;
     retry.disabled = offline || pending || running || !resumeId || !report?.retryCount;
     missing.disabled = offline || pending || running || !resumeId || !report?.retryCount || !model?.availability?.missing;
     inspectLocal.disabled = pending || running;
@@ -163,18 +185,57 @@ export async function renderLibraryCollection(ctx) {
       : !running && !resumable && !scope.ready()
         ? 'Prévisualisez le périmètre avant de lancer une nouvelle collecte. Pour conserver les fiches déjà lues, utilisez la vérification locale ou le complément des seuls contenus absents.' : '';
     launchHint.hidden = !launchHint.textContent;
-    for (const control of [start, resume, retry, missing]) control.title = offline ? 'Une source GLPI active est nécessaire pour lire en ligne. Les contenus locaux restent consultables.' : '';
+    for (const control of [start, resume, retryCompleted, retry, missing]) control.title = offline ? 'Une source GLPI active est nécessaire pour lire en ligne. Les contenus locaux restent consultables.' : '';
+    if (!offline && ['blocked', 'warning'].includes(scope.preflightState())) for (const control of [start, resume, retryCompleted, retry, missing])
+      control.title = 'L’index GLPI sera vérifié à nouveau avant toute lecture de fiche. Les dates d’un ancien relevé ne confirment pas son état actuel.';
     if (start.disabled && !offline && !pending && !running) start.title = 'Prévisualiser le périmètre avant de démarrer.';
     pause.disabled = !running || !activity.sessionId || state !== 'running';
     stop.disabled = !running || !activity.sessionId || state === 'stopping';
     settingsHost.inert = offline || running || pending; transferHost.inert = running || pending;
     drawLocalAvailability();
+    drawQuality(report, quality, running, readiness);
     syncJournalIdentity(); paintJournalControls();
     const openFor = `${journalIdentity}:${running ? 'active' : state}`;
-    if ((running || ['attention', 'interrupted'].includes(state)) && journalOpenedFor !== openFor) {
+    if ((running || ['attention', 'interrupted'].includes(state) || quality.needsAttention) && journalOpenedFor !== openFor) {
       journalOpenedFor = openFor; journal.open = true;
     }
+    if (!running && quality.needsAttention && report && runId && retriesOpenedFor !== runId
+      && (report.retryCount > 0 || collectionQualityCounts(report).some(item => item.value > 0)
+        || readiness?.available === true && readiness.isReady === false)) {
+      retriesOpenedFor = runId; retries.open = true;
+    }
     if (running && retries.open) retryHost.replaceChildren(el('p', { text: 'La liste des fiches sera actualisée à la fin du passage. Le journal reste consultable pendant la collecte.' }));
+  }
+  function drawQuality(report, quality, running, readiness) {
+    const renderKey = JSON.stringify([running, report?.runId, report?.finalScopeVerified, report?.limitations,
+      collectionQualityCounts(report), quality, readiness]);
+    if (renderKey === qualityRenderKey) return;
+    qualityRenderKey = renderKey;
+    qualityHost.hidden = running || !report;
+    qualityHost.replaceChildren();
+    if (qualityHost.hidden) return;
+    const metrics = el('div', { class: 'collection-scope-metrics' }, ...collectionQualityCounts(report).map(item =>
+      el('div', { class: 'collection-scope-metric' }, el('strong', { text: item.value == null ? '—' : formatNumber(item.value) }), el('span', { text: item.label }))));
+    qualityHost.append(el('h3', { text: 'Qualité du passage' }), metrics,
+      el('p', { class: 'help', text: 'Les tickets examinés et les contenus lus mesurent le travail effectué. Ils ne prouvent pas que les contenus sont complets et confirmés. Les motifs peuvent concerner une même fiche.' }));
+    if (readiness?.available === true) {
+      const count = value => Number.isSafeInteger(value) && value >= 0 ? formatNumber(value) : '—';
+      const readyHost = el('div', { class: 'collection-readiness' },
+        el('h3', { text: 'Contenus conservés complets et confirmés' }),
+        el('p', { class: 'collection-readiness-count', text: `${count(readiness.eligibleTickets)} / ${count(readiness.tickets)} fiches` }),
+        el('div', { class: 'collection-scope-metrics' }, ...[['incomplete', 'Contenu incomplet'], ['missingContent', 'Sans contenu'], ['unconfirmed', 'Version non confirmée'], ['conflicts', 'Avec conflit']]
+          .map(([key, label]) => el('div', { class: 'collection-scope-metric' }, el('strong', { text: count(readiness[key]) }), el('span', { text: label })))),
+        el('p', { class: 'help', text: 'Ce bilan vérifie les fiches actuellement conservées selon le contrat de données GLPI-Pilot. Relais vérifie ensuite l’admissibilité de chaque fragment. Les motifs ci-dessus peuvent se recouper.' }));
+      qualityHost.append(readyHost);
+    }
+    if (report.finalScopeVerified !== true) qualityHost.append(el('p', { class: 'notice warning', text: 'Le contrôle final du périmètre n’est pas confirmé.' }));
+    if (quality.needsAttention) {
+      const limits = Array.isArray(report.limitations) ? report.limitations.filter(value => typeof value === 'string') : [];
+      if (limits.length) qualityHost.append(el('ul', { class: 'collection-quality-reasons' }, ...limits.map(value => el('li', { text: value }))));
+      qualityHost.append(el('p', { class: 'help', text: 'Consultez les motifs des fiches avant de relancer. Relire des contenus ne corrige pas un format de date, un fuseau ou un contrôle final manquant.' }),
+        toolbar(button('Voir les motifs des fiches', () => { if (retries.open) void safe(loadRetries)(); else retries.open = true; retries.scrollIntoView?.({ block: 'nearest' }); }),
+          !offline ? button('Régler les dates GLPI', () => navigate('library', { view: 'connection', focus: 'source-dates' }), { icon: 'settings' }) : null));
+    }
   }
   function drawLocalAvailability() {
     const availability = model?.availability;
@@ -190,7 +251,7 @@ export async function renderLibraryCollection(ctx) {
     const metric = (label, value) => el('div', { class: 'collection-scope-metric' }, el('strong', { text: formatNumber(value || 0) }), el('span', { text: label }));
     localMetrics.replaceChildren(metric('Fiches du passage', availability.observed), metric('Contenus conservés', availability.stored),
       metric('Complets conservés', availability.complete), metric('Partiels conservés', availability.partial), metric('Sans contenu', availability.missing),
-      metric('Version à confirmer', availability.unconfirmed), ...(availability.archived ? [metric('Copie archivée', availability.archived)] : []),
+      metric('Version à confirmer', availability.unconfirmed), ...(Number.isSafeInteger(availability.confirmed) && availability.confirmed >= 0 ? [metric('Versions confirmées', availability.confirmed)] : []), ...(availability.archived ? [metric('Copie archivée', availability.archived)] : []),
       ...(availability.invalid ? [metric('Copie à examiner', availability.invalid)] : []));
     localStatus.textContent = `Vérification locale du ${formatDate(availability.checkedAt)} · ${formatNumber(availability.stored)} contenus présents dans la base locale. Leur consultation ne nécessite aucune nouvelle collecte. La fraîcheur GLPI reste indiquée séparément.`;
   }
@@ -240,7 +301,18 @@ export async function renderLibraryCollection(ctx) {
       const result = await call('library.capture', { mode, runId: mode === 'incremental' ? '' : collectionView().resumeId || '',
         confirmedNewCycle: missingJournal || newScope, ...scopeArgs, ...options });
       newScope = false;
-      if (!disposed) notify(labels[result?.collectionState] || result?.message || 'Point de reprise conservé.', result?.collectionState === 'attention' ? 'warning' : 'info');
+      if (!disposed) {
+        const completed = result?.collectionState === 'completed' || result?.status === 'completed';
+        const quality = collectionQuality(result, completed, result?.readiness);
+        const counts = collectionQualityCounts(result).filter(item => item.value > 0).map(item => `${formatNumber(item.value)} ${item.label.toLocaleLowerCase('fr-FR')}`);
+        const readyText = result?.readiness?.available === true && Number.isSafeInteger(result.readiness.eligibleTickets) && Number.isSafeInteger(result.readiness.tickets)
+          && result.readiness.eligibleTickets >= 0 && result.readiness.tickets >= result.readiness.eligibleTickets
+          ? `${formatNumber(result.readiness.eligibleTickets)} / ${formatNumber(result.readiness.tickets)} fiches complètes et confirmées` : '';
+        const detail = [readyText, ...counts].filter(Boolean).join(' · ');
+        const message = completed ? `${collectionResultLabel(result, true, result?.readiness)}${detail ? ` · ${detail}` : ''}.`
+          : labels[result?.collectionState] || result?.message || 'Point de reprise conservé.';
+        notify(message, quality.needsAttention || result?.collectionState === 'attention' ? 'warning' : 'info');
+      }
     } catch (error) {
       if (mode === 'incremental') scope.invalidatePreview();
       throw error;
@@ -278,7 +350,7 @@ export async function renderLibraryCollection(ctx) {
       el('div', { class: 'collection-fields' },
         numeric('batchSize', 'Navigations par lot', 1, 500), numeric('batchPauseSeconds', 'Pause entre lots (secondes)', 0, 3600),
         numeric('maximumMinutes', 'Budget par passage (minutes)', 1, 1440), numeric('consecutiveErrorLimit', 'Arrêt après erreurs consécutives', 1, 10),
-        field('Début du créneau automatique', from), field('Fin du créneau automatique', to), field('Fuseau horaire', zone)));
+        field('Début du créneau automatique', from), field('Fin du créneau automatique', to), field('Fuseau du créneau automatique', zone, 'Ce fuseau règle la programmation. Le fuseau et le format des dates affichées dans GLPI se règlent dans la bibliothèque.')));
     form.append(el('p', { text: 'Désignez un seul poste collecteur par périmètre. Les autres postes peuvent importer la bibliothèque et synchroniser le partage sans solliciter GLPI. Ces réglages ne changent pas la fréquence du partage entre postes.' }),
       field('Ce poste effectue les mises à jour automatiques', automatic, canSchedule
         ? 'La programmation utilise le dernier périmètre lancé. Modifier les filtres de l’aperçu ne change pas ce périmètre.'
@@ -406,15 +478,18 @@ export async function renderLibraryCollection(ctx) {
   }
   async function loadRetries() {
     if (disposed || !retries.open) return;
-    const { running, runId, state } = collectionView();
+    const { running, runId, state, report } = collectionView();
     if (running) { retryHost.replaceChildren(el('p', { text: 'La liste des fiches sera actualisée à la fin du passage. Le journal reste consultable pendant la collecte.' })); return; }
     if (!runId) { retryHost.replaceChildren(el('p', { text: 'Aucune liste de fiches enregistrée pour cette tentative. Les erreurs avant la lecture des tickets figurent dans le journal.' })); return; }
     const stamp = ++retryGeneration, offset = retryOffset;
-    const page = await call('library.capture.entries', { runId, offset, limit: journalPageSize, retryOnly: true });
+    const allEntries = (state === 'completed' || state === 'attention' && report?.status === 'completed')
+      && collectionQuality({ ...report, collectionState: state }, true, model?.readiness).needsAttention && !report?.retryCount;
+    const page = await call('library.capture.entries', { runId, offset, limit: journalPageSize, retryOnly: !allEntries });
     if (disposed || stamp !== retryGeneration || collectionView().runId !== runId || activeStates.has(activity.state)) return;
     retryHost.replaceChildren(el('p', { text: page.total
-      ? `${formatNumber(page.total)} fiches à reprendre ou confirmer. Aucun ticket absent de la liste n’est supprimé automatiquement.`
-      : `Aucune fiche individuelle à reprendre dans ce passage.${['attention', 'interrupted'].includes(state) ? ' Une erreur de lecture de l’index peut néanmoins nécessiter « Reprendre » : consultez le journal.' : ''}` }),
+      ? allEntries ? `${formatNumber(page.total)} fiches dans ce passage. Le compteur de reprises ne suffit pas à confirmer leur qualité ; les états et motifs conservés sont affichés ci-dessous.`
+        : `${formatNumber(page.total)} fiches à reprendre ou confirmer. Aucun ticket absent de la liste n’est supprimé automatiquement.`
+      : `Aucune fiche individuelle à reprendre dans ce passage.${['attention', 'interrupted'].includes(state) ? ' Une erreur de lecture de l’index peut néanmoins nécessiter « Reprendre » : consultez le journal.' : allEntries ? ' La qualité du passage reste à vérifier dans le bilan et le journal.' : ''}` }),
       ...page.items.map(item => el('div', { class: 'collection-retry-entry' },
         el('p', { text: `#${item.ticketId} · ${item.stateLabel} · ${item.message}` }),
         ...(item.detailLimitations || []).map(message => el('p', { class: 'help', text: message })),

@@ -125,6 +125,12 @@ internal static class TargetedCollectionJourneyChecks
                 var state = await Call(app, "library.collection.get", new { });
                 Require(state.GetProperty("coverage").GetProperty("selected").GetInt32() == 2
                     && state.GetProperty("coverage").GetProperty("percent").GetDouble() == 100, "Coverage uses the global 180000 denominator.");
+                Require(result.GetProperty("isSuccessful").GetBoolean() && !result.GetProperty("needsAttention").GetBoolean()
+                    && result.GetProperty("readiness").GetProperty("isReady").GetBoolean()
+                    && result.GetProperty("readiness").GetProperty("eligibleTickets").GetInt32() == 2
+                    && state.GetProperty("report").GetProperty("isSuccessful").GetBoolean()
+                    && state.GetProperty("state").GetProperty("lastSuccess").ValueKind == JsonValueKind.String,
+                    "Targeted success disagrees with the selected native SQL contract or its durable success timestamp.");
                 Require(reads.GetValueOrDefault("42") == 1 && reads.GetValueOrDefault("43") == 1, "A selected body was read twice.");
                 OnlySelection();
             });

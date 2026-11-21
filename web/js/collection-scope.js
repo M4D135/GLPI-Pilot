@@ -16,9 +16,10 @@ export function collectionCoverage(value) {
     percent: value.selected ? Math.round(value.complete * 1000 / value.selected) / 10 : null };
 }
 
-export function createCollectionScope({ preview: requestPreview, search: requestValues, onChange = () => {}, onError = () => {} }) {
+export function createCollectionScope({ preview: requestPreview, search: requestValues, onChange = () => {}, onError = () => {}, onDateSettings }) {
   let data = null, draft = emptyScope(), initialized = false, dirty = false, locked = false, held = false, disposed = false;
   let preview = null, previewRequest = null, revision = 0, liveCoverage = null, liveCoverageVerifiedAt = null, fieldRows = [], modeConfirmed = false;
+  let preflightKey = '', livePreflight = null;
   const heading = el('h2', { text: 'Périmètre de collecte' });
   const source = el('p', { class: 'collection-scope-source' });
   const sourceNote = el('p', { class: 'collection-scope-note' });
@@ -70,7 +71,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
       if (result.scope) { draft = normalizeScope(result.scope); fieldRows = draft.fields.map(filter => filter.column); }
       dirty = false;
       draw();
-      previewStatus.textContent = draft.enabled
+      previewStatus.textContent = result.preflight?.state === 'blocked' ? 'Les dates du relevé demandent un contrôle. Le lancement vérifiera l’index GLPI avant toute lecture de fiche.' : draft.enabled
         ? result.coverage?.selected === 0 ? 'Aucun ticket ne correspond à ces filtres.'
           : result.coverage?.toRead === 0 ? 'Tous les contenus connus sont complets. « Mettre à jour » vérifiera les versions dans GLPI et relira les fiches qui le nécessitent.'
             : 'Périmètre prêt. La collecte démarre uniquement avec le bouton de lancement.'
@@ -90,13 +91,15 @@ export function createCollectionScope({ preview: requestPreview, search: request
   });
   const coverageHost = el('div', { class: 'collection-scope-coverage', hidden: true });
   const warnings = el('ul', { class: 'collection-scope-warnings', hidden: true });
+  const preflightHost = el('section', { class: 'collection-preflight', 'aria-label': 'Vérification des dates avant collecte', hidden: true });
+  const dateSettingsButton = onDateSettings ? button('Régler les dates GLPI', onDateSettings, { icon: 'settings' }) : null;
   mainFields.append(dates, dateNotice, textFields,
     el('div', { class: 'collection-scope-filter-heading' }, el('h3', { text: 'Groupes, utilisateurs et autres critères' }),
       el('p', { class: 'help', text: 'Les filtres se cumulent. Dans un même filtre, une seule des valeurs choisies suffit.' })),
     filters, toolbar(fieldChoice, addFilter), fieldsNotice, teamsHost);
   controls.append(mainFields, advanced, toolbar(previewButton, reset));
   const element = el('section', { class: 'card collection-scope', 'aria-label': 'Périmètre de collecte' },
-    heading, source, sourceNote, unavailable, frozen, controls, previewStatus, coverageHost, warnings);
+    heading, source, sourceNote, unavailable, frozen, controls, previewStatus, preflightHost, coverageHost, warnings);
   dateRole.addEventListener('change', () => change('dateRole', dateRole.value));
   from.addEventListener('input', () => change('fromDate', from.value));
   to.addEventListener('input', () => change('toDate', to.value));
@@ -125,7 +128,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
   }
   function change(key, value) { if (!editable()) return; draft[key] = value; invalidate(); }
   function invalidate() {
-    revision++; dirty = true; preview = null; liveCoverage = null;
+    revision++; dirty = true; preview = null; liveCoverage = null; livePreflight = null;
     previewStatus.textContent = 'Filtres modifiés. Prévisualiser le périmètre avant de lancer la collecte.';
     drawSource(); drawCoverage(); paint(); onChange();
   }
@@ -220,6 +223,33 @@ export function createCollectionScope({ preview: requestPreview, search: request
       el('p', { class: 'help', text: 'Choisir une équipe ajoute ses groupes au filtre « Groupe attribué ». Les groupes choisis se cumulent.' }), query, list));
   }
   function displayedInventory() { return preview?.inventory || (locked ? data?.inventory : null); }
+  function currentPreflight() { return livePreflight || preview?.preflight || (locked || !dirty ? data?.preflight : null); }
+  function drawPreflight() {
+    const value = currentPreflight(), key = JSON.stringify(value || null);
+    if (key === preflightKey) return;
+    preflightKey = key; preflightHost.replaceChildren(); preflightHost.hidden = !value;
+    if (!value) return;
+    const state = ['ready', 'warning', 'blocked', 'unknown'].includes(value.state) ? value.state : 'unknown';
+    preflightHost.dataset.state = state;
+    const heading = state === 'blocked' ? 'Dates à corriger avant de collecter' : state === 'warning' ? 'Certaines dates restent à vérifier'
+      : state === 'ready' ? 'Dates du relevé interprétables' : 'Dates à contrôler au démarrage';
+    preflightHost.append(el('h3', { text: heading }));
+    if (['checked', 'reliableDates', 'unreliableDates'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0)
+      && value.reliableDates + value.unreliableDates === value.checked)
+      preflightHost.append(el('p', { class: 'collection-preflight-counts', text: `${formatNumber(value.checked)} dates de modification examinées · ${formatNumber(value.reliableDates)} interprétables · ${formatNumber(value.unreliableDates)} non fiables` }));
+    const messages = Array.isArray(value.messages) ? value.messages.filter(message => typeof message === 'string') : [];
+    if (messages.length) preflightHost.append(el('ul', {}, ...messages.map(message => el('li', { text: message }))));
+    preflightHost.append(el('p', { class: 'help', text: state === 'blocked'
+      ? 'Le dernier contrôle ne permettait pas de lire les fiches avec une date fiable. Une reprise vérifiera de nouveau l’index GLPI avant toute lecture de fiche. Les contenus déjà enregistrés sont conservés.'
+      : state === 'warning' ? 'Les fiches dont la date reste ambiguë peuvent conserver une version non confirmée. Le moteur vérifie de nouveau les dates avant la lecture.'
+        : state === 'ready' ? 'Ce contrôle porte sur les dates du relevé. La collecte doit encore confirmer les contenus et leur version dans GLPI.'
+          : 'Le contrôle sera effectué sur l’index GLPI avant la lecture des fiches. Ce statut ne confirme pas encore la qualité des dates.' }));
+    if (typeof value.sourceTimeZone === 'string' || typeof value.sourceDateOrder === 'string') {
+      const orders = { dmy: 'jour / mois / année', mdy: 'mois / jour / année', ymd: 'année / mois / jour' };
+      preflightHost.append(el('p', { class: 'help', text: `Fuseau des dates GLPI : ${value.sourceTimeZone || 'non renseigné'} · Format : ${orders[value.sourceDateOrder] || 'détection prudente'}. Une date avec un décalage explicite peut être interprétable sans fuseau configuré.` }));
+    }
+    if (dateSettingsButton) preflightHost.append(dateSettingsButton);
+  }
   function drawSource() {
     const catalog = data?.catalog, inventory = data?.inventory;
     const shown = displayedInventory();
@@ -261,6 +291,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
     drawFilters(); drawTeams(); drawCoverage(); paint();
   }
   function drawCoverage() {
+    drawPreflight();
     const value = liveCoverage || preview?.coverage || (!dirty && initialized ? data?.coverage : null);
     const coverage = collectionCoverage(value);
     const applicable = draft.enabled && (locked || !dirty);
@@ -292,6 +323,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
     addFilter.disabled = locked || !fieldChoice.value || fieldRows.length >= 12;
     frozen.hidden = !locked;
     frozen.textContent = held ? 'Périmètre conservé pour la reprise. Préparer un autre périmètre pour démarrer une collecte différente.' : 'Le périmètre reste fixe pendant ce passage.';
+    if (dateSettingsButton) dateSettingsButton.disabled = locked && !held;
     element.dataset.scopeReady = String(ready());
   }
   draw();
@@ -307,7 +339,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
         if (!previewStatus.textContent) previewStatus.textContent = 'Prévisualiser pour afficher le nombre de tickets et les contenus déjà disponibles.';
         if (!preserveSaved && next.catalog?.sourceFingerprint && next.inventory?.sourceFingerprint
           && next.catalog.sourceFingerprint !== next.inventory.sourceFingerprint) dirty = true;
-      } else if (changedSource) { revision++; preview = null; dirty = true; liveCoverage = null;
+      } else if (changedSource) { revision++; preview = null; dirty = true; liveCoverage = null; livePreflight = null;
         previewStatus.textContent = 'Le relevé a changé. Prévisualiser à nouveau le périmètre.'; }
       if (!dirty && next.coverage && preview && scopeKey(draft) === scopeKey(normalizeScope(next.scope || next.state?.scope))) {
         preview = { ...preview, coverage: next.coverage, inventory: next.inventory || preview.inventory };
@@ -319,6 +351,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
       if (disposed) return;
       locked = !!state.locked; held = !!state.held;
       liveCoverage = state.coverage || null; liveCoverageVerifiedAt = state.coverageVerifiedAt || null;
+      livePreflight = state.preflight || null;
       drawSource(); drawCoverage(); paint();
     },
     beginDraft() { if (disposed) return; locked = false; held = false; draft.enabled = true; modeConfirmed = false; invalidate(); draw(); },
@@ -331,6 +364,7 @@ export function createCollectionScope({ preview: requestPreview, search: request
     invalidatePreview() { if (disposed) return; invalidate(); previewStatus.textContent = 'Prévisualiser à nouveau ce périmètre avant de relancer la collecte.'; },
     ready,
     args() { return ready() ? { scope: clone(draft), previewToken: preview.previewToken, confirmedGlobal: !draft.enabled && modeConfirmed } : null; },
+    preflightState() { return currentPreflight()?.state || 'unknown'; },
     dispose() { disposed = true; revision++; previewRequest = null; }
   };
 }

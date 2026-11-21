@@ -222,7 +222,7 @@ internal static partial class Program
         await WaitForPageAsync(page, "document.querySelector('.library-connection-status')?.dataset.tone==='success'", null,
             @"()=>{const s=document.querySelector('.library-connection-status');const b=[...document.querySelectorAll('.library-settings button')].find(x=>(x.textContent||'').includes('Tester la connexion'));return 'statut='+(s?(s.textContent||'(vide)'):'element absent')+' | ton='+(s&&s.dataset.tone||'(aucun)')+' | bouton='+(b?(b.disabled?'desactive':'actif'):'absent')+' | occupes='+document.querySelectorAll('.library-settings button[aria-busy=true]').length;}");
         Require(new LibraryPreferencesStore().Load().SyncMode == "local", "Testing shared-folder access leaves the active configuration unchanged.");
-        await Button("Enregistrer le partage").ClickAsync();
+        await Button("Enregistrer les réglages").ClickAsync();
         await WaitForPageAsync(page, "!document.querySelector('.library-settings button[aria-busy=true]') && document.querySelector('.library-settings select')!==null");
         var sharedAppointment = new CalendarIntervention { Id = Guid.NewGuid().ToString("N"), Title = "Intervention partagée par dossier", StartLocal = "2026-11-02T09:00", EndLocal = "2026-11-02T10:00", TimeZoneId = "UTC" };
         await Call(app, "calendar.save", new { intervention = sharedAppointment });
@@ -282,7 +282,7 @@ internal static partial class Program
         await page.GetByRole(AriaRole.Combobox, new() { Name = "Format des dates GLPI", Exact = true }).SelectOptionAsync("dmy");
         const string sessionSecret = "Only-for-this-synthetic-session-32";
         await page.GetByLabel("Mot de passe PostgreSQL", new() { Exact = true }).FillAsync(sessionSecret);
-        await Button("Enregistrer le partage").ClickAsync();
+        await Button("Enregistrer les réglages").ClickAsync();
         await WaitForPageAsync(page, "document.querySelector('input[type=password]')?.value==='' && !document.querySelector('.library-settings button[aria-busy=true]')");
         var publicSettings = await Call(app, "library.get");
         var storedSettings = new LibraryPreferencesStore().Load();
@@ -293,7 +293,7 @@ internal static partial class Program
             && await page.GetByLabel("Mot de passe PostgreSQL", new() { Exact = true }).InputValueAsync() == "",
             "Connection settings persist through C# while a session-only password is cleared from the form, omitted from public state, and never written as a saved secret.");
         await Capture("library-connection");
-        await Button("Enregistrer le partage").ClickAsync();
+        await Button("Enregistrer les réglages").ClickAsync();
         await WaitForPageAsync(page, "!document.querySelector('.library-settings button[aria-busy=true]')");
         var preservedSecret = (await Call(app, "library.get")).GetProperty("settings").GetProperty("hasPassword").GetBoolean();
         await Button("Oublier le mot de passe").ClickAsync();
@@ -301,7 +301,7 @@ internal static partial class Program
         Require(preservedSecret && !(await Call(app, "library.get")).GetProperty("settings").GetProperty("hasPassword").GetBoolean(),
             "Saving an empty password field preserves the existing session secret until the explicit forget operation removes it.");
         await page.GetByLabel("Mode de partage", new() { Exact = true }).SelectOptionAsync("local");
-        await Button("Enregistrer le partage").ClickAsync();
+        await Button("Enregistrer les réglages").ClickAsync();
         await WaitForPageAsync(page, "!document.querySelector('.library-settings button[aria-busy=true]')");
 
         await View("Bibliothèque");

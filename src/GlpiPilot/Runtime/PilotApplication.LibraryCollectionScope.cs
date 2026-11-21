@@ -18,6 +18,7 @@ public sealed partial class PilotApplication
         public LibraryCollectionScope Scope { get; init; } = new() { Enabled = true };
         public LibraryCollectionScopeCatalog? Catalog { get; init; }
         public LibraryCollectionCoverage? Coverage { get; init; }
+        public LibraryCollectionPreflight? Preflight { get; init; }
         public object? Inventory { get; init; }
         public bool Available { get; init; }
         public string Message { get; init; } = "";
@@ -81,7 +82,7 @@ public sealed partial class PilotApplication
         return new()
         {
             Scope = plan?.Scope ?? (state.Scope.Enabled ? state.Scope : new() { Enabled = true }),
-            Catalog = catalog, Coverage = coverage,
+            Catalog = catalog, Coverage = coverage, Preflight = LibraryCollectionPreflight.Preview(plan?.Tickets, LibrarySettings),
             Inventory = plan is not null ? CollectionInventory(plan) : catalog is null ? null : new
             {
                 sourceUrl = AppPaths.SafeUrl(catalog.SourceUrl), observedAt = catalog.ObservedAt,
@@ -103,6 +104,7 @@ public sealed partial class PilotApplication
             var token = Guid.NewGuid().ToString("N");
             _collectionScopePreview = new(token, Revision, context.Fingerprint, Result, TicketLibraryRules.Copy(scope), null);
             return new CollectionScopeModel { Scope = scope, Available = true, PreviewToken = token,
+                Preflight = LibraryCollectionPreflight.Preview(null, LibrarySettings),
                 Message = "La collecte globale examine tous les tickets accessibles. Son volume sera connu après lecture de la liste GLPI ; aucun taux ciblé ne peut être calculé à cet aperçu." };
         }
         if (!HasCollectionInventory(out var message)) throw new InvalidOperationException(message);
@@ -115,7 +117,8 @@ public sealed partial class PilotApplication
         var previewToken = Guid.NewGuid().ToString("N");
         _collectionScopePreview = new(previewToken, revision, context.Fingerprint, source, TicketLibraryRules.Copy(scope), plan);
         return new CollectionScopeModel { Scope = plan.Scope, Catalog = catalog, Coverage = coverage, Inventory = CollectionInventory(plan),
-            Available = true, Message = message, PreviewToken = previewToken, Warnings = plan.Warnings, Teams = CollectionTeams() };
+            Available = true, Message = message, PreviewToken = previewToken, Warnings = plan.Warnings, Teams = CollectionTeams(),
+            Preflight = LibraryCollectionPreflight.Preview(plan.Tickets, preferences) };
     }
 
     private async Task<LibraryCollectionPlan?> ResolveCollectionPlanAsync(JsonElement args, string mode,

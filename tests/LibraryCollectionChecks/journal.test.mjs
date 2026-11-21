@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fixture, runA, runB, sessionA, sessionB, options, event, deferred } from './fixture.mjs';
+import { collectionQuality } from '../../web/js/collection-quality.js';
 
 const storedPass = () => ({
   state: { revision: 1, state: 'completed', runId: runA, options },
@@ -63,12 +64,140 @@ test('retry entries open saved partial content by its exact key even in offline 
     { ticketKey: 'f'.repeat(64), ticketId: '43', stateLabel: 'Non encore lu', message: 'Aucun contenu.', hasContent: false }
   ] }));
   f.handlers.set('library.ticket', args => ({ key: args.key }));
-  f.panel('retry').open = true; await f.flush();
+  f.panel('retry').open = false; await f.flush(); f.panel('retry').open = true; await f.flush();
   assert.match(f.panel('retry').textContent, /rubrique Tâches reste incomplète/);
   assert.equal(f.all().filter(node => node.tagName === 'button' && node.textContent === 'Lire le contenu conservé').length, 1);
   await f.button('Lire le contenu conservé').emit('click');
   assert.deepEqual(f.calls.find(call => call.operation === 'library.ticket').args, { key });
   assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+});
+
+const completedReport = (patch = {}) => ({ runId: runA, status: 'completed', observed: 8, targeted: 8, processed: 8,
+  read: 8, reused: 0, failed: 0, partial: 0, conflicts: 0, unconfirmed: 0, retryCount: 0, finalScopeVerified: true, limitations: [], ...patch });
+const readyContents = (patch = {}) => ({ available: true, tickets: 8, eligibleTickets: 8, incomplete: 0, missingContent: 0,
+  unconfirmed: 0, conflicts: 0, isReady: true, ...patch });
+
+test('a completed global pass with zero retries still exposes unconfirmed versions and their recorded causes', async () => {
+  const f = await fixture({ state: { revision: 1, state: 'completed', runId: runA, options },
+    report: completedReport({ observed: 800, targeted: 800, processed: 800, read: 800, unconfirmed: 800 }),
+    retryEntries: [{ ticketId: '42', stateLabel: 'Contenu à confirmer', message: 'La date, son format ou le fuseau reste ambigu.', hasContent: true, ticketKey: 'e'.repeat(64) }] });
+  assert.equal(f.find(node => node.id === 'collection-state-title').textContent, 'Passage à compléter');
+  assert.match(f.byClass('collection-quality').textContent, /800Versions non confirmées/);
+  assert.equal(f.byClass('collection-status').dataset.quality, 'incomplete');
+  assert.equal(f.panel('journal').open, true); assert.equal(f.panel('retry').open, true);
+  assert.match(f.panel('retry').textContent, /compteur de reprises ne suffit pas.*format ou le fuseau reste ambigu/);
+  assert.equal(f.calls.find(call => call.operation === 'library.capture.entries').args.retryOnly, false);
+  assert.equal(f.button('Reprendre les erreurs').disabled, true);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+});
+
+test('a completed capture notification reports unconfirmed contents as a warning even when retryCount is zero', async () => {
+  const f = await fixture(storedPass());
+  const result = { ...completedReport({ unconfirmed: 8, isSuccessful: false, needsAttention: true }), collectionState: 'attention',
+    readiness: readyContents({ eligibleTickets: 0, unconfirmed: 8, isReady: false }) };
+  f.handlers.set('library.capture', () => result);
+  await f.button('Reprendre les erreurs').emit('click'); await f.flush();
+  assert.equal(f.notifications.at(-1)[1], 'warning');
+  assert.match(f.notifications.at(-1)[0], /Passage à compléter.*0 \/ 8 fiches complètes et confirmées.*8 versions non confirmées/);
+  assert.doesNotMatch(f.notifications.at(-1)[0], /Passage validé|réussi/);
+  f.dispose();
+});
+
+test('runtime attention for a completed pass keeps its quality causes and nonretryable entries visible', async () => {
+  const f = await fixture({ state: { revision: 1, state: 'attention', runId: runA, options },
+    report: completedReport({ isSuccessful: true }), readiness: readyContents({ eligibleTickets: 0, conflicts: 8, isReady: false }),
+    activity: { state: 'attention', sessionId: sessionA, runId: runA, errorCode: 'collection-incomplete' },
+    retryEntries: [{ ticketId: '42', stateLabel: 'Versions à comparer', message: 'Versions concurrentes conservées.' }] });
+  assert.equal(f.find(node => node.id === 'collection-state-title').textContent, 'Passage à compléter');
+  assert.equal(f.byClass('collection-status').dataset.state, 'attention');
+  assert.equal(f.byClass('collection-status').dataset.quality, 'incomplete');
+  assert.equal(f.panel('retry').open, true);
+  assert.match(f.byClass('collection-quality').textContent, /Consultez les motifs des fiches/);
+  assert.match(f.panel('retry').textContent, /Versions concurrentes conservées/);
+  assert.equal(f.calls.find(call => call.operation === 'library.capture.entries').args.retryOnly, false);
+  assert.equal(f.button('Reprendre').hidden, true);
+  assert.match(f.byClass('collection-recovery').textContent, /Aucun ticket.*réessayable/);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  assert.equal(collectionQuality({ ...completedReport(), collectionState: 'attention' }, true, readyContents()).successful, false);
+  f.dispose();
+});
+
+test('current content readiness can contradict an otherwise successful historical pass without certifying an import', async () => {
+  const f = await fixture({ state: { revision: 1, state: 'completed', runId: runA, options },
+    report: completedReport({ isSuccessful: true, needsAttention: false }),
+    readiness: readyContents({ eligibleTickets: 0, unconfirmed: 8, isReady: false }) });
+  assert.equal(f.find(node => node.id === 'collection-state-title').textContent, 'Passage à compléter');
+  assert.match(f.byClass('collection-readiness').textContent, /0 \/ 8 fiches.*8Version non confirmée/);
+  assert.match(f.byClass('collection-readiness').textContent, /Relais vérifie ensuite l’admissibilité de chaque fragment/);
+  assert.equal(f.panel('retry').open, true);
+  assert.equal(f.calls.find(call => call.operation === 'library.capture.entries').args.retryOnly, false);
+  const action = f.button('Voir les motifs des fiches'); await f.tick();
+  assert.equal(f.button('Voir les motifs des fiches'), action, 'unchanged polling preserves keyboard focus targets');
+  f.dispose();
+});
+
+test('only a fully checked nonempty pass is labelled validated, including strict historical reports', async () => {
+  const f = await fixture({ state: { revision: 1, state: 'completed', runId: runA, options },
+    report: completedReport(), readiness: readyContents() });
+  assert.equal(f.find(node => node.id === 'collection-state-title').textContent, 'Passage validé');
+  assert.equal(f.byClass('collection-status').dataset.quality, '');
+  assert.match(f.byClass('collection-readiness').textContent, /8 \/ 8 fiches/);
+  assert.equal(f.panel('journal').open, false); assert.equal(f.panel('retry').open, false);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+  for (const patch of [{ targeted: 0, processed: 0 }, { targeted: 8, processed: 7 }, { finalScopeVerified: false },
+    { unconfirmed: 1 }, { conflicts: 1 }, { partial: 1 }, { failed: 1 }, { retryCount: 1 }, { isSuccessful: false },
+    { targeted: -1 }, { processed: '8' }, { failed: undefined }, { status: 'failed' }]) {
+    assert.equal(collectionQuality(completedReport(patch), true, readyContents()).successful, false, JSON.stringify(patch));
+  }
+  assert.equal(collectionQuality({ status: 'completed', isSuccessful: true, retryCount: 0 }).successful, false);
+  assert.equal(collectionQuality(completedReport(), true, { available: false }).successful, false);
+});
+
+test('an old terminal report without quality evidence remains explicitly unverified instead of assuming zero issues', async () => {
+  const f = await fixture({ state: { revision: 1, state: 'completed', runId: runA, options },
+    report: { runId: runA, status: 'completed', read: 800, reused: 0, retryCount: 0 } });
+  assert.equal(f.find(node => node.id === 'collection-state-title').textContent, 'Qualité du passage à vérifier');
+  assert.match(f.byClass('collection-quality').textContent, /—Versions non confirmées/);
+  assert.equal(f.byClass('collection-status').dataset.quality, 'unknown');
+  assert.equal(f.panel('journal').open, true);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.dispose();
+});
+
+test('a blocked date verdict from an old pass does not prevent rechecking its live index', async () => {
+  const f = await fixture({ ...storedPass(), state: { revision: 1, state: 'paused', runId: runA, options },
+    preflight: { state: 'blocked', checked: 8, reliableDates: 0, unreliableDates: 8, sourceTimeZone: '', sourceDateOrder: '', messages: ['Aucune date de modification fiable.'] } });
+  for (const name of ['Reprendre', 'Reprendre les erreurs', 'Compléter seulement les contenus absents']) {
+    assert.equal(f.button(name).disabled, false, name);
+  }
+  assert.equal(f.button('Vérifier les contenus conservés').disabled, false);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture'), false);
+  f.handlers.set('library.capture', () => ({ collectionState: 'paused' }));
+  await f.button('Reprendre').emit('click'); await f.flush();
+  assert.equal(f.calls.find(call => call.operation === 'library.capture').args.mode, 'resume');
+  await f.button('Régler les dates GLPI').emit('click');
+  assert.deepEqual(f.navigations, [['library', { view: 'connection', focus: 'source-dates' }]]);
+  f.dispose();
+});
+
+test('a finished pass requiring attention retries its remaining entries instead of resuming an exhausted plan', async () => {
+  const f = await fixture({ state: { revision: 1, state: 'attention', runId: runA, options, scope: { enabled: true } },
+    report: completedReport({ unconfirmed: 2, retryCount: 2, isSuccessful: false }),
+    readiness: readyContents({ eligibleTickets: 6, unconfirmed: 2, isReady: false }) });
+  assert.equal(f.button('Reprendre').hidden, true);
+  assert.equal(f.button('Reprendre').disabled, true);
+  assert.equal(f.button('Reprendre les fiches à vérifier').hidden, false);
+  assert.equal(f.button('Reprendre les fiches à vérifier').disabled, false);
+  assert.match(f.byClass('collection-recovery').textContent, /seules fiches à vérifier/);
+  f.handlers.set('library.capture', () => ({ collectionState: 'attention', ...completedReport({ unconfirmed: 2, retryCount: 2, isSuccessful: false }) }));
+  await f.button('Reprendre les fiches à vérifier').emit('click'); await f.flush();
+  const capture = f.calls.find(call => call.operation === 'library.capture');
+  assert.equal(capture.args.mode, 'retry'); assert.equal(capture.args.runId, runA);
+  assert.equal(capture.args.scope, undefined); assert.equal(capture.args.previewToken, undefined);
+  assert.equal(f.calls.some(call => call.operation === 'library.capture' && call.args.mode === 'resume'), false);
   f.dispose();
 });
 

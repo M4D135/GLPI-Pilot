@@ -18,6 +18,80 @@ async function fill(node, value) { node.value = value; await node.emit('input');
 async function preview(f) { await f.button('Prévisualiser le périmètre').emit('click'); await f.flush(); }
 const countCalls = (f, operation) => f.calls.filter(call => call.operation === operation).length;
 
+const datePreflight = (patch = {}) => ({ state: 'ready', checked: 10, reliableDates: 10, unreliableDates: 0,
+  sourceTimeZone: 'Europe/Paris', sourceDateOrder: 'dmy', messages: [], ...patch });
+
+test('an old preview with no reliable modification dates allows a fresh index check and links to the exact source-date settings', async () => {
+  const f = await fixture(idle({ previewPreflight: datePreflight({ state: 'blocked', reliableDates: 0, unreliableDates: 10,
+    messages: ['Les dates de modification ne peuvent pas être interprétées.'] }) }));
+  await preview(f);
+  assert.equal(f.button('Mettre à jour').disabled, false);
+  assert.match(f.button('Mettre à jour').title, /index GLPI sera vérifié à nouveau avant toute lecture/);
+  assert.match(f.byClass('collection-scope-status').textContent, /vérifiera l’index GLPI avant toute lecture/);
+  assert.match(f.byClass('collection-preflight').textContent, /10 dates de modification examinées.*0 interprétables.*10 non fiables/);
+  assert.match(f.byClass('collection-preflight').textContent, /reprise vérifiera de nouveau l’index GLPI.*déjà enregistrés sont conservés/);
+  assert.equal(countCalls(f, 'library.capture'), 0);
+  f.handlers.set('library.capture', () => ({ collectionState: 'attention', status: 'failed' }));
+  await f.button('Mettre à jour').emit('click');
+  assert.equal(countCalls(f, 'library.capture'), 1);
+  assert.equal(f.calls.find(call => call.operation === 'library.capture').args.previewToken, 'preview-token');
+  await f.button('Régler les dates GLPI').emit('click');
+  assert.deepEqual(f.navigations, [['library', { view: 'connection', focus: 'source-dates' }]]);
+  f.dispose();
+});
+
+test('a reliable explicit-offset preview does not require an invented timezone and a mixed-date warning stays visible', async () => {
+  const f = await fixture(idle({ previewPreflight: datePreflight({ sourceTimeZone: '', sourceDateOrder: '' }) }));
+  await preview(f);
+  assert.equal(f.button('Mettre à jour').disabled, false);
+  assert.match(f.byClass('collection-preflight').textContent, /décalage explicite peut être interprétable sans fuseau configuré/);
+  assert.match(f.byClass('collection-preflight').textContent, /collecte doit encore confirmer les contenus/);
+  f.data.previewPreflight = datePreflight({ state: 'warning', reliableDates: 7, unreliableDates: 3 });
+  await preview(f);
+  assert.equal(f.button('Mettre à jour').disabled, false);
+  assert.equal(f.byClass('collection-preflight').dataset.state, 'warning');
+  assert.match(f.byClass('collection-preflight').textContent, /7 interprétables.*3 non fiables.*version non confirmée/);
+  assert.equal(countCalls(f, 'library.capture'), 0);
+  f.dispose();
+});
+
+test('changing a reviewed scope removes its date verdict and cannot reuse the old launch permission', async () => {
+  const f = await fixture(idle({ previewPreflight: datePreflight() }));
+  await preview(f);
+  assert.equal(f.byClass('collection-preflight').hidden, false);
+  await fill(f.fieldControl('Sujet contenant'), 'nouveau périmètre');
+  assert.equal(f.byClass('collection-preflight').hidden, true);
+  assert.equal(f.button('Mettre à jour').disabled, true);
+  f.data.previewPreflight = datePreflight({ state: 'unknown', checked: 0, reliableDates: 0 });
+  await preview(f);
+  assert.match(f.byClass('collection-preflight').textContent, /contrôle sera effectué.*avant la lecture des fiches/);
+  assert.equal(f.button('Mettre à jour').disabled, false, 'the runtime must perform the live-index preflight before reading contents');
+  assert.equal(countCalls(f, 'library.capture'), 0);
+  f.dispose();
+});
+
+test('a live index date verdict replaces an unknown preview and leaves pause and stop available', async () => {
+  const f = await fixture(idle({ previewPreflight: datePreflight({ state: 'unknown', checked: 0, reliableDates: 0 }) }));
+  const capture = deferred();
+  f.handlers.set('library.capture', () => {
+    f.emit({ state: 'running', sessionId: sessionA, runId: runA, phase: 'Vérification des dates',
+      preflight: datePreflight({ state: 'warning', reliableDates: 9, unreliableDates: 1 }) });
+    return capture.promise;
+  });
+  await preview(f);
+  const pending = f.button('Mettre à jour').emit('click'); await f.flush();
+  assert.equal(f.byClass('collection-preflight').dataset.state, 'warning');
+  assert.match(f.byClass('collection-preflight').textContent, /9 interprétables.*1 non fiables/);
+  assert.equal(f.button('Pause').disabled, false); assert.equal(f.button('Arrêter').disabled, false);
+  assert.equal(f.button('Régler les dates GLPI').disabled, true);
+  f.data.state = { ...f.data.state, state: 'paused', runId: runA };
+  f.emit({ state: 'paused', sessionId: sessionA, runId: runA, preflight: datePreflight({ state: 'warning', reliableDates: 9, unreliableDates: 1 }) });
+  capture.resolve({ collectionState: 'paused' }); await pending; await f.flush();
+  assert.equal(f.button('Régler les dates GLPI').disabled, false);
+  assert.equal(f.button('Reprendre').disabled, false);
+  f.dispose();
+});
+
 test('a 180000-ticket source opens in targeted mode without reading any remote ticket or calculating an unsolicited preview', async () => {
   const f = await fixture(idle());
   assert.match(f.byClass('collection-scope-source').textContent, /180000.*2026-11-18.*https:\/\/fixture.invalid/);

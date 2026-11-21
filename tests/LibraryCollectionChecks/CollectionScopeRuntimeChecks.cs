@@ -74,6 +74,46 @@ internal static class CollectionScopeRuntimeChecks
                 await Refuse(app, new { mode = "incremental", scope = global, previewToken = preview.GetProperty("previewToken").GetString() }, "explicitement");
                 Require(app.Browser.ActivePage is null, "Unconfirmed global draft opened GLPI.");
             });
+            await check("Uninterpretable dates in a saved inventory warn without preventing a fresh GLPI index check", async () =>
+            {
+                var noZone = preferences.Copy(); noZone.SourceTimeZone = ""; preferencesStore.Save(noZone);
+                try
+                {
+                    await using var app = new PilotApplication(new NullHost(), (_, _) => { }, settings); app.LoadCollectionScopeFixture(Inventory(portal));
+                    var preview = await Call(app, "library.collection.preview", new { scope });
+                    var preflight = preview.GetProperty("preflight");
+                    Require(preflight.GetProperty("state").GetString() == "warning" && preflight.GetProperty("checked").GetInt32() == 2
+                        && preflight.GetProperty("reliableDates").GetInt32() == 0
+                        && preflight.GetProperty("messages")[0].GetString()!.Contains("index GLPI actuel", StringComparison.Ordinal),
+                        "A historical date was either trusted or used to forbid a fresh index check.");
+                    var model = await Call(app, "library.collection.get", new { });
+                    Require(app.Browser.ActivePage is null && model.GetProperty("state").GetProperty("runId").GetString() == "",
+                        "A local date preview opened GLPI or created a collection journal.");
+                }
+                finally { preferencesStore.Save(preferences); }
+            });
+            await check("An explicit date offset needs no source timezone and mixed dates report their exact risk", async () =>
+            {
+                var noZone = preferences.Copy(); noZone.SourceTimeZone = ""; preferencesStore.Save(noZone);
+                try
+                {
+                    var inventory = Inventory(portal);
+                    inventory.Rows[1][3] = "2025-04-02T12:00:00+02:00";
+                    inventory.Rows[2][3] = "2025-04-03T12:00:00+02:00";
+                    await using var app = new PilotApplication(new NullHost(), (_, _) => { }, settings); app.LoadCollectionScopeFixture(inventory);
+                    var preview = await Call(app, "library.collection.preview", new { scope });
+                    Require(preview.GetProperty("preflight").GetProperty("state").GetString() == "ready"
+                        && preview.GetProperty("preflight").GetProperty("sourceTimeZone").GetString() == "",
+                        "The preview demanded an invented timezone for explicit offsets.");
+                    inventory = Inventory(portal); inventory.Rows[1][3] = "2025-04-02T12:00:00+02:00";
+                    app.LoadCollectionScopeFixture(inventory);
+                    var mixed = (await Call(app, "library.collection.preview", new { scope })).GetProperty("preflight");
+                    Require(mixed.GetProperty("state").GetString() == "warning" && mixed.GetProperty("reliableDates").GetInt32() == 1
+                        && mixed.GetProperty("unreliableDates").GetInt32() == 1 && app.Browser.ActivePage is null,
+                        "Mixed date quality was hidden or the preview accessed GLPI.");
+                }
+                finally { preferencesStore.Save(preferences); }
+            });
             await check("Scheduling cannot apply a local draft before a targeted plan has been recorded", async () =>
             {
                 await using var app = new PilotApplication(new NullHost(), (_, _) => { }, settings); app.LoadCollectionScopeFixture(Inventory(portal));
@@ -112,6 +152,19 @@ internal static class CollectionScopeRuntimeChecks
                 var model = await Call(app, "library.collection.get", new { });
                 Require(model.GetProperty("state").GetProperty("runId").GetString() == ""
                     && model.GetProperty("coverage").ValueKind == JsonValueKind.Null, "Scope crossed source context.");
+            });
+            await check("A completed targeted journal cannot be resumed into a new success without fresh GLPI evidence", async () =>
+            {
+                var context = TicketLibraryCaptureContext.FromSettings(settings, preferences);
+                var store = new TicketLibraryStore(preferences.DatabasePath);
+                var plan = LibraryCollectionScopePlanner.Build(Inventory(portal), settings, scope, preferences);
+                var run = await store.BeginCaptureAsync(context, "incremental");
+                await store.SaveCollectionPlanAsync(run, context, plan);
+                await store.FinishCaptureAsync(run, "completed", Array.Empty<string>()); TicketLibraryStore.ReleaseCapture(run);
+                await using var app = new PilotApplication(new NullHost(), (_, _) => { }, settings);
+                await Refuse(app, new { mode = "resume", runId = run }, "Reprendre les erreurs");
+                Require(app.Browser.ActivePage is null && (await store.GetCaptureAsync(run)).Status == "completed",
+                    "An already completed plan was reopened or its old scope was presented as freshly verified.");
             });
         }
         finally { preferencesStore.Save(previous); }

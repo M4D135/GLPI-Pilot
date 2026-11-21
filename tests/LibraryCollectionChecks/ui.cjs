@@ -29,20 +29,20 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js');
       window.calls = []; window.callbacks = new Map(); window.state = { revision: 1, state: 'idle', runId: '', nextAt: null, options: { version: 1, automatic: false, intervalMinutes: 120, delayMilliseconds: 3000, batchSize: 25, batchPauseSeconds: 30, maximumMinutes: 60, consecutiveErrorLimit: 3, startMinute: 0, endMinute: 1440, timeZone: 'UTC' } }; window.activity = { state: 'idle' }; window.collectionEvents = []; window.reportOverride = null;
       window.collectionScope = { version: 1, enabled: true, dateRole: 'created', fromDate: '', toDate: '', ticketIds: [], text: '', similarSubject: '', fields: [] };
-      window.localAvailability = null; window.retryEntries = [];
+      window.localAvailability = null; window.retryEntries = []; window.collectionPreflight = null; window.contentReadiness = null; window.notifications = []; window.navigations = [];
       window.collectionCatalog = { sourceFingerprint: 'fixture-source-a', sourceUrl: 'https://fixture.invalid/glpi/front/ticket.php', observedAt: '2026-11-18T10:00:00Z', inventoryComplete: true, inventoryCount: 180000, titleAvailable: true,
         dateRoles: [{ role: 'created', label: 'Date de création', column: 'Date de création', available: true }, { role: 'updated', label: 'Dernière modification', column: 'Dernière modification', available: true }],
         fields: [{ column: 'Groupe attribué', role: 'group', label: 'Groupe attribué', valuesLoaded: true, truncated: false, values: [{ value: 'Support', count: 10000 }, { value: 'Réseau', count: 5000 }] },
           { column: 'Demandeur', role: 'requester', label: 'Demandeur', valuesLoaded: true, truncated: false, values: [{ value: 'Utilisateur de test', count: 12 }] }] };
       window.collectionInventory = { sourceFingerprint: 'fixture-source-a', sourceUrl: collectionCatalog.sourceUrl, observedAt: collectionCatalog.observedAt, count: 180000, complete: true };
       window.scopeCoverage = { selected: 50, complete: 30, missing: 15, partial: 3, changed: 2, unconfirmed: 0, toRead: 20 };
-      window.scopeModel = () => ({ scope: structuredClone(collectionScope), catalog: structuredClone(collectionCatalog), available: true, inventory: structuredClone(collectionInventory),
+      window.scopeModel = () => ({ scope: structuredClone(collectionScope), catalog: structuredClone(collectionCatalog), available: true, inventory: structuredClone(collectionInventory), preflight: structuredClone(collectionPreflight),
         teams: [{ key: 'team:test', label: 'Assistance', groups: ['Support', 'Réseau'] }] });
       const signal = new AbortController().signal;
       const api = { on: (name, callback) => { callbacks.set(name, callback); return () => callbacks.delete(name); }, call: async (op, args = {}) => {
         calls.push({ op, args: structuredClone(args) });
         if (op === 'library.collection.status') return structuredClone(activity);
-        if (op === 'library.collection.get') return { ...scopeModel(), state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi', coverage: state.runId ? structuredClone(scopeCoverage) : null, availability: structuredClone(localAvailability) };
+        if (op === 'library.collection.get') return { ...scopeModel(), state: structuredClone(state), report: reportOverride || (state.runId ? { runId: state.runId, read: 3, reused: 7, retryCount: 2, message: '10 tickets conservés' } : null), activity: structuredClone(activity), installation: 'https://fixture.invalid/glpi', coverage: state.runId ? structuredClone(scopeCoverage) : null, availability: structuredClone(localAvailability), readiness: structuredClone(contentReadiness) };
         if (op === 'library.collection.scope') return scopeModel();
         if (op === 'library.collection.preview') return { ...scopeModel(), scope: structuredClone(args.scope), previewToken: 'f'.repeat(32), coverage: structuredClone(scopeCoverage), warnings: [] };
         if (op === 'library.collection.events') return { runId: args.runId, total: collectionEvents.length, offset: args.offset, limit: args.limit, persisted: true, items: structuredClone(collectionEvents.slice(args.offset, args.offset + args.limit)) };
@@ -59,7 +59,7 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
         throw new Error('Unexpected operation ' + op);
       } };
       function assertSession(id) { if (id !== 'b'.repeat(32)) throw new Error('Wrong collection identity'); }
-      window.collectionContext = { root, api, signal, state: { session: {}, settings: { sources: [], interface: {} } }, notify: () => {}, navigate: () => {} };
+      window.collectionContext = { root, api, signal, state: { session: {}, settings: { sources: [], interface: {} } }, notify: (...args) => notifications.push(args), navigate: (...args) => navigations.push(args) };
       window.cleanup = await renderLibraryCollection(collectionContext);
     });
     ok(await page.evaluate(() => calls.every(c => c.op !== 'library.capture')), 'Opening the dedicated menu never starts a collection');
@@ -141,7 +141,35 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
       await page.screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-journal-initial-failure.png') });
     }
     await page.evaluate(async () => {
-      cleanup(); state.state = 'completed'; activity = { state: 'idle' }; collectionContext.state.session = { cachedSource: true };
+      cleanup(); state.state = 'completed'; activity = { state: 'idle' };
+      reportOverride = { runId: state.runId, status: 'completed', observed: 800, targeted: 800, processed: 800, read: 800, reused: 0,
+        failed: 0, partial: 0, conflicts: 0, unconfirmed: 800, retryCount: 0, finalScopeVerified: true, limitations: [] };
+      contentReadiness = { available: true, tickets: 800, eligibleTickets: 0, incomplete: 0, missingContent: 0, unconfirmed: 800, conflicts: 0, isReady: false };
+      retryEntries = [{ ticketId: '42', stateLabel: 'Contenu à confirmer', message: 'La date, son format ou le fuseau reste ambigu.' }];
+      collectionPreflight = { state: 'blocked', checked: 25, reliableDates: 0, unreliableDates: 25, sourceTimeZone: '', sourceDateOrder: '',
+        messages: ['Aucune date de modification fiable dans les dates examinées.'] };
+      const { renderLibraryCollection } = await importProduction('/web/js/pages/library-collection.js'); cleanup = await renderLibraryCollection(collectionContext);
+    });
+    await page.getByRole('heading', { name: 'Passage à compléter', exact: true }).waitFor({ state: 'visible' });
+    ok(await page.locator('.collection-quality').textContent().then(text => text.includes('800Versions non confirmées'))
+      && await page.locator('.collection-readiness-count').textContent().then(text => text.includes('0 / 800 fiches')), 'A completed 800-ticket pass with no retries exposes zero currently confirmed contents');
+    ok(await page.locator('[data-collection-panel=retry]').evaluate(node => node.open)
+      && await page.locator('.collection-retry-entry').textContent().then(text => text.includes('format ou le fuseau reste ambigu'))
+      && await page.evaluate(() => calls.filter(c => c.op === 'library.capture.entries').at(-1).args.retryOnly === false), 'The nonretryable historical entries remain visible with their recorded causes');
+    await page.getByRole('button', { name: 'Prévisualiser le périmètre', exact: true }).click();
+    ok(await page.getByRole('button', { name: 'Mettre à jour', exact: true }).isEnabled()
+      && await page.locator('.collection-preflight').textContent().then(text => text.includes('25 non fiables') && text.includes('avant toute lecture de fiche')),
+      'An old date verdict permits a fresh index check and does not claim permission to read unqualified contents');
+    await page.locator('.collection-preflight').getByRole('button', { name: 'Régler les dates GLPI', exact: true }).click();
+    ok(await page.evaluate(() => navigations.at(-1)[0] === 'library' && navigations.at(-1)[1].view === 'connection' && navigations.at(-1)[1].focus === 'source-dates'), 'The preflight action leads to GLPI source-date settings, separately from the scheduler timezone');
+    for (const [width, height] of [[1280, 800], [390, 800]]) {
+      await page.setViewportSize({ width, height });
+      ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Quality counts and blocked date preflight remain bounded at ${width}x${height}`);
+    }
+    if (process.env.GLPI_TEST_SCREENSHOTS) await page.locator('.collection-status').screenshot({ path: path.join(process.env.GLPI_TEST_SCREENSHOTS, 'collection-unconfirmed-quality.png') });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(async () => {
+      cleanup(); state.state = 'completed'; activity = { state: 'idle' }; collectionContext.state.session = { cachedSource: true }; contentReadiness = null; collectionPreflight = null;
       reportOverride = { runId: state.runId, observed: 8, read: 7, reused: 0, retryCount: 8, message: 'Passage terminé, versions à confirmer.' };
       localAvailability = { runId: state.runId, observed: 8, stored: 7, complete: 1, partial: 6, missing: 1, unconfirmed: 7, checkedAt: '2026-11-20T10:00:00Z' };
       retryEntries = [{ ticketKey: 'e'.repeat(64), ticketId: '42', stateLabel: 'Lecture partielle', message: 'Version à confirmer.', hasContent: true, detailLimitations: ['La rubrique Tâches reste incomplète.'] }];
@@ -150,7 +178,7 @@ function ok(value, text) { assert.ok(value, text); console.log(`PASS ${++count} 
     await page.getByRole('button', { name: 'Vérifier les contenus conservés', exact: true }).click();
     ok(await page.locator('.collection-local-status').textContent().then(text => text.includes('7 contenus présents') && text.includes('aucune nouvelle collecte'))
       && await page.getByRole('button', { name: 'Mettre à jour', exact: true }).isDisabled(), 'Offline local verification reports saved contents independently of unconfirmed freshness and disables online collection');
-    await page.locator('[data-collection-panel=retry] > summary').click();
+    if (!await page.locator('[data-collection-panel=retry]').evaluate(node => node.open)) await page.locator('[data-collection-panel=retry] > summary').click();
     await page.getByRole('button', { name: 'Lire le contenu conservé', exact: true }).click();
     await page.locator('.library-offline-notice').waitFor({ state: 'visible' });
     ok(await page.locator('.library-ticket-content').textContent().then(text => text.includes('Lecture partielle conservée') && text.includes('Description déjà enregistrée <script>texte littéral</script>'))

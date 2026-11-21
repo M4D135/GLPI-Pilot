@@ -112,7 +112,7 @@ public sealed partial class TicketLibraryStore
                 throw new InvalidOperationException("La sélection des contenus absents n’est plus conservée. Aucun autre ticket ne sera ajouté à cette reprise.");
             if (mode == "retry" && allowed.Count == 0)
             {
-                using var query = Command(c, tx, "SELECT ticket_key FROM ticket_library_capture_entries WHERE run_id=$parent AND retryable=1", ("$parent", parent));
+                using var query = Command(c, tx, $"SELECT e.ticket_key FROM ticket_library_capture_entries e WHERE e.run_id=$parent AND {CaptureRetryableSql}", ("$parent", parent));
                 using var reader = query.ExecuteReader(); while (reader.Read()) { ct.ThrowIfCancellationRequested(); allowed.Add(reader.GetString(0)); }
                 if (allowed.Count == 0) throw new InvalidOperationException("Les cibles de cet essai ne sont plus présentes. Démarrez explicitement une mise à jour différentielle.");
             }
@@ -144,6 +144,6 @@ public sealed partial class TicketLibraryStore
     }
     // A kept read by the previous reader may still await its confirmation (TicketLibraryRules.CanSkip): the final check decides.
     public Task RecordCollectionReuseAsync(string runId, string key, CancellationToken ct = default, bool awaitingConfirmation = false) => UpdateCaptureEntry(runId, key,
-        awaitingConfirmation ? "state='reused',category='awaiting-final-check',retryable=0,processed=1,reused=1,read_count=0,failed=0,partial=0,confirmed=0"
+        awaitingConfirmation ? "state='reused',category='awaiting-final-check',retryable=1,processed=1,reused=1,read_count=0,failed=0,partial=0,confirmed=0"
             : "state='reused',category='cache-reused',retryable=0,processed=1,reused=1,read_count=0,failed=0,partial=0,confirmed=1", ct);
 }

@@ -27,6 +27,8 @@ public sealed partial class PilotApplication
         public int Total { get; init; }
         public int Reused { get; init; }
         public LibraryCollectionCoverage? Coverage { get; init; }
+        public LibraryCollectionPreflight? Preflight { get; init; }
+        public TicketLibraryCaptureReadiness? Readiness { get; init; }
         public DateTimeOffset? CoverageVerifiedAt { get; init; }
         public double WaitSeconds { get; init; }
         public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
@@ -44,9 +46,10 @@ public sealed partial class PilotApplication
             var state = await TicketLibrary.CollectionStateAsync(context.Fingerprint, ct).ConfigureAwait(false);
             var report = state.RunId.Length == 0 ? null : await TicketLibrary.GetCaptureAsync(state.RunId, ct).ConfigureAwait(false);
             var availability = state.RunId.Length == 0 ? null : await TicketLibrary.CaptureAvailabilityAsync(state.RunId, ct).ConfigureAwait(false);
+            var readiness = state.RunId.Length == 0 ? null : await TicketLibrary.CaptureKnowledgeReadinessAsync(state.RunId, ct).ConfigureAwait(false);
             var selection = await CollectionScopeModelAsync(state, context, args, ct).ConfigureAwait(false);
             var restorationPending = AutomaticRestorationPending();
-            return new { state, report, availability, installation = context.Installation, activity = ReadCollectionActivity(), applicationMustRemainOpen = true,
+            return new { state, report, availability, readiness, preflight = selection.Preflight, installation = context.Installation, activity = ReadCollectionActivity(), applicationMustRemainOpen = true,
                 selection.Scope, selection.Catalog, selection.Coverage, selection.Inventory, selection.Available, selection.Message, selection.Warnings, selection.Teams,
                 automaticBlocked = state.Options.Automatic && (!state.Scope.Enabled || restorationPending),
                 automaticBlockReason = restorationPending ? AutomaticRestorationMessage : "" };
@@ -149,6 +152,12 @@ public sealed partial class PilotApplication
         var plan = await ResolveCollectionPlanAsync(args, mode, resumeId, parent, state, context, targets, requestCancellation).ConfigureAwait(false);
         if (plan is { Selected: 0 }) throw new InvalidOperationException("Aucun ticket ne correspond à ce périmètre. Modifier les filtres puis prévisualiser la sélection.");
         state.Options.Validate();
+        if (plan is not null && mode == "resume")
+        {
+            var previous = await local.GetCaptureAsync(resumeId, requestCancellation).ConfigureAwait(false);
+            if (previous.Status == "completed")
+                throw new InvalidOperationException("Ce passage ciblé est déjà terminé. Utilisez « Reprendre les erreurs » pour les fiches à vérifier, ou prévisualisez un nouveau passage. Les lots terminés ne sont pas revalidés en rouvrant leur ancien journal.");
+        }
         using var controlled = CancellationTokenSource.CreateLinkedTokenSource(requestCancellation);
         using var budget = new CancellationTokenSource(TimeSpan.FromMinutes(state.Options.MaximumMinutes));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(controlled.Token, budget.Token);
@@ -198,14 +207,16 @@ public sealed partial class PilotApplication
                 await CollectLibraryWindowsAsync(local, context, settings, preferences, state, runId, mode, plan, journal, limits, ct).ConfigureAwait(false);
                 await local.FinishCaptureAsync(runId, "completed", limits, ct).ConfigureAwait(false); finished = true; outcome = "completed";
                 var completedReport = await local.GetCaptureAsync(runId, ct).ConfigureAwait(false);
+                var readiness = await local.CaptureKnowledgeReadinessAsync(runId, ct).ConfigureAwait(false);
                 var fullyCovered = ReadCollectionActivity().Coverage is { Selected: > 0, ToRead: 0 };
-                var successful = completedReport.FinalScopeVerified && completedReport.RetryCount == 0 && fullyCovered;
+                var successful = completedReport.IsSuccessful && fullyCovered && readiness.IsReady;
+                outcome = successful ? "completed" : "attention";
                 if (successful) state.LastSuccess = DateTimeOffset.UtcNow;
                 var completionMessage = completedReport.Message + " · Périmètre ciblé vérifié par lots."
-                    + (fullyCovered ? "" : " Des contenus restent à lire ou à confirmer.");
+                    + " " + readiness.Message;
                 CollectionDiagnostic(journal, "completed", "Passage terminé", "collection-completed", completionMessage,
                     successful ? "info" : "warning");
-                CollectionProgress(s => s with { Message = completionMessage, ErrorCode = successful ? "" : "collection-incomplete" });
+                CollectionProgress(s => s with { Message = completionMessage, Readiness = readiness, ErrorCode = successful ? "" : "collection-incomplete" });
             }
             else
             {
@@ -235,6 +246,7 @@ public sealed partial class PilotApplication
                     $"{index.Tickets.Count:N0} tickets indexés et enregistrés dans le point de reprise. " + (index.Complete ? "Pagination confirmée." : "Index partiel : les limites sont conservées."), index.Complete ? "info" : "warning");
                 var selected = resumedKeys?.ToHashSet(StringComparer.Ordinal) ?? targets?.Select(t => t.TicketKey).ToHashSet(StringComparer.Ordinal);
                 var tickets = index.Tickets.Where(s => selected is null || selected.Contains(TicketLibraryRules.Key(s.Ticket))).ToList();
+                CheckCollectionDates(tickets, preferences, journal, limits);
                 var requiredReads = mode == "resume" ? await local.RequiredCollectionReadKeysAsync(runId, ct).ConfigureAwait(false) : null;
                 // The live index, not elapsed time since reading, decides whether a
                 // confirmed complete body must be fetched. A forced pass is explicit.
@@ -312,15 +324,18 @@ public sealed partial class PilotApplication
                     CollectionDiagnostic(journal, "verification", "Confirmation finale", LibraryCaptureFailureCategory(error), LibraryCaptureFailureMessage(error), "warning");
                 }
                 await local.FinishCaptureVerificationAsync(runId, finalRead, finalVerified, ct).ConfigureAwait(false);
-                if (preferences.SourceTimeZone.Length == 0) limits.Add("Configurez le fuseau des dates GLPI pour permettre une réutilisation fiable des contenus.");
                 limits.Add("Les fichiers joints ne sont pas téléchargés automatiquement : seules leurs références disponibles sont conservées.");
                 await local.FinishCaptureAsync(runId, "completed", limits, ct).ConfigureAwait(false); finished = true; outcome = "completed";
                 var completedReport = await local.GetCaptureAsync(runId, ct).ConfigureAwait(false);
-                if (finalVerified && completedReport.RetryCount == 0) state.LastSuccess = DateTimeOffset.UtcNow;
-                var completionMessage = completedReport.Message + (finalVerified ? " · Périmètre final confirmé." : " · Fraîcheur finale à confirmer.");
+                var readiness = await local.CaptureKnowledgeReadinessAsync(runId, ct).ConfigureAwait(false);
+                var successful = completedReport.IsSuccessful && readiness.IsReady;
+                outcome = successful ? "completed" : "attention";
+                if (successful) state.LastSuccess = DateTimeOffset.UtcNow;
+                var completionMessage = completedReport.Message + (finalVerified ? " · Périmètre final confirmé." : " · Fraîcheur finale à confirmer.")
+                    + " " + readiness.Message;
                 CollectionDiagnostic(journal, "completed", "Passage terminé", "collection-completed", completionMessage,
-                    finalVerified && completedReport.RetryCount == 0 ? "info" : "warning");
-                CollectionProgress(s => s with { Message = completionMessage, ErrorCode = finalVerified && completedReport.RetryCount == 0 ? "" : "collection-incomplete" });
+                    successful ? "info" : "warning");
+                CollectionProgress(s => s with { Message = completionMessage, Readiness = readiness, ErrorCode = successful ? "" : "collection-incomplete" });
             }
         }
         catch (OperationCanceledException)
@@ -395,9 +410,13 @@ public sealed partial class PilotApplication
         if (!ownsJournal) throw new InvalidOperationException("La collecte n’a pas pu ouvrir son journal. Aucune lecture de ticket n’a été lancée.");
         using var reportBudget = new CancellationTokenSource(TimeSpan.FromSeconds(12));
         var report = await local.GetCaptureAsync(runId, reportBudget.Token).ConfigureAwait(false);
+        var finalReadiness = await local.CaptureKnowledgeReadinessAsync(runId, reportBudget.Token).ConfigureAwait(false);
         return new { report.RunId, report.Message, report.Status, report.StatusLabel, report.StartedAt, report.CompletedAt, report.Mode,
             report.Observed, report.Targeted, report.Processed, report.Read, report.Reused, report.Failed, report.Partial,
             report.Conflicts, report.Unconfirmed, report.RetryCount, report.Scope, report.FinalScopeVerified, report.Limitations,
+            isSuccessful = report.IsSuccessful && finalReadiness.IsReady && outcome == "completed",
+            needsAttention = report.NeedsAttention || !finalReadiness.IsReady || outcome == "attention",
+            readiness = finalReadiness, preflight = ReadCollectionActivity().Preflight,
             coverage = ReadCollectionActivity().Coverage, collectionState = outcome };
     }
 

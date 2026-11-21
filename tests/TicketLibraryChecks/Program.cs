@@ -79,6 +79,22 @@ try
         var refreshed = (await store.SaveDetailAsync(next, Detail(next, "Nouvelle lecture"), Coverage(), "reader-1")).Document;
         Require(refreshed.DetailsCurrent && refreshed.DetailModifiedAt == next.LastModifiedAt);
     });
+    await Check("Retained conflicts prevent both current and earlier-reader cache reuse after a newer complete read", async () =>
+    {
+        foreach (var reader in new[] { TicketLibraryAcquisition.ReaderSignature, "glpi-browser-library-v2-confirmed" })
+        {
+            var store = Store("skip-retained-conflict-" + reader); var seed = Seed();
+            await store.SaveDetailAsync(seed, Detail(seed, "Version A"), Coverage(), reader);
+            await store.SaveDetailAsync(seed, Detail(seed, "Version B"), Coverage(), reader);
+            var next = Seed(); next.LastModifiedAt = At(12, 35); next.LastModifiedRaw = "2026-10-20 12:35";
+            var stored = (await store.SaveDetailAsync(next, Detail(next, "Nouvelle version complète"), Coverage(), reader)).Document;
+            Require(stored.DetailComplete && TicketLibraryRules.IsContentConfirmed(stored) && stored.Conflicts == 1);
+            var before = TicketLibraryRules.Serialize(stored);
+            Require(!TicketLibraryStore.CanSkip(next, stored, TicketLibraryAcquisition.ReaderSignature, new() { Now = At(14, 0) }));
+            Require(!TicketLibraryStore.CanSkip(next, stored, TicketLibraryAcquisition.ReaderSignature, new() { Now = At(14, 0), ForceRefresh = true }));
+            Require(TicketLibraryRules.Serialize(stored) == before && (await store.GetConflictsAsync(stored.Key)).Count == 1);
+        }
+    });
     await Check("Equal date with different content conserves both versions and does not select a winner", async () =>
     {
         var store = Store("conflict"); var seed = Seed(); await store.SaveDetailAsync(seed, Detail(seed, "Version A"), Coverage(), "reader-1");

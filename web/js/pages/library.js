@@ -3,6 +3,7 @@ import { el, button, toolbar, empty, badge, input, select, field, table, dialog,
 import { sharedOperationKinds, reviewSharedOperation } from './shared-operations.js';
 import { openLibraryTicket } from '../library-ticket.js';
 import { sharedBusinessKinds, renderSharedBusinessStatus, reviewSharedBusinessConflict } from './shared-business.js';
+import { collectionQuality, collectionResultLabel, collectionQualityCounts } from '../collection-quality.js';
 
 const kinds = { comment: 'Commentaire', knowledge: 'Connaissance', assignment: 'Affectation', note: 'Note', configuration: 'Configuration partagée', statistics: 'Statistiques partagées', ...sharedOperationKinds, ...sharedBusinessKinds, 'calendar-intervention':'Intervention planifiée','calendar-resource':'Ressource du planning' };
 const states = { open: 'Ouvert', done: 'Terminé', draft: 'Brouillon', published: 'Publié' };
@@ -54,7 +55,14 @@ export async function renderLibrary(ctx) {
     operation = new AbortController(); lock(true); outcome.hidden = true; progressText.textContent = label; progressDetail.textContent = 'Les observations et les limites du traitement sont indiquées au fil de son exécution.';
     try {
       const result = await call(op, args, { signal: operation.signal });
-      if (!result?.cancelled) notify(result?.message || result?.summary || 'Opération terminée.');
+      if (!result?.cancelled) {
+        if (op === 'library.capture') {
+          const completed = result?.collectionState === 'completed' || result?.status === 'completed';
+          const quality = collectionQuality(result, completed, result?.readiness);
+          const details = collectionQualityCounts(result).filter(item => item.value > 0).map(item => `${count(item.value)} ${item.label.toLocaleLowerCase('fr-FR')}`).join(' · ');
+          notify(`${collectionResultLabel(result, completed, result?.readiness)}${details ? ` · ${details}` : ''}.`, quality.needsAttention ? 'warning' : 'info');
+        } else notify(result?.message || result?.summary || 'Opération terminée.');
+      }
       if (!disposed && result && !result.cancelled && op !== 'library.capture') drawOutcome(result);
       return result;
     } catch (error) {
@@ -75,13 +83,18 @@ export async function renderLibrary(ctx) {
     captureSummary.hidden = !latestCapture;
     if (!latestCapture) { captureSummary.replaceChildren(); return; }
     const run = latestCapture, canRetry = !offline && run.retryCount > 0 && run.status !== 'running';
+    const quality = collectionQuality(run);
+    const qualityCounts = collectionQualityCounts(run).filter(item => item.value > 0).map(item => `${count(item.value)} ${item.label.toLocaleLowerCase('fr-FR')}`).join(' · ');
     captureSummary.replaceChildren(el('div', { class: 'library-outcome-heading' },
       el('div', {}, el('h3', { text: 'Dernière collecte' }),
         el('p', { class: 'help', text: `Démarrée le ${formatDate(run.startedAt)}${run.completedAt ? ' · Terminée le ' + formatDate(run.completedAt) : ''}` })),
-      badge(run.statusLabel || 'Bilan conservé', run.status === 'completed' && !run.retryCount ? '' : 'info')),
+      badge(collectionResultLabel(run), quality.needsAttention ? 'warning' : 'info')),
       el('p', { text: run.message || 'Le bilan et les observations de cette collecte sont conservés sur ce poste.' }),
+      qualityCounts ? el('p', { class: 'notice warning', text: qualityCounts }) : null,
+      quality.needsAttention ? el('p', { class: 'help', text: 'La fin du passage ne certifie pas que tous les contenus sont complets et confirmés. Consultez les motifs avant de relancer une lecture.' }) : null,
       toolbar(action('Détail de la collecte', () => showCapture(run), { icon: 'log' }),
-        canRetry ? action(`Reprendre les ${count(run.retryCount)} ticket(s) à relire`, () => retryCapture(run), { icon: 'refresh' }) : null));
+        canRetry ? action(`Reprendre les ${count(run.retryCount)} ticket(s) à relire`, () => retryCapture(run), { icon: 'refresh' }) : null,
+        quality.needsAttention && !offline ? action('Régler les dates GLPI', () => { view = 'connection'; drawView(); }, { icon: 'settings' }) : null));
     if (run.finalScopeVerified !== true) captureSummary.append(el('p', { class: 'help', text: 'La vérification finale n’est pas confirmée. Les nouveaux contenus restent consultables ; leur fraîcheur devra être contrôlée.' }));
     if (offline) captureSummary.append(el('p', { class: 'help', text: 'Consultation hors connexion : les contenus déjà recueillis restent lisibles. Vérifier leur présence ne relance pas la collecte GLPI.' }));
     if (canRetry) captureSummary.append(el('p', { class: 'help', text: 'La reprise réactualise la liste GLPI et relit les tickets encore accessibles dans le même contexte.' }));
@@ -94,10 +107,10 @@ export async function renderLibrary(ctx) {
       summary = el('p', { class: 'help', role: 'status' }), retryOnly = check('Afficher uniquement les tickets à relire', run.retryCount > 0);
     let offset = 0, generation = 0;
     const body = el('div', { class: 'library-detail library-capture-detail' },
-      el('p', { text: `${run.statusLabel || 'Collecte'} · ${formatDate(run.startedAt)}` }),
+      el('p', { text: `${collectionResultLabel(run)} · ${formatDate(run.startedAt)}` }),
       el('dl', { class: 'library-outcome-counts' }, ...[
         [run.observed, 'Tickets observés'], [run.read, 'Contenus lus'], [run.reused, 'Contenus réutilisés'],
-        [run.failed, 'Lectures en échec'], [run.partial, 'Lectures partielles'], [run.unconfirmed, 'Fraîcheur à confirmer']
+        [run.failed, 'Lectures en échec'], [run.partial, 'Lectures partielles'], [run.unconfirmed, 'Versions non confirmées'], [run.conflicts, 'Conflits conservés']
       ].map(([value, label]) => el('div', {}, el('dt', { text: label }), el('dd', { text: count(value) })))),
       el('p', { class: 'help', text: 'Ce bilan décrit la tentative de lecture. Une fiche complète plus ancienne peut rester conservée lorsqu’une nouvelle lecture est partielle.' }),
       el('p', { class: 'help', text: run.scope || '' }),
@@ -323,8 +336,10 @@ export async function renderLibrary(ctx) {
         el('section', { class: 'library-settings-section' }, el('h2', { text: 'Copie locale' }),
           field('Dossier de la bibliothèque', controls.localFolder, 'Dossier local sur ce poste et conserve la copie de travail, même lorsque le partage est actif.'),
           button('Choisir le dossier', async () => { const result = await call('library.folder.pick'); const folder = result.folder ?? result.path; if (folder) controls.localFolder.value = folder; }, { icon: 'folder' }),
-          field('Fuseau des dates GLPI', controls.sourceTimeZone, 'Choisissez le fuseau d’affichage de GLPI. Sans ce choix, la collecte reste possible ; une date sans décalage horaire ne permet pas de réutiliser un contenu sans le relire.'),
-          field('Format des dates GLPI', controls.sourceDateOrder, 'Choisissez l’ordre affiché dans GLPI. En détection prudente, une date telle que 05/06 reste ambiguë et le contenu sera relu.'),
+          el('h3', { text: 'Dates affichées dans GLPI' }),
+          field('Fuseau des dates GLPI', controls.sourceTimeZone, 'Indiquez le fuseau utilisé pour afficher les dates dans GLPI, par exemple Europe/Paris. Sans décalage explicite dans la date ni fuseau connu, sa valeur peut rester non fiable : le contenu ne peut pas être confirmé. Une date avec un décalage explicite peut être interprétable sans ce réglage.'),
+          field('Format des dates GLPI', controls.sourceDateOrder, 'Choisissez l’ordre réellement affiché dans GLPI. En détection prudente, une date telle que 05/06 reste ambiguë. Relire les tickets sans résoudre cette ambiguïté ne confirme pas leur version.'),
+          el('p', { class: 'library-setting-note', text: 'Ces réglages servent aux prochaines vérifications des versions GLPI. Leur enregistrement ne transforme pas les contenus déjà conservés en contenus confirmés. Vérifiez d’abord le précontrôle de la collecte.' }),
           el('p', { class: 'library-setting-note', text: 'Les copies complètes et confirmées sont réutilisées tant que leur version GLPI reste inchangée, sans limite d’âge. Seuls les contenus absents, modifiés ou à vérifier sont relus lors d’une mise à jour.' }),
           field('Nom affiché dans l’espace d’équipe', controls.displayName),
           el('p', { class: 'library-setting-note', text: 'Les pièces jointes sont conservées sous forme de références. La bibliothèque recueille les onglets de consultation accessibles ; elle conserve les limites et les lectures partielles.' }),
@@ -334,11 +349,12 @@ export async function renderLibrary(ctx) {
           simulation?el('p',{class:'notice info',text:'Dans cette simulation, le partage et les tests restent locaux. Le dossier réseau et le serveur réels ne sont pas contactés.'}):null,
           el('p',{class:'library-sharing-boundary',text:'Les données communes suivent le mode de partage choisi. Les identifiants GLPI, les mots de passe et les préférences personnelles restent propres à chaque poste.'}))),
       el('div', { class: 'library-settings-actions' },
-        button('Enregistrer le partage', async () => {
+        button('Enregistrer les réglages', async () => {
           await call('library.settings.save', { settings: read(), password:mode.value==='postgres'?password.value:'', rememberPassword:mode.value==='postgres'&&remember.control.checked, forgetPassword: false });
           password.value = ''; await refreshModel(); notify('Paramètres de la bibliothèque enregistrés.'); drawSettings();
         }, { primary: true }),
-        test,forget,connectionStatus));
+        test,forget,connectionStatus,
+        ctx.params?.focus === 'source-dates' ? button('Revenir à la collecte', () => navigate('data', { panel: 'collection' }), { icon: 'refresh' }) : null));
     function read() {
       if (!editor.reportValidity()) throw new Error('Vérifiez les champs de connexion signalés.');
       // Keep the legacy value when saving an existing profile; it no longer expires unchanged content.
@@ -350,6 +366,7 @@ export async function renderLibrary(ctx) {
       modeDescription.textContent=isFolder?'Un dossier réseau commun suffit pour réunir les données des postes de l’équipe. Aucun compte supplémentaire n’est créé dans GLPI Pilot.':isPostgres?'Serveur PostgreSQL de l’équipe. Les identifiants ci-dessous concernent uniquement cette connexion technique.':'Le partage est désactivé. Toutes les fonctions restent utilisables sur ce poste.';connectionStatus.textContent='';};
     mode.addEventListener('change',update);automatic.control.addEventListener('change',update);update();
     const common=el('div',{class:'library-business-host'});content.replaceChildren(editor,common);mountBusinessStatus(common);
+    if (ctx.params?.focus === 'source-dates') { controls.sourceTimeZone.focus(); controls.sourceTimeZone.scrollIntoView({ block: 'center' }); }
   }
   async function drawTeam() {
     const filter = select([{ value: '', label: 'Toutes les contributions' }, ...Object.entries(kinds).map(([value, label]) => ({ value, label }))]);

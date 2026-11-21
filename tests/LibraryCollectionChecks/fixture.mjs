@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const production = ['../../web/js/team-scope.js', '../../web/js/collection-scope.js', '../../web/js/pages/library-collection.js']
+const production = ['../../web/js/team-scope.js', '../../web/js/collection-quality.js', '../../web/js/collection-scope.js', '../../web/js/pages/library-collection.js']
   .map(path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/^import[^\n]+\n/gm, '').replace(/\bexport (?=(?:async )?function)/g, '')).join('\n');
 export const runA = 'a'.repeat(32), runB = 'b'.repeat(32), sessionA = 'c'.repeat(32), sessionB = 'd'.repeat(32);
 export const options = { automatic: false, intervalMinutes: 120, delayMilliseconds: 3000, batchSize: 25, batchPauseSeconds: 30,
@@ -62,13 +62,14 @@ export async function fixture(patch = {}) {
       if (operation === 'library.collection.status') return structuredClone(data.activity);
       if (operation === 'library.collection.get') {
         if (data.modelReadFailure) throw new Error(data.modelReadFailure);
-        return structuredClone({ state: data.state, report: data.report, activity: data.activity, availability: data.availability, ...(data.scopeModel || {}) });
+        return structuredClone({ state: data.state, report: data.report, activity: data.activity, availability: data.availability,
+          readiness: data.readiness, preflight: data.preflight, ...(data.scopeModel || {}) });
       }
       if (operation === 'library.collection.events') return { runId: args.runId, total: data.events.length, offset: args.offset, limit: args.limit,
         persisted: data.persisted, items: structuredClone(data.events.slice(args.offset, args.offset + args.limit)) };
       if (operation === 'library.collection.scope') return structuredClone(data.scopeModel || {});
-      if (operation === 'library.collection.preview') return { ...(structuredClone(data.scopeModel || {})), scope: structuredClone(args.scope), previewToken: 'preview-token', coverage: structuredClone(data.previewCoverage || { selected: 10, complete: 6, missing: 2, partial: 1, changed: 1, unconfirmed: 0, toRead: 4 }) };
-      if (operation === 'library.capture.entries') return { total: 0, items: [] };
+      if (operation === 'library.collection.preview') return { ...(structuredClone(data.scopeModel || {})), preflight: structuredClone(data.previewPreflight || data.preflight), scope: structuredClone(args.scope), previewToken: 'preview-token', coverage: structuredClone(data.previewCoverage || { selected: 10, complete: 6, missing: 2, partial: 1, changed: 1, unconfirmed: 0, toRead: 4 }) };
+      if (operation === 'library.capture.entries') return { total: data.retryEntries?.length || 0, items: structuredClone((data.retryEntries || []).slice(args.offset, args.offset + args.limit)) };
       throw new Error(`Unexpected operation: ${operation}`);
     }
   };
@@ -83,7 +84,7 @@ export async function fixture(patch = {}) {
     setInterval: callback => { const id = ++timerId; timers.set(id, callback); return id; }, clearInterval: id => timers.delete(id)
   });
   vm.runInContext(production + '\nglobalThis.render = renderLibraryCollection; globalThis.coveragePolicy = collectionCoverage;', context);
-  const dispose = await context.render({ root, api, signal: controller.signal, state: { session: data.session || {} }, notify: (...args) => notifications.push(args), navigate: (...args) => navigations.push(args) });
+  const dispose = await context.render({ root, api, signal: controller.signal, state: { session: data.session || {} }, notify: (...args) => notifications.push(args), navigate: (...args) => navigations.push(structuredClone(args)) });
   function all(node = root) { return [node, ...node.children.filter(child => child instanceof Element).flatMap(child => all(child))]; }
   const find = predicate => all().find(predicate);
   async function flush() {

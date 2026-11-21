@@ -16,6 +16,7 @@ internal static class CollectionJourneyChecks
         var settings = new AppSettings { PortalUrl = portal, SelectorOrigin = "https://collection-journey.example", TimeoutSeconds = 15, ListTimeoutSeconds = 5, DetailTimeoutSeconds = 5, MaxPages = 5, MaxRows = 100, ResumePagination = false };
         var reads = new ConcurrentDictionary<string, int>(); var requests = 0; var expanded = false;
         var indexFailureStatus = 0; var gateUsed = 0;
+        var indexDateOverride = ""; var finalIndexFailureAfterReads = 0;
         TaskCompletionSource? indexReached = null, releaseIndex = null;
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true, ExecutablePath = Environment.GetEnvironmentVariable("GLPI_TEST_CHROMIUM"), Args = ["--no-sandbox", "--disable-dev-shm-usage"] });
@@ -30,13 +31,15 @@ internal static class CollectionJourneyChecks
                 string body;
                 if (uri.AbsolutePath.EndsWith("/ticket.php", StringComparison.Ordinal))
                 {
-                    if (indexFailureStatus != 0) { await route.FulfillAsync(new() { Status = indexFailureStatus, Body = "Fixture index access refused." }); return; }
+                    var refusedStatus = indexFailureStatus != 0 ? indexFailureStatus
+                        : finalIndexFailureAfterReads > 0 && reads.Values.Sum() >= finalIndexFailureAfterReads ? 403 : 0;
+                    if (refusedStatus != 0) { await route.FulfillAsync(new() { Status = refusedStatus, Body = "Fixture index access refused." }); return; }
                     var arrived = indexReached; var release = releaseIndex;
                     if (arrived is not null && release is not null && Interlocked.Exchange(ref gateUsed, 1) == 0)
                     { arrived.TrySetResult(); await release.Task; }
                     var all = query["criteria[0][value]"] == "all";
                     var ids = expanded ? new[] { "41", "42", "43" } : new[] { "41", "42" };
-                    var rows = string.Join("", ids.Select(id => $"<tr><td><a href='ticket.form.php?id={id}'>Incident synthétique {id}</a></td><td>{(expanded && id == "42" ? "2025-01-02 12:00" : "2025-01-01 12:00")}</td><td>Résolu</td></tr>"));
+                    var rows = string.Join("", ids.Select(id => $"<tr><td><a href='ticket.form.php?id={id}'>Incident synthétique {id}</a></td><td>{(indexDateOverride.Length > 0 ? indexDateOverride : expanded && id == "42" ? "2025-01-02 12:00" : "2025-01-01 12:00")}</td><td>Résolu</td></tr>"));
                     body = $"<html><title>GLPI</title><body><form name='searchformticket' method='get' action='ticket.php'><select name='criteria[0][field]'><option value='12' selected>Statut</option></select><select name='criteria[0][searchtype]'><option value='equals'>est</option></select><select name='criteria[0][value]'><option value='notold' {(!all ? "selected" : "")}>Non clos</option><option value='all' {(all ? "selected" : "")}>Tous</option><option value='5'>Résolu</option></select><input name='is_deleted' value='0' type='hidden'><input name='as_map' value='0' type='hidden'><input name='browse' value='0' type='hidden'><a class='search-reset' href='ticket.php?reset=reset'>Réinitialiser</a></form><form data-search-itemtype='Ticket' data-count='{ids.Length}' data-start='0' data-limit='100'><table class='search-results'><thead><tr><th data-searchopt-id='1'>Titre</th><th data-searchopt-id='19'>Dernière modification</th><th data-searchopt-id='12'>Statut</th></tr></thead><tbody>{rows}</tbody></table></form></body></html>";
                 }
                 else if (uri.AbsolutePath.EndsWith("/ticket.form.php", StringComparison.Ordinal))
@@ -84,6 +87,15 @@ internal static class CollectionJourneyChecks
             var result = await Call(app, "library.capture", new { mode = "resume", runId });
             Require(result.GetProperty("runId").GetString() == runId && result.GetProperty("collectionState").GetString() == "completed", "Resume changed identity or failed.");
             Require(result.GetProperty("retryCount").GetInt32() == 0 && reads.GetValueOrDefault("41") == 1 && reads.GetValueOrDefault("42") == 1, "Already saved body was re-read or remains unconfirmed.");
+            var readiness = result.GetProperty("readiness");
+            Require(result.GetProperty("isSuccessful").GetBoolean() && !result.GetProperty("needsAttention").GetBoolean()
+                && readiness.GetProperty("isReady").GetBoolean() && readiness.GetProperty("tickets").GetInt32() == 2
+                && readiness.GetProperty("eligibleTickets").GetInt32() == 2, "A successful resumed passage disagrees with current SQL knowledge readiness.");
+            var persisted = await Call(app, "library.collection.get", new { });
+            Require(persisted.GetProperty("report").GetProperty("isSuccessful").GetBoolean()
+                && persisted.GetProperty("readiness").GetProperty("isReady").GetBoolean()
+                && persisted.GetProperty("state").GetProperty("lastSuccess").ValueKind == JsonValueKind.String,
+                "The successful result was not persisted with its quality proof and success timestamp.");
         });
         await check("Incremental production acquisition reads only one modified ticket and one new ticket", async () =>
         {
@@ -281,6 +293,92 @@ internal static class CollectionJourneyChecks
             Require(result.GetProperty("collectionState").GetString() == "paused" && reads.Values.Sum() == before, "Pausing an unfinished index did not preserve the no-detail-read boundary.");
             var journal = await Call(app, "library.collection.events", new { runId = result.GetProperty("runId").GetString() });
             Require(journal.GetProperty("items").EnumerateArray().Any(e => e.GetProperty("code").GetString() == "collection-paused"), "Pause outcome was not recorded durably.");
+        });
+        await check("Global date preflight refuses an unconfigured timezone or ambiguous date order before reading any body", async () =>
+        {
+            var originalFolder = preferences.LocalFolder; var originalZone = preferences.SourceTimeZone; var originalOrder = preferences.SourceDateOrder;
+            try
+            {
+                foreach (var (name, zone, order, raw) in new[]
+                {
+                    ("missing-zone", "", "ymd", ""),
+                    ("ambiguous-order", "UTC", "", "03/04/2025 12:00")
+                })
+                {
+                    preferences.LocalFolder = Path.Combine(root, "date-preflight-" + name);
+                    preferences.SourceTimeZone = zone; preferences.SourceDateOrder = order; indexDateOverride = raw;
+                    new LibraryPreferencesStore().Save(preferences);
+                    await using var app = await Open(); var before = reads.Values.Sum();
+                    var result = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
+                    var run = result.GetProperty("runId").GetString()!;
+                    Require(result.GetProperty("collectionState").GetString() == "attention"
+                        && !result.GetProperty("isSuccessful").GetBoolean() && result.GetProperty("needsAttention").GetBoolean()
+                        && result.GetProperty("read").GetInt32() == 0 && reads.Values.Sum() == before,
+                        "Invalid source dates permitted a body request or a successful outcome: " + name);
+                    Require(result.GetProperty("preflight").GetProperty("state").GetString() == "blocked"
+                        && result.GetProperty("preflight").GetProperty("checked").GetInt32() == 3
+                        && result.GetProperty("preflight").GetProperty("reliableDates").GetInt32() == 0,
+                        "The live date preflight does not describe the three unusable source dates.");
+                    var status = await Call(app, "library.collection.status", new { });
+                    var events = await Call(app, "library.collection.events", new { runId = run });
+                    Require(status.GetProperty("errorCode").GetString() == "collection-date-preflight"
+                        && events.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("code").GetString() == "collection-date-preflight"
+                            && item.GetProperty("level").GetString() == "error"), "Date preparation failure was absent from the durable diagnosis.");
+                    var local = new TicketLibraryStore(preferences.DatabasePath);
+                    var state = await local.CollectionStateAsync(TicketLibraryCaptureContext.FromSettings(settings, preferences).Fingerprint);
+                    Require(state.State == "attention" && state.LastSuccess is null, "An unusable date inventory advanced LastSuccess.");
+                    foreach (var id in new[] { "41", "42", "43" })
+                    {
+                        var ticket = new TicketReference(id, portal.Replace("ticket.php", "ticket.form.php", StringComparison.Ordinal) + "?id=" + id);
+                        Require((await local.GetAsync(ticket))?.Detail is null, "A body was fabricated during blocked date preparation.");
+                    }
+                }
+            }
+            finally
+            {
+                indexDateOverride = ""; preferences.LocalFolder = originalFolder; preferences.SourceTimeZone = originalZone; preferences.SourceDateOrder = originalOrder;
+                new LibraryPreferencesStore().Save(preferences);
+            }
+        });
+        await check("A failed final verification preserves received bodies, reports attention and never advances the last successful passage", async () =>
+        {
+            preferences.LocalFolder = Path.Combine(root, "final-quality-journey-library"); new LibraryPreferencesStore().Save(preferences);
+            await using var app = await Open();
+            var page = await Call(app, "library.collection.get", new { });
+            await Call(app, "library.collection.settings", new { revision = page.GetProperty("state").GetProperty("revision").GetInt64(),
+                options = new LibraryCollectionOptions { DelayMilliseconds = 1000, BatchPauseSeconds = 0, MaximumMinutes = 5 } });
+            var first = await Call(app, "library.capture", new { mode = "incremental", confirmedGlobal = true });
+            Require(first.GetProperty("isSuccessful").GetBoolean() && first.GetProperty("readiness").GetProperty("isReady").GetBoolean(),
+                "The baseline browser passage was not fully confirmed.");
+            var local = new TicketLibraryStore(preferences.DatabasePath); var fingerprint = TicketLibraryCaptureContext.FromSettings(settings, preferences).Fingerprint;
+            var lastSuccess = (await local.CollectionStateAsync(fingerprint)).LastSuccess;
+            Require(lastSuccess is not null, "The baseline success timestamp was not stored.");
+            var retained = new Dictionary<string, TicketLibraryDocument>();
+            foreach (var id in new[] { "41", "42", "43" })
+                retained[id] = (await local.GetAsync(new TicketReference(id, portal.Replace("ticket.php", "ticket.form.php", StringComparison.Ordinal) + "?id=" + id)))!;
+            var before = reads.Values.Sum(); finalIndexFailureAfterReads = before + 3;
+            JsonElement result;
+            try { result = await Call(app, "library.capture", new { mode = "all", confirmedGlobal = true }); }
+            finally { finalIndexFailureAfterReads = 0; }
+            Require(reads.Values.Sum() == before + 3 && result.GetProperty("read").GetInt32() == 3
+                && result.GetProperty("status").GetString() == "completed" && result.GetProperty("collectionState").GetString() == "attention"
+                && !result.GetProperty("isSuccessful").GetBoolean() && result.GetProperty("needsAttention").GetBoolean()
+                && result.GetProperty("unconfirmed").GetInt32() == 3 && result.GetProperty("retryCount").GetInt32() == 3,
+                "Completed reads with a failed final check were exposed as successful or lost their retry membership.");
+            var readiness = result.GetProperty("readiness");
+            Require(readiness.GetProperty("tickets").GetInt32() == 3 && readiness.GetProperty("eligibleTickets").GetInt32() == 0
+                && readiness.GetProperty("unconfirmed").GetInt32() == 3 && !readiness.GetProperty("isReady").GetBoolean(),
+                "Current SQL quality converted received bodies into confirmed content.");
+            var state = await local.CollectionStateAsync(fingerprint);
+            Require(state.State == "attention" && state.LastSuccess == lastSuccess, "An incomplete passage advanced or erased the previous LastSuccess.");
+            foreach (var (id, original) in retained)
+            {
+                var after = (await local.GetAsync(original.Seed.Ticket))!;
+                Require(after.Detail is not null && after.DetailComplete && after.ContentHash == original.ContentHash
+                    && after.ConfirmationPending && !TicketLibraryRules.IsContentConfirmed(after), "A received body was lost or falsely confirmed: " + id);
+            }
+            var status = await Call(app, "library.collection.status", new { });
+            Require(status.GetProperty("errorCode").GetString() == "collection-incomplete", "The incomplete terminal state has no explicit quality diagnosis.");
         });
     }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }

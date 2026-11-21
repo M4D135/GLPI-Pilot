@@ -11,6 +11,7 @@ public sealed partial class PilotApplication
 {
     private sealed class CollectionStoppedException(string message) : InvalidOperationException(message);
     private sealed class CollectionPreparationException(string message) : InvalidOperationException(message);
+    private sealed class CollectionDatePreflightException(string message) : InvalidOperationException(message);
     private async Task<object?> CaptureLibraryAsync(JsonElement args, CancellationToken ct)
     {
         var targeted = args.TryGetProperty("scope", out var scope) && scope.ValueKind == JsonValueKind.Object && Flag(scope, "enabled");
@@ -48,6 +49,7 @@ public sealed partial class PilotApplication
         GlpiLibraryIndexException index => index.Category,
         LibraryCollectorLeaseException => "collection-coordination",
         CollectionStoppedException => "consecutive-errors",
+        CollectionDatePreflightException => "collection-date-preflight",
         CollectionPreparationException => "local-storage",
         NpgsqlException => "collection-coordination",
         TimeoutException => "read-timeout", PlaywrightException => "browser-unavailable", InvalidDataException or JsonException => "invalid-content",
@@ -58,6 +60,7 @@ public sealed partial class PilotApplication
         GlpiLibraryIndexException index => index.Message,
         LibraryCollectorLeaseException lease => lease.Message,
         CollectionStoppedException stopped => stopped.Message,
+        CollectionDatePreflightException dates => dates.Message,
         CollectionPreparationException preparation => preparation.Message,
         GlpiLibraryPageException page => "Liste GLPI non reconnue : " + page.Message,
         NpgsqlException => "Le verrou de collecte sur la base partagée n’a pas pu être confirmé. Vérifiez la connexion PostgreSQL avant de reprendre.",
@@ -68,6 +71,17 @@ public sealed partial class PilotApplication
         if (!seed.LastModifiedReliable) { seed.LastModifiedAt = null; return; }
         seed.LastModifiedAt = LibraryPreferencesStore.ParseModification(seed.LastModifiedRaw, preferences.SourceTimeZone, preferences.SourceDateOrder);
         if (seed.LastModifiedAt is null) seed.LastModifiedReliable = false;
+    }
+    private void CheckCollectionDates(IReadOnlyCollection<TicketLibrarySeed> tickets, LibraryPreferences preferences,
+        LibraryCollectionJournalSession journal, List<string> limits)
+    {
+        var preflight = LibraryCollectionPreflight.Inspect(tickets, preferences);
+        CollectionProgress(s => s with { Preflight = preflight });
+        var message = preflight.Messages[0];
+        CollectionDiagnostic(journal, "preflight", "Vérification des dates GLPI", "collection-date-preflight", message,
+            preflight.State == "blocked" ? "error" : preflight.State == "warning" ? "warning" : "info");
+        if (preflight.State is "blocked" or "warning" && !limits.Contains(message, StringComparer.Ordinal)) limits.Add(message);
+        if (preflight.State == "blocked") throw new CollectionDatePreflightException(message);
     }
     private void LibraryProgress(string message) => Publish("operation.progress", new { message });
 

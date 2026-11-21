@@ -16,6 +16,7 @@ internal static class TicketLibraryCaptureChecks
             var reopened = new TicketLibraryStore(store.DatabasePath); var report = (await reopened.LatestCaptureAsync())!;
             var saved = (await reopened.GetAsync(seed.Ticket))!;
             Require(report.Read == 1 && report.Unconfirmed == 1 && report.RetryCount == 1 && !report.FinalScopeVerified);
+            Require(!report.IsSuccessful && report.NeedsAttention && report.Message.Contains("1 contenus non confirmés", StringComparison.Ordinal));
             Require(saved is { DetailComplete: true, DetailsCurrent: false, ConfirmationPending: true } && saved.ConfirmationId == run);
             Require(!TicketLibraryStore.CanSkip(seed, saved, TicketLibraryAcquisition.ReaderSignature));
             Require((await reopened.SearchAsync(new() { ResolvedOnly = true })).Total == 0);
@@ -49,7 +50,23 @@ internal static class TicketLibraryCaptureChecks
             await TicketLibrarySyncService.Apply(b, identity, 1, [new(2, confirmed, null, "identical")], default);
             Require(TicketLibraryRules.IsContentConfirmed(await b.GetAsync(seed.Ticket)));
             Require((await b.SearchAsync(new() { ResolvedOnly = true })).Rows.Single().Citations.Any(c => c.IsSolution && c.Current));
-            Require((await a.GetCaptureAsync(run)).RetryCount == 0);
+            var report = await a.GetCaptureAsync(run);
+            Require(report.RetryCount == 0 && report.IsSuccessful && !report.NeedsAttention);
+        });
+        await check("Capture: a confirmed partial body cannot make the finished pass successful", async () =>
+        {
+            var store = Store("confirmed-partial"); var seed = Seed(); var run = await Start(store, seed);
+            var observed = await store.ObserveCaptureSeedAsync(run, seed);
+            var detail = Detail(seed); detail.Sections[0].Data.Complete = false;
+            await store.SaveCaptureDetailAsync(run, seed,
+                new() { Detail = detail, Coverage = new() { Complete = false, TabsDiscovered = 2, TabsLoaded = 1 } }, observed.Document.LocalRevision);
+            await store.ConfirmCaptureTicketAsync(run, seed, true);
+            await store.FinishCaptureVerificationAsync(run, true, true); await store.FinishCaptureAsync(run, "completed", []);
+            var saved = (await store.GetAsync(seed.Ticket))!; var report = await store.GetCaptureAsync(run);
+            Require(TicketLibraryRules.IsContentConfirmed(saved) && !saved.DetailComplete && !saved.Coverage.Complete);
+            Require(report.FinalScopeVerified && report.Partial == 1 && report.Unconfirmed == 0 && report.RetryCount == 1
+                && !report.IsSuccessful && report.NeedsAttention && report.Message.Contains("1 lectures partielles", StringComparison.Ordinal));
+            Require((await store.SearchAsync(new() { ResolvedOnly = true })).Total == 0);
         });
         await check("Capture: a later interrupted read of identical content cannot borrow the old attempt confirmation", async () =>
         {

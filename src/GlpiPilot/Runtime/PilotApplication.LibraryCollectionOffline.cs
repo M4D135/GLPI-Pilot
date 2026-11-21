@@ -23,6 +23,7 @@ public sealed partial class PilotApplication
         var saved = store is null ? null : await store.ReadSavedCollectionAsync(installation, ct: ct).ConfigureAwait(false);
         var state = saved?.State ?? new();
         var availability = saved is null ? null : await store!.CaptureAvailabilityAsync(saved.Report.RunId, ct).ConfigureAwait(false);
+        var readiness = saved is null ? null : await store!.CaptureKnowledgeReadinessAsync(saved.Report.RunId, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         if (!IsCachedSource || !ReferenceEquals(source, Result))
             throw new InvalidOperationException("Le relevé consulté a changé. Actualisez le bilan des contenus conservés.");
@@ -32,7 +33,7 @@ public sealed partial class PilotApplication
             : "L’installation GLPI de ce relevé n’est pas identifiée. Aucun bilan d’une autre source n’est affiché ; consultez la bibliothèque pour retrouver les contenus conservés.";
         return new
         {
-            state, report = saved?.Report, availability, installation, activity = new CollectionActivity(),
+            state, report = saved?.Report, availability, readiness, installation, activity = new CollectionActivity(),
             applicationMustRemainOpen = true, offlineSavedRun = true,
             scope = state.Scope, catalog = (LibraryCollectionScopeCatalog?)null, coverage = (LibraryCollectionCoverage?)null,
             inventory = (object?)null, available = false, message, warnings = Array.Empty<string>(), teams = Array.Empty<object>(),

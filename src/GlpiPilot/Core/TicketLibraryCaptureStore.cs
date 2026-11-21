@@ -15,6 +15,12 @@ public sealed partial class TicketLibraryStore
     private static readonly long CaptureProcessStart = Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks;
     private static readonly ConcurrentDictionary<string, byte> ActiveCaptures = new(StringComparer.Ordinal);
 
+    // Earlier journals could hide an unconfirmed reuse behind retryable=0.
+    // Derive the effective retry decision consistently without rewriting saved
+    // journals during consultation. Every query using this predicate aliases
+    // the capture entry as e; confirmed successful entries remain excluded.
+    private const string CaptureRetryableSql = "(e.retryable=1 OR e.confirmed=0 OR e.failed>0 OR e.partial>0 OR e.conflicts>0)";
+
     // These tables belong to this workstation. They are neither exported as RAG content nor synchronized.
     private const string CaptureSchemaSql = """
         CREATE TABLE IF NOT EXISTS ticket_library_capture_runs (
@@ -74,7 +80,7 @@ public sealed partial class TicketLibraryStore
                     parentScope = reader.GetString(4); parentScopeHash = reader.GetString(5);
                 }
                 var allowed = new Dictionary<string, string>(StringComparer.Ordinal);
-                using (var parent = Command(c, tx, "SELECT ticket_key,ticket_id FROM ticket_library_capture_entries WHERE run_id=$parent AND retryable=1", ("$parent", parentRunId)))
+                using (var parent = Command(c, tx, $"SELECT e.ticket_key,e.ticket_id FROM ticket_library_capture_entries e WHERE e.run_id=$parent AND {CaptureRetryableSql}", ("$parent", parentRunId)))
                 using (var reader = parent.ExecuteReader())
                     while (reader.Read()) { ct.ThrowIfCancellationRequested(); allowed.Add(reader.GetString(0), reader.GetString(1)); }
                 if (frozenTargets.Any(target => !allowed.TryGetValue(target.TicketKey, out var id) || id != target.TicketId))
@@ -140,15 +146,15 @@ public sealed partial class TicketLibraryStore
     {
         _ = ReadCapture(c, tx, runId);
         var page = new TicketLibraryCaptureEntryPage { Offset = offset, Limit = limit };
-        const string where = " WHERE run_id=$run AND ($retry=0 OR retryable=1)";
-        page.Total = ScalarLong(c, tx, "SELECT COUNT(*) FROM ticket_library_capture_entries" + where, ("$run", runId), ("$retry", retryOnly ? 1 : 0));
+        var where = $" WHERE e.run_id=$run AND ($retry=0 OR {CaptureRetryableSql})";
+        page.Total = ScalarLong(c, tx, "SELECT COUNT(*) FROM ticket_library_capture_entries e" + where, ("$run", runId), ("$retry", retryOnly ? 1 : 0));
         using var command = Command(c, tx, $"""
-            SELECT e.ticket_key,e.ticket_id,e.state,e.category,e.retryable,{CaptureStoredContentSql},
+            SELECT e.ticket_key,e.ticket_id,e.state,e.category,CASE WHEN {CaptureRetryableSql} THEN 1 ELSE 0 END,{CaptureStoredContentSql},
                 CASE WHEN json_valid(t.document_json) THEN COALESCE(json_extract(t.document_json,'$.detailComplete'),0) ELSE 0 END,
                 CASE WHEN json_valid(t.document_json) THEN CASE WHEN {CaptureConfirmedContentSql} THEN 1 ELSE 0 END ELSE 0 END,
                 CASE WHEN json_valid(t.document_json) THEN json_extract(t.document_json,'$.coverage.limitations') END
             FROM ticket_library_capture_entries e LEFT JOIN ticket_library_tickets t ON t.ticket_key=e.ticket_key
-            """ + where + " ORDER BY ordinal LIMIT $limit OFFSET $offset",
+            """ + where + " ORDER BY e.ordinal LIMIT $limit OFFSET $offset",
             ("$run", runId), ("$retry", retryOnly ? 1 : 0), ("$limit", limit), ("$offset", offset));
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -186,7 +192,7 @@ public sealed partial class TicketLibraryStore
             using (var command = Command(c, tx, $"""
                 SELECT e.ticket_key,e.ticket_id FROM ticket_library_capture_entries e
                 LEFT JOIN ticket_library_tickets t ON t.ticket_key=e.ticket_key
-                WHERE e.run_id=$run AND e.retryable=1 AND ($missing=0 OR ({CaptureStoredContentSql})='missing')
+                WHERE e.run_id=$run AND {CaptureRetryableSql} AND ($missing=0 OR ({CaptureStoredContentSql})='missing')
                 ORDER BY e.ordinal LIMIT $limit
                 """, ("$run", runId), ("$limit", CaptureTicketLimit + 1), ("$missing", missingOnly ? 1 : 0)))
             using (var reader = command.ExecuteReader())
@@ -281,7 +287,7 @@ public sealed partial class TicketLibraryStore
             using var tx = c.BeginTransaction(); RequireCaptureEntry(c, tx, runId, candidate.Key);
             RequireCaptureSeed(c, tx, runId, seed);
             var result = SaveCore(c, tx, candidate, expectedLocalRevision, ct);
-            var conflict = result.Outcome is not ("identical" or "inserted" or "content-added" or "newer-source-version");
+            var conflict = result.Document.Conflicts > 0 || result.Outcome is not ("identical" or "inserted" or "content-added" or "newer-source-version");
             var partial = !candidate.DetailComplete;
             Execute(c, tx, """
                 INSERT INTO ticket_library_capture_pending VALUES($key,$run,$hash,$revision,$conflicts)
@@ -305,7 +311,7 @@ public sealed partial class TicketLibraryStore
             using var tx = c.BeginTransaction(); RequireCaptureEntry(c, tx, runId, candidate.Key);
             RequireCaptureSeed(c, tx, runId, seed);
             var result = SaveCore(c, tx, candidate, null, ct);
-            if (result.ConflictCreated) Execute(c, tx, "UPDATE ticket_library_capture_entries SET conflicts=1 WHERE run_id=$run AND ticket_key=$key", ("$run", runId), ("$key", candidate.Key));
+            if (result.Document.Conflicts > 0) Execute(c, tx, "UPDATE ticket_library_capture_entries SET conflicts=1 WHERE run_id=$run AND ticket_key=$key", ("$run", runId), ("$key", candidate.Key));
             ct.ThrowIfCancellationRequested(); tx.Commit(); return result;
         }, ct);
     }
@@ -345,7 +351,7 @@ public sealed partial class TicketLibraryStore
             var before = Read(c, tx, metadata.Key);
             var observed = SaveCore(c, tx, metadata, null, ct);
             Execute(c, tx, "UPDATE ticket_library_capture_entries SET final_seen=1,conflicts=MAX(conflicts,$conflict) WHERE run_id=$run AND ticket_key=$key",
-                ("$conflict", observed.ConflictCreated ? 1 : 0), ("$run", runId), ("$key", metadata.Key));
+                ("$conflict", observed.Document.Conflicts > 0 ? 1 : 0), ("$run", runId), ("$key", metadata.Key));
             if (!read && !reused) { tx.Commit(); return true; }
             string? category = null;
             if (initialHash != metadata.ContentHash) category = "changed-during-capture";
@@ -369,7 +375,7 @@ public sealed partial class TicketLibraryStore
                 {
                     var unconfirmed = EarlierReadUnconfirmed(kept, finalSeed, scopeVerified);
                     if (unconfirmed is null) ConfirmEarlierRead(c, tx, kept, runId, ct);
-                    else Execute(c, tx, "UPDATE ticket_library_capture_entries SET state='unconfirmed',category=$category,confirmed=0 WHERE run_id=$run AND ticket_key=$key",
+                    else Execute(c, tx, "UPDATE ticket_library_capture_entries SET state='unconfirmed',category=$category,retryable=1,confirmed=0 WHERE run_id=$run AND ticket_key=$key",
                         ("$category", unconfirmed), ("$run", runId), ("$key", metadata.Key));
                 }
                 tx.Commit(); return true;
@@ -446,7 +452,7 @@ public sealed partial class TicketLibraryStore
                 """, ("$category", finalIndexRead ? "no-longer-visible" : "final-check-failed"), ("$run", runId), ("$final", finalIndexRead ? 1 : 0));
             // A kept earlier read that awaited this check stays pending; say so rather than leave it awaiting.
             if (!finalIndexRead)
-                Execute(c, tx, "UPDATE ticket_library_capture_entries SET state='unconfirmed',category='final-check-failed',confirmed=0 WHERE run_id=$run AND read_count=0 AND category='awaiting-final-check'", ("$run", runId));
+                Execute(c, tx, "UPDATE ticket_library_capture_entries SET state='unconfirmed',category='final-check-failed',retryable=1,confirmed=0 WHERE run_id=$run AND read_count=0 AND category='awaiting-final-check'", ("$run", runId));
             ct.ThrowIfCancellationRequested(); tx.Commit(); return true;
         }, ct);
     }
@@ -460,6 +466,9 @@ public sealed partial class TicketLibraryStore
         {
             using var tx = c.BeginTransaction(); RequireRunningCapture(c, tx, runId);
             Execute(c, tx, "UPDATE ticket_library_capture_entries SET state='interrupted',category='interrupted',retryable=1 WHERE run_id=$run AND state IN ('pending','reading')", ("$run", runId));
+            // Older journals may have counted a retained, unconfirmed body as a
+            // nonretryable reuse. Finalizing never hides an outstanding result.
+            Execute(c, tx, "UPDATE ticket_library_capture_entries SET retryable=1 WHERE run_id=$run AND (confirmed=0 OR failed>0 OR partial>0 OR conflicts>0)", ("$run", runId));
             if (status != "completed")
                 Execute(c, tx, "UPDATE ticket_library_capture_entries SET category='interrupted' WHERE run_id=$run AND category='awaiting-final-check'", ("$run", runId));
             Execute(c, tx, "UPDATE ticket_library_capture_runs SET status=$status,completed_at=$date,limitations_json=$limits WHERE run_id=$run",
@@ -491,10 +500,10 @@ public sealed partial class TicketLibraryStore
             report.Mode = reader.GetString(3); report.Scope = reader.GetString(4); report.Observed = reader.GetInt32(5); report.FinalScopeVerified = reader.GetBoolean(6);
             report.Limitations = JsonSerializer.Deserialize<List<string>>(reader.GetString(7), TicketLibraryRules.Json) ?? new();
         }
-        using var count = Command(c, tx, """
+        using var count = Command(c, tx, $"""
             SELECT COUNT(*),COALESCE(SUM(processed),0),COALESCE(SUM(read_count),0),COALESCE(SUM(reused),0),COALESCE(SUM(failed),0),
-            COALESCE(SUM(partial),0),COALESCE(SUM(conflicts),0),COALESCE(SUM(CASE WHEN (read_count=1 OR reused=1) AND partial=0 AND confirmed=0 THEN 1 ELSE 0 END),0),COALESCE(SUM(retryable),0)
-            FROM ticket_library_capture_entries WHERE run_id=$run
+            COALESCE(SUM(partial),0),COALESCE(SUM(conflicts),0),COALESCE(SUM(CASE WHEN (read_count=1 OR reused=1) AND partial=0 AND confirmed=0 THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN {CaptureRetryableSql} THEN 1 ELSE 0 END),0)
+            FROM ticket_library_capture_entries e WHERE e.run_id=$run
             """, ("$run", runId));
         using var counts = count.ExecuteReader(); counts.Read();
         report.Targeted = counts.GetInt32(0); report.Processed = counts.GetInt32(1); report.Read = counts.GetInt32(2); report.Reused = counts.GetInt32(3);

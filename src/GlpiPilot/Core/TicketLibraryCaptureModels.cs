@@ -5,10 +5,16 @@ public sealed class TicketLibraryCaptureReport
 {
     public string RunId { get; set; } = "";
     public string Status { get; set; } = "running";
+    // Finishing a pass is not proof that every requested content was verified.
+    // This describes the journal; consumers must still check current documents.
+    public bool IsSuccessful => Status == "completed" && Targeted > 0 && Processed == Targeted && FinalScopeVerified
+        && Failed == 0 && Partial == 0 && Conflicts == 0 && Unconfirmed == 0 && RetryCount == 0;
+    public bool NeedsAttention => Status == "completed" && !IsSuccessful;
     public string StatusLabel => Status switch
     {
         "paused" => "Collecte en pause", "stopped" => "Collecte arrêtée",
-        "completed" => "Collecte terminée", "cancelled" => "Collecte arrêtée", "interrupted" => "Collecte interrompue",
+        "completed" when IsSuccessful => "Collecte validée", "completed" => "Collecte terminée, à compléter",
+        "cancelled" => "Collecte arrêtée", "interrupted" => "Collecte interrompue",
         "failed" => "Collecte non aboutie", _ => "Collecte en cours"
     };
     public DateTimeOffset StartedAt { get; set; }
@@ -28,8 +34,14 @@ public sealed class TicketLibraryCaptureReport
     public int RetryCount { get; set; }
     public bool FinalScopeVerified { get; set; }
     public List<string> Limitations { get; set; } = new();
-    public string Message => $"{StatusLabel} · {Observed:N0} tickets observés, {Read:N0} contenus lus, {Reused:N0} réutilisés"
-        + (RetryCount > 0 ? $" · {RetryCount:N0} fiches à reprendre" : "");
+    public string Message => $"{StatusLabel} · {Observed:N0} tickets observés, {Processed:N0}/{Targeted:N0} examinés, {Read:N0} contenus lus, {Reused:N0} réutilisés"
+        + (Failed > 0 ? $" · {Failed:N0} lectures non abouties" : "")
+        + (Partial > 0 ? $" · {Partial:N0} lectures partielles" : "")
+        + (Conflicts > 0 ? $" · {Conflicts:N0} tickets avec versions en conflit" : "")
+        + (Unconfirmed > 0 ? $" · {Unconfirmed:N0} contenus non confirmés" : "")
+        + (RetryCount > 0 ? $" · {RetryCount:N0} fiches à reprendre" : "")
+        + (Status == "completed" && !FinalScopeVerified ? " · Périmètre final non confirmé" : "")
+        + (Status == "completed" && Targeted == 0 ? " · Aucun ticket ciblé : aucun contenu validé" : "");
 }
 
 public sealed class TicketLibraryCaptureEntry

@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.16 · Windows x64
+# GLPI Pilot 4.0.17 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -7,6 +7,8 @@
 La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface locale HTML/CSS/JavaScript. Les calculs, la pagination, les validations, la persistance et les accès au navigateur restent en C#. Depuis la 3.14.0, seul le pack allégé est publié : il utilise le runtime WebView2 Evergreen de Windows, ou à défaut le runtime fixe publié une seule fois pour tous les outils dans le [Socle Windows](https://github.com/M4D135/socle-windows/releases). Les pages de l’application n’ont besoin d’aucun site hébergé. Le modèle de migration est documenté dans le [contrat WebView](docs/WebView-contract.md), à partir de Domenia 2.
 
 ## Télécharger le pack
+
+Le code 4.0.17 renforce la confirmation des collectes et le diagnostic avant export vers Relais. Sa publication exige la qualification complète du commit et l’inspection du pack original ; consulter les [notes 4.0.17](docs/RELEASE-4.0.17.md) et la page Releases pour son état de livraison.
 
 Le [pack PROD-LIGHT 4.0.16 pour Windows x64](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.16/GLPI-Pilot_4.0.16_PROD-LIGHT_Windows-x64.zip) est publié. La qualification Windows et PostgreSQL du commit livré a réussi **16/16 jobs**, et le ZIP original inspecté a été publié sans recompilation ni recompression, puis retéléchargé et comparé octet pour octet. Voir la [release v4.0.16](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.16), le [fichier SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.16/SHA256SUMS.txt) et le [reçu de qualification](docs/QUALIFICATION-4.0.16.md). Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
 
@@ -27,6 +29,12 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/.playwright/` | Pilote Windows de la connexion au navigateur GLPI |
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
+
+## 4.0.17 : contrôler la collecte avant l’import de connaissances
+
+Le précontrôle vérifie les dates de modification avant la lecture massive des fiches. Un index dont aucune date n’est interprétable arrête le passage avec une explication et un lien vers les réglages de bibliothèque ; une date ISO portant son décalage reste admise sans inventer de fuseau. Un index mêlant dates fiables et dates incertaines affiche un avertissement chiffré.
+
+Un passage terminé n’est déclaré validé que si ses cibles, ses contenus et son périmètre final le sont effectivement. Les contenus non confirmés restent à reprendre même dans les anciens journaux qui annonçaient zéro reprise. Le bilan lit aussi les cinq critères du contrat SQL de connaissances : complétude, présence du contenu, confirmation, absence de confirmation en attente et absence de conflit. Les motifs restent visibles et aucune preuve n’est forcée. Voir les [notes et la procédure 4.0.17](docs/RELEASE-4.0.17.md).
 
 ## 4.0.16 : consulter les contenus recueillis sans refaire la collecte
 
@@ -492,7 +500,7 @@ Les [notes 3.2.1](docs/RELEASE-3.2.1.md) détaillent les parcours et les vérifi
 
 **Bibliothèque de tickets** ajoute un cache SQLite local persistant et quatre vues : bibliothèque, résolution, équipe et connexion. **Aspirer tous les tickets** parcourt tous les statuts accessibles, y compris résolus et clos, hors corbeille et dans les entités actives de la session GLPI. Les descriptions, suivis, tâches, solutions, historiques et autres onglets consultables sont conservés avec leurs preuves de lecture ; les pièces jointes restent des références et métadonnées. Les limites du portail et les lectures partielles sont indiquées dans le bilan.
 
-Les mises à jour réutilisent les contenus complets et confirmés lorsque la date de modification GLPI, sa précision et la signature du lecteur correspondent. Depuis la 4.0.16, l’âge du cache ne provoque plus de relecture si cette version reste inchangée. Renseigner le **fuseau d’affichage des dates GLPI** dans Connexion pour interpréter une date sans décalage explicite. Une date absente ou ambiguë entraîne une relecture ; elle ne permet pas de déclarer une version plus récente qu’une autre. **Relire tous les contenus** force une nouvelle lecture. Les versions divergentes sont conservées.
+Les mises à jour réutilisent les contenus complets et confirmés lorsque la date de modification GLPI, sa précision et la signature du lecteur correspondent. Depuis la 4.0.16, l’âge du cache ne provoque plus de relecture si cette version reste inchangée. Renseigner le **fuseau d’affichage des dates GLPI** dans Bibliothèque → Connexion pour interpréter une date sans décalage explicite. Une date absente ou ambiguë entraîne une relecture ; elle ne permet pas de déclarer une version plus récente qu’une autre. **Relire tous les contenus** force une nouvelle lecture. Les versions divergentes sont conservées.
 
 La vue **Résolution** recherche dans les tickets résolus ou clos dont le contenu est complet et encore actuel selon les observations conservées. Chaque résultat renvoie au ticket, à la section lue et à un extrait exact. **Exporter le corpus RAG** produit des documents complets et des fragments de texte sourcés en JSONL pour une indexation ultérieure. Cette recherche utilise l’index local de texte ; elle n’envoie pas les tickets à un modèle externe.
 

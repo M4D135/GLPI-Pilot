@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GlpiPilot.Core;
@@ -37,6 +38,131 @@ try
 #if !COLLECTION_CORE_ONLY
     await CollectionScopeRuntimeChecks.RunAsync(root, Check);
 #endif
+    await Check("A finished pass succeeds only when every target and the final scope were verified", () =>
+    {
+        TicketLibraryCaptureReport Complete() => new()
+        { Status = "completed", Observed = 2, Targeted = 2, Processed = 2, Read = 1, Reused = 1, FinalScopeVerified = true };
+        var complete = Complete();
+        Require(complete.IsSuccessful && !complete.NeedsAttention && complete.StatusLabel == "Collecte validée");
+        Action<TicketLibraryCaptureReport>[] incomplete =
+        [
+            report => report.FinalScopeVerified = false, report => report.Processed = 1, report => report.Processed = 3,
+            report => report.Failed = 1, report => report.Partial = 1, report => report.Conflicts = 1,
+            report => report.Unconfirmed = 1, report => report.RetryCount = 1
+        ];
+        foreach (var change in incomplete)
+        {
+            var report = Complete(); change(report);
+            Require(!report.IsSuccessful && report.NeedsAttention && report.StatusLabel == "Collecte terminée, à compléter");
+        }
+        var retained = Complete(); retained.Unconfirmed = 2; // historical retryable=0 must not turn this green
+        Require(retained.RetryCount == 0 && !retained.IsSuccessful && retained.Message.Contains("2 contenus non confirmés", StringComparison.Ordinal));
+        foreach (var status in new[] { "running", "paused", "stopped", "failed", "cancelled", "interrupted" })
+        { var report = Complete(); report.Status = status; Require(!report.IsSuccessful && !report.NeedsAttention); }
+        return Task.CompletedTask;
+    });
+    await Check("An empty finished journal explicitly says that no content was validated", () =>
+    {
+        var report = new TicketLibraryCaptureReport { Status = "completed", FinalScopeVerified = true };
+        Require(!report.IsSuccessful && report.NeedsAttention && report.Message.Contains("Aucun ticket ciblé : aucun contenu validé", StringComparison.Ordinal));
+        return Task.CompletedTask;
+    });
+    await Check("Date preflight blocks local dates without a source timezone and ambiguous date order without changing seeds", () =>
+    {
+        var local = Seed("date-local"); local.LastModifiedRaw = "2026-11-01 08:00:00"; local.LastModifiedPrecision = "seconds";
+        var ambiguous = Seed("date-ambiguous"); ambiguous.LastModifiedRaw = "03/04/2026 12:00";
+        var before = TicketLibraryRules.Serialize(new[] { local, ambiguous });
+        var withoutZone = LibraryCollectionPreflight.Inspect([local], new() { SourceDateOrder = "ymd" });
+        var withoutOrder = LibraryCollectionPreflight.Inspect([ambiguous], new() { SourceTimeZone = "UTC" });
+        Require(withoutZone.State == "blocked" && withoutZone.ReliableDates == 0 && withoutZone.UnreliableDates == 1);
+        Require(withoutOrder.State == "blocked" && withoutOrder.ReliableDates == 0 && withoutOrder.UnreliableDates == 1);
+        var preview = LibraryCollectionPreflight.Preview([local], new() { SourceDateOrder = "ymd" });
+        Require(preview.State == "warning" && preview.Checked == 1 && preview.ReliableDates == 0 && preview.UnreliableDates == 1);
+        Require(LibraryCollectionPreflight.Inspect([ambiguous], new() { SourceTimeZone = "UTC", SourceDateOrder = "dmy" }).State == "ready");
+        Require(TicketLibraryRules.Serialize(new[] { local, ambiguous }) == before);
+        return Task.CompletedTask;
+    });
+    await Check("Date preflight accepts an explicit ISO offset without inventing a source timezone", () =>
+    {
+        var seed = Seed("date-offset"); seed.LastModifiedRaw = "2026-11-01T08:00:00+02:00";
+        seed.LastModifiedAt = null; seed.LastModifiedPrecision = "seconds";
+        var preferences = new LibraryPreferences(); var before = TicketLibraryRules.Serialize(seed);
+        var result = LibraryCollectionPreflight.Inspect([seed], preferences);
+        Require(result.State == "ready" && result.Checked == 1 && result.ReliableDates == 1 && result.UnreliableDates == 0
+            && result.SourceTimeZone == "" && preferences.SourceTimeZone == "" && seed.LastModifiedAt is null);
+        Require(TicketLibraryRules.Serialize(seed) == before);
+        seed.LastModifiedReliable = false;
+        Require(LibraryCollectionPreflight.Inspect([seed], preferences).State == "blocked");
+        return Task.CompletedTask;
+    });
+    await Check("Mixed date preflight warns with exact counts and an empty inventory remains unknown", () =>
+    {
+        var valid = Seed("date-valid"); valid.LastModifiedRaw = "2026-11-01T08:00:00Z"; valid.LastModifiedPrecision = "seconds";
+        var missing = Seed("date-missing"); missing.LastModifiedRaw = ""; missing.LastModifiedAt = null; missing.LastModifiedReliable = false;
+        var before = TicketLibraryRules.Serialize(new[] { valid, missing });
+        var result = LibraryCollectionPreflight.Inspect([valid, missing], new());
+        Require(result.State == "warning" && result.Checked == 2 && result.ReliableDates == 1 && result.UnreliableDates == 1
+            && result.Messages.Single().Contains("1 date(s) de modification sur 2", StringComparison.Ordinal));
+        Require(TicketLibraryRules.Serialize(new[] { valid, missing }) == before);
+        Require(LibraryCollectionPreflight.Inspect(null, new()).State == "unknown" && LibraryCollectionPreflight.Inspect([], new()).Checked == 0);
+        return Task.CompletedTask;
+    });
+    await Check("Current knowledge readiness matches native complete, pending, partial, conflicting and missing content without writing", async () =>
+    {
+        var store = Store("knowledge-readiness");
+        var ready = Seed("61"); var pending = Seed("62"); var partial = Seed("63"); var conflict = Seed("64"); var metadata = Seed("65"); var absent = Seed("66");
+        var run = await Start(store, ready, pending, partial, conflict, metadata, absent);
+        await SaveBody(store, run, ready); await store.ConfirmCaptureTicketAsync(run, ready, true);
+        await SaveBody(store, run, pending);
+        var observed = await store.ObserveCaptureSeedAsync(run, partial);
+        await store.SaveCaptureDetailAsync(run, partial, new()
+        {
+            Coverage = new() { Complete = false, TabsDiscovered = 2, TabsLoaded = 1 },
+            Detail = new()
+            {
+                Ticket = partial.Ticket, Title = partial.Title, ReadAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+                Tabs = [new() { Key = "treatment", Name = "Traitement", Loaded = true }],
+                Sections = [new() { Name = "Chronologie partielle", Kind = "timeline", TabKey = "treatment", Data = new()
+                    { Headers = ["Type", "Contenu"], Rows = [["Solution", "Corps partiel conservé"]], Complete = false } }]
+            }
+        }, observed.Document.LocalRevision);
+        await store.ConfirmCaptureTicketAsync(run, partial, true);
+        await SaveBody(store, run, conflict, solution: "Version A conservée");
+        await SaveBody(store, run, conflict, solution: "Version B conservée");
+        await store.ConfirmCaptureTicketAsync(run, conflict, true);
+        await store.ObserveCaptureSeedAsync(run, metadata);
+        await store.FinishCaptureAsync(run, "completed", []);
+        var before = FileHash(store.DatabasePath);
+        var result = await store.CaptureKnowledgeReadinessAsync(run);
+        Require(result.Available && !result.IsReady && result.Tickets == 6 && result.EligibleTickets == 1
+            && result.Incomplete == 3 && result.MissingContent == 2 && result.Unconfirmed == 4 && result.Conflicts == 1);
+        Require(FileHash(store.DatabasePath) == before);
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(store.ConnectionString)
+            { Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly }.ToString());
+        connection.Open(); using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM ticket_library_knowledge_v1_tickets WHERE version_kind='selected' AND detail_complete=1 AND has_content=1 AND content_confirmed=1 AND confirmation_pending=0 AND conflict_count=0";
+        Require(Convert.ToInt32(command.ExecuteScalar()) == result.EligibleTickets);
+        Require(FileHash(store.DatabasePath) == before);
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await RejectCancelled(() => store.CaptureKnowledgeReadinessAsync(run, cancelled.Token));
+        await Reject(() => store.CaptureKnowledgeReadinessAsync(new string('f', 32)));
+        Require(FileHash(store.DatabasePath) == before);
+    });
+    await Check("Native capture readiness changes only after its exact final confirmation while the body remains identical", async () =>
+    {
+        var store = Store("knowledge-ready-after-confirmation"); var seed = Seed("67"); var run = await Start(store, seed);
+        await SaveBody(store, run, seed);
+        var pending = (await store.GetAsync(seed.Ticket))!; var body = TicketLibraryRules.Serialize(pending.Detail); var contentHash = pending.ContentHash;
+        var before = FileHash(store.DatabasePath); var first = await store.CaptureKnowledgeReadinessAsync(run);
+        Require(!first.IsReady && first.Tickets == 1 && first.EligibleTickets == 0 && first.Unconfirmed == 1 && FileHash(store.DatabasePath) == before);
+        await store.ConfirmCaptureTicketAsync(run, seed, true); await store.FinishCaptureVerificationAsync(run, true, true);
+        await store.FinishCaptureAsync(run, "completed", []);
+        var confirmed = (await store.GetAsync(seed.Ticket))!;
+        Require(TicketLibraryRules.IsContentConfirmed(confirmed) && confirmed.ContentHash == contentHash && TicketLibraryRules.Serialize(confirmed.Detail) == body);
+        before = FileHash(store.DatabasePath); var final = await store.CaptureKnowledgeReadinessAsync(run);
+        Require(final.IsReady && final.Tickets == 1 && final.EligibleTickets == 1 && final.Incomplete == 0 && final.MissingContent == 0
+            && final.Unconfirmed == 0 && final.Conflicts == 0 && FileHash(store.DatabasePath) == before);
+    });
     await Check("Options default to explicit manual collection, distinct from shared synchronization", () =>
     { var options = new LibraryCollectionOptions(); options.Validate(); Require(!options.Automatic && options.DelayMilliseconds >= 1000); return Task.CompletedTask; });
     await Check("Unbounded pace and malformed schedules are refused", async () =>
@@ -153,21 +279,23 @@ try
             }
             return (store, seed);
         }
-        async Task<(TicketLibraryDocument Kept, TicketLibraryCaptureReport Report)> Run((TicketLibraryStore Store, TicketLibrarySeed Seed) at, bool? scope)
+        async Task<(TicketLibraryDocument Kept, TicketLibraryCaptureReport Report)> Run((TicketLibraryStore Store, TicketLibrarySeed Seed) at, bool? scope, bool reusable = true)
         {
             var run = await Start(at.Store, at.Seed); var observed = await at.Store.ObserveCaptureSeedAsync(run, at.Seed);
-            Require(TicketLibraryStore.CanSkip(at.Seed, observed.Document, context.ReaderSignature));
+            Require(TicketLibraryStore.CanSkip(at.Seed, observed.Document, context.ReaderSignature) == reusable);
+            // Also submit the stale planner decision: final verification must not
+            // promote a real conflict even if a caller had already chosen reuse.
             await at.Store.RecordCollectionReuseAsync(run, observed.Document.Key, awaitingConfirmation: true);
             if (scope is { } verified) await at.Store.ConfirmCaptureTicketAsync(run, at.Seed, verified);
             await at.Store.FinishCaptureAsync(run, scope is null ? "stopped" : "completed", []);
             return ((await at.Store.GetAsync(at.Seed.Ticket))!, await at.Store.GetCaptureAsync(run));
         }
-        var demoted = await Run(await Kept("earlier-conflict", true), true);
-        Require(!demoted.Kept.DetailsCurrent && demoted.Report.Unconfirmed == 1 && demoted.Report.Conflicts == 0);
+        var demoted = await Run(await Kept("earlier-conflict", true), true, reusable: false);
+        Require(!demoted.Kept.DetailsCurrent && demoted.Report.Unconfirmed == 1 && demoted.Report.Conflicts == 1 && demoted.Report.RetryCount == 1 && !demoted.Report.IsSuccessful);
         var partialScope = await Run(await Kept("earlier-scope", false), false);
         Require(partialScope.Kept.ConfirmationPending && !partialScope.Kept.DetailsCurrent && partialScope.Report.Unconfirmed == 1);
         var stopped = await Run(await Kept("earlier-stopped", false), null);
-        Require(stopped.Kept.ConfirmationPending && stopped.Report.Unconfirmed == 1 && stopped.Report.RetryCount == 0);
+        Require(stopped.Kept.ConfirmationPending && stopped.Report.Unconfirmed == 1 && stopped.Report.RetryCount == 1);
     });
     await Check("A kept earlier read that the final check cannot confirm stays pending and is reported as unconfirmed", async () =>
     {
@@ -180,7 +308,97 @@ try
         await store.RecordCollectionReuseAsync(run, observed.Document.Key, awaitingConfirmation: true); await store.ConfirmCaptureTicketAsync(run, seed, true);
         await store.FinishCaptureAsync(run, "completed", []);
         var kept = (await store.GetAsync(seed.Ticket))!; var report = await store.GetCaptureAsync(run);
-        Require(kept.ConfirmationPending && !kept.DetailsCurrent && report.Unconfirmed == 1 && report.RetryCount == 0 && report.Conflicts == 0 && (await store.GetStateAsync()).ConflictCount == 0);
+        Require(kept.ConfirmationPending && !kept.DetailsCurrent && report.Unconfirmed == 1 && report.RetryCount == 1 && report.Conflicts == 0 && (await store.GetStateAsync()).ConflictCount == 0);
+        Require(!report.IsSuccessful && report.NeedsAttention && (await store.CaptureRetryTargetsAsync(run, context)).Count == 1);
+    });
+    await Check("Finalizing an older pending reuse restores its retry without rewriting its retained body or proof", async () =>
+    {
+        var store = Store("legacy-pending-retry"); var seed = Seed(); var run = await Start(store, seed);
+        await SaveBody(store, run, seed);
+        var stored = (await store.GetAsync(seed.Ticket))!;
+        var body = TicketLibraryRules.Serialize(stored.Detail); var hash = stored.ContentHash; var proof = stored.ConfirmationId;
+        await store.RecordCollectionResumeReuseAsync(run, stored.Key, awaitingConfirmation: true);
+        Require((await store.GetCaptureAsync(run)).RetryCount == 1);
+        // Reproduce the old journal flag only; no content or confirmation is fabricated.
+        await store.Run(connection => TicketLibraryStore.Execute(connection, null,
+            "UPDATE ticket_library_capture_entries SET retryable=0 WHERE run_id=$run", ("$run", run)), default);
+        await store.FinishCaptureAsync(run, "completed", []);
+        var kept = (await store.GetAsync(seed.Ticket))!; var report = await store.GetCaptureAsync(run);
+        Require(kept.ContentHash == hash && kept.ConfirmationId == proof && kept.ConfirmationPending && !kept.DetailsCurrent
+            && TicketLibraryRules.Serialize(kept.Detail) == body && report.Unconfirmed == 1 && report.RetryCount == 1
+            && report.Read == 1 && report.Reused == 0 && !report.IsSuccessful && report.NeedsAttention);
+    });
+    await Check("An already completed legacy journal exposes pending, partial, failed and conflicting retries without a repair write", async () =>
+    {
+        var store = Store("legacy-completed-retry");
+        var pending = Seed("71"); var ready = Seed("72"); var partial = Seed("73"); var conflict = Seed("74"); var missing = Seed("75");
+        var seeds = new[] { pending, ready, partial, conflict, missing }; var parent = await Start(store, seeds);
+        await SaveBody(store, parent, pending);
+        await store.RecordCollectionReuseAsync(parent, TicketLibraryRules.Key(pending.Ticket), awaitingConfirmation: true);
+        await SaveBody(store, parent, ready); await store.ConfirmCaptureTicketAsync(parent, ready, true);
+        var observed = await store.ObserveCaptureSeedAsync(parent, partial);
+        await store.SaveCaptureDetailAsync(parent, partial, new()
+        {
+            Coverage = new() { Complete = false, TabsDiscovered = 2, TabsLoaded = 1 },
+            Detail = new()
+            {
+                Ticket = partial.Ticket, Title = partial.Title, ReadAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+                Tabs = [new() { Key = "treatment", Name = "Traitement", Loaded = true }],
+                Sections = [new() { Name = "Chronologie partielle", Kind = "timeline", TabKey = "treatment", Data = new()
+                    { Headers = ["Type", "Contenu"], Rows = [["Solution", "Corps partiel conservé"]], Complete = false } }]
+            }
+        }, observed.Document.LocalRevision);
+        await store.ConfirmCaptureTicketAsync(parent, partial, true);
+        await SaveBody(store, parent, conflict, solution: "Version A conservée");
+        await SaveBody(store, parent, conflict, solution: "Version B conservée");
+        await store.ConfirmCaptureTicketAsync(parent, conflict, true);
+        await store.RecordCaptureFailureAsync(parent, TicketLibraryRules.Key(missing.Ticket), "read-timeout");
+        await store.FinishCaptureAsync(parent, "completed", []);
+        // Emulate the persisted legacy flag after the run has already closed.
+        // Never call FinishCapture again on this parent: consultation must work
+        // without a repair pass or a rewrite of bodies, proofs or journal flags.
+        await store.Run(connection => TicketLibraryStore.Execute(connection, null,
+            "UPDATE ticket_library_capture_entries SET retryable=0 WHERE run_id=$run", ("$run", parent)), default);
+        var documents = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var seed in seeds) documents[seed.Ticket.Id] = TicketLibraryRules.Serialize(await store.GetAsync(seed.Ticket));
+        var before = FileHash(store.DatabasePath);
+        var report = await store.GetCaptureAsync(parent);
+        Require(report.Status == "completed" && report.Targeted == 5 && report.RetryCount == 4
+            && report.Partial == 1 && report.Failed == 1 && report.Conflicts == 1 && report.Unconfirmed > 0
+            && !report.IsSuccessful && report.NeedsAttention);
+        var all = await store.CaptureEntriesAsync(parent);
+        var retry = await store.CaptureEntriesAsync(parent, retryOnly: true);
+        var paged = await store.CaptureEntriesAsync(parent, offset: 1, limit: 2, retryOnly: true);
+        var expectedIds = new[] { "71", "73", "74", "75" };
+        Require(all.Total == 5 && all.Items.Single(item => item.TicketId == "72").Retryable == false
+            && all.Items.Count(item => item.Retryable) == 4 && retry.Total == 4
+            && retry.Items.Select(item => item.TicketId).SequenceEqual(expectedIds)
+            && retry.Items.All(item => item.Retryable) && paged.Total == 4
+            && paged.Items.Select(item => item.TicketId).SequenceEqual(expectedIds.Skip(1).Take(2)));
+        var offline = await store.ReadSavedCollectionAsync(installation, parent);
+        var offlinePage = await store.ReadSavedCaptureEntriesAsync(installation, parent, retryOnly: true);
+        Require(offline is not null && offline.Report.RetryCount == 4 && offline.Report.NeedsAttention
+            && offlinePage.Total == 4 && offlinePage.Items.All(item => item.Retryable)
+            && offlinePage.Items.Select(item => item.TicketId).SequenceEqual(expectedIds));
+        var targets = await store.CaptureRetryTargetsAsync(parent, context);
+        var missingTargets = await store.CaptureRetryTargetsAsync(parent, context, missingOnly: true);
+        Require(targets.Select(target => target.TicketId).SequenceEqual(expectedIds)
+            && missingTargets.Count == 1 && missingTargets[0].TicketId == "75");
+        await Reject(() => store.BeginCaptureAsync(context, "retry", parent,
+            retryTargets: [new(TicketLibraryRules.Key(ready.Ticket), ready.Ticket.Id)]));
+        Require(FileHash(store.DatabasePath) == before);
+        var run = await store.BeginCaptureAsync(context, "retry", parent, retryTargets: targets);
+        Require((await store.CaptureEntriesAsync(run)).Items.Select(item => item.TicketId).SequenceEqual(expectedIds));
+        await store.FinishCaptureAsync(run, "stopped", []);
+        // Legacy unrestricted retry journals reconstruct only these effective
+        // parent targets, never a healthy entry or an unrelated live ticket.
+        var legacyRetry = await store.BeginCaptureAsync(context, "retry", parent);
+        var keys = await store.ReconcileCaptureIndexAsync(legacyRetry, Index([.. seeds, Seed("76")]));
+        Require(keys.Count == 4 && keys.All(key => targets.Any(target => target.TicketKey == key)));
+        await store.FinishCaptureAsync(legacyRetry, "stopped", []);
+        foreach (var seed in seeds) Require(TicketLibraryRules.Serialize(await store.GetAsync(seed.Ticket)) == documents[seed.Ticket.Id]);
+        Require(await store.Run(connection => TicketLibraryStore.ScalarLong(connection, null,
+            "SELECT COUNT(*) FROM ticket_library_capture_entries WHERE run_id=$run AND retryable=0", ("$run", parent)), default) == 5);
     });
     await Check("A changed source token invalidates the old pending proof without losing its saved content", async () =>
     {
@@ -385,6 +603,7 @@ return passed == total ? 0 : 1;
 
 async Task Check(string label, Func<Task> test) { total++; try { await test(); passed++; Console.WriteLine("PASS " + label); } catch (Exception error) { Console.WriteLine("FAIL " + label + "\n" + error); } }
 static void Require(bool condition) { if (!condition) throw new InvalidOperationException("Collection invariant failed."); }
+static string FileHash(string file) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
 static async Task Reject(Func<Task> action) { try { await action(); } catch (Exception e) when (e is InvalidOperationException or InvalidDataException or JsonException) { return; } throw new Exception("Expected refusal."); }
 static async Task RejectCancelled(Func<Task> action) { try { await action(); } catch (OperationCanceledException) { return; } throw new Exception("Expected cancellation."); }
 TicketLibraryStore Store(string name) => new(Path.Combine(root, name + ".db"));

@@ -68,6 +68,17 @@
 .collection-state-mark .icon{width:23px;height:23px}
 .collection-status[data-state="paused"] .collection-state-mark,.collection-status[data-state="stopped"] .collection-state-mark{background:var(--surface-2);color:var(--muted)}
 .collection-status[data-state="attention"] .collection-state-mark,.collection-status[data-state="interrupted"] .collection-state-mark{background:var(--warning-soft);color:var(--warning)}
+.collection-status[data-quality="incomplete"] .collection-state-mark,.collection-status[data-quality="unknown"] .collection-state-mark{background:var(--warning-soft);color:var(--warning)}
+.collection-quality,.collection-readiness,.collection-preflight{display:grid;gap:12px;min-width:0}
+.collection-quality h3,.collection-readiness h3,.collection-preflight h3,.collection-quality p,.collection-preflight p{margin:0}
+.collection-quality .collection-scope-metrics{margin:0}
+.collection-quality-reasons,.collection-preflight ul{margin:0;padding-left:20px;line-height:1.6;overflow-wrap:anywhere}
+.collection-readiness{padding-top:16px;border-top:1px solid var(--border)}
+.collection-readiness-count{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.collection-preflight{padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.collection-preflight[data-state="blocked"],.collection-preflight[data-state="warning"]{border-color:var(--warning);background:var(--warning-soft)}
+.collection-preflight .button{justify-self:start}
+.collection-preflight-counts{font-variant-numeric:tabular-nums}
 .collection-phase,.collection-counters,.collection-next,.collection-reassurance,.collection-recovery{margin:0}
 .collection-phase{color:var(--text)}
 .collection-counters{font-variant-numeric:tabular-nums;color:var(--muted)}

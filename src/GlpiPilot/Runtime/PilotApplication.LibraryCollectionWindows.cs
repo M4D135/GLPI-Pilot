@@ -49,6 +49,7 @@ public sealed partial class PilotApplication
             if (!index.Complete)
                 throw new GlpiLibraryIndexException("targeted", "index-incomplete", "Le lot ciblé n’a pas été vérifié entièrement. Vérifier les limites de pagination avant de reprendre ; les lots déjà terminés restent conservés.");
             foreach (var seed in index.Tickets) NormalizeLibraryDate(seed, preferences);
+            CheckCollectionDates(index.Tickets, preferences, journal, limits);
             var beforeWindow = await local.CollectionWindowCoverageAsync(runId, context, offset, count, ct).ConfigureAwait(false);
             await local.ApplyCollectionWindowIndexAsync(runId, context, index, offset, count, ct).ConfigureAwait(false);
             await local.UpdateCollectionWindowEvidenceAsync(runId, context, offset, count, index.Tickets, ct).ConfigureAwait(false);
@@ -147,7 +148,6 @@ public sealed partial class PilotApplication
         await local.FinishCaptureVerificationAsync(runId, true, true, ct).ConfigureAwait(false);
         var completedCoverage = await local.CollectionPlanCoverageAsync(runId, context, ct).ConfigureAwait(false);
         CollectionProgress(s => s with { Coverage = completedCoverage });
-        if (preferences.SourceTimeZone.Length == 0) limits.Add("Configurer le fuseau des dates GLPI pour permettre une réutilisation fiable des contenus.");
         limits.Add("La sélection est vérifiée par lots ; les dates de vérification des tickets peuvent différer pendant le passage.");
         limits.Add("Les fichiers joints ne sont pas téléchargés automatiquement : seules leurs références disponibles sont conservées.");
     }

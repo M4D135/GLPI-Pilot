@@ -31,6 +31,6 @@ public sealed partial class TicketLibraryStore
     // Resuming the same journal must retain its already completed reads and counts.
     // Otherwise a second pause loses that evidence and a forced refresh repeats work.
     public Task RecordCollectionResumeReuseAsync(string runId, string key, CancellationToken ct = default, bool awaitingConfirmation = false) => UpdateCaptureEntry(runId, key,
-        awaitingConfirmation ? "state='reused',category='awaiting-final-check',retryable=0,processed=1,reused=CASE WHEN read_count>0 THEN 0 ELSE 1 END,failed=0,partial=0,confirmed=0"
+        awaitingConfirmation ? "state='reused',category='awaiting-final-check',retryable=1,processed=1,reused=CASE WHEN read_count>0 THEN 0 ELSE 1 END,failed=0,partial=0,confirmed=0"
             : "state='reused',category='cache-reused',retryable=0,processed=1,reused=CASE WHEN read_count>0 THEN 0 ELSE 1 END,failed=0,partial=0,confirmed=1", ct);
 }
