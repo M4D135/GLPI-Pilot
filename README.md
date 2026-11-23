@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.18 · Windows x64
+# GLPI Pilot 4.0.19 · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,9 +8,9 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-La version 4.0.18 ajoute **Bibliothèque → Exporter pour Relais** : un fichier `.relais` autonome à choisir directement dans Relais 0.6.3. L’export utilise la bibliothèque existante, explique les exclusions et ne relance aucune collecte. Voir [les notes et la procédure 4.0.18](docs/RELEASE-4.0.18.md).
+La version 4.0.19 corrige la lecture des onglets paginés vides de GLPI 9.5. Une fiche dont tous les autres onglets sont complets peut désormais passer la vérification finale. [Notes 4.0.19 et procédure de vérification](docs/RELEASE-4.0.19.md).
 
-Le [pack PROD-LIGHT 4.0.18 pour Windows x64](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.18/GLPI-Pilot_4.0.18_PROD-LIGHT_Windows-x64.zip) est publié depuis le **21 novembre 2026 à 23:16 (Europe/Paris)**. La qualification Windows et PostgreSQL du commit livré a réussi **16/16 jobs**. Le ZIP original inspecté a été publié sans recompilation ni recompression, puis retéléchargé et comparé octet par octet. Voir la [release v4.0.18](https://github.com/M4D135/GLPI-Pilot/releases/tag/v4.0.18), le [fichier SHA256SUMS.txt](https://github.com/M4D135/GLPI-Pilot/releases/download/v4.0.18/SHA256SUMS.txt) et le [reçu de qualification](docs/QUALIFICATION-4.0.18.md). Les tests utilisent des données fictives : le portail GLPI, le SSO et les accès réseau propres à l’organisation restent à vérifier sur un poste autorisé avant diffusion généralisée.
+Le ZIP Windows x64 et son fichier de contrôle SHA-256 sont disponibles sur la [page de la dernière version publiée](https://github.com/M4D135/GLPI-Pilot/releases/latest). Choisir le pack **PROD-LIGHT** dans la section **Assets**.
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
