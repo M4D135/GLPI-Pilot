@@ -47,6 +47,11 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("Index ciblé : opérateur modifié dans la réponse ou une ligne OR interdit la confirmation", TargetedOperatorDrift),
     ("Détails : tous les onglets sûrs, description, suivis, tâches et solution", AllTabs),
     ("Détails : historique paginé lu jusqu’au total, aucune ligne perdue", HistoryPages),
+    ("Détails : pagination GLPI 9.5 vide et vérifiée", () => CheckLegacyPager(EmptyHistoryPanel(), complete: true)),
+    ("Détails : pagination GLPI 9.5 vide avec suite contradictoire", () => CheckLegacyPager(EmptyHistoryPanel(control: "<th><a href='javascript:window.business++'><i class='fa fa-chevron-right'></i></a></th>"), complete: false)),
+    ("Détails : pagination GLPI 9.5 vide avec lignes présentes", () => CheckLegacyPager(EmptyHistoryPanel(rows: "<tr><td>22/10/2026</td><td>Événement synthétique</td></tr>"), complete: false)),
+    ("Détails : pagination GLPI 9.5 avec première page manquante", () => CheckLegacyPager(EmptyHistoryPanel(range: "De 26 à 30 sur 30"), complete: false)),
+    ("Détails : pagination GLPI 9.5 avec second compteur illisible", () => CheckLegacyPager(EmptyHistoryPanel() + "<table class='tab_cadre_pager'><tr><td class='b'>…</td></tr></table>", complete: false)),
     ("Détails : références des documents sans téléchargement binaire", DocumentReferences),
     ("Détails : onglet étranger et action métier ne sont jamais cliqués", UnsafeTabs),
     ("Détails : onglets sans intérêt (coûts, Tous) jamais ouverts, couverture complète", SkippedTabs),
@@ -198,6 +203,7 @@ string TabHtml(Uri uri, FixtureOptions options)
     if (tab == "Ticket$1") return "<div class='timeline_history'><div class='h_item'><div class='h_date'>22/10/2026 10:10</div><div class='h_content ITILFollowup'><div class='displayed_content'><div class='rich_text_container'>Suivi synthétique intégral</div></div></div></div><div class='h_item'><div class='h_content ITILTask'><div class='displayed_content'><div class='rich_text_container'>Tâche synthétique intégrale</div></div></div></div><div class='h_item'><div class='h_content Solution accepted'><div class='displayed_content'><div class='rich_text_container'>Solution synthétique complète</div></div></div></div>" +
         (options.HiddenEvent ? "<div class='h_item' hidden>NEVER_HIDDEN_LIBRARY_EVENT</div>" : "") + "</div>" + (options.LoadMore ? "<button type='button'>Charger plus</button>" : "");
     if (tab == "Document_Item$1") return "<table id='document-list'><thead><tr><th>Nom</th><th>Type</th></tr></thead><tbody><tr><td><a href='/glpi/front/document.send.php?docid=7'>document-synthetique.pdf</a></td><td>PDF</td></tr></tbody></table>";
+    if (options.HistoryPanel is not null) return options.HistoryPanel;
     var second = Query(uri, "start") == "2";
     var rows = second ? "<tr><td>22/10/2026 10:03</td><td>Événement historique trois</td></tr>" : "<tr><td>22/10/2026 10:01</td><td>Événement historique un</td></tr><tr><td>22/10/2026 10:02</td><td>Événement historique deux</td></tr>";
     return "<table id='history-list'><thead><tr><th>Date</th><th>Modification</th></tr></thead><tbody>" + rows + "</tbody></table><div class='search-pager'><p class='page-infos'>" + (second ? "3-3/3" : "1-2/3") + "</p>" +
@@ -768,6 +774,21 @@ async Task AllTabs()
         Require(result.Detail.Sections.Any(section => section.Data.Rows.Any(row => row.Any(cell => cell.Contains(expected, StringComparison.Ordinal)))), "Contenu de consultation absent.");
     Require(!json.Contains("NEVER_", StringComparison.Ordinal) && await s.Service.TicketPage!.EvaluateAsync<int>("window.business+window.submitted") == 0, "Secret lu ou mutation déclenchée.");
 }
+// GLPI 9.5.13 Html::printAjaxPager emits the 0/0/0 range twice around an empty filtered history.
+static string EmptyHistoryPanel(string range = "De 0 à 0 sur 0", string control = "", string rows = "")
+{
+    var pager = $"<table class='tab_cadre_pager'><tr><td class='tab_bg_2'><select><option>25</option></select></td><td class='tab_bg_2 b'>{range}</td>{control}</tr></table>";
+    return pager + $"<table id='history-list'><thead><tr><th>Date</th><th>Modification</th></tr></thead><tbody>{rows}</tbody></table>" + pager;
+}
+async Task CheckLegacyPager(string panel, bool complete)
+{
+    await using var s = await Setup(new() { HistoryPanel = panel });
+    var result = await Detail(s);
+    Require(result.Coverage.Complete == complete && result.Coverage.TabsDiscovered == 4 && result.Coverage.TabsLoaded == (complete ? 4 : 3),
+        "Couverture inattendue de l’onglet paginé : " + string.Join(" | ", result.Coverage.Limitations));
+    Require(await s.Service.TicketPage!.EvaluateAsync<int>("window.business") == 0, "Commande inattendue exécutée.");
+    Require(!s.Requests.Any(url => Query(new Uri(url), "start") != "" && Query(new Uri(url), "_glpi_tab") == "Log$1"), "Une page d’historique supplémentaire a été demandée.");
+}
 async Task HistoryPages()
 {
     await using var s = await Setup(); var result = await Detail(s);
@@ -901,6 +922,7 @@ sealed class FixtureOptions
     public bool HiddenEvent { get; init; }
     public bool LoadMore { get; init; }
     public bool UnsafeDetailNext { get; init; }
+    public string? HistoryPanel { get; init; }
     public bool DelayDetail { get; init; }
 }
 sealed class FixtureSession(IBrowserContext context, IPage search, BrowserService service, AppSettings settings, ConcurrentQueue<string> logs, ConcurrentQueue<string> requests) : IAsyncDisposable

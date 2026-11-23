@@ -30,12 +30,15 @@ public sealed partial class BrowserService
           const root=roots[0];
           if(root.closest('[aria-busy=true]')||[...document.querySelectorAll('#loadingtabs,.loadingindicator')].some(visible))return {ready:false};
           const pagers=[...root.querySelectorAll('.search-pager,.tab_cadre_pager')].filter(visible);
-          const ranges=pagers.flatMap(p=>[...p.querySelectorAll('.page-infos,td.b')].filter(visible).map(e=>{
+          const pagerRanges=pagers.map(p=>[...p.querySelectorAll('.page-infos,td.b')].filter(visible).map(e=>{
             const numbers=text(e).match(/\d[\d \u00a0\u202f]*/g)||[];
             const values=numbers.map(n=>Number(n.replace(/[ \u00a0\u202f]/g,'')));
             return values.length===3&&values.every(Number.isSafeInteger)&&values[0]>=0&&values[0]<=values[1]&&values[1]<=values[2]?values:null;
-          }).filter(Boolean));
-          const range=ranges[0]||null,rangeValid=!!range&&ranges.every(r=>JSON.stringify(r)===JSON.stringify(range));
+          }));
+          const range=pagerRanges[0]?.[0],rangeValid=!!range&&pagerRanges.every(ranges=>ranges.length>0&&ranges.every(r=>r&&r.every((value,i)=>value===range[i])));
+          // A legacy pager can appear at both ends of a list. A zero total must have no active paging control.
+          const emptyPage=rangeValid&&range[2]===0&&!pagers.some(p=>[...p.querySelectorAll('a[href],button,[role=button],input[type=button],input[type=submit]')]
+            .some(e=>visible(e)&&!e.closest(':disabled,[aria-disabled=true],.disabled')));
           const forwards=pagers.flatMap(p=>[...p.querySelectorAll('a[href]')].filter(a=>a.matches('.page-link-next')||a.querySelector('.fa-chevron-right,.ti-chevron-right'))).filter(visible).filter(a=>a.getAttribute('aria-disabled')!=='true'&&!a.closest('.disabled'));
           const decoded=forwards.map(a=>{const href=a.getAttribute('href')||'',match=/^javascript:reloadTab\((['"])start=(\d+)\1\);?$/.exec(href);let inline=false;for(let n=a;n&&n!==root;n=n.parentElement)if([...n.attributes].some(x=>/^on/i.test(x.name)))inline=true;return {selector:css(a),href,start:match?Number(match[2]):null,allowed:!!match&&!inline&&!business(a)&&!a.hasAttribute('download')&&Number.isSafeInteger(Number(match?.[2]))}});
           const same=decoded.length>0&&decoded.every(d=>d.allowed&&d.href===decoded[0].href);
@@ -51,7 +54,7 @@ public sealed partial class BrowserService
             const kind=/\/front\/document\.(?:send|form)\.php$/i.test(u.pathname)||a.hasAttribute('download')?'document':'link';
             links.push({label,url:u.href,kind});
           }
-          return {ready:true,discovered:0,unsupported:0,keys:[],overflow:false,pager: pagers.length>0,
+          return {ready:true,discovered:0,unsupported:0,keys:[],overflow:false,pager: pagers.length>0,emptyPage,
             rangeStart:rangeValid?range[0]:null,rangeEnd:rangeValid?range[1]:null,rangeTotal:rangeValid?range[2]:null,
             nextSelector:same?decoded[0].selector:'',nextHref:same?decoded[0].href:'',nextStart:same?decoded[0].start:null,
             unverifiedPagination:unexpected||pagers.length>0&&!rangeValid||forwards.length>0&&!same,
@@ -67,6 +70,7 @@ public sealed partial class BrowserService
         [JsonPropertyName("keys")] public List<string> Keys { get; set; } = new();
         [JsonPropertyName("overflow")] public bool Overflow { get; set; }
         [JsonPropertyName("pager")] public bool Pager { get; set; }
+        [JsonPropertyName("emptyPage")] public bool EmptyPage { get; set; }
         [JsonPropertyName("rangeStart")] public int? RangeStart { get; set; }
         [JsonPropertyName("rangeEnd")] public int? RangeEnd { get; set; }
         [JsonPropertyName("rangeTotal")] public int? RangeTotal { get; set; }
@@ -185,8 +189,16 @@ public sealed partial class BrowserService
                 if (dom.Pager && dom.RangeStart.HasValue && dom.RangeTotal.HasValue)
                 {
                     expectedTotal ??= dom.RangeTotal;
-                    if (dom.RangeTotal != expectedTotal || dom.RangeStart != expectedStart)
-                    { coverage.Limitations.Add("La plage ou le total d’un onglet ne correspond pas à la pagination attendue."); tabComplete = false; break; }
+                    // GLPI numbers nonempty pages from 1. Its native empty pager displays 0–0 of 0.
+                    var emptyFirstPage = pageNumber == 0 && dom.EmptyPage
+                        && !part.Sections.Any(section => section.Kind == "table" && section.Data.Rows.Count > 0);
+                    var requiredStart = emptyFirstPage ? 0 : expectedStart;
+                    if (dom.RangeTotal != expectedTotal || dom.RangeStart != requiredStart)
+                    {
+                        coverage.Limitations.Add($"Pagination de l’onglet {result.Tabs.IndexOf(tab) + 1} : plage lue {dom.RangeStart}–{dom.RangeEnd} sur {dom.RangeTotal}, début attendu {requiredStart}, total attendu {expectedTotal}.");
+                        tabComplete = false;
+                        break;
+                    }
                 }
                 if (dom.HiddenEvents || dom.UnverifiedPagination || dom.LinkOverflow)
                 {

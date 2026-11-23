@@ -536,7 +536,7 @@ try {
             $assembly = Join-Path $repository "$suite/bin/Release/net10.0/TicketLibraryAcquisitionChecks.dll"
             if (-not (Test-Path -LiteralPath $assembly -PathType Leaf)) { throw 'Missing compiled ticket library acquisition checks.' }
             Invoke-CheckedProcess -Executable 'dotnet' -Arguments @($assembly) `
-                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 420 -ExpectedSummary "60/60 contrôles d’acquisition de bibliothèque réussis."
+                -LogName 'ticket-library-acquisition-checks.log' -TimeoutSeconds 420 -ExpectedSummary "65/65 contrôles d’acquisition de bibliothèque réussis."
         }
         'WebViewChecks' {
             Set-TestBrowser
