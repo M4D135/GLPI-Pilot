@@ -23,6 +23,7 @@ python3 build-tools/select-verified-release.py --stored "$evidence_dir" "$GITHUB
   "$QUALIFIED_RUN_ATTEMPT" "$version" "$EXPECTED_LIGHT_SHA256"
 store="${GLPI_CI_EVIDENCE_ROOT:-$HOME/GLPI-Pilot-Evidence}/$QUALIFIED_RUN_ID/$QUALIFIED_RUN_ATTEMPT/$GITHUB_SHA"
 name="GLPI-Pilot_${version}_PROD-LIGHT_Windows-x64.zip"
+stable_name="GLPI-Pilot_PROD-LIGHT_Windows-x64.zip"
 [[ -f "$store/$name" && ! -L "$store/$name" ]] || {
   echo "Missing retained original: $name (expected in $store)."
   echo 'The publication workflow places it there from the qualified run artifact; run it through'
@@ -53,6 +54,8 @@ if digest != os.environ['EXPECTED_LIGHT_SHA256']:
 (root / 'SHA256SUMS.txt').write_text(digest + '  ' + path.name + '\n', encoding='utf-8')
 PY
 python3 build-tools/verify-release-packs.py "$release_dir" "$version" "$GITHUB_SHA" --output "$evidence_dir/candidate-archives.json"
+# Both download names publish the same verified bytes. The checksum keeps the versioned filename.
+ln -- "$release_dir/$name" "$release_dir/$stable_name"
 check_refs() {
   local main_sha tag_refs
   main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
@@ -65,17 +68,17 @@ check_refs() {
 download_and_compare() {
   local output="$1" original
   gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$output" \
-    --pattern 'SHA256SUMS.txt' --pattern "GLPI-Pilot_${version}_PROD-LIGHT_Windows-x64.zip"
+    --pattern 'SHA256SUMS.txt' --pattern "$name" --pattern "$stable_name"
   for original in "$release_dir"/*; do cmp "$original" "$output/${original##*/}"; done
 }
 check_inventory() {
   local draft="$1" metadata
   metadata=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish,assets)
-  python3 - "$version" "$draft" "$GITHUB_SHA" "$metadata" <<'PYINV'
+  python3 - "$draft" "$GITHUB_SHA" "$metadata" "$name" "$stable_name" <<'PYINV'
 import json, sys
-version, state, commit, metadata = sys.argv[1:]
+state, commit, metadata, *archives = sys.argv[1:]
 release = json.loads(metadata)
-expected = sorted(['SHA256SUMS.txt', f'GLPI-Pilot_{version}_PROD-LIGHT_Windows-x64.zip'])
+expected = sorted(['SHA256SUMS.txt', *archives])
 if (release['isDraft'] != (state == 'draft') or sorted(a['name'] for a in release['assets']) != expected
         or (release['isDraft'] and release['targetCommitish'] != commit)):
     raise SystemExit('Release state, target or asset inventory changed')
@@ -86,10 +89,10 @@ new_publication=true
 existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish,assets 2>/dev/null || true)
 if [[ -n "$existing" ]]; then
   # An old draft must not silently reintroduce a withdrawn edition.
-  python3 - "$version" "$existing" <<'PYASSETS'
+  python3 - "$existing" "$name" "$stable_name" <<'PYASSETS'
 import json, sys
-version, release = sys.argv[1], json.loads(sys.argv[2])
-allowed = {'SHA256SUMS.txt', f'GLPI-Pilot_{version}_PROD-LIGHT_Windows-x64.zip'}
+release = json.loads(sys.argv[1])
+allowed = {'SHA256SUMS.txt', *sys.argv[2:]}
 names = {a['name'] for a in release['assets']}
 if names - allowed or (not release['isDraft'] and names != allowed):
     raise SystemExit('Unexpected assets in the existing release. Check its inventory before promotion.')
@@ -104,11 +107,11 @@ PYASSETS
     target=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["targetCommitish"])' <<< "$existing")
     [[ "$target" == "$GITHUB_SHA" ]] || { echo 'An existing draft targets another commit; refusing to replace it.'; exit 1; }
     for file in "$release_dir"/*; do
-      name=${file##*/}
-      if jq -e --arg name "$name" 'any(.assets[]; .name==$name)' <<< "$existing" >/dev/null; then
-        gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$published_dir"
-        cmp "$file" "$published_dir/$name" || { echo "Existing draft asset differs: $name"; exit 1; }
-        rm -- "$published_dir/$name"
+      asset=${file##*/}
+      if jq -e --arg name "$asset" 'any(.assets[]; .name==$name)' <<< "$existing" >/dev/null; then
+        gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$published_dir"
+        cmp "$file" "$published_dir/$asset" || { echo "Existing draft asset differs: $asset"; exit 1; }
+        rm -- "$published_dir/$asset"
       else
         gh release upload "$tag" "$file" --repo "$GITHUB_REPOSITORY"
       fi
@@ -127,6 +130,20 @@ fi
 # Download the distributed assets using release access, including for a private repository.
 download_and_compare "$published_dir"
 check_inventory published
+[[ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" == "$tag" ]] || { echo 'Latest release points to another tag'; exit 1; }
+if [[ "$(gh api "repos/$GITHUB_REPOSITORY" --jq '.visibility')" == public ]]; then
+  stable_url="${GITHUB_SERVER_URL:-https://github.com}/$GITHUB_REPOSITORY/releases/latest/download/$stable_name"
+  verified=false
+  for delay in 0 5 15 30; do
+    sleep "$delay"
+    if curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$published_dir/latest.zip" "$stable_url" \
+        && cmp -s "$release_dir/$name" "$published_dir/latest.zip"; then
+      verified=true
+      break
+    fi
+  done
+  [[ "$verified" == true ]] || { echo 'Latest public download differs from the qualified original'; exit 1; }
+fi
 python3 build-tools/verify-release-packs.py "$published_dir" "$version" "$GITHUB_SHA" --output "$evidence_dir/published-archives.json"
 [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq '.sha')" == "$GITHUB_SHA" ]]
 cp "$published_dir/SHA256SUMS.txt" "$evidence_dir/SHA256SUMS.txt"

@@ -27,8 +27,10 @@ ZIP PROD-LIGHT téléchargé et inspecté :
    (`build-tools/select-verified-release.py --stored`) ;
 2. retrouve l'artefact du run portant le nom du pack, le commit et la même empreinte, puis le télécharge
    octet pour octet ;
-3. publie ce ZIP avec `build-tools/publish-release.sh`, puis retélécharge les fichiers publics pour les
-   comparer aux originaux.
+3. place dans le brouillon le ZIP versionné, son empreinte et une copie identique nommée
+   `GLPI-Pilot_PROD-LIGHT_Windows-x64.zip` pour le bouton du README. Les trois fichiers sont
+   retéléchargés et comparés avant publication. Sur le dépôt public, le script télécharge aussi
+   le ZIP via `releases/latest/download/` et le compare à l’original qualifié.
 
 L'artefact expire après 7 jours : la publication doit suivre la qualification dans ce délai, sinon il
 faut relancer la qualification.

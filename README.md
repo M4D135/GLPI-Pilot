@@ -1,4 +1,4 @@
-# GLPI Pilot 4.0.19 · Windows x64
+# GLPI Pilot · Windows x64
 
 ![Logo GLPI Pilot](web/brand/glpi-pilot-logo.png)
 
@@ -8,9 +8,9 @@ La version 4 conserve l'**hôte C# WinForms avec WebView2** et une interface loc
 
 ## Télécharger le pack
 
-La version 4.0.19 corrige la lecture des onglets paginés vides de GLPI 9.5. Une fiche dont tous les autres onglets sont complets peut désormais passer la vérification finale. [Notes 4.0.19 et procédure de vérification](docs/RELEASE-4.0.19.md).
+**[Télécharger GLPI Pilot pour Windows x64 (.zip)](https://github.com/M4D135/GLPI-Pilot/releases/latest/download/GLPI-Pilot_PROD-LIGHT_Windows-x64.zip)**
 
-Le ZIP Windows x64 et son fichier de contrôle SHA-256 sont disponibles sur la [page de la dernière version publiée](https://github.com/M4D135/GLPI-Pilot/releases/latest). Choisir le pack **PROD-LIGHT** dans la section **Assets**.
+Ce lien télécharge le pack PROD-LIGHT de la dernière version publiée. Pour vérifier le téléchargement, comparez son SHA-256 à celui du ZIP versionné. [Empreinte SHA-256](https://github.com/M4D135/GLPI-Pilot/releases/latest/download/SHA256SUMS.txt) · [Version et notes de publication](https://github.com/M4D135/GLPI-Pilot/releases/latest).
 
 | Pack | Pour qui | Contenu à la racine |
 | --- | --- | --- |
@@ -30,9 +30,13 @@ Extraire **tout le ZIP** dans un dossier local puis ouvrir **GLPI-Pilot.exe**. G
 | `wad/docs/`, `wad/support/`, `wad/licenses/` | Guides, diagnostics et licences des composants |
 | `wad/version.json`, `wad/SHA256SUMS.txt` | Version, provenance, dépendances et inventaire d’intégrité |
 
+## 4.0.19 · Lecture des onglets vides
+
+La version 4.0.19 corrige la lecture des onglets paginés vides de GLPI 9.5. Une fiche dont tous les autres onglets sont complets peut désormais passer la vérification finale. [Notes 4.0.19 et procédure de vérification](docs/RELEASE-4.0.19.md).
+
 ## 4.0.18 : un fichier pour Relais
 
-La version 4.0.18 ajoute **Bibliothèque → Exporter pour Relais**. Un seul fichier `.relais` regroupe les contenus admissibles déjà collectés, leurs références et un bilan des exclusions. Choisir ce fichier directement dans Relais 0.6.3 ; aucun script ni copie manuelle de SQLite n’est nécessaire. Les dates, confirmations et contenus existants restent conservés. Voir [les notes et le parcours](docs/RELEASE-4.0.18.md). La qualification et la publication sont terminées ; le reçu ci-dessus identifie les fichiers distribués.
+La version 4.0.18 ajoute **Bibliothèque → Exporter pour Relais**. Un seul fichier `.relais` regroupe les contenus admissibles déjà collectés, leurs références et un bilan des exclusions. Choisir ce fichier directement dans Relais 0.6.3 ; aucun script ni copie manuelle de SQLite n’est nécessaire. Les dates, confirmations et contenus existants restent conservés. Voir [les notes et le parcours](docs/RELEASE-4.0.18.md).
 
 ## 4.0.17 : contrôler la collecte avant l’import de connaissances
 
